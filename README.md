@@ -7,4 +7,4 @@ A native port of pokewilds for Android.
 
 On the release page, download **Pokewilds-Source-PAckage.zip**. It includes the Godot project, source code, assets, build instructions, licenses and credits.
 
-This download is a v0.9.3 source snapshot. See the included documentation for license scope and third-party asset notices.
+This download is a v9.8 source snapshot. See the included documentation for license scope and third-party asset notices.
