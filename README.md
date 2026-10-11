@@ -1,4 +1,4 @@
-# Pokewilds-Android
+# Pokewilds-Godot
 A native port of pokewilds for Android.
 
 ## Source code
