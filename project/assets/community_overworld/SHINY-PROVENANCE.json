@@ -1,0 +1,1115 @@
+[
+  {
+    "species": "audino",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0531s.png",
+    "sha256": "6eb5d926fd892050c160a897fe7d8987aba8adcec53207eef5ba6488b2dfc511",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "bibarel",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0400s.png",
+    "sha256": "3ff7c465f33b18b99995b98f432fca3a26e150eb5ff708e3130fff292f314f23",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "bidoof",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0399s.png",
+    "sha256": "79f24ba5f59fc0855ae5a2304dac4f4362224c482df037af7883f30974274ef6",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "blipbug",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0824s.png",
+    "sha256": "26d844acabb62f972dfcb9161544585ea4696e5be1f29fc905ae6be7d34eb4b0",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "charjabug",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0737s.png",
+    "sha256": "1ee19b6df0cbf3fbd476fcfa876cd20c60c853fb95911c2355fe4747c2aabda0",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "cinderace",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0815s.png",
+    "sha256": "7a10568ad59400fb1e1957fee56eb526d6d086ce026a4070f0322625309a7e6d",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "croagunk",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0453s.png",
+    "sha256": "cf73895e3083c4f0ecdb12f8e1e2d46ada9b482ef91bd84e1db6149916bdfec6",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "cufant",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0878s.png",
+    "sha256": "f107b9943bb3466c11ad49432ca01972c152f4f1eae339e76d9155e105060558",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "dewott",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0502s.png",
+    "sha256": "c348c2bfd6902b8b003b8967dca0c1fd24155fdbaf39fec1e1cd8937828f8e75",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "drilbur",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0529s.png",
+    "sha256": "e1999d3f292fdec52c57980d4c160c9f612166048be7fb3da687b016947bbaee",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "empoleon",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0395s.png",
+    "sha256": "13113ecc389046cb4182498138215a0f53ce036bfb53ed14a5f8b5de4a0b2cf5",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "espurr",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0677s.png",
+    "sha256": "d9d1110fe0badb858f3fa4ce5f9d7c5d3bd2f09e9b189654b25de5698b6e570c",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "excadrill",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0530s.png",
+    "sha256": "1a123d9b96d39bbedf3680e8bebe9909c8d65e5c8679cc528351a6efcb2c812d",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "flapple",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0841s.png",
+    "sha256": "fdfb89fbb7e261376e4df3afc7c3372c3acb406191a4599346d87e1506a3bfd7",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "gliscor",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0472s.png",
+    "sha256": "fe1d5b3de3493de0db0adc8e51ee96c5a80c7cef8d921c2ad2ece967c878147e",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "golett",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0622s.png",
+    "sha256": "6b1b21a0e6151327e0f4dc1031f9dbdffaa7b8119c7e7c76e4dd527df4a80067",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "golurk",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0623s.png",
+    "sha256": "a37755c9414a286d8be5183b797183a1bbbbd09ac0e7ab0d3b5396b56d226d20",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "grubbin",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0736s.png",
+    "sha256": "c9a6202390ea2d4fb43e24e2fcce395dd71eb7b8241cbfc124a2e1eb5ba7dd59",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "hippopotas",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0449s.png",
+    "sha256": "36572b40ded4ca7f5706cf08f11009a500cefeadc15d089f17ab25de00d91933",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "klefki",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0707s.png",
+    "sha256": "5714f93771fb1c51ede7de66197b14ac42fb6e073fb7359da0004789fd6f74e3",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "lilligant",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0549s.png",
+    "sha256": "66aafb0850fba2deeaa7335331f1c4176de4a6167ff49f1d31cfcd6ac384bc1d",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "litten",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0725s.png",
+    "sha256": "d7e42d7327d103ceda5e6278f47a0577fa15917dbb93285f2376c80b2e48258c",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "magnezone",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0462s.png",
+    "sha256": "c845662c08ac83c7af1825edffdea4cc5c8780bb97d6ab309a297dd90b5dd9bd",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "manaphy",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0490s.png",
+    "sha256": "0442228a57c606ae4672c59b8c98e3470afba3748b366455a0753d71f4e204f4",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "meowstic_female",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0678s_01.png",
+    "sha256": "71c20718a6ce649a3a4c3e78bf0ae2e32ed9dba532d6bd323b5ab9317d623451",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "meowstic_male",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0678s.png",
+    "sha256": "929da22dcf464db712a151c613dd3be17ef6f381bd47b56ebbc4a2179b97bb78",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "milcery",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0868s.png",
+    "sha256": "c9225ef7848f1aab13400e6da5668c386de92639e847f13a6a5e4df6cd928473",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "pancham",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0674s.png",
+    "sha256": "67cc31a7d9f19d2651c5f32b560797b85a89a8f3bed3199fdbec6d2a1e3cea77",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "pangoro",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0675s.png",
+    "sha256": "58cab9735b3ef9e37a994660f92a0d5aaa19bc37aa7ad64ced31b8e42f9d16f5",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "petilil",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0548s.png",
+    "sha256": "823e646123f1637574d830573152dc8ac987b8de740822cbc94be3a8bdb627d3",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "piplup",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0393s.png",
+    "sha256": "1afcff4e843053feae38d8ee32ebda37ab07c7577b57ff696f45ad86dc7716ef",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "porygonz",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0474s.png",
+    "sha256": "6f000c9ab52322466c247d722a7643c080ccda33bd602188ac2acd69be3de11b",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "prinplup",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0394s.png",
+    "sha256": "a2fd72d8b6b6472c1706e1a5b5885a2c0a5f973e66ed56dd16b4d3fb15495c27",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "tangrowth",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0465s.png",
+    "sha256": "e92c93cf2bc86bbce028fcd4cad13590d7a3712ff5f027ac95c91bbd2c7aec9d",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "vikavolt",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0738s.png",
+    "sha256": "47f0a066a812805eb4284741ad53bfd80a4d84b0a3fb85e52c409dca66201df7",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "bidoof",
+    "kind": "back",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/pokedex/pokebackshiny/0399s.png",
+    "sha256": "40e9e6e3ed6d960c04eb76e14cffb8da953cd03828f624ca72fd9c0b2e5f789b",
+    "source_size": [
+      96,
+      96
+    ],
+    "output_size": [
+      48,
+      48
+    ]
+  },
+  {
+    "species": "bibarel",
+    "kind": "back",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/pokedex/pokebackshiny/0400s.png",
+    "sha256": "f8728e780c2240896b5b04b687ea03e1ad77f8c3966b2e10d64460483279b9a6",
+    "source_size": [
+      96,
+      96
+    ],
+    "output_size": [
+      48,
+      48
+    ]
+  }
+]

@@ -1,0 +1,2002 @@
+[
+  {
+    "species": "amoonguss",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0591.png",
+    "source_sha256": "c88a19a463da25f036f7f9daaa2dc118b1017f7b9c34374f8c6b6aee2a70a99e",
+    "shiny_source_sha256": "4fc2fdc9134f3aa365d1a6093b12033d2bf1ea6c96b716741e760c39a9f22fd5",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "bounsweet",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0761.png",
+    "source_sha256": "00b14343dad6a440e08bf0a804a9cb82821f8bb463cd0be15767cd567bcbadae",
+    "shiny_source_sha256": "e18235b6bb24c9ebc39d274fd65a912f0b3df8ef7f15136f12a9d41c0eaaab80",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "cherrim",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0421.png",
+    "source_sha256": "b6fe10b29f4aa4e11ca0a3af38c430483cda3d26b7db4ac30f1df13e3ba5d563",
+    "shiny_source_sha256": "c51215fed3091a231df7539cdb3a7d40a3c5d7f831d4bbc9c61c75219688ed87",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "cherubi",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0420.png",
+    "source_sha256": "655980ce4140e28a9c8bec7ba46d463fb320cf0712015a8cde1f13d069a33ea5",
+    "shiny_source_sha256": "e76b69d25049df4b3f2b8a3c43545baa2bb2dbc87f159cd7051ff3bdcca31638",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "deerling",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0585.png",
+    "source_sha256": "1da0fede7f96edb6d6e9b48fdae29adbb9eabf2fb7945b6c1c8d730a091747c1",
+    "shiny_source_sha256": "b7edd86f3f374e02565bf066c5cd4ef70c0a8f46e7637e6873949b5a2fb73ab7",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "ferroseed",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0597.png",
+    "source_sha256": "5eb2f784d2cb96d45b9959141fbcfe99b078bc1901ad533a18b7f340b4582b1c",
+    "shiny_source_sha256": "16b0c1e84510953d752b12021475ceea1da3c6c98f8757c450d9408f72b071cf",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "ferrothorn",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0598.png",
+    "source_sha256": "dc8748ac4fa3b02fe9f2b81ded30d30c132195486e5a46b9785c8ffe3f3ff785",
+    "shiny_source_sha256": "29f15afb7bcdc3a996945b475b5ee1e7f5365a14cef0c2a7e0069b4c5dc0c8f2",
+    "source_size": [
+      160,
+      160
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "foongus",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0590.png",
+    "source_sha256": "ce677f4ac5fb0a2000950c94dd060737228c75625e89b4c10d3797cd4c75069a",
+    "shiny_source_sha256": "fa617da5dbc0b9695c73ed3ecab849dc5c0942fbac8fc291a4f5eafcc03c15ae",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "gogoat",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0673.png",
+    "source_sha256": "ba5563b3355fae8de374d9a834feb686792ae5bb2f18ec8ef2e3313ebb2df023",
+    "shiny_source_sha256": "b9d3a6e97eda7da5fc24b56b04f7b7ff657d9b44c3a59a0f3ae02f48e0eb03ba",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "grookey",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0810.png",
+    "source_sha256": "48a7a9880fa8506e9e33d1b9842140b6f5c61f3849a7659f20588d2522d822ea",
+    "shiny_source_sha256": "6c014df9ed1059de782231d032f40389fe015f2014a44005ce1fbe4c08fffdb9",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "grotle",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0388.png",
+    "source_sha256": "355287f065e3ee201f35e581e276242b752d51b2b512402bd36579f8ab6f51e7",
+    "shiny_source_sha256": "99c727cbad1deeb8b0c555bb80bc70d6fec63700cb7eff2973ad6351ec0db76e",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "kartana",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0798.png",
+    "source_sha256": "e325c58e428caead67dada49eb056cb487589d0dab44e95c25aacd08fe43baa9",
+    "shiny_source_sha256": "f5e6bf39e982840ef3679626686bc6c34249b58a1bd9a23404a426316da79487",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "leavanny",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0542.png",
+    "source_sha256": "db05ec66f22605d15fb049d7b95ea29b90b1c9b2360054cb2b0412895181834c",
+    "shiny_source_sha256": "93261a1284680a9f4fb575a89773b65e5872170dd4d8598850003da48fcc1bc3",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "pansage",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0511.png",
+    "source_sha256": "eb12a46b96abe4c2956989a4137c94bb968de42d9b66416050e1fced533c2374",
+    "shiny_source_sha256": "78a416eb2227fc110ec9e1134f6acad46c8f0c204e8e82e2fb88f5e4d91f1fb0",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "rillaboom",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0812.png",
+    "source_sha256": "a22c3a4f9acee895bb315f3c8d5a37f6020f4675688a7458db315e043f0574c6",
+    "shiny_source_sha256": "f603df5f4a6fbe53d53e49612a5f1bf025ff36b50b1190b5c0502b8eba3540aa",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "sawsbuck",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0586.png",
+    "source_sha256": "5c2c836f80c12a89d9ad55660da17d3a0f2f5d93ae6bb842994f7cc23f7e586a",
+    "shiny_source_sha256": "9dc1a770b71ed4a168784c6ca3fa3b323d2647a4be3b2aecbb3c1642faf93fc1",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "shaymin",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0492.png",
+    "source_sha256": "e398e31949edeab5e841fa4fa8c729d14480e8dec60ed12f674b6ef442903536",
+    "shiny_source_sha256": "dc41613413c9abade33301abdf1112e35f6674fe0e2857323c1f33894447f474",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "simisage",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0512.png",
+    "source_sha256": "6dd649bcafb933e2194da4104389787097e52fe4cf963d5f26bd92bcb7987c2f",
+    "shiny_source_sha256": "c7029144fd5b085e5aea71d36b107095ba31880568a55b75f178eb26d33d6241",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "skiddo",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0672.png",
+    "source_sha256": "a35419a3f0702e06827bfd9e3c52d2d9e29de04813fde7ea21a4c51149e194fa",
+    "shiny_source_sha256": "f8cc1ec5aaa7ecf2cc94c8c7d39ba3110ea5f86a756224d87e9ad1e9f4ec504e",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "swadloon",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0541.png",
+    "source_sha256": "ac0f7ff2026dd83315bad56a6785829d6e67ef8aceb1813a0532efc7814b1d22",
+    "shiny_source_sha256": "c6b8f655b73a0608b094a49d07fbe234cb27256aa914f61dd3430f6953cc60d2",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        1
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        1
+      ]
+    ]
+  },
+  {
+    "species": "thwackey",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0811.png",
+    "source_sha256": "e7c55bc2d2da6c42e02ed73ace28a3b5b91db0b73eeca394823db39e0298f43d",
+    "shiny_source_sha256": "ab5a1a82a6cc797623b2e7a3471333efa12139577e3997e2156e69905200fb7a",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "tropius",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0357.png",
+    "source_sha256": "b92c789eb39a9f98c761806baf4fc623752993fc81cefe36c173da9994f20c6a",
+    "shiny_source_sha256": "cc7e05f9138a0bfc82585e186b7a4d8f12123bcb98f92a50a36d929fee5bb48a",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "virizion",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0640.png",
+    "source_sha256": "508a31ab9e3f92c2152f4fae0fe58533d49851fa4256bbe2760b47f6aa2ff0c0",
+    "shiny_source_sha256": "d06471bfc9672a3e861bd3eb3b5a2fad07254458eb730d6eaa7a008950fd4858",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "zarude",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0893.png",
+    "source_sha256": "2e4de891e2cefb40db46e291d108b76fe116728151b980563358a6b235f54273",
+    "shiny_source_sha256": "7efee0ef18a404210db0392c841912aefda585f0cf8c554a5b74ae32a7a42344",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "alomomola",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0594.png",
+    "source_sha256": "c8ca6cbefd83eafa337368a5bad55b7191ab408ddfcf5984fb8989271e1a8a2b",
+    "shiny_source_sha256": "54e8a6e30f7074ebb4859188f482eb9aee7b4278ca1a3adc305e5613f55f5a58",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "araquanid",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0752.png",
+    "source_sha256": "23586b50830ebe604dc39045eeecf56be3db95d5f1b78a49aac17d8771cc2f30",
+    "shiny_source_sha256": "166eb6e8594552383acf271101a99a0ea3c2acfe5d0c52e7f8827141675b2166",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "arctovish",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0883.png",
+    "source_sha256": "bc7c587317c858310a04774072f32b5b30dd0ad920cb3237577fd57987053276",
+    "shiny_source_sha256": "97ba8edf13a9a821b327f9936e197be064189906147d66cfc2ed369ce3945f05",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "barbaracle",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0689.png",
+    "source_sha256": "b4999ed5aad5ea672bd7b81a2aafdc30effc3554ae103512d0cfe88db60b983d",
+    "shiny_source_sha256": "4c8f41ab53630eafafeb8c95786ccc9d110c3681da5085bdb9e245b843a91cfe",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        1
+      ]
+    ]
+  },
+  {
+    "species": "barraskewda",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0847.png",
+    "source_sha256": "e970229aa4523fad96dae815da51113996df414b73ad717efd353e687e84b7ec",
+    "shiny_source_sha256": "25531ac70021393b6ccc58acab8e4ee5971a04076078c2918db46ccc5c52a7c2",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "basculin",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0550.png",
+    "source_sha256": "c90129f4b52276418c2ce0fb8a14c0717e5e691321bcb3c04a2fbfcf05f6663c",
+    "shiny_source_sha256": "996dc3be1dbfe47b3b44871794cb81906ce9f835552b1303d9597b777b9316e3",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "bruxish",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0779.png",
+    "source_sha256": "907ebaef1a9449908c40ff819fd695fca5e0e110d956310f5c6e0b951bf1444d",
+    "shiny_source_sha256": "6d4468da0b07dfd4b79836a070711b552f52b66a2ee72b4385272c9743688e80",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "carracosta",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0565.png",
+    "source_sha256": "983e5ee904e3e537fcc2f86ecdc35c8ece66c8de4a85f28bf04da12783e0c63f",
+    "shiny_source_sha256": "37895ecae6757fee5438d92c79e1acac4806dd069fb95c330f88f7b6cb1572c7",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "clawitzer",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0693.png",
+    "source_sha256": "1cfc6716398f4d6dd3068503eb91cba4959b2313f01c43cecde3b95bceb4b9a2",
+    "shiny_source_sha256": "405251e686defbf020bb8fc0845332492ff662ebc4b9c81c75fd5f0b5327d973",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "dracovish",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0882.png",
+    "source_sha256": "dff040ccc41b0554a3d17d293df24c322171e768d00267e0df7b1f65c6301925",
+    "shiny_source_sha256": "9541367bd6414375cdddc07c75a8107fa6b4e1c3f1733938b14c0187b038e2a7",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "drednaw",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0834.png",
+    "source_sha256": "b58be4ab4ed89bd82de8b400b2ba1d1e5f843da1e5ffd8ec3cfb5418b4af1c4c",
+    "shiny_source_sha256": "a83cc1c85e4d52ad8c08e51c2b34ed54055dc7a1b51b8b00cba9bbf77c279297",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "gastrodon",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0423.png",
+    "source_sha256": "6edc96b2724616f8a0873cbe73e9fe52a3560c4a6fc5c6d6d1b9f0985cdfbb40",
+    "shiny_source_sha256": "b832e3601d919e32fe1b5022bba3a9c203ebb5febd5ef39e0f2a8eb01d21913e",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "inteleon",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0818.png",
+    "source_sha256": "4985df798ca0c95c14897e1b560c7b851cdd0ddba7fe14746848b1b8ada0cbe5",
+    "shiny_source_sha256": "33fe45946c79029c0631da6463cdf7a55720ce16765607e14dc2d48bcf52df13",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "jellicent",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0593.png",
+    "source_sha256": "ecdd6702e6e791a34dacfd1dc926ad96e422fea2db30112f8fa27a1b53d0f654",
+    "shiny_source_sha256": "b7b6de8e2a0c20fe7048a61eb88c45f7f5db5d82e8a1031dd56e41bb19b0246e",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "keldeo",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0647.png",
+    "source_sha256": "a460fa5c4d4b5cb671e493be37f9868815debe18ebc071353f1f0c9ea1e2c250",
+    "shiny_source_sha256": "2ae1429df349f4a315f86146a5a207686dcf69ef36b5450da99ede9cbc756e27",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "lumineon",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0457.png",
+    "source_sha256": "39485273c9c713dfecee7a5b140e76eda20d5687c78afeff41fa0e00b3f3953d",
+    "shiny_source_sha256": "7404765fcdb1d43e8597386fb265b04d2c1b0785e6993a29750d2fe26a6f0215",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "palkia",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0484.png",
+    "source_sha256": "80e91c52d1abd5bee3867e3607e74b5157376ce0b5aac6508a6bec0eec0500a6",
+    "shiny_source_sha256": "e224ec51497713134dcae56a9212d42489e4f687730650cf42932ba384e5fd82",
+    "source_size": [
+      256,
+      256
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "pyukumuku",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0771.png",
+    "source_sha256": "b4094bbdf4fe1ae3dfbba45148f4ea8b2068a259087565ddbeae83007e9579f4",
+    "shiny_source_sha256": "a1ef393b05d9211f0ff32b4622122bd440c55025503321931ad977626cfaead4",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "seismitoad",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0537.png",
+    "source_sha256": "6e6992db64f1a8dfd16e03d479731ae61038a48c4fe9fa9774a2288a89b5a95a",
+    "shiny_source_sha256": "7ebb06d1d92e5b093a0d400d8133e20fdc07d4119ab10d6515e4311ef765418e",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "simipour",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0516.png",
+    "source_sha256": "398dec69b2deaa3a5e26dace5ba0f10675bfd924a47ac316d4e8b325f55dfcae",
+    "shiny_source_sha256": "cf4ea953726988a5fa07346da205e35cacca4a816eeb3e37cc7701beabfaf836",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "swanna",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0581.png",
+    "source_sha256": "c6d4c908cacc73c7678d19120fe2b6db289c27dee1826d476e70ceb06d6313b2",
+    "shiny_source_sha256": "e6a7a2377481a81a3946e9ac55bbf746cb441c62572496069ee5d1adcb111b38",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "toxapex",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0748.png",
+    "source_sha256": "cbf40b3cc8767614e0b0495913908d5536f2b4d0221b4d1c07e7317970316935",
+    "shiny_source_sha256": "3fe2e4181d7950d853b5493e4c416d391473794ecdeab9dc3ba37c7e4c4036e6",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "volcanion",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0721.png",
+    "source_sha256": "42d835636f302cf3894de7cce820025f5162af6ae1aed6044a7247c5d3555eb7",
+    "shiny_source_sha256": "efec417d1c765f934869e2e1dafb11ba8db6df1bd271b8857b28db9dac822b97",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "walrein",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0365.png",
+    "source_sha256": "471ccfa2c8b3864c11e7d2a1c0dc335349ba48d433a4a6bcf1d5b9405e53ca78",
+    "shiny_source_sha256": "386337252b0d7c70cee4e8416618fcc8329d319ef301d8fc725145f14cfbeb7b",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "whiscash",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0340.png",
+    "source_sha256": "b267fd2b809fdaaab1384371c7da0c07f227dd747171300e48629c92e97b35bb",
+    "shiny_source_sha256": "63c5b5763c4c36f3d71bcfa396b5e1bcce5c61f56933ac882f18d2b9db595596",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  },
+  {
+    "species": "wishiwashi",
+    "upstream": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0746.png",
+    "source_sha256": "bfe54cab6a0ddb334a4d98282f0cec3a3c8d4ca05983f0725651ffe3220811aa",
+    "shiny_source_sha256": "33f27af1b78f8dff8414fdae3a30cae449f77dfb19265649bf3890eb1208210b",
+    "source_size": [
+      128,
+      128
+    ],
+    "output_size": [
+      96,
+      16
+    ],
+    "row_column_pairs": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ]
+  }
+]

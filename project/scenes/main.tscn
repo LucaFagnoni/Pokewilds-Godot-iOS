@@ -1,0 +1,2210 @@
+[gd_scene load_steps=38 format=3]
+
+[ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+[ext_resource type="Script" path="res://scripts/world.gd" id="2_world"]
+[ext_resource type="Script" path="res://scripts/player_controller.gd" id="3_player"]
+[ext_resource type="Script" path="res://scripts/touch_controls.gd" id="4_touch"]
+[ext_resource type="Texture2D" path="res://assets/player_runtime.png" id="5_playertex"]
+[ext_resource type="Texture2D" path="res://assets/pokewilds.png" id="6_logo"]
+[ext_resource type="Script" path="res://scripts/button_skin.gd" id="7_btn"]
+[ext_resource type="Texture2D" path="res://assets/title_bg1.png" id="8_titlebg"]
+[ext_resource type="Texture2D" path="res://assets/player_green.png" id="9_preview"]
+[ext_resource type="Texture2D" path="res://assets/generation_sky.png" id="10_gensky"]
+
+[ext_resource type="FontFile" path="res://assets/source_text_font.fnt" id="11_pokefont"]
+[ext_resource type="FontFile" path="res://assets/source_text_font_white.fnt" id="39_mapwhite"]
+[ext_resource type="Texture2D" path="res://assets/pokewilds_dialogue_border.png" id="12_dialogue_border"]
+
+[ext_resource type="Texture2D" path="res://assets/menu_pokemon_reference.png" id="21_menu_pokemon"]
+[ext_resource type="Texture2D" path="res://assets/menu_item_reference.png" id="22_menu_item"]
+[ext_resource type="Texture2D" path="res://assets/menu_map_reference.png" id="23_menu_map"]
+[ext_resource type="Texture2D" path="res://assets/menu_guide_reference.png" id="24_menu_guide"]
+[ext_resource type="Texture2D" path="res://assets/menu_save_reference.png" id="25_menu_save"]
+
+[ext_resource type="FontFile" path="res://assets/fonts.ttf" id="26_symbolfont"]
+[ext_resource type="Texture2D" path="res://assets/item_bag_background.png" id="27_item_bag_background"]
+[ext_resource type="Texture2D" path="res://assets/item_bag_pockets.png" id="28_item_bag_pockets"]
+[ext_resource type="Texture2D" path="res://assets/source_exact/global/arrow_down.png" id="29_arrow_down"]
+[ext_resource type="Texture2D" path="res://assets/source_exact/global/select_color1.png" id="30_select_color"]
+[ext_resource type="Texture2D" path="res://assets/source_exact/battle/battle_screen2.png" id="31_source_battle_screen"]
+[ext_resource type="Texture2D" path="res://assets/source_exact/battle/gsc/enemy_healthbar1.png" id="32_source_enemy_hud"]
+[ext_resource type="Texture2D" path="res://assets/source_exact/battle/gsc/friendly_healthbar1.png" id="33_source_player_hud"]
+[ext_resource type="Texture2D" path="res://assets/source_exact/battle/arrow_right1.png" id="34_source_battle_arrow"]
+[ext_resource type="Texture2D" path="res://assets/source_exact/global/male_symbol1.png" id="35_source_male"]
+[ext_resource type="Texture2D" path="res://assets/source_exact/global/female_symbol1.png" id="36_source_female"]
+[ext_resource type="Texture2D" path="res://assets/source_exact/battle/gsc/enemy_levelchar.png" id="37_source_enemy_level"]
+[ext_resource type="Texture2D" path="res://assets/source_exact/battle/gsc/friendly_levelchar.png" id="38_source_player_level"]
+
+[ext_resource type="Texture2D" path="res://assets/startup_splash.png" id="40_startup"]
+
+[sub_resource type="RectangleShape2D" id="PlayerShape"]
+size = Vector2(10, 10)
+
+[sub_resource type="AtlasTexture" id="DialogueBorderCropped"]
+atlas = ExtResource("12_dialogue_border")
+region = Rect2(2, 2, 44, 44)
+
+[sub_resource type="StyleBoxTexture" id="ClassicDialogue"]
+texture = SubResource("DialogueBorderCropped")
+texture_margin_left = 8.0
+texture_margin_top = 8.0
+texture_margin_right = 8.0
+texture_margin_bottom = 8.0
+axis_stretch_horizontal = 1
+axis_stretch_vertical = 1
+
+[sub_resource type="StyleBoxTexture" id="GenerationDialogue"]
+texture = SubResource("DialogueBorderCropped")
+texture_margin_left = 8.0
+texture_margin_top = 8.0
+texture_margin_right = 8.0
+texture_margin_bottom = 8.0
+axis_stretch_horizontal = 1
+axis_stretch_vertical = 1
+
+[sub_resource type="AtlasTexture" id="SourceBattleArrowRegion"]
+atlas = ExtResource("34_source_battle_arrow")
+region = Rect2(0, 0, 5, 7)
+
+[node name="Main" type="Node"]
+script = ExtResource("1_main")
+
+[node name="World" type="Node2D" parent="."]
+visible = false
+script = ExtResource("2_world")
+visible = false
+
+[node name="Player" type="CharacterBody2D" parent="World"]
+z_index = 10
+position = Vector2(160, 90)
+script = ExtResource("3_player")
+
+[node name="Sprite2D" type="Sprite2D" parent="World/Player"]
+texture = ExtResource("5_playertex")
+texture_filter = 1
+hframes = 8
+frame = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="World/Player"]
+position = Vector2(0, 3)
+shape = SubResource("PlayerShape")
+
+[node name="Camera2D" type="Camera2D" parent="World/Player"]
+enabled = true
+process_callback = 0
+
+[node name="UI" type="CanvasLayer" parent="."]
+visible = false
+
+[node name="SetupPanel" type="Control" parent="UI"]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Background" type="ColorRect" parent="UI/SetupPanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(1, 1, 1, 1)
+mouse_filter = 2
+
+
+[node name="MenuCursor" type="Label" parent="UI/SetupPanel"]
+theme_override_fonts/font = ExtResource("26_symbolfont")
+offset_left = 0.0
+offset_top = 7.0
+offset_right = 10.0
+offset_bottom = 23.0
+text = "▶"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 9
+mouse_filter = 2
+
+[node name="LocalLabel" type="Label" parent="UI/SetupPanel"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 8.0
+offset_top = 6.0
+offset_right = 90.0
+offset_bottom = 24.0
+text = "LOCAL"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 12
+
+[node name="ModeSelectionTick" type="Label" parent="UI/SetupPanel"]
+theme_override_fonts/font = ExtResource("26_symbolfont")
+offset_left = 0.0
+offset_top = 29.0
+offset_right = 10.0
+offset_bottom = 45.0
+text = "▶"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 9
+mouse_filter = 2
+
+
+[node name="ModeLabel" type="Label" parent="UI/SetupPanel"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 8.0
+offset_top = 29.0
+offset_right = 170.0
+offset_bottom = 47.0
+text = "NEW        LOAD"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 12
+
+[node name="WorldSizeLabel" type="Label" parent="UI/SetupPanel"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 8.0
+offset_top = 50.0
+offset_right = 312.0
+offset_bottom = 68.0
+text = "WORLD  S  M  L  XL  XXL"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 11
+
+[node name="WorldLabel" type="Label" parent="UI/SetupPanel"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 14.0
+offset_top = 74.0
+offset_right = 92.0
+offset_bottom = 90.0
+text = "WORLD NAME"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 9
+
+[node name="WorldEdit" type="LineEdit" parent="UI/SetupPanel"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+focus_mode = 0
+offset_left = 96.0
+offset_top = 70.0
+offset_right = 306.0
+offset_bottom = 92.0
+placeholder_text = ""
+expand_to_text_length = false
+virtual_keyboard_enabled = false
+max_length = 24
+flat = true
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_colors/font_placeholder_color = Color(0.35, 0.35, 0.35, 1)
+theme_override_colors/caret_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 11
+
+[node name="NameLabel" type="Label" parent="UI/SetupPanel"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 14.0
+offset_top = 98.0
+offset_right = 92.0
+offset_bottom = 114.0
+text = "NAME"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="PlayerModelName" type="Label" parent="UI/SetupPanel"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 96.0
+offset_top = 98.0
+offset_right = 222.0
+offset_bottom = 114.0
+text = "RED"
+mouse_filter = 2
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 11
+
+[node name="AppearanceLabel" type="Label" parent="UI/SetupPanel"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 14.0
+offset_top = 122.0
+offset_right = 90.0
+offset_bottom = 138.0
+text = "PLAYER"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="ColorUp" type="TextureButton" parent="UI/SetupPanel"]
+offset_left = 98.0
+offset_top = 121.0
+offset_right = 105.0
+offset_bottom = 126.0
+focus_mode = 0
+mouse_default_cursor_shape = 2
+texture_normal = ExtResource("29_arrow_down")
+ignore_texture_size = true
+stretch_mode = 3
+flip_v = true
+
+[node name="ColorDown" type="TextureButton" parent="UI/SetupPanel"]
+offset_left = 98.0
+offset_top = 132.0
+offset_right = 105.0
+offset_bottom = 137.0
+focus_mode = 0
+mouse_default_cursor_shape = 2
+texture_normal = ExtResource("29_arrow_down")
+ignore_texture_size = true
+stretch_mode = 3
+
+[node name="PlayerColorSwatch" type="TextureRect" parent="UI/SetupPanel"]
+offset_left = 116.0
+offset_top = 121.0
+offset_right = 132.0
+offset_bottom = 137.0
+texture = ExtResource("30_select_color")
+texture_filter = 1
+mouse_filter = 2
+
+[node name="ModelUp" type="TextureButton" parent="UI/SetupPanel"]
+offset_left = 148.0
+offset_top = 121.0
+offset_right = 155.0
+offset_bottom = 126.0
+focus_mode = 0
+mouse_default_cursor_shape = 2
+texture_normal = ExtResource("29_arrow_down")
+ignore_texture_size = true
+stretch_mode = 3
+flip_v = true
+
+[node name="ModelDown" type="TextureButton" parent="UI/SetupPanel"]
+offset_left = 148.0
+offset_top = 132.0
+offset_right = 155.0
+offset_bottom = 137.0
+focus_mode = 0
+mouse_default_cursor_shape = 2
+texture_normal = ExtResource("29_arrow_down")
+ignore_texture_size = true
+stretch_mode = 3
+
+[node name="PlayerPreview" type="Sprite2D" parent="UI/SetupPanel"]
+position = Vector2(174, 129)
+texture = ExtResource("9_preview")
+texture_filter = 1
+hframes = 8
+frame = 0
+
+[node name="StartButton" type="Button" parent="UI/SetupPanel"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+focus_mode = 2
+offset_left = 14.0
+offset_top = 148.0
+offset_right = 72.0
+offset_bottom = 174.0
+text = "GO!"
+flat = true
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_colors/font_hover_color = Color(0, 0, 0, 1)
+theme_override_colors/font_pressed_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 12
+script = ExtResource("7_btn")
+
+[node name="Status" type="Label" parent="UI/SetupPanel"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 86.0
+offset_top = 151.0
+offset_right = 308.0
+offset_bottom = 172.0
+text = "READY"
+horizontal_alignment = 2
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="TouchControls" type="Control" parent="UI"]
+visible = false
+z_index = 400
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("4_touch")
+
+[node name="EditHint" type="Label" parent="UI/TouchControls"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 72.0
+offset_top = 5.0
+offset_right = 248.0
+offset_bottom = 28.0
+text = "DRAG CONTROLS - BACK SAVES"
+horizontal_alignment = 1
+visible = false
+
+[node name="TouchConfig" type="Panel" parent="UI"]
+visible = false
+z_index = 500
+offset_left = 48.0
+offset_top = 4.0
+offset_right = 272.0
+offset_bottom = 176.0
+
+[node name="VBox" type="VBoxContainer" parent="UI/TouchConfig"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 10.0
+offset_top = 5.0
+offset_right = -10.0
+offset_bottom = -5.0
+theme_override_constants/separation = 0
+
+[node name="Title" type="Label" parent="UI/TouchConfig/VBox"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+layout_mode = 2
+text = "TOUCH CONTROLS"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 9
+
+[node name="ShowTouch" type="CheckButton" parent="UI/TouchConfig/VBox"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+layout_mode = 2
+text = "TOUCH CONTROLS: ON"
+button_pressed = true
+theme_override_font_sizes/font_size = 7
+
+[node name="AutoHide" type="CheckButton" parent="UI/TouchConfig/VBox"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+layout_mode = 2
+text = "Auto-hide with controller"
+button_pressed = true
+theme_override_font_sizes/font_size = 7
+
+[node name="OpacityLabel" type="Label" parent="UI/TouchConfig/VBox"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+layout_mode = 2
+text = "OPACITY 72%"
+theme_override_font_sizes/font_size = 7
+
+[node name="Opacity" type="HSlider" parent="UI/TouchConfig/VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 10)
+min_value = 15.0
+max_value = 100.0
+step = 1.0
+value = 72.0
+
+[node name="SizeLabel" type="Label" parent="UI/TouchConfig/VBox"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+layout_mode = 2
+text = "SIZE 100%"
+theme_override_font_sizes/font_size = 7
+
+[node name="Size" type="HSlider" parent="UI/TouchConfig/VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 10)
+min_value = 65.0
+max_value = 140.0
+step = 1.0
+value = 100.0
+
+[node name="ThemeMode" type="Button" parent="UI/TouchConfig/VBox"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+layout_mode = 2
+text = "THEME: SYSTEM"
+theme_override_font_sizes/font_size = 7
+script = ExtResource("7_btn")
+
+[node name="MoveControls" type="Button" parent="UI/TouchConfig/VBox"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+layout_mode = 2
+text = "Move controls"
+theme_override_font_sizes/font_size = 7
+script = ExtResource("7_btn")
+
+[node name="ResetLayout" type="Button" parent="UI/TouchConfig/VBox"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+layout_mode = 2
+text = "Reset layout"
+theme_override_font_sizes/font_size = 7
+script = ExtResource("7_btn")
+
+[node name="Close" type="Button" parent="UI/TouchConfig/VBox"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+layout_mode = 2
+text = "Close"
+theme_override_font_sizes/font_size = 7
+script = ExtResource("7_btn")
+
+
+
+[node name="GenerationPanel" type="Control" parent="UI"]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Background" type="TextureRect" parent="UI/GenerationPanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = ExtResource("10_gensky")
+expand_mode = 1
+stretch_mode = 6
+texture_filter = 1
+mouse_filter = 2
+
+[node name="ControlsTitle" type="Label" parent="UI/GenerationPanel"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 58.0
+offset_top = 12.0
+offset_right = 262.0
+offset_bottom = 34.0
+text = "- Trainer Tips -"
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 13
+
+[node name="Controls" type="Label" parent="UI/GenerationPanel"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 16.0
+offset_top = 38.0
+offset_right = 304.0
+offset_bottom = 112.0
+text = "POKEMON are happiest in their natural habitat."
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+autowrap_mode = 2
+max_lines_visible = 3
+vertical_alignment = 1
+
+[node name="Dialogue" type="Panel" parent="UI/GenerationPanel"]
+offset_left = 5.0
+offset_top = 116.0
+offset_right = 315.0
+offset_bottom = 176.0
+theme_override_styles/panel = SubResource("ClassicDialogue")
+
+[node name="Status" type="Label" parent="UI/GenerationPanel"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 18.0
+offset_top = 126.0
+offset_right = 302.0
+offset_bottom = 157.0
+text = "Generating...\nPlease wait..."
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 11
+vertical_alignment = 1
+
+[node name="GameMenu" type="Control" parent="UI"]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MenuBox" type="Panel" parent="UI/GameMenu"]
+offset_left = 166.0
+offset_top = 10.0
+offset_right = 316.0
+offset_bottom = 158.0
+theme_override_styles/panel = SubResource("ClassicDialogue")
+
+[node name="Cursor" type="Label" parent="UI/GameMenu/MenuBox"]
+theme_override_fonts/font = ExtResource("26_symbolfont")
+offset_left = 12.0
+offset_top = 14.0
+offset_right = 28.0
+offset_bottom = 32.0
+text = "▶"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 11
+
+[node name="Pokemon" type="TextureRect" parent="UI/GameMenu/MenuBox"]
+offset_left = 32.0
+offset_top = 14.0
+offset_right = 134.0
+offset_bottom = 32.0
+texture = ExtResource("21_menu_pokemon")
+expand_mode = 1
+stretch_mode = 3
+mouse_filter = 2
+
+[node name="Item" type="TextureRect" parent="UI/GameMenu/MenuBox"]
+offset_left = 32.0
+offset_top = 38.0
+offset_right = 134.0
+offset_bottom = 56.0
+texture = ExtResource("22_menu_item")
+expand_mode = 1
+stretch_mode = 3
+mouse_filter = 2
+
+[node name="Map" type="TextureRect" parent="UI/GameMenu/MenuBox"]
+offset_left = 32.0
+offset_top = 62.0
+offset_right = 134.0
+offset_bottom = 80.0
+texture = ExtResource("23_menu_map")
+expand_mode = 1
+stretch_mode = 3
+mouse_filter = 2
+
+[node name="Guide" type="TextureRect" parent="UI/GameMenu/MenuBox"]
+offset_left = 32.0
+offset_top = 86.0
+offset_right = 134.0
+offset_bottom = 104.0
+texture = ExtResource("24_menu_guide")
+expand_mode = 1
+stretch_mode = 3
+mouse_filter = 2
+
+[node name="Save" type="TextureRect" parent="UI/GameMenu/MenuBox"]
+offset_left = 32.0
+offset_top = 110.0
+offset_right = 134.0
+offset_bottom = 128.0
+texture = ExtResource("25_menu_save")
+expand_mode = 1
+stretch_mode = 3
+mouse_filter = 2
+
+[node name="GuideMenu" type="Panel" parent="UI/GameMenu"]
+visible = false
+offset_left = 82.0
+offset_top = 24.0
+offset_right = 252.0
+offset_bottom = 150.0
+theme_override_styles/panel = SubResource("ClassicDialogue")
+
+[node name="Cursor" type="Label" parent="UI/GameMenu/GuideMenu"]
+theme_override_fonts/font = ExtResource("26_symbolfont")
+offset_left = 16.0
+offset_top = 12.0
+offset_right = 32.0
+offset_bottom = 30.0
+text = "▶"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 11
+
+[node name="FieldMoves" type="Label" parent="UI/GameMenu/GuideMenu"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 38.0
+offset_top = 12.0
+offset_right = 158.0
+offset_bottom = 30.0
+text = "FIELD MOVES"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="Crafting" type="Label" parent="UI/GameMenu/GuideMenu"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 38.0
+offset_top = 36.0
+offset_right = 158.0
+offset_bottom = 54.0
+text = "CRAFTING"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="Fainting" type="Label" parent="UI/GameMenu/GuideMenu"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 38.0
+offset_top = 60.0
+offset_right = 158.0
+offset_bottom = 78.0
+text = "FAINTING"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="Ghosts" type="Label" parent="UI/GameMenu/GuideMenu"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 38.0
+offset_top = 84.0
+offset_right = 158.0
+offset_bottom = 102.0
+text = "GHOSTS"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="UpArrow" type="Label" parent="UI/GameMenu/GuideMenu"]
+visible = false
+theme_override_fonts/font = ExtResource("26_symbolfont")
+offset_left = 146.0
+offset_top = 7.0
+offset_right = 162.0
+offset_bottom = 23.0
+text = "▲"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 9
+
+[node name="DownArrow" type="Label" parent="UI/GameMenu/GuideMenu"]
+theme_override_fonts/font = ExtResource("26_symbolfont")
+offset_left = 146.0
+offset_top = 100.0
+offset_right = 162.0
+offset_bottom = 116.0
+text = "▼"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 9
+
+[node name="ItemPocketMenu" type="Control" parent="UI/GameMenu"]
+visible = false
+offset_right = 160.0
+offset_bottom = 144.0
+scale = Vector2(2, 1.25)
+texture_filter = 1
+
+[node name="Background" type="TextureRect" parent="UI/GameMenu/ItemPocketMenu"]
+offset_right = 160.0
+offset_bottom = 144.0
+texture = ExtResource("27_item_bag_background")
+expand_mode = 1
+stretch_mode = 0
+texture_filter = 1
+mouse_filter = 2
+
+[node name="PocketLabel" type="TextureRect" parent="UI/GameMenu/ItemPocketMenu"]
+offset_top = 24.0
+offset_right = 41.0
+offset_bottom = 48.0
+texture = ExtResource("28_item_bag_pockets")
+expand_mode = 1
+stretch_mode = 0
+texture_filter = 1
+mouse_filter = 2
+
+[node name="PocketBag" type="TextureRect" parent="UI/GameMenu/ItemPocketMenu"]
+offset_top = 56.0
+offset_right = 41.0
+offset_bottom = 82.0
+texture = ExtResource("28_item_bag_pockets")
+expand_mode = 1
+stretch_mode = 0
+texture_filter = 1
+mouse_filter = 2
+
+[node name="Cursor" type="Control" parent="UI/GameMenu/ItemPocketMenu"]
+offset_left = 57.0
+offset_top = 16.0
+offset_right = 62.0
+offset_bottom = 24.0
+
+[node name="Row0" type="ColorRect" parent="UI/GameMenu/ItemPocketMenu/Cursor"]
+offset_right = 1.0
+offset_bottom = 1.0
+color = Color(0.972549, 0, 0, 1)
+
+[node name="Row1" type="ColorRect" parent="UI/GameMenu/ItemPocketMenu/Cursor"]
+offset_top = 1.0
+offset_right = 2.0
+offset_bottom = 2.0
+color = Color(0.972549, 0, 0, 1)
+
+[node name="Row2" type="ColorRect" parent="UI/GameMenu/ItemPocketMenu/Cursor"]
+offset_top = 2.0
+offset_right = 3.0
+offset_bottom = 3.0
+color = Color(0.972549, 0, 0, 1)
+
+[node name="Rows34" type="ColorRect" parent="UI/GameMenu/ItemPocketMenu/Cursor"]
+offset_top = 3.0
+offset_right = 4.0
+offset_bottom = 5.0
+color = Color(0.972549, 0, 0, 1)
+
+[node name="Row5" type="ColorRect" parent="UI/GameMenu/ItemPocketMenu/Cursor"]
+offset_top = 5.0
+offset_right = 3.0
+offset_bottom = 6.0
+color = Color(0.972549, 0, 0, 1)
+
+[node name="Row6" type="ColorRect" parent="UI/GameMenu/ItemPocketMenu/Cursor"]
+offset_top = 6.0
+offset_right = 2.0
+offset_bottom = 7.0
+color = Color(0.972549, 0, 0, 1)
+
+[node name="Row7" type="ColorRect" parent="UI/GameMenu/ItemPocketMenu/Cursor"]
+visible = false
+offset_top = 7.0
+offset_right = 2.0
+offset_bottom = 8.0
+color = Color(0.972549, 0, 0, 1)
+
+[node name="List" type="Label" parent="UI/GameMenu/ItemPocketMenu"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 64.0
+offset_top = 11.0
+offset_right = 139.0
+offset_bottom = 96.0
+text = "CANCEL"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 7
+theme_override_constants/line_spacing = 8
+
+[node name="Quantities" type="Label" parent="UI/GameMenu/ItemPocketMenu"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 139.0
+offset_top = 11.0
+offset_right = 158.0
+offset_bottom = 96.0
+text = ""
+horizontal_alignment = 2
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 7
+theme_override_constants/line_spacing = 8
+
+[node name="Description" type="Label" parent="UI/GameMenu/ItemPocketMenu"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 8.0
+offset_top = 103.0
+offset_right = 152.0
+offset_bottom = 139.0
+text = ""
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 7
+theme_override_constants/line_spacing = 8
+autowrap_mode = 2
+
+[node name="PokemonMenu" type="Control" parent="UI/GameMenu"]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Background" type="ColorRect" parent="UI/GameMenu/PokemonMenu"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(1, 1, 1, 1)
+mouse_filter = 2
+
+[node name="Cursor" type="Label" parent="UI/GameMenu/PokemonMenu"]
+theme_override_fonts/font = ExtResource("26_symbolfont")
+offset_left = 4.0
+offset_top = 10.0
+offset_right = 20.0
+offset_bottom = 28.0
+text = "▶"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 11
+
+[node name="PokemonSprite" type="TextureRect" parent="UI/GameMenu/PokemonMenu"]
+offset_left = 20.0
+offset_top = 5.0
+offset_right = 60.0
+offset_bottom = 45.0
+expand_mode = 1
+stretch_mode = 5
+mouse_filter = 2
+
+[node name="Name" type="Label" parent="UI/GameMenu/PokemonMenu"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 62.0
+offset_top = 10.0
+offset_right = 188.0
+offset_bottom = 28.0
+text = "POKEMON"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="Level" type="Label" parent="UI/GameMenu/PokemonMenu"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 150.0
+offset_top = 10.0
+offset_right = 220.0
+offset_bottom = 28.0
+text = "LV 1"
+horizontal_alignment = 2
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 9
+
+[node name="HPValue" type="Label" parent="UI/GameMenu/PokemonMenu"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 230.0
+offset_top = 10.0
+offset_right = 312.0
+offset_bottom = 28.0
+text = "24/24"
+horizontal_alignment = 2
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="HPBar" type="ColorRect" parent="UI/GameMenu/PokemonMenu"]
+offset_left = 208.0
+offset_top = 34.0
+offset_right = 302.0
+offset_bottom = 44.0
+color = Color(0, 0, 0, 1)
+mouse_filter = 2
+
+[node name="HPLabel" type="Label" parent="UI/GameMenu/PokemonMenu/HPBar"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = -30.0
+offset_top = -2.0
+offset_right = 8.0
+offset_bottom = 14.0
+text = "HP:"
+theme_override_colors/font_color = Color(0.94, 0.76, 0.27, 1)
+theme_override_font_sizes/font_size = 8
+
+[node name="Fill" type="ColorRect" parent="UI/GameMenu/PokemonMenu/HPBar"]
+offset_left = 3.0
+offset_top = 3.0
+offset_right = 91.0
+offset_bottom = 7.0
+color = Color(0, 0.78, 0.08, 1)
+mouse_filter = 2
+
+[node name="PromptBox" type="Panel" parent="UI/GameMenu/PokemonMenu"]
+offset_left = 4.0
+offset_top = 138.0
+offset_right = 316.0
+offset_bottom = 178.0
+theme_override_styles/panel = SubResource("ClassicDialogue")
+
+[node name="Prompt" type="Label" parent="UI/GameMenu/PokemonMenu/PromptBox"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 14.0
+offset_top = 10.0
+offset_right = 294.0
+offset_bottom = 28.0
+text = "Choose a POKEMON."
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="SaveConfirm" type="Panel" parent="UI/GameMenu"]
+visible = false
+offset_left = 22.0
+offset_top = 34.0
+offset_right = 298.0
+offset_bottom = 146.0
+theme_override_styles/panel = SubResource("ClassicDialogue")
+
+[node name="Question" type="Label" parent="UI/GameMenu/SaveConfirm"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 36.0
+offset_top = 20.0
+offset_right = 236.0
+offset_bottom = 44.0
+text = "SAVE?"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="Cursor" type="Label" parent="UI/GameMenu/SaveConfirm"]
+theme_override_fonts/font = ExtResource("26_symbolfont")
+offset_left = 22.0
+offset_top = 62.0
+offset_right = 42.0
+offset_bottom = 82.0
+text = "▶"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 12
+
+[node name="Yes" type="Label" parent="UI/GameMenu/SaveConfirm"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 44.0
+offset_top = 62.0
+offset_right = 100.0
+offset_bottom = 84.0
+text = "YES"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="No" type="Label" parent="UI/GameMenu/SaveConfirm"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 154.0
+offset_top = 62.0
+offset_right = 204.0
+offset_bottom = 84.0
+text = "NO"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="DetailBox" type="Panel" parent="UI/GameMenu"]
+visible = false
+offset_left = 6.0
+offset_top = 10.0
+offset_right = 314.0
+offset_bottom = 170.0
+theme_override_styles/panel = SubResource("ClassicDialogue")
+
+[node name="Title" type="Label" parent="UI/GameMenu/DetailBox"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 14.0
+offset_top = 10.0
+offset_right = 294.0
+offset_bottom = 30.0
+text = "POKEMON"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="Body" type="Label" parent="UI/GameMenu/DetailBox"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 14.0
+offset_top = 34.0
+offset_right = 294.0
+offset_bottom = 145.0
+text = ""
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 9
+autowrap_mode = 2
+
+[node name="MapCanvas" type="Control" parent="UI/GameMenu/DetailBox"]
+visible = false
+offset_left = 18.0
+offset_top = 38.0
+offset_right = 290.0
+offset_bottom = 142.0
+clip_contents = true
+
+[node name="MapScreen" type="Control" parent="UI/GameMenu"]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Background" type="ColorRect" parent="UI/GameMenu/MapScreen"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 1)
+mouse_filter = 2
+
+[node name="MapCanvas" type="Control" parent="UI/GameMenu/MapScreen"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+clip_contents = true
+mouse_filter = 2
+
+[node name="Hint" type="Label" parent="UI/GameMenu/MapScreen"]
+theme_override_fonts/font = ExtResource("39_mapwhite")
+offset_left = 8.0
+offset_top = 158.0
+offset_right = 312.0
+offset_bottom = 176.0
+text = "L/R: ZOOM  STICK: CURSOR  Waypoint: A  B: BACK"
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 7
+
+[node name="CraftingPanel" type="Panel" parent="UI"]
+visible = false
+offset_left = 2.0
+offset_top = 2.0
+offset_right = 142.0
+offset_bottom = 50.0
+theme_override_styles/panel = SubResource("ClassicDialogue")
+
+[node name="NeedPanel" type="Panel" parent="UI/CraftingPanel"]
+offset_left = 176.0
+offset_right = 316.0
+offset_bottom = 78.0
+theme_override_styles/panel = SubResource("ClassicDialogue")
+
+[node name="Title" type="Label" parent="UI/CraftingPanel"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 14.0
+offset_top = 11.0
+offset_right = 128.0
+offset_bottom = 37.0
+text = "TORCH"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="Cursor" type="Label" parent="UI/CraftingPanel"]
+visible = false
+theme_override_fonts/font = ExtResource("26_symbolfont")
+offset_left = 14.0
+offset_top = 38.0
+offset_right = 28.0
+offset_bottom = 56.0
+text = "▶"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="List" type="Label" parent="UI/CraftingPanel"]
+visible = false
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 34.0
+offset_top = 36.0
+offset_right = 260.0
+offset_bottom = 136.0
+text = ""
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 9
+
+[node name="Cost" type="RichTextLabel" parent="UI/CraftingPanel"]
+bbcode_enabled = true
+scroll_active = false
+fit_content = false
+theme_override_fonts/normal_font = ExtResource("11_pokefont")
+offset_left = 192.0
+offset_top = 8.0
+offset_right = 306.0
+offset_bottom = 70.0
+text = "Need\nLOG  x1\nGRASS x1"
+theme_override_colors/default_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/normal_font_size = 8
+autowrap_mode = 2
+
+[node name="BuildPanel" type="Panel" parent="UI"]
+visible = false
+offset_left = 2.0
+offset_top = 2.0
+offset_right = 142.0
+offset_bottom = 50.0
+theme_override_styles/panel = SubResource("ClassicDialogue")
+
+[node name="NeedPanel" type="Panel" parent="UI/BuildPanel"]
+offset_left = 176.0
+offset_right = 316.0
+offset_bottom = 48.0
+theme_override_styles/panel = SubResource("ClassicDialogue")
+
+[node name="Title" type="Label" parent="UI/BuildPanel"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 14.0
+offset_top = 11.0
+offset_right = 128.0
+offset_bottom = 37.0
+text = "TORCH"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="Builder" type="Label" parent="UI/BuildPanel"]
+visible = false
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 142.0
+offset_top = 8.0
+offset_right = 282.0
+offset_bottom = 26.0
+text = "MACHOP"
+horizontal_alignment = 2
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 9
+
+[node name="Cursor" type="Label" parent="UI/BuildPanel"]
+visible = false
+theme_override_fonts/font = ExtResource("26_symbolfont")
+offset_left = 14.0
+offset_top = 32.0
+offset_right = 28.0
+offset_bottom = 48.0
+text = "▶"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="List" type="Label" parent="UI/BuildPanel"]
+visible = false
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 34.0
+offset_top = 30.0
+offset_right = 282.0
+offset_bottom = 126.0
+text = ""
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 9
+
+[node name="Cost" type="RichTextLabel" parent="UI/BuildPanel"]
+bbcode_enabled = true
+scroll_active = false
+fit_content = false
+theme_override_fonts/normal_font = ExtResource("11_pokefont")
+offset_left = 192.0
+offset_top = 10.0
+offset_right = 306.0
+offset_bottom = 44.0
+text = "Need\nLOG  x1\nGRASS x1"
+theme_override_colors/default_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/normal_font_size = 8
+autowrap_mode = 2
+
+[node name="Hint" type="Label" parent="UI/BuildPanel"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 16.0
+offset_top = 150.0
+offset_right = 284.0
+offset_bottom = 164.0
+text = "A: BUILD   L/R: ITEM   B: STOP"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 8
+
+[node name="ResourcePopup" type="Panel" parent="UI"]
+visible = false
+offset_left = 4.0
+offset_top = 4.0
+offset_right = 154.0
+offset_bottom = 58.0
+theme_override_styles/panel = SubResource("ClassicDialogue")
+
+[node name="Text" type="Label" parent="UI/ResourcePopup"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 15.0
+offset_top = 8.0
+offset_right = 138.0
+offset_bottom = 47.0
+text = "GOT\nGRASS x1"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 8
+
+[node name="MessagePanel" type="Panel" parent="UI"]
+visible = false
+offset_left = 8.0
+offset_top = 126.0
+offset_right = 312.0
+offset_bottom = 178.0
+theme_override_styles/panel = SubResource("ClassicDialogue")
+
+[node name="Message" type="Label" parent="UI/MessagePanel"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 14.0
+offset_top = 8.0
+offset_right = -28.0
+offset_bottom = -8.0
+text = ""
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="Arrow" type="Label" parent="UI/MessagePanel"]
+theme_override_fonts/font = ExtResource("26_symbolfont")
+offset_left = 276.0
+offset_top = 29.0
+offset_right = 296.0
+offset_bottom = 47.0
+text = "▼"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+horizontal_alignment = 1
+
+[node name="QuitPrompt" type="Panel" parent="UI"]
+visible = false
+offset_left = 28.0
+offset_top = 46.0
+offset_right = 292.0
+offset_bottom = 140.0
+theme_override_styles/panel = SubResource("ClassicDialogue")
+
+[node name="Title" type="Label" parent="UI/QuitPrompt"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 32.0
+offset_top = 18.0
+offset_right = 232.0
+offset_bottom = 42.0
+text = "QUIT GAME?"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="Cursor" type="Label" parent="UI/QuitPrompt"]
+theme_override_fonts/font = ExtResource("26_symbolfont")
+offset_left = 32.0
+offset_top = 56.0
+offset_right = 46.0
+offset_bottom = 76.0
+text = "▶"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="Yes" type="Label" parent="UI/QuitPrompt"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 50.0
+offset_top = 55.0
+offset_right = 100.0
+offset_bottom = 77.0
+text = "YES"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="No" type="Label" parent="UI/QuitPrompt"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 152.0
+offset_top = 55.0
+offset_right = 200.0
+offset_bottom = 77.0
+text = "NO"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="BattlePanel" type="Control" parent="UI"]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Background" type="ColorRect" parent="UI/BattlePanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(1, 1, 1, 1)
+
+[node name="ExactBattleCommandFrame" type="TextureRect" parent="UI/BattlePanel"]
+visible = false
+mouse_filter = 2
+offset_left = 60.0
+offset_top = 1.25
+offset_right = 260.0
+offset_bottom = 181.25
+texture = ExtResource("31_source_battle_screen")
+expand_mode = 1
+stretch_mode = 0
+texture_filter = 1
+
+[node name="SourceSingleHud" type="Control" parent="UI/BattlePanel"]
+visible = false
+z_index = 5
+mouse_filter = 2
+offset_left = 60.0
+offset_right = 220.0
+offset_bottom = 144.0
+scale = Vector2(1.25, 1.25)
+
+[node name="EnemyHPTrack" type="ColorRect" parent="UI/BattlePanel/SourceSingleHud"]
+mouse_filter = 2
+offset_left = 32.0
+offset_top = 20.0
+offset_right = 80.0
+offset_bottom = 22.0
+color = Color(1, 1, 1, 1)
+
+[node name="EnemyHPFill" type="ColorRect" parent="UI/BattlePanel/SourceSingleHud"]
+mouse_filter = 2
+offset_left = 32.0
+offset_top = 20.0
+offset_right = 80.0
+offset_bottom = 22.0
+color = Color(0, 0.721569, 0, 1)
+
+[node name="PlayerHPTrack" type="ColorRect" parent="UI/BattlePanel/SourceSingleHud"]
+mouse_filter = 2
+offset_left = 96.0
+offset_top = 72.0
+offset_right = 144.0
+offset_bottom = 74.0
+color = Color(1, 1, 1, 1)
+
+[node name="PlayerHPFill" type="ColorRect" parent="UI/BattlePanel/SourceSingleHud"]
+mouse_filter = 2
+offset_left = 96.0
+offset_top = 72.0
+offset_right = 144.0
+offset_bottom = 74.0
+color = Color(0, 0.721569, 0, 1)
+
+[node name="EXPFill" type="ColorRect" parent="UI/BattlePanel/SourceSingleHud"]
+mouse_filter = 2
+offset_left = 97.0
+offset_top = 88.0
+offset_right = 97.0
+offset_bottom = 90.0
+color = Color(0.12549, 0.533333, 0.972549, 1)
+
+[node name="EnemyFrame" type="TextureRect" parent="UI/BattlePanel/SourceSingleHud"]
+mouse_filter = 2
+offset_top = 1.0
+offset_right = 160.0
+offset_bottom = 145.0
+texture = ExtResource("32_source_enemy_hud")
+expand_mode = 1
+stretch_mode = 0
+texture_filter = 1
+
+[node name="PlayerFrame" type="TextureRect" parent="UI/BattlePanel/SourceSingleHud"]
+mouse_filter = 2
+offset_top = -3.0
+offset_right = 160.0
+offset_bottom = 141.0
+texture = ExtResource("33_source_player_hud")
+expand_mode = 1
+stretch_mode = 0
+texture_filter = 1
+
+[node name="EnemyLevelChar" type="TextureRect" parent="UI/BattlePanel/SourceSingleHud"]
+mouse_filter = 2
+offset_top = 1.0
+offset_right = 160.0
+offset_bottom = 145.0
+texture = ExtResource("37_source_enemy_level")
+expand_mode = 1
+stretch_mode = 0
+texture_filter = 1
+
+[node name="PlayerLevelChar" type="TextureRect" parent="UI/BattlePanel/SourceSingleHud"]
+mouse_filter = 2
+offset_top = -2.0
+offset_right = 160.0
+offset_bottom = 142.0
+texture = ExtResource("38_source_player_level")
+expand_mode = 1
+stretch_mode = 0
+texture_filter = 1
+
+[node name="EnemyName" type="Label" parent="UI/BattlePanel/SourceSingleHud"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 7.0
+offset_top = 1.0
+offset_right = 90.0
+offset_bottom = 16.0
+text = "SHROOMISH"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="EnemyLevel" type="Label" parent="UI/BattlePanel/SourceSingleHud"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 56.0
+offset_top = 10.0
+offset_right = 69.0
+offset_bottom = 26.0
+text = "4"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="EnemyGender" type="TextureRect" parent="UI/BattlePanel/SourceSingleHud"]
+mouse_filter = 2
+offset_left = 72.0
+offset_top = 9.0
+offset_right = 80.0
+offset_bottom = 17.0
+texture = ExtResource("35_source_male")
+expand_mode = 1
+stretch_mode = 2
+texture_filter = 1
+
+[node name="EnemyStatus" type="Label" parent="UI/BattlePanel/SourceSingleHud"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 7.0
+offset_top = 11.0
+offset_right = 48.0
+offset_bottom = 25.0
+text = ""
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="PlayerName" type="Label" parent="UI/BattlePanel/SourceSingleHud"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 79.0
+offset_top = 53.0
+offset_right = 148.0
+offset_bottom = 69.0
+text = "MACHOP"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="PlayerLevel" type="Label" parent="UI/BattlePanel/SourceSingleHud"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 120.0
+offset_top = 63.0
+offset_right = 139.0
+offset_bottom = 79.0
+text = "11"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="PlayerStatus" type="Label" parent="UI/BattlePanel/SourceSingleHud"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 79.0
+offset_top = 63.0
+offset_right = 116.0
+offset_bottom = 77.0
+text = ""
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="PlayerGender" type="TextureRect" parent="UI/BattlePanel/SourceSingleHud"]
+mouse_filter = 2
+offset_left = 136.0
+offset_top = 61.0
+offset_right = 144.0
+offset_bottom = 69.0
+texture = ExtResource("35_source_male")
+expand_mode = 1
+stretch_mode = 2
+texture_filter = 1
+
+[node name="PlayerHPCurrent" type="Label" parent="UI/BattlePanel/SourceSingleHud"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 84.0
+offset_top = 76.0
+offset_right = 108.0
+offset_bottom = 91.0
+text = "36"
+horizontal_alignment = 2
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="PlayerHPMax" type="Label" parent="UI/BattlePanel/SourceSingleHud"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 122.0
+offset_top = 76.0
+offset_right = 146.0
+offset_bottom = 91.0
+text = "36"
+horizontal_alignment = 2
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="SourceCommandCursor" type="TextureRect" parent="UI/BattlePanel/SourceSingleHud"]
+visible = false
+z_index = 2
+mouse_filter = 2
+offset_left = 73.0
+offset_top = 112.0
+offset_right = 78.0
+offset_bottom = 119.0
+texture = SubResource("SourceBattleArrowRegion")
+expand_mode = 1
+stretch_mode = 0
+texture_filter = 1
+
+[node name="Transition" type="ColorRect" parent="UI/BattlePanel"]
+visible = false
+z_index = 300
+mouse_filter = 2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 1)
+
+[node name="WeatherOverlay" type="ColorRect" parent="UI/BattlePanel"]
+mouse_filter = 2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0)
+
+[node name="PlayerSprite" type="TextureRect" parent="UI/BattlePanel"]
+offset_left = 26.0
+offset_top = 34.0
+offset_right = 110.0
+offset_bottom = 116.0
+expand_mode = 1
+stretch_mode = 5
+texture_filter = 1
+
+[node name="EnemySprite" type="TextureRect" parent="UI/BattlePanel"]
+offset_left = 210.0
+offset_top = 2.0
+offset_right = 292.0
+offset_bottom = 66.0
+expand_mode = 1
+stretch_mode = 5
+texture_filter = 1
+
+[node name="PlayerPartnerSprite" type="TextureRect" parent="UI/BattlePanel"]
+visible = false
+offset_left = 74.0
+offset_top = 31.0
+offset_right = 144.0
+offset_bottom = 99.0
+expand_mode = 1
+stretch_mode = 5
+texture_filter = 1
+
+[node name="EnemyPartnerSprite" type="TextureRect" parent="UI/BattlePanel"]
+visible = false
+offset_left = 176.0
+offset_top = 4.0
+offset_right = 242.0
+offset_bottom = 58.0
+expand_mode = 1
+stretch_mode = 5
+texture_filter = 1
+
+[node name="MoveAnimation" type="TextureRect" parent="UI/BattlePanel"]
+mouse_filter = 2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+expand_mode = 1
+stretch_mode = 0
+texture_filter = 1
+
+[node name="FieldLabel" type="Label" parent="UI/BattlePanel"]
+visible = false
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 6.0
+offset_top = 5.0
+offset_right = 150.0
+offset_bottom = 24.0
+text = "GRASSY FIELD"
+theme_override_colors/font_color = Color(0.08, 0.10, 0.08, 1)
+theme_override_font_sizes/font_size = 8
+
+[node name="DoubleStatus" type="Label" parent="UI/BattlePanel"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+visible = false
+offset_left = 6.0
+offset_top = 101.0
+offset_right = 314.0
+offset_bottom = 119.0
+text = "ALLY 2 / FOE 2"
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 7
+
+[node name="EnemyHud" type="Control" parent="UI/BattlePanel"]
+offset_right = 178.0
+offset_bottom = 64.0
+
+[node name="EnemyLabel" type="Label" parent="UI/BattlePanel/EnemyHud"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 15.0
+offset_top = 1.0
+offset_right = 170.0
+offset_bottom = 19.0
+text = "POKEMON"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="Gender" type="Label" parent="UI/BattlePanel/EnemyHud"]
+theme_override_fonts/font = ExtResource("26_symbolfont")
+offset_left = 142.0
+offset_top = 2.0
+offset_right = 172.0
+offset_bottom = 20.0
+text = "♂"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 11
+
+[node name="Level" type="Label" parent="UI/BattlePanel/EnemyHud"]
+visible = false
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 100.0
+offset_top = 17.0
+offset_right = 168.0
+offset_bottom = 33.0
+text = ":L5"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 9
+
+[node name="LeftLine" type="ColorRect" parent="UI/BattlePanel/EnemyHud"]
+mouse_filter = 2
+offset_left = 18.0
+offset_top = 33.0
+offset_right = 21.0
+offset_bottom = 61.0
+color = Color(0, 0, 0, 1)
+
+[node name="BottomLine" type="ColorRect" parent="UI/BattlePanel/EnemyHud"]
+mouse_filter = 2
+offset_left = 18.0
+offset_top = 59.0
+offset_right = 176.0
+offset_bottom = 62.0
+color = Color(0, 0, 0, 1)
+
+[node name="HPBack" type="ColorRect" parent="UI/BattlePanel/EnemyHud"]
+mouse_filter = 2
+offset_left = 32.0
+offset_top = 35.0
+offset_right = 168.0
+offset_bottom = 47.0
+color = Color(0, 0, 0, 1)
+
+[node name="HPTrack" type="ColorRect" parent="UI/BattlePanel/EnemyHud"]
+mouse_filter = 2
+offset_left = 58.0
+offset_top = 38.0
+offset_right = 164.0
+offset_bottom = 43.0
+color = Color(1, 1, 1, 1)
+
+[node name="HPFill" type="ColorRect" parent="UI/BattlePanel/EnemyHud"]
+mouse_filter = 2
+offset_left = 58.0
+offset_top = 38.0
+offset_right = 164.0
+offset_bottom = 43.0
+color = Color(0, 0.721569, 0, 1)
+
+[node name="HPText" type="Label" parent="UI/BattlePanel/EnemyHud"]
+z_index = 2
+mouse_filter = 2
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 36.0
+offset_top = 32.0
+offset_right = 59.0
+offset_bottom = 47.0
+text = "HP:"
+theme_override_colors/font_color = Color(0.941176, 0.815686, 0.470588, 1)
+theme_override_font_sizes/font_size = 8
+
+[node name="PlayerHud" type="Control" parent="UI/BattlePanel"]
+offset_left = 154.0
+offset_top = 63.0
+offset_right = 304.0
+offset_bottom = 116.0
+
+[node name="Name" type="Label" parent="UI/BattlePanel/PlayerHud"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 6.0
+offset_right = 145.0
+offset_bottom = 18.0
+text = "POKEMON"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="Gender" type="Label" parent="UI/BattlePanel/PlayerHud"]
+theme_override_fonts/font = ExtResource("26_symbolfont")
+offset_left = 122.0
+offset_top = 1.0
+offset_right = 146.0
+offset_bottom = 19.0
+text = "♀"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 11
+
+[node name="Level" type="Label" parent="UI/BattlePanel/PlayerHud"]
+visible = false
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 92.0
+offset_top = 8.0
+offset_right = 144.0
+offset_bottom = 23.0
+text = ":L5"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 9
+
+[node name="RightLine" type="ColorRect" parent="UI/BattlePanel/PlayerHud"]
+mouse_filter = 2
+offset_left = 147.0
+offset_top = 24.0
+offset_right = 150.0
+offset_bottom = 52.0
+color = Color(0, 0, 0, 1)
+
+[node name="BottomLine" type="ColorRect" parent="UI/BattlePanel/PlayerHud"]
+mouse_filter = 2
+offset_left = 0.0
+offset_top = 50.0
+offset_right = 150.0
+offset_bottom = 53.0
+color = Color(0, 0, 0, 1)
+
+[node name="HPBack" type="ColorRect" parent="UI/BattlePanel/PlayerHud"]
+mouse_filter = 2
+offset_left = 6.0
+offset_top = 22.0
+offset_right = 148.0
+offset_bottom = 34.0
+color = Color(0, 0, 0, 1)
+
+[node name="HPTrack" type="ColorRect" parent="UI/BattlePanel/PlayerHud"]
+mouse_filter = 2
+offset_left = 34.0
+offset_top = 25.0
+offset_right = 144.0
+offset_bottom = 30.0
+color = Color(1, 1, 1, 1)
+
+[node name="HPFill" type="ColorRect" parent="UI/BattlePanel/PlayerHud"]
+mouse_filter = 2
+offset_left = 34.0
+offset_top = 25.0
+offset_right = 144.0
+offset_bottom = 30.0
+color = Color(0, 0.721569, 0, 1)
+
+[node name="HPText" type="Label" parent="UI/BattlePanel/PlayerHud"]
+z_index = 2
+mouse_filter = 2
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 11.0
+offset_top = 19.0
+offset_right = 35.0
+offset_bottom = 34.0
+text = "HP:"
+theme_override_colors/font_color = Color(0.941176, 0.815686, 0.470588, 1)
+theme_override_font_sizes/font_size = 8
+
+[node name="HPValue" type="Label" parent="UI/BattlePanel/PlayerHud"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 42.0
+offset_top = 34.0
+offset_right = 145.0
+offset_bottom = 50.0
+text = "24/ 24"
+horizontal_alignment = 2
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 9
+
+[node name="EXPBack" type="ColorRect" parent="UI/BattlePanel/PlayerHud"]
+mouse_filter = 2
+offset_left = 44.0
+offset_top = 51.0
+offset_right = 148.0
+offset_bottom = 57.0
+color = Color(0, 0, 0, 1)
+
+[node name="EXPTrack" type="ColorRect" parent="UI/BattlePanel/PlayerHud"]
+mouse_filter = 2
+offset_left = 47.0
+offset_top = 53.0
+offset_right = 145.0
+offset_bottom = 55.0
+color = Color(0.972549, 0.972549, 0.972549, 1)
+
+[node name="EXPFill" type="ColorRect" parent="UI/BattlePanel/PlayerHud"]
+mouse_filter = 2
+offset_left = 47.0
+offset_top = 53.0
+offset_right = 47.0
+offset_bottom = 55.0
+color = Color(0.184314, 0.596078, 0.913725, 1)
+
+[node name="EXPText" type="Label" parent="UI/BattlePanel/PlayerHud"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 8.0
+offset_top = 47.0
+offset_right = 43.0
+offset_bottom = 61.0
+text = "EXP"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 7
+
+[node name="CommandBox" type="Panel" parent="UI/BattlePanel"]
+mouse_filter = 2
+offset_left = 4.0
+offset_top = 122.0
+offset_right = 316.0
+offset_bottom = 178.0
+theme_override_styles/panel = SubResource("ClassicDialogue")
+
+[node name="Divider" type="ColorRect" parent="UI/BattlePanel/CommandBox"]
+mouse_filter = 2
+offset_left = 130.0
+offset_top = 9.0
+offset_right = 131.0
+offset_bottom = 47.0
+color = Color(0, 0, 0, 1)
+
+[node name="BattleStatus" type="Label" parent="UI/BattlePanel"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 16.0
+offset_top = 135.0
+offset_right = 125.0
+offset_bottom = 175.0
+text = "A wild Pokemon appeared!"
+modulate = Color(0.08, 0.10, 0.08, 1)
+theme_override_font_sizes/font_size = 9
+autowrap_mode = 2
+
+[node name="MessageArrow" type="Label" parent="UI/BattlePanel"]
+visible = false
+mouse_filter = 2
+theme_override_fonts/font = ExtResource("26_symbolfont")
+offset_left = 286.0
+offset_top = 151.0
+offset_right = 304.0
+offset_bottom = 169.0
+text = "▼"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="Actions" type="Control" parent="UI/BattlePanel"]
+offset_left = 140.0
+offset_top = 130.0
+offset_right = 316.0
+offset_bottom = 176.0
+
+[node name="Fight" type="Button" parent="UI/BattlePanel/Actions"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 8.0
+offset_right = 84.0
+offset_bottom = 21.0
+text = "FIGHT"
+flat = true
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_colors/font_hover_color = Color(0, 0, 0, 1)
+theme_override_colors/font_pressed_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 9
+script = ExtResource("7_btn")
+
+[node name="Item" type="Button" parent="UI/BattlePanel/Actions"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 4.0
+offset_top = 23.0
+offset_right = 80.0
+offset_bottom = 44.0
+text = "ITEM"
+flat = true
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_colors/font_hover_color = Color(0, 0, 0, 1)
+theme_override_colors/font_pressed_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 9
+script = ExtResource("7_btn")
+
+[node name="Party" type="Button" parent="UI/BattlePanel/Actions"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 79.0
+offset_right = 176.0
+offset_bottom = 21.0
+text = "PKMN"
+flat = true
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_colors/font_hover_color = Color(0, 0, 0, 1)
+theme_override_colors/font_pressed_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 9
+script = ExtResource("7_btn")
+
+[node name="Catch" type="Button" parent="UI/BattlePanel/Actions"]
+visible = false
+theme_override_fonts/font = ExtResource("11_pokefont")
+text = "CATCH"
+script = ExtResource("7_btn")
+
+[node name="Run" type="Button" parent="UI/BattlePanel/Actions"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 75.0
+offset_top = 23.0
+offset_right = 172.0
+offset_bottom = 44.0
+text = "RUN"
+flat = true
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_colors/font_hover_color = Color(0, 0, 0, 1)
+theme_override_colors/font_pressed_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 9
+script = ExtResource("7_btn")
+
+[node name="Cursor" type="Label" parent="UI/BattlePanel/Actions"]
+mouse_filter = 2
+offset_right = 9.0
+offset_bottom = 18.0
+theme_override_fonts/font = ExtResource("26_symbolfont")
+text = "▶"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 8
+
+[node name="MoveTypeBox" type="Panel" parent="UI/BattlePanel"]
+visible = false
+z_index = 2
+mouse_filter = 2
+offset_left = 4.0
+offset_top = 77.0
+offset_right = 170.0
+offset_bottom = 120.0
+theme_override_styles/panel = SubResource("ClassicDialogue")
+
+[node name="Title" type="Label" parent="UI/BattlePanel/MoveTypeBox"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 15.0
+offset_top = 11.0
+offset_right = 151.0
+offset_bottom = 26.0
+text = "TYPE/"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 9
+
+[node name="Type" type="Label" parent="UI/BattlePanel/MoveTypeBox"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 28.0
+offset_top = 25.0
+offset_right = 105.0
+offset_bottom = 41.0
+text = "NORMAL"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 9
+
+[node name="PP" type="Label" parent="UI/BattlePanel/MoveTypeBox"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 96.0
+offset_top = 25.0
+offset_right = 151.0
+offset_bottom = 41.0
+text = "35/35"
+horizontal_alignment = 2
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 8
+
+[node name="MoveBox" type="Panel" parent="UI/BattlePanel"]
+visible = false
+mouse_filter = 2
+offset_left = 68.0
+offset_top = 116.0
+offset_right = 316.0
+offset_bottom = 178.0
+theme_override_styles/panel = SubResource("ClassicDialogue")
+
+[node name="Cursor" type="Label" parent="UI/BattlePanel/MoveBox"]
+mouse_filter = 2
+theme_override_fonts/font = ExtResource("26_symbolfont")
+offset_left = 12.0
+offset_top = 8.0
+offset_right = 23.0
+offset_bottom = 21.0
+text = "▶"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 8
+
+[node name="List" type="Label" parent="UI/BattlePanel/MoveBox"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+theme_override_constants/line_spacing = 0
+offset_left = 29.0
+offset_top = 12.0
+offset_right = 234.0
+offset_bottom = 61.0
+text = "TACKLE\n-\n-\n-"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 8
+
+[node name="BattleAudio" type="AudioStreamPlayer" parent="UI/BattlePanel"]
+
+[node name="BattleSubmenu" type="Control" parent="UI/BattlePanel"]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Dim" type="ColorRect" parent="UI/BattlePanel/BattleSubmenu"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.03, 0.04, 0.03, 0.42)
+
+[node name="Window" type="Panel" parent="UI/BattlePanel/BattleSubmenu"]
+offset_left = 18.0
+offset_top = 10.0
+offset_right = 302.0
+offset_bottom = 170.0
+theme_override_styles/panel = SubResource("ClassicDialogue")
+
+[node name="Title" type="Label" parent="UI/BattlePanel/BattleSubmenu/Window"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 18.0
+offset_top = 14.0
+offset_right = 250.0
+offset_bottom = 34.0
+text = "BATTLE ITEMS"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
+
+[node name="Cursor" type="Label" parent="UI/BattlePanel/BattleSubmenu/Window"]
+theme_override_fonts/font = ExtResource("26_symbolfont")
+offset_left = 18.0
+offset_top = 40.0
+offset_right = 34.0
+offset_bottom = 58.0
+text = "▶"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 9
+
+[node name="List" type="Label" parent="UI/BattlePanel/BattleSubmenu/Window"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+theme_override_constants/line_spacing = 4
+offset_left = 38.0
+offset_top = 39.0
+offset_right = 266.0
+offset_bottom = 130.0
+text = "POTION x1"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 9
+
+[node name="Hint" type="Label" parent="UI/BattlePanel/BattleSubmenu/Window"]
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 18.0
+offset_top = 134.0
+offset_right = 266.0
+offset_bottom = 151.0
+text = "A SELECT   B BACK"
+theme_override_colors/font_color = Color(0.12, 0.12, 0.12, 1)
+theme_override_font_sizes/font_size = 8
+
+[node name="ProgressionOverlay" type="Control" parent="UI"]
+visible = false
+z_index = 350
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Backdrop" type="ColorRect" parent="UI/ProgressionOverlay"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(1, 1, 1, 1)
+
+[node name="Background" type="TextureRect" parent="UI/ProgressionOverlay"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 0
+texture_filter = 1
+
+[node name="Animation" type="TextureRect" parent="UI/ProgressionOverlay"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 0
+texture_filter = 1
+
+[node name="SpriteTop" type="TextureRect" parent="UI/ProgressionOverlay"]
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 0
+texture_filter = 1
+
+[node name="SpriteBottom" type="TextureRect" parent="UI/ProgressionOverlay"]
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 0
+texture_filter = 1
+
+[node name="Title" type="Label" parent="UI/ProgressionOverlay"]
+visible = false
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 16.0
+offset_top = 10.0
+offset_right = 304.0
+offset_bottom = 34.0
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 9
+autowrap_mode = 2
+
+[node name="List" type="Label" parent="UI/ProgressionOverlay"]
+visible = false
+theme_override_fonts/font = ExtResource("11_pokefont")
+theme_override_constants/line_spacing = 5
+offset_left = 84.0
+offset_top = 50.0
+offset_right = 304.0
+offset_bottom = 142.0
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 8
+
+[node name="Values" type="Label" parent="UI/ProgressionOverlay"]
+visible = false
+theme_override_fonts/font = ExtResource("11_pokefont")
+theme_override_constants/line_spacing = 5
+offset_left = 246.0
+offset_top = 10.0
+offset_right = 292.0
+offset_bottom = 112.0
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 8
+horizontal_alignment = 2
+
+[node name="Cursor" type="Label" parent="UI/ProgressionOverlay"]
+visible = false
+theme_override_fonts/font = ExtResource("26_symbolfont")
+offset_left = 70.0
+offset_top = 50.0
+offset_right = 84.0
+offset_bottom = 66.0
+text = "▶"
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 8
+
+[node name="Detail" type="Label" parent="UI/ProgressionOverlay"]
+visible = false
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 14.0
+offset_top = 15.0
+offset_right = 164.0
+offset_bottom = 38.0
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 8
+
+[node name="Hint" type="Label" parent="UI/ProgressionOverlay"]
+visible = false
+theme_override_fonts/font = ExtResource("11_pokefont")
+offset_left = 12.0
+offset_top = 154.0
+offset_right = 308.0
+offset_bottom = 174.0
+theme_override_colors/font_color = Color(0.08, 0.08, 0.08, 1)
+theme_override_font_sizes/font_size = 8
+horizontal_alignment = 1
+
+[node name="StartupSplash" type="CanvasLayer" parent="."]
+layer = 100
+
+[node name="Backdrop" type="ColorRect" parent="StartupSplash"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.965, 0.957, 0.906, 1)
+
+[node name="Artwork" type="TextureRect" parent="StartupSplash"]
+texture_filter = 2
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("40_startup")
+expand_mode = 1
+stretch_mode = 0

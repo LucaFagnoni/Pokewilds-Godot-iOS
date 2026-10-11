@@ -1,0 +1,138 @@
+[
+  {
+    "species": "clefable",
+    "variant": "normal",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0036.png",
+    "source_sha256": "a950235ddabe817414bf6383baaacd3dc1b67a9152a8df6378babf994a0b625e",
+    "target": "assets/community_overworld/clefable/overworld.png",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ],
+    "adaptation": "Nearest-neighbor 32x32 to 16x16; left/up/down pairs; existing right mirror."
+  },
+  {
+    "species": "clefable",
+    "variant": "s",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0036s.png",
+    "source_sha256": "ac5d0a56a05d7b947c2165a6f503606f90aa4fcd84fbb17e1110d3856ca2e1d1",
+    "target": "assets/community_overworld/clefable/overworld-shiny.png",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ],
+    "adaptation": "Nearest-neighbor 32x32 to 16x16; left/up/down pairs; existing right mirror."
+  },
+  {
+    "species": "finneon",
+    "variant": "normal",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0456.png",
+    "source_sha256": "c75a5d8cef0797159eb5f42b6936f7c6c489113a7f8abbf6a9abd58279a2b08a",
+    "target": "assets/community_overworld/finneon/overworld.png",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ],
+    "adaptation": "Nearest-neighbor 32x32 to 16x16; left/up/down pairs; existing right mirror."
+  },
+  {
+    "species": "finneon",
+    "variant": "s",
+    "url": "https://raw.githubusercontent.com/PokemonWorkshop/GameDataPacks/gen-packs/Gen%209/scarlet-violet/graphics/characters/0456s.png",
+    "source_sha256": "b65f76d9bebc7c25ec2fca4a43350450aad525b166070c9bbef973f0a2118bae",
+    "target": "assets/community_overworld/finneon/overworld-shiny.png",
+    "frames": [
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        2
+      ]
+    ],
+    "adaptation": "Nearest-neighbor 32x32 to 16x16; left/up/down pairs; existing right mirror."
+  }
+]

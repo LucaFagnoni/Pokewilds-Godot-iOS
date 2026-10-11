@@ -1,0 +1,13 @@
+Rare legendary encounter artwork
+
+Articuno, Zapdos, Moltres, Raikou, Entei, Suicune and Celebi use the normal and shiny walking sheets, battle animation sheets, back sprites, palettes and cries already supplied in this project's source assets.
+Arceus likewise uses its existing battle animation sheet, back sprite, shiny battle palette and cry.
+
+Arceus walking artwork and normal/shiny palettes:
+rh-hideout/pokeemerald-expansion
+https://github.com/rh-hideout/pokeemerald-expansion/tree/master/graphics/pokemon/arceus
+Source files: overworld.png, overworld_normal.pal, overworld_shiny.pal.
+Source animation layout: src/data/object_events/object_event_anims.h (two-frame south, north and west; east mirrors west).
+Converted to the game's west/north/south six-frame layout, with palette background transparency and nearest-neighbor reduction to 32-pixel cells. No new poses were invented.
+Upstream project credits: https://github.com/rh-hideout/pokeemerald-expansion/blob/master/CREDITS.md
+Downloaded October 7, 2026.

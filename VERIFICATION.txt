@@ -1,0 +1,15 @@
+PACKAGE VERIFICATION
+- MULTIPLAYER COPY: the checks below were made on the fixes170 snapshot. This
+  copy changes scripts and the Android wrapper and adds libzt; its manifest was
+  regenerated. Debug APKs were built from it and played on two Android devices.
+- 152 production GDScript files match the current fixes170 working project byte for byte.
+- All literal load/preload resource paths found in the production scripts and scene exist.
+- Known credential patterns and private-key blocks were scanned in included text files.
+- No detected private credentials; one personal-path pattern was inspected and was a
+  public PokeAPI sprite path (other/home), not a user's filesystem path.
+- Signing keys, export credentials, local profiles, saves, .godot and Gradle caches excluded.
+- Third-party source notices and resource credits preserved.
+- GPL-3.0 full text downloaded from GNU; Godot MIT notice downloaded from upstream.
+- Full APK rebuild and device testing from this source package have not been performed.
+- Native-wrapper source parity with the most recent shipped binary is unverified.
+- Automated scans are not a guarantee of complete secret detection or license clearance.

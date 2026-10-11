@@ -1,0 +1,1527 @@
+{
+  "mega_charizard_x": {
+    "id": "mega_charizard_x",
+    "name": "MEGA CHARIZARD X",
+    "dex": 6,
+    "dex_entry": "It spits fire that is hot enough to melt boulders. It may cause forest fires by blowing flames.",
+    "weight_kg": 110.5,
+    "height_m": 1.7,
+    "types": [
+      "FIRE",
+      "DRAGON"
+    ],
+    "stats": [
+      78,
+      130,
+      111,
+      100,
+      130,
+      85
+    ],
+    "catch_rate": 45,
+    "base_exp": 240,
+    "growth_rate": "GROWTH_MEDIUM_SLOW",
+    "special": [
+      "FLY"
+    ],
+    "forced_off": [],
+    "fully_evolved": true,
+    "evolutions": [],
+    "learnset": [
+      {
+        "level": 1,
+        "move": "AIR_SLASH"
+      },
+      {
+        "level": 1,
+        "move": "DRAGON_CLAW"
+      },
+      {
+        "level": 1,
+        "move": "HEAT_WAVE"
+      },
+      {
+        "level": 1,
+        "move": "SCRATCH"
+      },
+      {
+        "level": 1,
+        "move": "GROWL"
+      },
+      {
+        "level": 1,
+        "move": "EMBER"
+      },
+      {
+        "level": 1,
+        "move": "SMOKESCREEN"
+      },
+      {
+        "level": 12,
+        "move": "DRAGONBREATH"
+      },
+      {
+        "level": 19,
+        "move": "FIRE_FANG"
+      },
+      {
+        "level": 24,
+        "move": "SLASH"
+      },
+      {
+        "level": 30,
+        "move": "FLAMETHROWER"
+      },
+      {
+        "level": 39,
+        "move": "SCARY_FACE"
+      },
+      {
+        "level": 46,
+        "move": "FIRE_SPIN"
+      },
+      {
+        "level": 54,
+        "move": "INFERNO"
+      },
+      {
+        "level": 62,
+        "move": "FLARE_BLITZ"
+      }
+    ],
+    "base_forms": [
+      {
+        "species": "charmander",
+        "weight": 100
+      }
+    ],
+    "spawn_biomes": [],
+    "aggressive_biomes": [],
+    "disguise_tile": "",
+    "habitats": [],
+    "harvest": [],
+    "habitat_tokens": [
+      "TYPE"
+    ],
+    "harvest_tokens": [
+      "TYPE"
+    ],
+    "gender_ratio": "GENDER_F12_5",
+    "egg_groups": [
+      "EGG_MONSTER",
+      "EGG_DRAGON"
+    ],
+    "egg_cycles": 20,
+    "egg_moves": [],
+    "tmhm": [
+      "BRUTAL_SWING",
+      "FLING",
+      "OUTRAGE",
+      "DRAGON_PULSE",
+      "DRAGON_CLAW",
+      "DRAGON_TAIL",
+      "THUNDER_PUNCH",
+      "FOCUS_PUNCH",
+      "FOCUS_BLAST",
+      "BRICK_BREAK",
+      "POWER_UP_PUNCH",
+      "ROCK_SMASH",
+      "BLAST_BURN",
+      "OVERHEAT",
+      "FIRE_BLAST",
+      "HEAT_WAVE",
+      "FLAMETHROWER",
+      "FIRE_PLEDGE",
+      "FIRE_PUNCH",
+      "FLAME_CHARGE",
+      "SUNNY_DAY",
+      "WILL_O_WISP",
+      "FLY",
+      "AERIAL_ACE",
+      "SKY_DROP",
+      "ACROBATICS",
+      "DEFOG",
+      "ROOST",
+      "TAILWIND",
+      "SHADOW_CLAW",
+      "SOLAR_BEAM",
+      "EARTHQUAKE",
+      "BULLDOZE",
+      "GIGA_IMPACT",
+      "HYPER_BEAM",
+      "STRENGTH",
+      "FACADE",
+      "HIDDEN_POWER",
+      "ROUND",
+      "CUT",
+      "SNORE",
+      "ECHOED_VOICE",
+      "FALSE_SWIPE",
+      "FRUSTRATION",
+      "RETURN",
+      "ATTRACT",
+      "CONFIDE",
+      "DOUBLE_TEAM",
+      "HELPING_HAND",
+      "PROTECT",
+      "ROAR",
+      "SLEEP_TALK",
+      "SUBSTITUTE",
+      "SWAGGER",
+      "SWORDS_DANCE",
+      "WORK_UP",
+      "TOXIC",
+      "REFLECT",
+      "REST",
+      "ROCK_SLIDE",
+      "ROCK_TOMB",
+      "SANDSTORM",
+      "IRON_TAIL",
+      "STEEL_WING",
+      "ENDURE",
+      "MEGA_KICK",
+      "BODY_SLAM",
+      "MEGA_PUNCH",
+      "SWIFT",
+      "SCARY_FACE",
+      "BLAZE_KICK",
+      "FIRE_FANG",
+      "FLARE_BLITZ",
+      "SCORCHING_SANDS",
+      "FIRE_SPIN",
+      "WEATHER_BALL",
+      "BREAKING_SWIPE",
+      "SCALE_SHOT",
+      "AIR_SLASH",
+      "CRUNCH",
+      "DIG",
+      "DUAL_WINGBEAT",
+      "HURRICANE",
+      "BEAT_UP",
+      "HEAT_CRASH",
+      "DRAGON_DANCE",
+      "MYSTICAL_FIRE"
+    ],
+    "wild_held_items": [],
+    "base_happiness": 70,
+    "overworld_behavior": {
+      "swim_only": false,
+      "flee": false,
+      "lunge": false,
+      "aggression": 1,
+      "flip_walk_3": true,
+      "flip_walk_4": false,
+      "stationary": false,
+      "water_offset": 0
+    },
+    "growth_ticks": 9000,
+    "front": "res://assets/community_megas/mega_charizard_x/front-normal.png",
+    "back": "res://assets/community_megas/mega_charizard_x/back-normal.png",
+    "overworld": "res://assets/community_megas/mega_charizard_x/overworld-normal.png",
+    "overworld_shiny": "res://assets/community_megas/mega_charizard_x/overworld-shiny.png",
+    "cry": "res://assets/source_audio/cries/006.ogg",
+    "mega_habitat": "VOLCANO",
+    "front_shiny": "res://assets/community_megas/mega_charizard_x/front-shiny.png",
+    "back_shiny": "res://assets/community_megas/mega_charizard_x/back-shiny.png",
+    "mega_base_species": "charizard"
+  },
+  "mega_charizard_y": {
+    "id": "mega_charizard_y",
+    "name": "MEGA CHARIZARD Y",
+    "dex": 6,
+    "dex_entry": "It spits fire that is hot enough to melt boulders. It may cause forest fires by blowing flames.",
+    "weight_kg": 100.5,
+    "height_m": 1.7,
+    "types": [
+      "FIRE",
+      "FLYING"
+    ],
+    "stats": [
+      78,
+      104,
+      78,
+      100,
+      159,
+      115
+    ],
+    "catch_rate": 45,
+    "base_exp": 240,
+    "growth_rate": "GROWTH_MEDIUM_SLOW",
+    "special": [
+      "FLY"
+    ],
+    "forced_off": [],
+    "fully_evolved": true,
+    "evolutions": [],
+    "learnset": [
+      {
+        "level": 1,
+        "move": "AIR_SLASH"
+      },
+      {
+        "level": 1,
+        "move": "DRAGON_CLAW"
+      },
+      {
+        "level": 1,
+        "move": "HEAT_WAVE"
+      },
+      {
+        "level": 1,
+        "move": "SCRATCH"
+      },
+      {
+        "level": 1,
+        "move": "GROWL"
+      },
+      {
+        "level": 1,
+        "move": "EMBER"
+      },
+      {
+        "level": 1,
+        "move": "SMOKESCREEN"
+      },
+      {
+        "level": 12,
+        "move": "DRAGONBREATH"
+      },
+      {
+        "level": 19,
+        "move": "FIRE_FANG"
+      },
+      {
+        "level": 24,
+        "move": "SLASH"
+      },
+      {
+        "level": 30,
+        "move": "FLAMETHROWER"
+      },
+      {
+        "level": 39,
+        "move": "SCARY_FACE"
+      },
+      {
+        "level": 46,
+        "move": "FIRE_SPIN"
+      },
+      {
+        "level": 54,
+        "move": "INFERNO"
+      },
+      {
+        "level": 62,
+        "move": "FLARE_BLITZ"
+      }
+    ],
+    "base_forms": [
+      {
+        "species": "charmander",
+        "weight": 100
+      }
+    ],
+    "spawn_biomes": [],
+    "aggressive_biomes": [],
+    "disguise_tile": "",
+    "habitats": [],
+    "harvest": [],
+    "habitat_tokens": [
+      "TYPE"
+    ],
+    "harvest_tokens": [
+      "TYPE"
+    ],
+    "gender_ratio": "GENDER_F12_5",
+    "egg_groups": [
+      "EGG_MONSTER",
+      "EGG_DRAGON"
+    ],
+    "egg_cycles": 20,
+    "egg_moves": [],
+    "tmhm": [
+      "BRUTAL_SWING",
+      "FLING",
+      "OUTRAGE",
+      "DRAGON_PULSE",
+      "DRAGON_CLAW",
+      "DRAGON_TAIL",
+      "THUNDER_PUNCH",
+      "FOCUS_PUNCH",
+      "FOCUS_BLAST",
+      "BRICK_BREAK",
+      "POWER_UP_PUNCH",
+      "ROCK_SMASH",
+      "BLAST_BURN",
+      "OVERHEAT",
+      "FIRE_BLAST",
+      "HEAT_WAVE",
+      "FLAMETHROWER",
+      "FIRE_PLEDGE",
+      "FIRE_PUNCH",
+      "FLAME_CHARGE",
+      "SUNNY_DAY",
+      "WILL_O_WISP",
+      "FLY",
+      "AERIAL_ACE",
+      "SKY_DROP",
+      "ACROBATICS",
+      "DEFOG",
+      "ROOST",
+      "TAILWIND",
+      "SHADOW_CLAW",
+      "SOLAR_BEAM",
+      "EARTHQUAKE",
+      "BULLDOZE",
+      "GIGA_IMPACT",
+      "HYPER_BEAM",
+      "STRENGTH",
+      "FACADE",
+      "HIDDEN_POWER",
+      "ROUND",
+      "CUT",
+      "SNORE",
+      "ECHOED_VOICE",
+      "FALSE_SWIPE",
+      "FRUSTRATION",
+      "RETURN",
+      "ATTRACT",
+      "CONFIDE",
+      "DOUBLE_TEAM",
+      "HELPING_HAND",
+      "PROTECT",
+      "ROAR",
+      "SLEEP_TALK",
+      "SUBSTITUTE",
+      "SWAGGER",
+      "SWORDS_DANCE",
+      "WORK_UP",
+      "TOXIC",
+      "REFLECT",
+      "REST",
+      "ROCK_SLIDE",
+      "ROCK_TOMB",
+      "SANDSTORM",
+      "IRON_TAIL",
+      "STEEL_WING",
+      "ENDURE",
+      "MEGA_KICK",
+      "BODY_SLAM",
+      "MEGA_PUNCH",
+      "SWIFT",
+      "SCARY_FACE",
+      "BLAZE_KICK",
+      "FIRE_FANG",
+      "FLARE_BLITZ",
+      "SCORCHING_SANDS",
+      "FIRE_SPIN",
+      "WEATHER_BALL",
+      "BREAKING_SWIPE",
+      "SCALE_SHOT",
+      "AIR_SLASH",
+      "CRUNCH",
+      "DIG",
+      "DUAL_WINGBEAT",
+      "HURRICANE",
+      "BEAT_UP",
+      "HEAT_CRASH",
+      "DRAGON_DANCE",
+      "MYSTICAL_FIRE"
+    ],
+    "wild_held_items": [],
+    "base_happiness": 70,
+    "overworld_behavior": {
+      "swim_only": false,
+      "flee": false,
+      "lunge": false,
+      "aggression": 1,
+      "flip_walk_3": true,
+      "flip_walk_4": false,
+      "stationary": false,
+      "water_offset": 0
+    },
+    "growth_ticks": 9000,
+    "front": "res://assets/community_megas/mega_charizard_y/front-normal.png",
+    "back": "res://assets/community_megas/mega_charizard_y/back-normal.png",
+    "overworld": "res://assets/community_megas/mega_charizard_y/overworld-normal.png",
+    "overworld_shiny": "res://assets/community_megas/mega_charizard_y/overworld-shiny.png",
+    "cry": "res://assets/source_audio/cries/006.ogg",
+    "mega_habitat": "VOLCANO",
+    "front_shiny": "res://assets/community_megas/mega_charizard_y/front-shiny.png",
+    "back_shiny": "res://assets/community_megas/mega_charizard_y/back-shiny.png",
+    "mega_base_species": "charizard"
+  },
+  "mega_venusaur": {
+    "id": "mega_venusaur",
+    "name": "MEGA VENUSAUR",
+    "dex": 3,
+    "dex_entry": "In battle, this Pok\u00ef\u00bf\u00bdmon swings around two thick vines. If these vines slammed into a 10-story building, they could easily topple it.",
+    "weight_kg": 155.5,
+    "height_m": 2.4,
+    "types": [
+      "GRASS",
+      "POISON"
+    ],
+    "stats": [
+      80,
+      100,
+      123,
+      80,
+      122,
+      120
+    ],
+    "catch_rate": 45,
+    "base_exp": 236,
+    "growth_rate": "GROWTH_MEDIUM_SLOW",
+    "special": [],
+    "forced_off": [],
+    "fully_evolved": true,
+    "evolutions": [],
+    "learnset": [
+      {
+        "level": 1,
+        "move": "PETAL_BLIZZARD"
+      },
+      {
+        "level": 1,
+        "move": "PETAL_DANCE"
+      },
+      {
+        "level": 1,
+        "move": "TACKLE"
+      },
+      {
+        "level": 1,
+        "move": "GROWL"
+      },
+      {
+        "level": 1,
+        "move": "VINE_WHIP"
+      },
+      {
+        "level": 1,
+        "move": "GROWTH"
+      },
+      {
+        "level": 9,
+        "move": "LEECH_SEED"
+      },
+      {
+        "level": 12,
+        "move": "RAZOR_LEAF"
+      },
+      {
+        "level": 15,
+        "move": "POISONPOWDER"
+      },
+      {
+        "level": 15,
+        "move": "SLEEP_POWDER"
+      },
+      {
+        "level": 20,
+        "move": "SEED_BOMB"
+      },
+      {
+        "level": 25,
+        "move": "TAKE_DOWN"
+      },
+      {
+        "level": 30,
+        "move": "SWEET_SCENT"
+      },
+      {
+        "level": 37,
+        "move": "SYNTHESIS"
+      },
+      {
+        "level": 44,
+        "move": "WORRY_SEED"
+      },
+      {
+        "level": 51,
+        "move": "DOUBLE_EDGE"
+      },
+      {
+        "level": 58,
+        "move": "SOLARBEAM"
+      }
+    ],
+    "base_forms": [
+      {
+        "species": "bulbasaur",
+        "weight": 100
+      }
+    ],
+    "spawn_biomes": [],
+    "aggressive_biomes": [],
+    "disguise_tile": "",
+    "habitats": [],
+    "harvest": [],
+    "habitat_tokens": [
+      "TYPE"
+    ],
+    "harvest_tokens": [
+      "TYPE"
+    ],
+    "gender_ratio": "GENDER_F12_5",
+    "egg_groups": [
+      "EGG_MONSTER",
+      "EGG_GRASS"
+    ],
+    "egg_cycles": 20,
+    "egg_moves": [],
+    "tmhm": [
+      "KNOCK_OFF",
+      "OUTRAGE",
+      "ROCK_SMASH",
+      "SUNNY_DAY",
+      "FRENZY_PLANT",
+      "SOLAR_BEAM",
+      "ENERGY_BALL",
+      "GRASS_PLEDGE",
+      "SEED_BOMB",
+      "GIGA_DRAIN",
+      "GRASS_KNOT",
+      "SYNTHESIS",
+      "WORRY_SEED",
+      "EARTHQUAKE",
+      "EARTH_POWER",
+      "STOMPING_TANTRUM",
+      "BULLDOZE",
+      "GIGA_IMPACT",
+      "HYPER_BEAM",
+      "STRENGTH",
+      "FACADE",
+      "HIDDEN_POWER",
+      "ROUND",
+      "CUT",
+      "SNORE",
+      "ECHOED_VOICE",
+      "FALSE_SWIPE",
+      "BIND",
+      "FRUSTRATION",
+      "RETURN",
+      "ATTRACT",
+      "BLOCK",
+      "CONFIDE",
+      "DOUBLE_TEAM",
+      "HELPING_HAND",
+      "NATURE_POWER",
+      "PROTECT",
+      "ROAR",
+      "SAFEGUARD",
+      "SLEEP_TALK",
+      "SUBSTITUTE",
+      "SWAGGER",
+      "SWORDS_DANCE",
+      "WORK_UP",
+      "SLUDGE_BOMB",
+      "VENOSHOCK",
+      "TOXIC",
+      "LIGHT_SCREEN",
+      "REFLECT",
+      "REST",
+      "ENDURE",
+      "BODY_SLAM",
+      "MAGICAL_LEAF",
+      "GRASSY_GLIDE",
+      "LEAF_STORM",
+      "GRASSY_TERRAIN",
+      "BULLET_SEED",
+      "WEATHER_BALL",
+      "AMNESIA",
+      "CHARM",
+      "POWER_WHIP",
+      "TERRAIN_PULSE"
+    ],
+    "wild_held_items": [],
+    "base_happiness": 70,
+    "overworld_behavior": {
+      "swim_only": false,
+      "flee": false,
+      "lunge": false,
+      "aggression": 1,
+      "flip_walk_3": true,
+      "flip_walk_4": false,
+      "stationary": false,
+      "water_offset": 0
+    },
+    "growth_ticks": 9000,
+    "front": "res://assets/community_megas/mega_venusaur/front-normal.png",
+    "back": "res://assets/community_megas/mega_venusaur/back-normal.png",
+    "overworld": "res://assets/community_megas/mega_venusaur/overworld-normal.png",
+    "overworld_shiny": "res://assets/community_megas/mega_venusaur/overworld-shiny.png",
+    "cry": "res://assets/source_audio/cries/003.ogg",
+    "mega_habitat": "FOREST",
+    "front_shiny": "res://assets/community_megas/mega_venusaur/front-shiny.png",
+    "back_shiny": "res://assets/community_megas/mega_venusaur/back-shiny.png",
+    "mega_base_species": "venusaur"
+  },
+  "mega_blastoise": {
+    "id": "mega_blastoise",
+    "name": "MEGA BLASTOISE",
+    "dex": 9,
+    "dex_entry": "It crushes its foe under its heavy body to cause fainting. In a pinch, it will withdraw inside its shell.",
+    "weight_kg": 101.1,
+    "height_m": 1.6,
+    "types": [
+      "WATER"
+    ],
+    "stats": [
+      79,
+      103,
+      120,
+      78,
+      135,
+      115
+    ],
+    "catch_rate": 45,
+    "base_exp": 239,
+    "growth_rate": "GROWTH_MEDIUM_SLOW",
+    "special": [
+      "HEADBUTT"
+    ],
+    "forced_off": [],
+    "fully_evolved": true,
+    "evolutions": [],
+    "learnset": [
+      {
+        "level": 1,
+        "move": "FLASH_CANNON"
+      },
+      {
+        "level": 1,
+        "move": "TACKLE"
+      },
+      {
+        "level": 1,
+        "move": "TAIL_WHIP"
+      },
+      {
+        "level": 1,
+        "move": "WATER_GUN"
+      },
+      {
+        "level": 1,
+        "move": "WITHDRAW"
+      },
+      {
+        "level": 9,
+        "move": "RAPID_SPIN"
+      },
+      {
+        "level": 12,
+        "move": "BITE"
+      },
+      {
+        "level": 15,
+        "move": "WATER_PULSE"
+      },
+      {
+        "level": 20,
+        "move": "PROTECT"
+      },
+      {
+        "level": 25,
+        "move": "RAIN_DANCE"
+      },
+      {
+        "level": 30,
+        "move": "AQUA_TAIL"
+      },
+      {
+        "level": 35,
+        "move": "SHELL_SMASH"
+      },
+      {
+        "level": 42,
+        "move": "IRON_DEFENSE"
+      },
+      {
+        "level": 49,
+        "move": "HYDRO_PUMP"
+      },
+      {
+        "level": 56,
+        "move": "SKULL_BASH"
+      }
+    ],
+    "base_forms": [
+      {
+        "species": "squirtle",
+        "weight": 100
+      }
+    ],
+    "spawn_biomes": [],
+    "aggressive_biomes": [],
+    "disguise_tile": "",
+    "habitats": [],
+    "harvest": [],
+    "habitat_tokens": [
+      "TYPE"
+    ],
+    "harvest_tokens": [
+      "TYPE"
+    ],
+    "gender_ratio": "GENDER_F12_5",
+    "egg_groups": [
+      "EGG_MONSTER",
+      "EGG_WATER1"
+    ],
+    "egg_cycles": 20,
+    "egg_moves": [],
+    "tmhm": [
+      "SIGNAL_BEAM",
+      "DARK_PULSE",
+      "FLING",
+      "OUTRAGE",
+      "DRAGON_PULSE",
+      "DRAGON_TAIL",
+      "FOCUS_PUNCH",
+      "FOCUS_BLAST",
+      "BRICK_BREAK",
+      "POWER_UP_PUNCH",
+      "ROCK_SMASH",
+      "EARTHQUAKE",
+      "BULLDOZE",
+      "BLIZZARD",
+      "ICE_BEAM",
+      "ICE_PUNCH",
+      "ICY_WIND",
+      "HAIL",
+      "GIGA_IMPACT",
+      "HYPER_BEAM",
+      "STRENGTH",
+      "FACADE",
+      "HIDDEN_POWER",
+      "ROUND",
+      "SNORE",
+      "FALSE_SWIPE",
+      "FRUSTRATION",
+      "RETURN",
+      "ATTRACT",
+      "CONFIDE",
+      "DOUBLE_TEAM",
+      "HELPING_HAND",
+      "PROTECT",
+      "ROAR",
+      "SLEEP_TALK",
+      "SUBSTITUTE",
+      "SWAGGER",
+      "WORK_UP",
+      "TOXIC",
+      "ZEN_HEADBUTT",
+      "REFLECT",
+      "REST",
+      "ROCK_SLIDE",
+      "ROCK_TOMB",
+      "SMACK_DOWN",
+      "IRON_TAIL",
+      "FLASH_CANNON",
+      "GYRO_BALL",
+      "IRON_DEFENSE",
+      "HYDRO_CANNON",
+      "AQUA_TAIL",
+      "SURF",
+      "LIQUIDATION",
+      "DIVE",
+      "SCALD",
+      "WATER_PLEDGE",
+      "WATERFALL",
+      "WATER_PULSE",
+      "RAIN_DANCE",
+      "ENDURE",
+      "MEGA_KICK",
+      "BODY_SLAM",
+      "BODY_PRESS",
+      "MEGA_PUNCH",
+      "MUDDY_WATER",
+      "WHIRLPOOL",
+      "WEATHER_BALL",
+      "HYDRO_PUMP",
+      "CRUNCH",
+      "DIG",
+      "FLIP_TURN",
+      "BRINE",
+      "AVALANCHE",
+      "TERRAIN_PULSE",
+      "AURA_SPHERE"
+    ],
+    "wild_held_items": [],
+    "base_happiness": 70,
+    "overworld_behavior": {
+      "swim_only": false,
+      "flee": false,
+      "lunge": false,
+      "aggression": 1,
+      "flip_walk_3": true,
+      "flip_walk_4": false,
+      "stationary": false,
+      "water_offset": 0
+    },
+    "growth_ticks": 9000,
+    "front": "res://assets/community_megas/mega_blastoise/front-normal.png",
+    "back": "res://assets/community_megas/mega_blastoise/back-normal.png",
+    "overworld": "res://assets/community_megas/mega_blastoise/overworld-normal.png",
+    "overworld_shiny": "res://assets/community_megas/mega_blastoise/overworld-shiny.png",
+    "cry": "res://assets/source_audio/cries/009.ogg",
+    "mega_habitat": "TIDAL BEACH",
+    "front_shiny": "res://assets/community_megas/mega_blastoise/front-shiny.png",
+    "back_shiny": "res://assets/community_megas/mega_blastoise/back-shiny.png",
+    "mega_base_species": "blastoise"
+  },
+  "mega_gyarados": {
+    "id": "mega_gyarados",
+    "name": "MEGA GYARADOS",
+    "dex": 130,
+    "dex_entry": "It has an extremely aggressive nature. The Hyper Beam it shoots from its mouth totally incinerates all targets.",
+    "weight_kg": 305.0,
+    "height_m": 6.5,
+    "types": [
+      "WATER",
+      "DARK"
+    ],
+    "stats": [
+      95,
+      155,
+      109,
+      81,
+      70,
+      130
+    ],
+    "catch_rate": 45,
+    "base_exp": 189,
+    "growth_rate": "GROWTH_SLOW",
+    "special": [],
+    "forced_off": [],
+    "fully_evolved": true,
+    "evolutions": [],
+    "learnset": [
+      {
+        "level": 1,
+        "move": "BITE"
+      },
+      {
+        "level": 1,
+        "move": "FLAIL"
+      },
+      {
+        "level": 1,
+        "move": "SPLASH"
+      },
+      {
+        "level": 1,
+        "move": "TACKLE"
+      },
+      {
+        "level": 1,
+        "move": "LEER"
+      },
+      {
+        "level": 1,
+        "move": "TWISTER"
+      },
+      {
+        "level": 4,
+        "move": "WHIRLPOOL"
+      },
+      {
+        "level": 8,
+        "move": "ICE_FANG"
+      },
+      {
+        "level": 12,
+        "move": "BRINE"
+      },
+      {
+        "level": 16,
+        "move": "SCARY_FACE"
+      },
+      {
+        "level": 21,
+        "move": "WATERFALL"
+      },
+      {
+        "level": 24,
+        "move": "CRUNCH"
+      },
+      {
+        "level": 28,
+        "move": "RAIN_DANCE"
+      },
+      {
+        "level": 32,
+        "move": "AQUA_TAIL"
+      },
+      {
+        "level": 36,
+        "move": "DRAGON_DANCE"
+      },
+      {
+        "level": 40,
+        "move": "HYDRO_PUMP"
+      },
+      {
+        "level": 44,
+        "move": "HURRICANE"
+      },
+      {
+        "level": 48,
+        "move": "THRASH"
+      },
+      {
+        "level": 52,
+        "move": "HYPER_BEAM"
+      }
+    ],
+    "base_forms": [
+      {
+        "species": "magikarp",
+        "weight": 100
+      }
+    ],
+    "spawn_biomes": [],
+    "aggressive_biomes": [],
+    "disguise_tile": "",
+    "habitats": [],
+    "harvest": [],
+    "habitat_tokens": [
+      "TYPE"
+    ],
+    "harvest_tokens": [
+      "TYPE"
+    ],
+    "gender_ratio": "GENDER_F50",
+    "egg_groups": [
+      "EGG_WATER2",
+      "EGG_DRAGON"
+    ],
+    "egg_cycles": 5,
+    "egg_moves": [],
+    "tmhm": [
+      "DARK_PULSE",
+      "BRUTAL_SWING",
+      "PAYBACK",
+      "TAUNT",
+      "TORMENT",
+      "OUTRAGE",
+      "DRAGON_PULSE",
+      "DRAGON_TAIL",
+      "THUNDER",
+      "THUNDERBOLT",
+      "THUNDER_WAVE",
+      "ROCK_SMASH",
+      "FIRE_BLAST",
+      "FLAMETHROWER",
+      "BOUNCE",
+      "SPITE",
+      "EARTHQUAKE",
+      "BULLDOZE",
+      "BLIZZARD",
+      "ICE_BEAM",
+      "ICY_WIND",
+      "HAIL",
+      "GIGA_IMPACT",
+      "HYPER_BEAM",
+      "UPROAR",
+      "STRENGTH",
+      "FACADE",
+      "HIDDEN_POWER",
+      "ROUND",
+      "SNORE",
+      "FRUSTRATION",
+      "RETURN",
+      "ATTRACT",
+      "CONFIDE",
+      "DOUBLE_TEAM",
+      "PROTECT",
+      "ROAR",
+      "SLEEP_TALK",
+      "SUBSTITUTE",
+      "SWAGGER",
+      "TOXIC",
+      "REFLECT",
+      "REST",
+      "STONE_EDGE",
+      "SANDSTORM",
+      "IRON_TAIL",
+      "IRON_HEAD",
+      "AQUA_TAIL",
+      "SURF",
+      "DIVE",
+      "SCALD",
+      "WATERFALL",
+      "WATER_PULSE",
+      "RAIN_DANCE",
+      "ENDURE",
+      "BODY_SLAM",
+      "SCARY_FACE",
+      "MUDDY_WATER",
+      "WHIRLPOOL",
+      "HYDRO_PUMP",
+      "SCALE_SHOT",
+      "CRUNCH",
+      "ICE_FANG",
+      "HURRICANE",
+      "LASH_OUT",
+      "DRAGON_DANCE",
+      "POWER_WHIP",
+      "BRINE",
+      "AVALANCHE"
+    ],
+    "wild_held_items": [],
+    "base_happiness": 70,
+    "overworld_behavior": {
+      "swim_only": true,
+      "flee": false,
+      "lunge": false,
+      "aggression": 1,
+      "flip_walk_3": true,
+      "flip_walk_4": false,
+      "stationary": false,
+      "water_offset": 0
+    },
+    "growth_ticks": 9000,
+    "front": "res://assets/community_megas/mega_gyarados/front-normal.png",
+    "back": "res://assets/community_megas/mega_gyarados/back-normal.png",
+    "overworld": "res://assets/community_megas/mega_gyarados/overworld-normal.png",
+    "overworld_shiny": "res://assets/community_megas/mega_gyarados/overworld-shiny.png",
+    "cry": "res://assets/source_audio/cries/130.ogg",
+    "mega_habitat": "WATER",
+    "mega_base_species": "gyarados",
+    "front_shiny": "res://assets/community_megas/mega_gyarados/front-shiny.png",
+    "back_shiny": "res://assets/community_megas/mega_gyarados/back-shiny.png"
+  },
+  "mega_sharpedo": {
+    "id": "mega_sharpedo",
+    "name": "MEGA SHARPEDO",
+    "dex": 319,
+    "dex_entry": "As soon as it catches the scent of prey, Sharpedo will jet seawater from its backside, hurtling toward the target to attack at 75 mph.",
+    "weight_kg": 130.3,
+    "height_m": 2.5,
+    "types": [
+      "WATER",
+      "DARK"
+    ],
+    "stats": [
+      70,
+      140,
+      70,
+      105,
+      110,
+      65
+    ],
+    "catch_rate": 45,
+    "base_exp": 161,
+    "growth_rate": "GROWTH_SLOW",
+    "special": [],
+    "forced_off": [],
+    "fully_evolved": true,
+    "evolutions": [],
+    "learnset": [
+      {
+        "level": 1,
+        "move": "SLASH"
+      },
+      {
+        "level": 1,
+        "move": "NIGHT_SLASH"
+      },
+      {
+        "level": 1,
+        "move": "AQUA_JET"
+      },
+      {
+        "level": 1,
+        "move": "LEER"
+      },
+      {
+        "level": 1,
+        "move": "POISON_FANG"
+      },
+      {
+        "level": 1,
+        "move": "FOCUS_ENERGY"
+      },
+      {
+        "level": 12,
+        "move": "SCARY_FACE"
+      },
+      {
+        "level": 16,
+        "move": "BITE"
+      },
+      {
+        "level": 20,
+        "move": "ICE_FANG"
+      },
+      {
+        "level": 24,
+        "move": "SCREECH"
+      },
+      {
+        "level": 28,
+        "move": "SWAGGER"
+      },
+      {
+        "level": 34,
+        "move": "CRUNCH"
+      },
+      {
+        "level": 40,
+        "move": "AGILITY"
+      },
+      {
+        "level": 46,
+        "move": "LIQUIDATION"
+      },
+      {
+        "level": 52,
+        "move": "TAKE_DOWN"
+      }
+    ],
+    "base_forms": [
+      {
+        "species": "carvanha",
+        "weight": 100
+      }
+    ],
+    "spawn_biomes": [],
+    "aggressive_biomes": [],
+    "disguise_tile": "",
+    "habitats": [],
+    "harvest": [],
+    "habitat_tokens": [
+      "TYPE"
+    ],
+    "harvest_tokens": [
+      "TYPE"
+    ],
+    "gender_ratio": "GENDER_F50",
+    "egg_groups": [
+      "EGG_WATER2",
+      "EGG_WATER2"
+    ],
+    "egg_cycles": 20,
+    "egg_moves": [],
+    "tmhm": [
+      "DARK_PULSE",
+      "THIEF",
+      "SNARL",
+      "PAYBACK",
+      "TAUNT",
+      "TORMENT",
+      "ROCK_SMASH",
+      "BOUNCE",
+      "SPITE",
+      "EARTHQUAKE",
+      "BULLDOZE",
+      "BLIZZARD",
+      "ICE_BEAM",
+      "ICY_WIND",
+      "HAIL",
+      "GIGA_IMPACT",
+      "HYPER_BEAM",
+      "UPROAR",
+      "STRENGTH",
+      "FACADE",
+      "HIDDEN_POWER",
+      "ROUND",
+      "SNORE",
+      "FRUSTRATION",
+      "RETURN",
+      "SUPER_FANG",
+      "ATTRACT",
+      "CONFIDE",
+      "DOUBLE_TEAM",
+      "PROTECT",
+      "ROAR",
+      "SLEEP_TALK",
+      "SUBSTITUTE",
+      "SWAGGER",
+      "POISON_JAB",
+      "TOXIC",
+      "ZEN_HEADBUTT",
+      "REST",
+      "ROCK_TOMB",
+      "SURF",
+      "LIQUIDATION",
+      "DIVE",
+      "SCALD",
+      "WATERFALL",
+      "WATER_PULSE",
+      "RAIN_DANCE",
+      "ENDURE",
+      "SCREECH",
+      "FOCUS_ENERGY",
+      "SWIFT",
+      "SCARY_FACE",
+      "AGILITY",
+      "WHIRLPOOL",
+      "HYDRO_PUMP",
+      "SCALE_SHOT",
+      "CRUNCH",
+      "ICE_FANG",
+      "PSYCHIC_FANGS",
+      "RETALIATE",
+      "CLOSE_COMBAT",
+      "FLIP_TURN",
+      "BRINE",
+      "AVALANCHE"
+    ],
+    "wild_held_items": [],
+    "base_happiness": 70,
+    "overworld_behavior": {
+      "swim_only": true,
+      "flee": false,
+      "lunge": true,
+      "aggression": 1,
+      "flip_walk_3": false,
+      "flip_walk_4": false,
+      "stationary": false,
+      "water_offset": 2
+    },
+    "growth_ticks": 9000,
+    "front": "res://assets/community_megas/mega_sharpedo/front-normal.png",
+    "back": "res://assets/community_megas/mega_sharpedo/back-normal.png",
+    "overworld": "res://assets/community_megas/mega_sharpedo/overworld-normal.png",
+    "overworld_shiny": "res://assets/community_megas/mega_sharpedo/overworld-shiny.png",
+    "cry": "res://assets/source_audio/cries/319.ogg",
+    "mega_habitat": "WATER",
+    "mega_base_species": "sharpedo",
+    "front_shiny": "res://assets/community_megas/mega_sharpedo/front-shiny.png",
+    "back_shiny": "res://assets/community_megas/mega_sharpedo/back-shiny.png"
+  },
+  "mega_kangaskhan": {
+    "id": "mega_kangaskhan",
+    "name": "MEGA KANGASKHAN",
+    "dex": 115,
+    "dex_entry": "Although it's carrying its baby in a pouch on its belly, Kangaskhan is swift on its feet. It intimidates its opponents with quick jabs.",
+    "weight_kg": 100.0,
+    "height_m": 2.2,
+    "types": [
+      "NORMAL"
+    ],
+    "stats": [
+      105,
+      125,
+      100,
+      100,
+      60,
+      100
+    ],
+    "catch_rate": 45,
+    "base_exp": 172,
+    "growth_rate": "GROWTH_MEDIUM_FAST",
+    "special": [
+      "HEADBUTT",
+      "RIDE"
+    ],
+    "forced_off": [],
+    "fully_evolved": true,
+    "evolutions": [],
+    "learnset": [
+      {
+        "level": 1,
+        "move": "POUND"
+      },
+      {
+        "level": 1,
+        "move": "TAIL_WHIP"
+      },
+      {
+        "level": 4,
+        "move": "GROWL"
+      },
+      {
+        "level": 8,
+        "move": "FAKE_OUT"
+      },
+      {
+        "level": 12,
+        "move": "BITE"
+      },
+      {
+        "level": 16,
+        "move": "STOMP"
+      },
+      {
+        "level": 20,
+        "move": "FOCUS_ENERGY"
+      },
+      {
+        "level": 24,
+        "move": "HEADBUTT"
+      },
+      {
+        "level": 28,
+        "move": "SUCKER_PUNCH"
+      },
+      {
+        "level": 32,
+        "move": "DOUBLE_HIT"
+      },
+      {
+        "level": 36,
+        "move": "CRUNCH"
+      },
+      {
+        "level": 40,
+        "move": "ENDURE"
+      },
+      {
+        "level": 44,
+        "move": "REVERSAL"
+      },
+      {
+        "level": 48,
+        "move": "OUTRAGE"
+      },
+      {
+        "level": 52,
+        "move": "LAST_RESORT"
+      }
+    ],
+    "base_forms": [
+      {
+        "species": "kangaskhan",
+        "weight": 100
+      }
+    ],
+    "spawn_biomes": [],
+    "aggressive_biomes": [],
+    "disguise_tile": "",
+    "habitats": [],
+    "harvest": [],
+    "habitat_tokens": [
+      "TYPE"
+    ],
+    "harvest_tokens": [
+      "TYPE"
+    ],
+    "gender_ratio": "GENDER_F100",
+    "egg_groups": [
+      "EGG_MONSTER",
+      "EGG_MONSTER"
+    ],
+    "egg_cycles": 20,
+    "egg_moves": [
+      "STOMP",
+      "FORESIGHT",
+      "FOCUS_ENERGY",
+      "DISABLE",
+      "COUNTER",
+      "CRUSH_CLAW",
+      "DOUBLE_EDGE",
+      "ENDEAVOR",
+      "HAMMER_ARM",
+      "FOCUS_PUNCH",
+      "TRUMP_CARD",
+      "UPROAR",
+      "CIRCLE_THROW"
+    ],
+    "tmhm": [
+      "THIEF",
+      "FLING",
+      "OUTRAGE",
+      "THUNDER",
+      "THUNDERBOLT",
+      "THUNDER_PUNCH",
+      "SHOCK_WAVE",
+      "FOCUS_PUNCH",
+      "FOCUS_BLAST",
+      "BRICK_BREAK",
+      "DRAIN_PUNCH",
+      "POWER_UP_PUNCH",
+      "ROCK_SMASH",
+      "LOW_KICK",
+      "FIRE_BLAST",
+      "FLAMETHROWER",
+      "FIRE_PUNCH",
+      "SUNNY_DAY",
+      "AERIAL_ACE",
+      "SHADOW_BALL",
+      "SHADOW_CLAW",
+      "SPITE",
+      "SOLAR_BEAM",
+      "EARTHQUAKE",
+      "BULLDOZE",
+      "BLIZZARD",
+      "ICE_BEAM",
+      "ICE_PUNCH",
+      "ICY_WIND",
+      "HAIL",
+      "GIGA_IMPACT",
+      "HYPER_BEAM",
+      "UPROAR",
+      "STRENGTH",
+      "FACADE",
+      "COVET",
+      "HIDDEN_POWER",
+      "ROUND",
+      "CUT",
+      "SNORE",
+      "ENDEAVOR",
+      "FRUSTRATION",
+      "RETURN",
+      "ATTRACT",
+      "CONFIDE",
+      "DOUBLE_TEAM",
+      "HELPING_HAND",
+      "PROTECT",
+      "ROAR",
+      "SAFEGUARD",
+      "SLEEP_TALK",
+      "SUBSTITUTE",
+      "SWAGGER",
+      "WORK_UP",
+      "TOXIC",
+      "REST",
+      "ROCK_SLIDE",
+      "ROCK_TOMB",
+      "SANDSTORM",
+      "IRON_TAIL",
+      "AQUA_TAIL",
+      "SURF",
+      "WATER_PULSE",
+      "RAIN_DANCE",
+      "ENDURE",
+      "MEGA_KICK",
+      "BODY_SLAM",
+      "MEGA_PUNCH",
+      "FOCUS_ENERGY",
+      "REVERSAL",
+      "WHIRLPOOL",
+      "HYDRO_PUMP",
+      "CRUNCH",
+      "DIG",
+      "RETALIATE",
+      "BEAT_UP",
+      "AVALANCHE",
+      "TERRAIN_PULSE"
+    ],
+    "wild_held_items": [],
+    "base_happiness": 70,
+    "overworld_behavior": {
+      "swim_only": false,
+      "flee": false,
+      "lunge": false,
+      "aggression": 1,
+      "flip_walk_3": true,
+      "flip_walk_4": false,
+      "stationary": false,
+      "water_offset": 0
+    },
+    "growth_ticks": 9000,
+    "front": "res://assets/community_megas/mega_kangaskhan/front-normal.png",
+    "back": "res://assets/community_megas/mega_kangaskhan/back-normal.png",
+    "overworld": "res://assets/community_megas/mega_kangaskhan/overworld-normal.png",
+    "overworld_shiny": "res://assets/community_megas/mega_kangaskhan/overworld-shiny.png",
+    "cry": "res://assets/source_audio/cries/115.ogg",
+    "mega_habitat": "DESERT",
+    "mega_base_species": "kangaskhan",
+    "front_shiny": "res://assets/community_megas/mega_kangaskhan/front-shiny.png",
+    "back_shiny": "res://assets/community_megas/mega_kangaskhan/back-shiny.png"
+  }
+}

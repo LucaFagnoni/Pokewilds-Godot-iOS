@@ -1,0 +1,1266 @@
+{
+  "alcremie": {
+    "normal": "res://assets/evolution_supplement/alcremie-normal.png",
+    "shiny": "res://assets/evolution_supplement/alcremie-shiny.png"
+  },
+  "alomomola": {
+    "normal": "res://assets/evolution_supplement/alomomola-normal.png",
+    "shiny": "res://assets/evolution_supplement/alomomola-shiny.png"
+  },
+  "altaria": {
+    "normal": "res://assets/evolution_supplement/altaria-normal.png",
+    "shiny": "res://assets/evolution_supplement/altaria-shiny.png"
+  },
+  "amaura": {
+    "normal": "res://assets/evolution_supplement/amaura-normal.png",
+    "shiny": "res://assets/evolution_supplement/amaura-shiny.png"
+  },
+  "amoonguss": {
+    "normal": "res://assets/evolution_supplement/amoonguss-normal.png",
+    "shiny": "res://assets/evolution_supplement/amoonguss-shiny.png"
+  },
+  "araquanid": {
+    "normal": "res://assets/evolution_supplement/araquanid-normal.png",
+    "shiny": "res://assets/evolution_supplement/araquanid-shiny.png"
+  },
+  "archen": {
+    "normal": "res://assets/evolution_supplement/archen-normal.png",
+    "shiny": "res://assets/evolution_supplement/archen-shiny.png"
+  },
+  "archeops": {
+    "normal": "res://assets/evolution_supplement/archeops-normal.png",
+    "shiny": "res://assets/evolution_supplement/archeops-shiny.png"
+  },
+  "arctovish": {
+    "normal": "res://assets/evolution_supplement/arctovish-normal.png",
+    "shiny": "res://assets/evolution_supplement/arctovish-shiny.png"
+  },
+  "arctozolt": {
+    "normal": "res://assets/evolution_supplement/arctozolt-normal.png",
+    "shiny": "res://assets/evolution_supplement/arctozolt-shiny.png"
+  },
+  "aromatisse": {
+    "normal": "res://assets/evolution_supplement/aromatisse-normal.png",
+    "shiny": "res://assets/evolution_supplement/aromatisse-shiny.png"
+  },
+  "arrokuda": {
+    "normal": "res://assets/evolution_supplement/arrokuda-normal.png",
+    "shiny": "res://assets/evolution_supplement/arrokuda-shiny.png"
+  },
+  "audino": {
+    "normal": "res://assets/evolution_supplement/audino-normal.png",
+    "shiny": "res://assets/evolution_supplement/audino-shiny.png"
+  },
+  "aurorus": {
+    "normal": "res://assets/evolution_supplement/aurorus-normal.png",
+    "shiny": "res://assets/evolution_supplement/aurorus-shiny.png"
+  },
+  "avalugg": {
+    "normal": "res://assets/evolution_supplement/avalugg-normal.png",
+    "shiny": "res://assets/evolution_supplement/avalugg-shiny.png"
+  },
+  "azelf": {
+    "normal": "res://assets/evolution_supplement/azelf-normal.png",
+    "shiny": "res://assets/evolution_supplement/azelf-shiny.png"
+  },
+  "bagon": {
+    "normal": "res://assets/evolution_supplement/bagon-normal.png",
+    "shiny": "res://assets/evolution_supplement/bagon-shiny.png"
+  },
+  "baltoy": {
+    "normal": "res://assets/evolution_supplement/baltoy-normal.png",
+    "shiny": "res://assets/evolution_supplement/baltoy-shiny.png"
+  },
+  "barbaracle": {
+    "normal": "res://assets/evolution_supplement/barbaracle-normal.png",
+    "shiny": "res://assets/evolution_supplement/barbaracle-shiny.png"
+  },
+  "barboach": {
+    "normal": "res://assets/evolution_supplement/barboach-normal.png",
+    "shiny": "res://assets/evolution_supplement/barboach-shiny.png"
+  },
+  "barraskewda": {
+    "normal": "res://assets/evolution_supplement/barraskewda-normal.png",
+    "shiny": "res://assets/evolution_supplement/barraskewda-shiny.png"
+  },
+  "basculin": {
+    "normal": "res://assets/evolution_supplement/basculin-normal.png",
+    "shiny": "res://assets/evolution_supplement/basculin-shiny.png"
+  },
+  "beartic": {
+    "normal": "res://assets/evolution_supplement/beartic-normal.png",
+    "shiny": "res://assets/evolution_supplement/beartic-shiny.png"
+  },
+  "bergmite": {
+    "normal": "res://assets/evolution_supplement/bergmite-normal.png",
+    "shiny": "res://assets/evolution_supplement/bergmite-shiny.png"
+  },
+  "bibarel": {
+    "normal": "res://assets/evolution_supplement/bibarel-normal.png",
+    "shiny": "res://assets/evolution_supplement/bibarel-shiny.png"
+  },
+  "bidoof": {
+    "normal": "res://assets/evolution_supplement/bidoof-normal.png",
+    "shiny": "res://assets/evolution_supplement/bidoof-shiny.png"
+  },
+  "binacle": {
+    "normal": "res://assets/evolution_supplement/binacle-normal.png",
+    "shiny": "res://assets/evolution_supplement/binacle-shiny.png"
+  },
+  "blacephalon": {
+    "normal": "res://assets/evolution_supplement/blacephalon-normal.png",
+    "shiny": "res://assets/evolution_supplement/blacephalon-shiny.png"
+  },
+  "blipbug": {
+    "normal": "res://assets/evolution_supplement/blipbug-normal.png",
+    "shiny": "res://assets/evolution_supplement/blipbug-shiny.png"
+  },
+  "blitzle": {
+    "normal": "res://assets/evolution_supplement/blitzle-normal.png",
+    "shiny": "res://assets/evolution_supplement/blitzle-shiny.png"
+  },
+  "boldore": {
+    "normal": "res://assets/evolution_supplement/boldore-normal.png",
+    "shiny": "res://assets/evolution_supplement/boldore-shiny.png"
+  },
+  "boltund": {
+    "normal": "res://assets/evolution_supplement/boltund-normal.png",
+    "shiny": "res://assets/evolution_supplement/boltund-shiny.png"
+  },
+  "bonsly": {
+    "normal": "res://assets/evolution_supplement/bonsly-normal.png",
+    "shiny": "res://assets/evolution_supplement/bonsly-shiny.png"
+  },
+  "bouffalant": {
+    "normal": "res://assets/evolution_supplement/bouffalant-normal.png",
+    "shiny": "res://assets/evolution_supplement/bouffalant-shiny.png"
+  },
+  "braixen": {
+    "normal": "res://assets/evolution_supplement/braixen-normal.png",
+    "shiny": "res://assets/evolution_supplement/braixen-shiny.png"
+  },
+  "braviary": {
+    "normal": "res://assets/evolution_supplement/braviary-normal.png",
+    "shiny": "res://assets/evolution_supplement/braviary-shiny.png"
+  },
+  "bruxish": {
+    "normal": "res://assets/evolution_supplement/bruxish-normal.png",
+    "shiny": "res://assets/evolution_supplement/bruxish-shiny.png"
+  },
+  "buneary": {
+    "normal": "res://assets/evolution_supplement/buneary-normal.png",
+    "shiny": "res://assets/evolution_supplement/buneary-shiny.png"
+  },
+  "bunnelby": {
+    "normal": "res://assets/evolution_supplement/bunnelby-normal.png",
+    "shiny": "res://assets/evolution_supplement/bunnelby-shiny.png"
+  },
+  "buzzwole": {
+    "normal": "res://assets/evolution_supplement/buzzwole-normal.png",
+    "shiny": "res://assets/evolution_supplement/buzzwole-shiny.png"
+  },
+  "carkol": {
+    "normal": "res://assets/evolution_supplement/carkol-normal.png",
+    "shiny": "res://assets/evolution_supplement/carkol-shiny.png"
+  },
+  "carnivine": {
+    "normal": "res://assets/evolution_supplement/carnivine-normal.png",
+    "shiny": "res://assets/evolution_supplement/carnivine-shiny.png"
+  },
+  "carracosta": {
+    "normal": "res://assets/evolution_supplement/carracosta-normal.png",
+    "shiny": "res://assets/evolution_supplement/carracosta-shiny.png"
+  },
+  "castform": {
+    "normal": "res://assets/evolution_supplement/castform-normal.png",
+    "shiny": "res://assets/evolution_supplement/castform-shiny.png"
+  },
+  "celesteela": {
+    "normal": "res://assets/evolution_supplement/celesteela-normal.png",
+    "shiny": "res://assets/evolution_supplement/celesteela-shiny.png"
+  },
+  "centiskorch": {
+    "normal": "res://assets/evolution_supplement/centiskorch-normal.png",
+    "shiny": "res://assets/evolution_supplement/centiskorch-shiny.png"
+  },
+  "charjabug": {
+    "normal": "res://assets/evolution_supplement/charjabug-normal.png",
+    "shiny": "res://assets/evolution_supplement/charjabug-shiny.png"
+  },
+  "chatot": {
+    "normal": "res://assets/evolution_supplement/chatot-normal.png",
+    "shiny": "res://assets/evolution_supplement/chatot-shiny.png"
+  },
+  "cherrim": {
+    "normal": "res://assets/evolution_supplement/cherrim-normal.png",
+    "shiny": "res://assets/evolution_supplement/cherrim-shiny.png"
+  },
+  "cherubi": {
+    "normal": "res://assets/evolution_supplement/cherubi-normal.png",
+    "shiny": "res://assets/evolution_supplement/cherubi-shiny.png"
+  },
+  "chespin": {
+    "normal": "res://assets/evolution_supplement/chespin-normal.png",
+    "shiny": "res://assets/evolution_supplement/chespin-shiny.png"
+  },
+  "chewtle": {
+    "normal": "res://assets/evolution_supplement/chewtle-normal.png",
+    "shiny": "res://assets/evolution_supplement/chewtle-shiny.png"
+  },
+  "chimchar": {
+    "normal": "res://assets/evolution_supplement/chimchar-normal.png",
+    "shiny": "res://assets/evolution_supplement/chimchar-shiny.png"
+  },
+  "cinderace": {
+    "normal": "res://assets/evolution_supplement/cinderace-normal.png",
+    "shiny": "res://assets/evolution_supplement/cinderace-shiny.png"
+  },
+  "clamperl": {
+    "normal": "res://assets/evolution_supplement/clamperl-normal.png",
+    "shiny": "res://assets/evolution_supplement/clamperl-shiny.png"
+  },
+  "clauncher": {
+    "normal": "res://assets/evolution_supplement/clauncher-normal.png",
+    "shiny": "res://assets/evolution_supplement/clauncher-shiny.png"
+  },
+  "clawitzer": {
+    "normal": "res://assets/evolution_supplement/clawitzer-normal.png",
+    "shiny": "res://assets/evolution_supplement/clawitzer-shiny.png"
+  },
+  "claydol": {
+    "normal": "res://assets/evolution_supplement/claydol-normal.png",
+    "shiny": "res://assets/evolution_supplement/claydol-shiny.png"
+  },
+  "coalossal": {
+    "normal": "res://assets/evolution_supplement/coalossal-normal.png",
+    "shiny": "res://assets/evolution_supplement/coalossal-shiny.png"
+  },
+  "cobalion": {
+    "normal": "res://assets/evolution_supplement/cobalion-normal.png",
+    "shiny": "res://assets/evolution_supplement/cobalion-shiny.png"
+  },
+  "comfey": {
+    "normal": "res://assets/evolution_supplement/comfey-normal.png",
+    "shiny": "res://assets/evolution_supplement/comfey-shiny.png"
+  },
+  "conkeldurr": {
+    "normal": "res://assets/evolution_supplement/conkeldurr-normal.png",
+    "shiny": "res://assets/evolution_supplement/conkeldurr-shiny.png"
+  },
+  "corviknight": {
+    "normal": "res://assets/evolution_supplement/corviknight-normal.png",
+    "shiny": "res://assets/evolution_supplement/corviknight-shiny.png"
+  },
+  "corvisquire": {
+    "normal": "res://assets/evolution_supplement/corvisquire-normal.png",
+    "shiny": "res://assets/evolution_supplement/corvisquire-shiny.png"
+  },
+  "crabominable": {
+    "normal": "res://assets/evolution_supplement/crabominable-normal.png",
+    "shiny": "res://assets/evolution_supplement/crabominable-shiny.png"
+  },
+  "crabrawler": {
+    "normal": "res://assets/evolution_supplement/crabrawler-normal.png",
+    "shiny": "res://assets/evolution_supplement/crabrawler-shiny.png"
+  },
+  "cresselia": {
+    "normal": "res://assets/evolution_supplement/cresselia-normal.png",
+    "shiny": "res://assets/evolution_supplement/cresselia-shiny.png"
+  },
+  "croagunk": {
+    "normal": "res://assets/evolution_supplement/croagunk-normal.png",
+    "shiny": "res://assets/evolution_supplement/croagunk-shiny.png"
+  },
+  "cryogonal": {
+    "normal": "res://assets/evolution_supplement/cryogonal-normal.png",
+    "shiny": "res://assets/evolution_supplement/cryogonal-shiny.png"
+  },
+  "cubchoo": {
+    "normal": "res://assets/evolution_supplement/cubchoo-normal.png",
+    "shiny": "res://assets/evolution_supplement/cubchoo-shiny.png"
+  },
+  "cufant": {
+    "normal": "res://assets/evolution_supplement/cufant-normal.png",
+    "shiny": "res://assets/evolution_supplement/cufant-shiny.png"
+  },
+  "darkrai": {
+    "normal": "res://assets/evolution_supplement/darkrai-normal.png",
+    "shiny": "res://assets/evolution_supplement/darkrai-shiny.png"
+  },
+  "deerling": {
+    "normal": "res://assets/evolution_supplement/deerling-normal.png",
+    "shiny": "res://assets/evolution_supplement/deerling-shiny.png"
+  },
+  "delphox": {
+    "normal": "res://assets/evolution_supplement/delphox-normal.png",
+    "shiny": "res://assets/evolution_supplement/delphox-shiny.png"
+  },
+  "dewott": {
+    "normal": "res://assets/evolution_supplement/dewott-normal.png",
+    "shiny": "res://assets/evolution_supplement/dewott-shiny.png"
+  },
+  "dewpider": {
+    "normal": "res://assets/evolution_supplement/dewpider-normal.png",
+    "shiny": "res://assets/evolution_supplement/dewpider-shiny.png"
+  },
+  "dhelmise": {
+    "normal": "res://assets/evolution_supplement/dhelmise-normal.png",
+    "shiny": "res://assets/evolution_supplement/dhelmise-shiny.png"
+  },
+  "dialga": {
+    "normal": "res://assets/evolution_supplement/dialga-normal.png",
+    "shiny": "res://assets/evolution_supplement/dialga-shiny.png"
+  },
+  "diggersby": {
+    "normal": "res://assets/evolution_supplement/diggersby-normal.png",
+    "shiny": "res://assets/evolution_supplement/diggersby-shiny.png"
+  },
+  "dottler": {
+    "normal": "res://assets/evolution_supplement/dottler-normal.png",
+    "shiny": "res://assets/evolution_supplement/dottler-shiny.png"
+  },
+  "dracovish": {
+    "normal": "res://assets/evolution_supplement/dracovish-normal.png",
+    "shiny": "res://assets/evolution_supplement/dracovish-shiny.png"
+  },
+  "dracozolt": {
+    "normal": "res://assets/evolution_supplement/dracozolt-normal.png",
+    "shiny": "res://assets/evolution_supplement/dracozolt-shiny.png"
+  },
+  "dragalge": {
+    "normal": "res://assets/evolution_supplement/dragalge-normal.png",
+    "shiny": "res://assets/evolution_supplement/dragalge-shiny.png"
+  },
+  "dragapult": {
+    "normal": "res://assets/evolution_supplement/dragapult-normal.png",
+    "shiny": "res://assets/evolution_supplement/dragapult-shiny.png"
+  },
+  "drakloak": {
+    "normal": "res://assets/evolution_supplement/drakloak-normal.png",
+    "shiny": "res://assets/evolution_supplement/drakloak-shiny.png"
+  },
+  "drednaw": {
+    "normal": "res://assets/evolution_supplement/drednaw-normal.png",
+    "shiny": "res://assets/evolution_supplement/drednaw-shiny.png"
+  },
+  "dreepy": {
+    "normal": "res://assets/evolution_supplement/dreepy-normal.png",
+    "shiny": "res://assets/evolution_supplement/dreepy-shiny.png"
+  },
+  "drilbur": {
+    "normal": "res://assets/evolution_supplement/drilbur-normal.png",
+    "shiny": "res://assets/evolution_supplement/drilbur-shiny.png"
+  },
+  "drizzile": {
+    "normal": "res://assets/evolution_supplement/drizzile-normal.png",
+    "shiny": "res://assets/evolution_supplement/drizzile-shiny.png"
+  },
+  "druddigon": {
+    "normal": "res://assets/evolution_supplement/druddigon-normal.png",
+    "shiny": "res://assets/evolution_supplement/druddigon-shiny.png"
+  },
+  "ducklett": {
+    "normal": "res://assets/evolution_supplement/ducklett-normal.png",
+    "shiny": "res://assets/evolution_supplement/ducklett-shiny.png"
+  },
+  "eelektrik": {
+    "normal": "res://assets/evolution_supplement/eelektrik-normal.png",
+    "shiny": "res://assets/evolution_supplement/eelektrik-shiny.png"
+  },
+  "eelektross": {
+    "normal": "res://assets/evolution_supplement/eelektross-normal.png",
+    "shiny": "res://assets/evolution_supplement/eelektross-shiny.png"
+  },
+  "eiscue": {
+    "normal": "res://assets/evolution_supplement/eiscue-normal.png",
+    "shiny": "res://assets/evolution_supplement/eiscue-shiny.png"
+  },
+  "electrike": {
+    "normal": "res://assets/evolution_supplement/electrike-normal.png",
+    "shiny": "res://assets/evolution_supplement/electrike-shiny.png"
+  },
+  "emboar": {
+    "normal": "res://assets/evolution_supplement/emboar-normal.png",
+    "shiny": "res://assets/evolution_supplement/emboar-shiny.png"
+  },
+  "emolga": {
+    "normal": "res://assets/evolution_supplement/emolga-normal.png",
+    "shiny": "res://assets/evolution_supplement/emolga-shiny.png"
+  },
+  "empoleon": {
+    "normal": "res://assets/evolution_supplement/empoleon-normal.png",
+    "shiny": "res://assets/evolution_supplement/empoleon-shiny.png"
+  },
+  "espurr": {
+    "normal": "res://assets/evolution_supplement/espurr-normal.png",
+    "shiny": "res://assets/evolution_supplement/espurr-shiny.png"
+  },
+  "eternatus": {
+    "normal": "res://assets/evolution_supplement/eternatus-normal.png",
+    "shiny": "res://assets/evolution_supplement/eternatus-shiny.png"
+  },
+  "excadrill": {
+    "normal": "res://assets/evolution_supplement/excadrill-normal.png",
+    "shiny": "res://assets/evolution_supplement/excadrill-shiny.png"
+  },
+  "ferroseed": {
+    "normal": "res://assets/evolution_supplement/ferroseed-normal.png",
+    "shiny": "res://assets/evolution_supplement/ferroseed-shiny.png"
+  },
+  "ferrothorn": {
+    "normal": "res://assets/evolution_supplement/ferrothorn-normal.png",
+    "shiny": "res://assets/evolution_supplement/ferrothorn-shiny.png"
+  },
+  "flapple": {
+    "normal": "res://assets/evolution_supplement/flapple-normal.png",
+    "shiny": "res://assets/evolution_supplement/flapple-shiny.png"
+  },
+  "fletchinder": {
+    "normal": "res://assets/evolution_supplement/fletchinder-normal.png",
+    "shiny": "res://assets/evolution_supplement/fletchinder-shiny.png"
+  },
+  "fletchling": {
+    "normal": "res://assets/evolution_supplement/fletchling-normal.png",
+    "shiny": "res://assets/evolution_supplement/fletchling-shiny.png"
+  },
+  "fraxure": {
+    "normal": "res://assets/evolution_supplement/fraxure-normal.png",
+    "shiny": "res://assets/evolution_supplement/fraxure-shiny.png"
+  },
+  "frillish": {
+    "normal": "res://assets/evolution_supplement/frillish-normal.png",
+    "shiny": "res://assets/evolution_supplement/frillish-shiny.png"
+  },
+  "furfrou": {
+    "normal": "res://assets/evolution_supplement/furfrou-normal.png",
+    "shiny": "res://assets/evolution_supplement/furfrou-shiny.png"
+  },
+  "garbodor": {
+    "normal": "res://assets/evolution_supplement/garbodor-normal.png",
+    "shiny": "res://assets/evolution_supplement/garbodor-shiny.png"
+  },
+  "gastrodon": {
+    "normal": "res://assets/evolution_supplement/gastrodon-normal.png",
+    "shiny": "res://assets/evolution_supplement/gastrodon-shiny.png"
+  },
+  "genesect": {
+    "normal": "res://assets/evolution_supplement/genesect-normal.png",
+    "shiny": "res://assets/evolution_supplement/genesect-shiny.png"
+  },
+  "gigalith": {
+    "normal": "res://assets/evolution_supplement/gigalith-normal.png",
+    "shiny": "res://assets/evolution_supplement/gigalith-shiny.png"
+  },
+  "giratina": {
+    "normal": "res://assets/evolution_supplement/giratina-normal.png",
+    "shiny": "res://assets/evolution_supplement/giratina-shiny.png"
+  },
+  "glameow": {
+    "normal": "res://assets/evolution_supplement/glameow-normal.png",
+    "shiny": "res://assets/evolution_supplement/glameow-shiny.png"
+  },
+  "glastrier": {
+    "normal": "res://assets/evolution_supplement/glastrier-normal.png",
+    "shiny": "res://assets/evolution_supplement/glastrier-shiny.png"
+  },
+  "gliscor": {
+    "normal": "res://assets/evolution_supplement/gliscor-normal.png",
+    "shiny": "res://assets/evolution_supplement/gliscor-shiny.png"
+  },
+  "gogoat": {
+    "normal": "res://assets/evolution_supplement/gogoat-normal.png",
+    "shiny": "res://assets/evolution_supplement/gogoat-shiny.png"
+  },
+  "golett": {
+    "normal": "res://assets/evolution_supplement/golett-normal.png",
+    "shiny": "res://assets/evolution_supplement/golett-shiny.png"
+  },
+  "golisopod": {
+    "normal": "res://assets/evolution_supplement/golisopod-normal.png",
+    "shiny": "res://assets/evolution_supplement/golisopod-shiny.png"
+  },
+  "golurk": {
+    "normal": "res://assets/evolution_supplement/golurk-normal.png",
+    "shiny": "res://assets/evolution_supplement/golurk-shiny.png"
+  },
+  "gorebyss": {
+    "normal": "res://assets/evolution_supplement/gorebyss-normal.png",
+    "shiny": "res://assets/evolution_supplement/gorebyss-shiny.png"
+  },
+  "grapploct": {
+    "normal": "res://assets/evolution_supplement/grapploct-normal.png",
+    "shiny": "res://assets/evolution_supplement/grapploct-shiny.png"
+  },
+  "greedent": {
+    "normal": "res://assets/evolution_supplement/greedent-normal.png",
+    "shiny": "res://assets/evolution_supplement/greedent-shiny.png"
+  },
+  "grookey": {
+    "normal": "res://assets/evolution_supplement/grookey-normal.png",
+    "shiny": "res://assets/evolution_supplement/grookey-shiny.png"
+  },
+  "groudon": {
+    "normal": "res://assets/evolution_supplement/groudon-normal.png",
+    "shiny": "res://assets/evolution_supplement/groudon-shiny.png"
+  },
+  "grubbin": {
+    "normal": "res://assets/evolution_supplement/grubbin-normal.png",
+    "shiny": "res://assets/evolution_supplement/grubbin-shiny.png"
+  },
+  "gumshoos": {
+    "normal": "res://assets/evolution_supplement/gumshoos-normal.png",
+    "shiny": "res://assets/evolution_supplement/gumshoos-shiny.png"
+  },
+  "guzzlord": {
+    "normal": "res://assets/evolution_supplement/guzzlord-normal.png",
+    "shiny": "res://assets/evolution_supplement/guzzlord-shiny.png"
+  },
+  "hakamo-o": {
+    "normal": "res://assets/evolution_supplement/hakamo-o-normal.png",
+    "shiny": "res://assets/evolution_supplement/hakamo-o-shiny.png"
+  },
+  "hatenna": {
+    "normal": "res://assets/evolution_supplement/hatenna-normal.png",
+    "shiny": "res://assets/evolution_supplement/hatenna-shiny.png"
+  },
+  "hatterene": {
+    "normal": "res://assets/evolution_supplement/hatterene-normal.png",
+    "shiny": "res://assets/evolution_supplement/hatterene-shiny.png"
+  },
+  "hattrem": {
+    "normal": "res://assets/evolution_supplement/hattrem-normal.png",
+    "shiny": "res://assets/evolution_supplement/hattrem-shiny.png"
+  },
+  "hawlucha": {
+    "normal": "res://assets/evolution_supplement/hawlucha-normal.png",
+    "shiny": "res://assets/evolution_supplement/hawlucha-shiny.png"
+  },
+  "haxorus": {
+    "normal": "res://assets/evolution_supplement/haxorus-normal.png",
+    "shiny": "res://assets/evolution_supplement/haxorus-shiny.png"
+  },
+  "heatran": {
+    "normal": "res://assets/evolution_supplement/heatran-normal.png",
+    "shiny": "res://assets/evolution_supplement/heatran-shiny.png"
+  },
+  "heliolisk": {
+    "normal": "res://assets/evolution_supplement/heliolisk-normal.png",
+    "shiny": "res://assets/evolution_supplement/heliolisk-shiny.png"
+  },
+  "helioptile": {
+    "normal": "res://assets/evolution_supplement/helioptile-normal.png",
+    "shiny": "res://assets/evolution_supplement/helioptile-shiny.png"
+  },
+  "hippopotas": {
+    "normal": "res://assets/evolution_supplement/hippopotas-normal.png",
+    "shiny": "res://assets/evolution_supplement/hippopotas-shiny.png"
+  },
+  "hippowdon": {
+    "normal": "res://assets/evolution_supplement/hippowdon-normal.png",
+    "shiny": "res://assets/evolution_supplement/hippowdon-shiny.png"
+  },
+  "hoopa": {
+    "normal": "res://assets/evolution_supplement/hoopa-normal.png",
+    "shiny": "res://assets/evolution_supplement/hoopa-shiny.png"
+  },
+  "huntail": {
+    "normal": "res://assets/evolution_supplement/huntail-normal.png",
+    "shiny": "res://assets/evolution_supplement/huntail-shiny.png"
+  },
+  "illumise": {
+    "normal": "res://assets/evolution_supplement/illumise-normal.png",
+    "shiny": "res://assets/evolution_supplement/illumise-shiny.png"
+  },
+  "infernape": {
+    "normal": "res://assets/evolution_supplement/infernape-normal.png",
+    "shiny": "res://assets/evolution_supplement/infernape-shiny.png"
+  },
+  "inteleon": {
+    "normal": "res://assets/evolution_supplement/inteleon-normal.png",
+    "shiny": "res://assets/evolution_supplement/inteleon-shiny.png"
+  },
+  "jangmo-o": {
+    "normal": "res://assets/evolution_supplement/jangmo-o-normal.png",
+    "shiny": "res://assets/evolution_supplement/jangmo-o-shiny.png"
+  },
+  "jellicent": {
+    "normal": "res://assets/evolution_supplement/jellicent-normal.png",
+    "shiny": "res://assets/evolution_supplement/jellicent-shiny.png"
+  },
+  "kartana": {
+    "normal": "res://assets/evolution_supplement/kartana-normal.png",
+    "shiny": "res://assets/evolution_supplement/kartana-shiny.png"
+  },
+  "kecleon": {
+    "normal": "res://assets/evolution_supplement/kecleon-normal.png",
+    "shiny": "res://assets/evolution_supplement/kecleon-shiny.png"
+  },
+  "keldeo": {
+    "normal": "res://assets/evolution_supplement/keldeo-normal.png",
+    "shiny": "res://assets/evolution_supplement/keldeo-shiny.png"
+  },
+  "klang": {
+    "normal": "res://assets/evolution_supplement/klang-normal.png",
+    "shiny": "res://assets/evolution_supplement/klang-shiny.png"
+  },
+  "klefki": {
+    "normal": "res://assets/evolution_supplement/klefki-normal.png",
+    "shiny": "res://assets/evolution_supplement/klefki-shiny.png"
+  },
+  "klink": {
+    "normal": "res://assets/evolution_supplement/klink-normal.png",
+    "shiny": "res://assets/evolution_supplement/klink-shiny.png"
+  },
+  "klinklang": {
+    "normal": "res://assets/evolution_supplement/klinklang-normal.png",
+    "shiny": "res://assets/evolution_supplement/klinklang-shiny.png"
+  },
+  "kricketot": {
+    "normal": "res://assets/evolution_supplement/kricketot-normal.png",
+    "shiny": "res://assets/evolution_supplement/kricketot-shiny.png"
+  },
+  "kricketune": {
+    "normal": "res://assets/evolution_supplement/kricketune-normal.png",
+    "shiny": "res://assets/evolution_supplement/kricketune-shiny.png"
+  },
+  "kyogre": {
+    "normal": "res://assets/evolution_supplement/kyogre-normal.png",
+    "shiny": "res://assets/evolution_supplement/kyogre-shiny.png"
+  },
+  "kyurem": {
+    "normal": "res://assets/evolution_supplement/kyurem-normal.png",
+    "shiny": "res://assets/evolution_supplement/kyurem-shiny.png"
+  },
+  "landorus": {
+    "normal": "res://assets/evolution_supplement/landorus-normal.png",
+    "shiny": "res://assets/evolution_supplement/landorus-shiny.png"
+  },
+  "latias": {
+    "normal": "res://assets/evolution_supplement/latias-normal.png",
+    "shiny": "res://assets/evolution_supplement/latias-shiny.png"
+  },
+  "latios": {
+    "normal": "res://assets/evolution_supplement/latios-normal.png",
+    "shiny": "res://assets/evolution_supplement/latios-shiny.png"
+  },
+  "leavanny": {
+    "normal": "res://assets/evolution_supplement/leavanny-normal.png",
+    "shiny": "res://assets/evolution_supplement/leavanny-shiny.png"
+  },
+  "lilligant": {
+    "normal": "res://assets/evolution_supplement/lilligant-normal.png",
+    "shiny": "res://assets/evolution_supplement/lilligant-shiny.png"
+  },
+  "litleo": {
+    "normal": "res://assets/evolution_supplement/litleo-normal.png",
+    "shiny": "res://assets/evolution_supplement/litleo-shiny.png"
+  },
+  "litten": {
+    "normal": "res://assets/evolution_supplement/litten-normal.png",
+    "shiny": "res://assets/evolution_supplement/litten-shiny.png"
+  },
+  "lopunny": {
+    "normal": "res://assets/evolution_supplement/lopunny-normal.png",
+    "shiny": "res://assets/evolution_supplement/lopunny-shiny.png"
+  },
+  "lumineon": {
+    "normal": "res://assets/evolution_supplement/lumineon-normal.png",
+    "shiny": "res://assets/evolution_supplement/lumineon-shiny.png"
+  },
+  "lycanroc": {
+    "normal": "res://assets/evolution_supplement/lycanroc-normal.png",
+    "shiny": "res://assets/evolution_supplement/lycanroc-shiny.png"
+  },
+  "magearna": {
+    "normal": "res://assets/evolution_supplement/magearna-normal.png",
+    "shiny": "res://assets/evolution_supplement/magearna-shiny.png"
+  },
+  "magnezone": {
+    "normal": "res://assets/evolution_supplement/magnezone-normal.png",
+    "shiny": "res://assets/evolution_supplement/magnezone-shiny.png"
+  },
+  "malamar": {
+    "normal": "res://assets/evolution_supplement/malamar-normal.png",
+    "shiny": "res://assets/evolution_supplement/malamar-shiny.png"
+  },
+  "manaphy": {
+    "normal": "res://assets/evolution_supplement/manaphy-normal.png",
+    "shiny": "res://assets/evolution_supplement/manaphy-shiny.png"
+  },
+  "mandibuzz": {
+    "normal": "res://assets/evolution_supplement/mandibuzz-normal.png",
+    "shiny": "res://assets/evolution_supplement/mandibuzz-shiny.png"
+  },
+  "manectric": {
+    "normal": "res://assets/evolution_supplement/manectric-normal.png",
+    "shiny": "res://assets/evolution_supplement/manectric-shiny.png"
+  },
+  "mareanie": {
+    "normal": "res://assets/evolution_supplement/mareanie-normal.png",
+    "shiny": "res://assets/evolution_supplement/mareanie-shiny.png"
+  },
+  "marshadow": {
+    "normal": "res://assets/evolution_supplement/marshadow-normal.png",
+    "shiny": "res://assets/evolution_supplement/marshadow-shiny.png"
+  },
+  "melmetal": {
+    "normal": "res://assets/evolution_supplement/melmetal-normal.png",
+    "shiny": "res://assets/evolution_supplement/melmetal-shiny.png"
+  },
+  "meloetta": {
+    "normal": "res://assets/evolution_supplement/meloetta-normal.png",
+    "shiny": "res://assets/evolution_supplement/meloetta-shiny.png"
+  },
+  "meowstic_female": {
+    "normal": "res://assets/evolution_supplement/meowstic_female-normal.png",
+    "shiny": "res://assets/evolution_supplement/meowstic_female-shiny.png"
+  },
+  "meowstic_male": {
+    "normal": "res://assets/evolution_supplement/meowstic_male-normal.png",
+    "shiny": "res://assets/evolution_supplement/meowstic_male-shiny.png"
+  },
+  "mesprit": {
+    "normal": "res://assets/evolution_supplement/mesprit-normal.png",
+    "shiny": "res://assets/evolution_supplement/mesprit-shiny.png"
+  },
+  "mienfoo": {
+    "normal": "res://assets/evolution_supplement/mienfoo-normal.png",
+    "shiny": "res://assets/evolution_supplement/mienfoo-shiny.png"
+  },
+  "mienshao": {
+    "normal": "res://assets/evolution_supplement/mienshao-normal.png",
+    "shiny": "res://assets/evolution_supplement/mienshao-shiny.png"
+  },
+  "milcery": {
+    "normal": "res://assets/evolution_supplement/milcery-normal.png",
+    "shiny": "res://assets/evolution_supplement/milcery-shiny.png"
+  },
+  "monferno": {
+    "normal": "res://assets/evolution_supplement/monferno-normal.png",
+    "shiny": "res://assets/evolution_supplement/monferno-shiny.png"
+  },
+  "morgrem": {
+    "normal": "res://assets/evolution_supplement/morgrem-normal.png",
+    "shiny": "res://assets/evolution_supplement/morgrem-shiny.png"
+  },
+  "morpeko": {
+    "normal": "res://assets/evolution_supplement/morpeko-normal.png",
+    "shiny": "res://assets/evolution_supplement/morpeko-shiny.png"
+  },
+  "mothim": {
+    "normal": "res://assets/evolution_supplement/mothim-normal.png",
+    "shiny": "res://assets/evolution_supplement/mothim-shiny.png"
+  },
+  "mudbray": {
+    "normal": "res://assets/evolution_supplement/mudbray-normal.png",
+    "shiny": "res://assets/evolution_supplement/mudbray-shiny.png"
+  },
+  "mudsdale": {
+    "normal": "res://assets/evolution_supplement/mudsdale-normal.png",
+    "shiny": "res://assets/evolution_supplement/mudsdale-shiny.png"
+  },
+  "munna": {
+    "normal": "res://assets/evolution_supplement/munna-normal.png",
+    "shiny": "res://assets/evolution_supplement/munna-shiny.png"
+  },
+  "musharna": {
+    "normal": "res://assets/evolution_supplement/musharna-normal.png",
+    "shiny": "res://assets/evolution_supplement/musharna-shiny.png"
+  },
+  "naganadel": {
+    "normal": "res://assets/evolution_supplement/naganadel-normal.png",
+    "shiny": "res://assets/evolution_supplement/naganadel-shiny.png"
+  },
+  "necrozma": {
+    "normal": "res://assets/evolution_supplement/necrozma-normal.png",
+    "shiny": "res://assets/evolution_supplement/necrozma-shiny.png"
+  },
+  "nickit": {
+    "normal": "res://assets/evolution_supplement/nickit-normal.png",
+    "shiny": "res://assets/evolution_supplement/nickit-shiny.png"
+  },
+  "nihilego": {
+    "normal": "res://assets/evolution_supplement/nihilego-normal.png",
+    "shiny": "res://assets/evolution_supplement/nihilego-shiny.png"
+  },
+  "orbeetle": {
+    "normal": "res://assets/evolution_supplement/orbeetle-normal.png",
+    "shiny": "res://assets/evolution_supplement/orbeetle-shiny.png"
+  },
+  "oricorio": {
+    "normal": "res://assets/evolution_supplement/oricorio-normal.png",
+    "shiny": "res://assets/evolution_supplement/oricorio-shiny.png"
+  },
+  "pachirisu": {
+    "normal": "res://assets/evolution_supplement/pachirisu-normal.png",
+    "shiny": "res://assets/evolution_supplement/pachirisu-shiny.png"
+  },
+  "palpitoad": {
+    "normal": "res://assets/evolution_supplement/palpitoad-normal.png",
+    "shiny": "res://assets/evolution_supplement/palpitoad-shiny.png"
+  },
+  "pancham": {
+    "normal": "res://assets/evolution_supplement/pancham-normal.png",
+    "shiny": "res://assets/evolution_supplement/pancham-shiny.png"
+  },
+  "pangoro": {
+    "normal": "res://assets/evolution_supplement/pangoro-normal.png",
+    "shiny": "res://assets/evolution_supplement/pangoro-shiny.png"
+  },
+  "panpour": {
+    "normal": "res://assets/evolution_supplement/panpour-normal.png",
+    "shiny": "res://assets/evolution_supplement/panpour-shiny.png"
+  },
+  "pansage": {
+    "normal": "res://assets/evolution_supplement/pansage-normal.png",
+    "shiny": "res://assets/evolution_supplement/pansage-shiny.png"
+  },
+  "pansear": {
+    "normal": "res://assets/evolution_supplement/pansear-normal.png",
+    "shiny": "res://assets/evolution_supplement/pansear-shiny.png"
+  },
+  "passimian": {
+    "normal": "res://assets/evolution_supplement/passimian-normal.png",
+    "shiny": "res://assets/evolution_supplement/passimian-shiny.png"
+  },
+  "patrat": {
+    "normal": "res://assets/evolution_supplement/patrat-normal.png",
+    "shiny": "res://assets/evolution_supplement/patrat-shiny.png"
+  },
+  "perrserker": {
+    "normal": "res://assets/evolution_supplement/perrserker-normal.png",
+    "shiny": "res://assets/evolution_supplement/perrserker-shiny.png"
+  },
+  "petilil": {
+    "normal": "res://assets/evolution_supplement/petilil-normal.png",
+    "shiny": "res://assets/evolution_supplement/petilil-shiny.png"
+  },
+  "pheromosa": {
+    "normal": "res://assets/evolution_supplement/pheromosa-normal.png",
+    "shiny": "res://assets/evolution_supplement/pheromosa-shiny.png"
+  },
+  "pidove": {
+    "normal": "res://assets/evolution_supplement/pidove-normal.png",
+    "shiny": "res://assets/evolution_supplement/pidove-shiny.png"
+  },
+  "piplup": {
+    "normal": "res://assets/evolution_supplement/piplup-normal.png",
+    "shiny": "res://assets/evolution_supplement/piplup-shiny.png"
+  },
+  "poipole": {
+    "normal": "res://assets/evolution_supplement/poipole-normal.png",
+    "shiny": "res://assets/evolution_supplement/poipole-shiny.png"
+  },
+  "porygonz": {
+    "normal": "res://assets/evolution_supplement/porygonz-normal.png",
+    "shiny": "res://assets/evolution_supplement/porygonz-shiny.png"
+  },
+  "primarina": {
+    "normal": "res://assets/evolution_supplement/primarina-normal.png",
+    "shiny": "res://assets/evolution_supplement/primarina-shiny.png"
+  },
+  "prinplup": {
+    "normal": "res://assets/evolution_supplement/prinplup-normal.png",
+    "shiny": "res://assets/evolution_supplement/prinplup-shiny.png"
+  },
+  "purugly": {
+    "normal": "res://assets/evolution_supplement/purugly-normal.png",
+    "shiny": "res://assets/evolution_supplement/purugly-shiny.png"
+  },
+  "pyroar": {
+    "normal": "res://assets/evolution_supplement/pyroar-normal.png",
+    "shiny": "res://assets/evolution_supplement/pyroar-shiny.png"
+  },
+  "rayquaza": {
+    "normal": "res://assets/evolution_supplement/rayquaza-normal.png",
+    "shiny": "res://assets/evolution_supplement/rayquaza-shiny.png"
+  },
+  "relicanth": {
+    "normal": "res://assets/evolution_supplement/relicanth-normal.png",
+    "shiny": "res://assets/evolution_supplement/relicanth-shiny.png"
+  },
+  "reshiram": {
+    "normal": "res://assets/evolution_supplement/reshiram-normal.png",
+    "shiny": "res://assets/evolution_supplement/reshiram-shiny.png"
+  },
+  "rillaboom": {
+    "normal": "res://assets/evolution_supplement/rillaboom-normal.png",
+    "shiny": "res://assets/evolution_supplement/rillaboom-shiny.png"
+  },
+  "rockruff": {
+    "normal": "res://assets/evolution_supplement/rockruff-normal.png",
+    "shiny": "res://assets/evolution_supplement/rockruff-shiny.png"
+  },
+  "roggenrola": {
+    "normal": "res://assets/evolution_supplement/roggenrola-normal.png",
+    "shiny": "res://assets/evolution_supplement/roggenrola-shiny.png"
+  },
+  "rolycoly": {
+    "normal": "res://assets/evolution_supplement/rolycoly-normal.png",
+    "shiny": "res://assets/evolution_supplement/rolycoly-shiny.png"
+  },
+  "rowlet": {
+    "normal": "res://assets/evolution_supplement/rowlet-normal.png",
+    "shiny": "res://assets/evolution_supplement/rowlet-shiny.png"
+  },
+  "salamence": {
+    "normal": "res://assets/evolution_supplement/salamence-normal.png",
+    "shiny": "res://assets/evolution_supplement/salamence-shiny.png"
+  },
+  "salandit": {
+    "normal": "res://assets/evolution_supplement/salandit-normal.png",
+    "shiny": "res://assets/evolution_supplement/salandit-shiny.png"
+  },
+  "salazzle": {
+    "normal": "res://assets/evolution_supplement/salazzle-normal.png",
+    "shiny": "res://assets/evolution_supplement/salazzle-shiny.png"
+  },
+  "sandaconda": {
+    "normal": "res://assets/evolution_supplement/sandaconda-normal.png",
+    "shiny": "res://assets/evolution_supplement/sandaconda-shiny.png"
+  },
+  "sawk": {
+    "normal": "res://assets/evolution_supplement/sawk-normal.png",
+    "shiny": "res://assets/evolution_supplement/sawk-shiny.png"
+  },
+  "sawsbuck": {
+    "normal": "res://assets/evolution_supplement/sawsbuck-normal.png",
+    "shiny": "res://assets/evolution_supplement/sawsbuck-shiny.png"
+  },
+  "scatterbug": {
+    "normal": "res://assets/evolution_supplement/scatterbug-normal.png",
+    "shiny": "res://assets/evolution_supplement/scatterbug-shiny.png"
+  },
+  "scrafty": {
+    "normal": "res://assets/evolution_supplement/scrafty-normal.png",
+    "shiny": "res://assets/evolution_supplement/scrafty-shiny.png"
+  },
+  "scraggy": {
+    "normal": "res://assets/evolution_supplement/scraggy-normal.png",
+    "shiny": "res://assets/evolution_supplement/scraggy-shiny.png"
+  },
+  "sealeo": {
+    "normal": "res://assets/evolution_supplement/sealeo-normal.png",
+    "shiny": "res://assets/evolution_supplement/sealeo-shiny.png"
+  },
+  "seismitoad": {
+    "normal": "res://assets/evolution_supplement/seismitoad-normal.png",
+    "shiny": "res://assets/evolution_supplement/seismitoad-shiny.png"
+  },
+  "seviper": {
+    "normal": "res://assets/evolution_supplement/seviper-normal.png",
+    "shiny": "res://assets/evolution_supplement/seviper-shiny.png"
+  },
+  "sewaddle": {
+    "normal": "res://assets/evolution_supplement/sewaddle-normal.png",
+    "shiny": "res://assets/evolution_supplement/sewaddle-shiny.png"
+  },
+  "shaymin": {
+    "normal": "res://assets/evolution_supplement/shaymin-normal.png",
+    "shiny": "res://assets/evolution_supplement/shaymin-shiny.png"
+  },
+  "shelgon": {
+    "normal": "res://assets/evolution_supplement/shelgon-normal.png",
+    "shiny": "res://assets/evolution_supplement/shelgon-shiny.png"
+  },
+  "silicobra": {
+    "normal": "res://assets/evolution_supplement/silicobra-normal.png",
+    "shiny": "res://assets/evolution_supplement/silicobra-shiny.png"
+  },
+  "silvally": {
+    "normal": "res://assets/evolution_supplement/silvally-normal.png",
+    "shiny": "res://assets/evolution_supplement/silvally-shiny.png"
+  },
+  "simipour": {
+    "normal": "res://assets/evolution_supplement/simipour-normal.png",
+    "shiny": "res://assets/evolution_supplement/simipour-shiny.png"
+  },
+  "simisage": {
+    "normal": "res://assets/evolution_supplement/simisage-normal.png",
+    "shiny": "res://assets/evolution_supplement/simisage-shiny.png"
+  },
+  "simisear": {
+    "normal": "res://assets/evolution_supplement/simisear-normal.png",
+    "shiny": "res://assets/evolution_supplement/simisear-shiny.png"
+  },
+  "sizzlipede": {
+    "normal": "res://assets/evolution_supplement/sizzlipede-normal.png",
+    "shiny": "res://assets/evolution_supplement/sizzlipede-shiny.png"
+  },
+  "skiddo": {
+    "normal": "res://assets/evolution_supplement/skiddo-normal.png",
+    "shiny": "res://assets/evolution_supplement/skiddo-shiny.png"
+  },
+  "skrelp": {
+    "normal": "res://assets/evolution_supplement/skrelp-normal.png",
+    "shiny": "res://assets/evolution_supplement/skrelp-shiny.png"
+  },
+  "skuntank": {
+    "normal": "res://assets/evolution_supplement/skuntank-normal.png",
+    "shiny": "res://assets/evolution_supplement/skuntank-shiny.png"
+  },
+  "skwovet": {
+    "normal": "res://assets/evolution_supplement/skwovet-normal.png",
+    "shiny": "res://assets/evolution_supplement/skwovet-shiny.png"
+  },
+  "sobble": {
+    "normal": "res://assets/evolution_supplement/sobble-normal.png",
+    "shiny": "res://assets/evolution_supplement/sobble-shiny.png"
+  },
+  "solgaleo": {
+    "normal": "res://assets/evolution_supplement/solgaleo-normal.png",
+    "shiny": "res://assets/evolution_supplement/solgaleo-shiny.png"
+  },
+  "spectrier": {
+    "normal": "res://assets/evolution_supplement/spectrier-normal.png",
+    "shiny": "res://assets/evolution_supplement/spectrier-shiny.png"
+  },
+  "spewpa": {
+    "normal": "res://assets/evolution_supplement/spewpa-normal.png",
+    "shiny": "res://assets/evolution_supplement/spewpa-shiny.png"
+  },
+  "spheal": {
+    "normal": "res://assets/evolution_supplement/spheal-normal.png",
+    "shiny": "res://assets/evolution_supplement/spheal-shiny.png"
+  },
+  "spritzee": {
+    "normal": "res://assets/evolution_supplement/spritzee-normal.png",
+    "shiny": "res://assets/evolution_supplement/spritzee-shiny.png"
+  },
+  "stakataka": {
+    "normal": "res://assets/evolution_supplement/stakataka-normal.png",
+    "shiny": "res://assets/evolution_supplement/stakataka-shiny.png"
+  },
+  "stunky": {
+    "normal": "res://assets/evolution_supplement/stunky-normal.png",
+    "shiny": "res://assets/evolution_supplement/stunky-shiny.png"
+  },
+  "swablu": {
+    "normal": "res://assets/evolution_supplement/swablu-normal.png",
+    "shiny": "res://assets/evolution_supplement/swablu-shiny.png"
+  },
+  "swadloon": {
+    "normal": "res://assets/evolution_supplement/swadloon-normal.png",
+    "shiny": "res://assets/evolution_supplement/swadloon-shiny.png"
+  },
+  "swanna": {
+    "normal": "res://assets/evolution_supplement/swanna-normal.png",
+    "shiny": "res://assets/evolution_supplement/swanna-shiny.png"
+  },
+  "talonflame": {
+    "normal": "res://assets/evolution_supplement/talonflame-normal.png",
+    "shiny": "res://assets/evolution_supplement/talonflame-shiny.png"
+  },
+  "tangrowth": {
+    "normal": "res://assets/evolution_supplement/tangrowth-normal.png",
+    "shiny": "res://assets/evolution_supplement/tangrowth-shiny.png"
+  },
+  "tapu_bulu": {
+    "normal": "res://assets/evolution_supplement/tapu_bulu-normal.png",
+    "shiny": "res://assets/evolution_supplement/tapu_bulu-shiny.png"
+  },
+  "tapu_fini": {
+    "normal": "res://assets/evolution_supplement/tapu_fini-normal.png",
+    "shiny": "res://assets/evolution_supplement/tapu_fini-shiny.png"
+  },
+  "tapu_koko": {
+    "normal": "res://assets/evolution_supplement/tapu_koko-normal.png",
+    "shiny": "res://assets/evolution_supplement/tapu_koko-shiny.png"
+  },
+  "tapu_lele": {
+    "normal": "res://assets/evolution_supplement/tapu_lele-normal.png",
+    "shiny": "res://assets/evolution_supplement/tapu_lele-shiny.png"
+  },
+  "terrakion": {
+    "normal": "res://assets/evolution_supplement/terrakion-normal.png",
+    "shiny": "res://assets/evolution_supplement/terrakion-shiny.png"
+  },
+  "thievul": {
+    "normal": "res://assets/evolution_supplement/thievul-normal.png",
+    "shiny": "res://assets/evolution_supplement/thievul-shiny.png"
+  },
+  "throh": {
+    "normal": "res://assets/evolution_supplement/throh-normal.png",
+    "shiny": "res://assets/evolution_supplement/throh-shiny.png"
+  },
+  "thundurus": {
+    "normal": "res://assets/evolution_supplement/thundurus-normal.png",
+    "shiny": "res://assets/evolution_supplement/thundurus-shiny.png"
+  },
+  "thwackey": {
+    "normal": "res://assets/evolution_supplement/thwackey-normal.png",
+    "shiny": "res://assets/evolution_supplement/thwackey-shiny.png"
+  },
+  "tirtouga": {
+    "normal": "res://assets/evolution_supplement/tirtouga-normal.png",
+    "shiny": "res://assets/evolution_supplement/tirtouga-shiny.png"
+  },
+  "togedemaru": {
+    "normal": "res://assets/evolution_supplement/togedemaru-normal.png",
+    "shiny": "res://assets/evolution_supplement/togedemaru-shiny.png"
+  },
+  "togekiss": {
+    "normal": "res://assets/evolution_supplement/togekiss-normal.png",
+    "shiny": "res://assets/evolution_supplement/togekiss-shiny.png"
+  },
+  "tornadus": {
+    "normal": "res://assets/evolution_supplement/tornadus-normal.png",
+    "shiny": "res://assets/evolution_supplement/tornadus-shiny.png"
+  },
+  "torracat": {
+    "normal": "res://assets/evolution_supplement/torracat-normal.png",
+    "shiny": "res://assets/evolution_supplement/torracat-shiny.png"
+  },
+  "toxapex": {
+    "normal": "res://assets/evolution_supplement/toxapex-normal.png",
+    "shiny": "res://assets/evolution_supplement/toxapex-shiny.png"
+  },
+  "toxel": {
+    "normal": "res://assets/evolution_supplement/toxel-normal.png",
+    "shiny": "res://assets/evolution_supplement/toxel-shiny.png"
+  },
+  "toxicroak": {
+    "normal": "res://assets/evolution_supplement/toxicroak-normal.png",
+    "shiny": "res://assets/evolution_supplement/toxicroak-shiny.png"
+  },
+  "tranquill": {
+    "normal": "res://assets/evolution_supplement/tranquill-normal.png",
+    "shiny": "res://assets/evolution_supplement/tranquill-shiny.png"
+  },
+  "tropius": {
+    "normal": "res://assets/evolution_supplement/tropius-normal.png",
+    "shiny": "res://assets/evolution_supplement/tropius-shiny.png"
+  },
+  "trubbish": {
+    "normal": "res://assets/evolution_supplement/trubbish-normal.png",
+    "shiny": "res://assets/evolution_supplement/trubbish-shiny.png"
+  },
+  "tsareena": {
+    "normal": "res://assets/evolution_supplement/tsareena-normal.png",
+    "shiny": "res://assets/evolution_supplement/tsareena-shiny.png"
+  },
+  "turtonator": {
+    "normal": "res://assets/evolution_supplement/turtonator-normal.png",
+    "shiny": "res://assets/evolution_supplement/turtonator-shiny.png"
+  },
+  "tympole": {
+    "normal": "res://assets/evolution_supplement/tympole-normal.png",
+    "shiny": "res://assets/evolution_supplement/tympole-shiny.png"
+  },
+  "tynamo": {
+    "normal": "res://assets/evolution_supplement/tynamo-normal.png",
+    "shiny": "res://assets/evolution_supplement/tynamo-shiny.png"
+  },
+  "unfezant": {
+    "normal": "res://assets/evolution_supplement/unfezant-normal.png",
+    "shiny": "res://assets/evolution_supplement/unfezant-shiny.png"
+  },
+  "uxie": {
+    "normal": "res://assets/evolution_supplement/uxie-normal.png",
+    "shiny": "res://assets/evolution_supplement/uxie-shiny.png"
+  },
+  "victini": {
+    "normal": "res://assets/evolution_supplement/victini-normal.png",
+    "shiny": "res://assets/evolution_supplement/victini-shiny.png"
+  },
+  "vikavolt": {
+    "normal": "res://assets/evolution_supplement/vikavolt-normal.png",
+    "shiny": "res://assets/evolution_supplement/vikavolt-shiny.png"
+  },
+  "virizion": {
+    "normal": "res://assets/evolution_supplement/virizion-normal.png",
+    "shiny": "res://assets/evolution_supplement/virizion-shiny.png"
+  },
+  "vivillon": {
+    "normal": "res://assets/evolution_supplement/vivillon-normal.png",
+    "shiny": "res://assets/evolution_supplement/vivillon-shiny.png"
+  },
+  "volcanion": {
+    "normal": "res://assets/evolution_supplement/volcanion-normal.png",
+    "shiny": "res://assets/evolution_supplement/volcanion-shiny.png"
+  },
+  "vullaby": {
+    "normal": "res://assets/evolution_supplement/vullaby-normal.png",
+    "shiny": "res://assets/evolution_supplement/vullaby-shiny.png"
+  },
+  "wailmer": {
+    "normal": "res://assets/evolution_supplement/wailmer-normal.png",
+    "shiny": "res://assets/evolution_supplement/wailmer-shiny.png"
+  },
+  "wailord": {
+    "normal": "res://assets/evolution_supplement/wailord-normal.png",
+    "shiny": "res://assets/evolution_supplement/wailord-shiny.png"
+  },
+  "walrein": {
+    "normal": "res://assets/evolution_supplement/walrein-normal.png",
+    "shiny": "res://assets/evolution_supplement/walrein-shiny.png"
+  },
+  "watchog": {
+    "normal": "res://assets/evolution_supplement/watchog-normal.png",
+    "shiny": "res://assets/evolution_supplement/watchog-shiny.png"
+  },
+  "whiscash": {
+    "normal": "res://assets/evolution_supplement/whiscash-normal.png",
+    "shiny": "res://assets/evolution_supplement/whiscash-shiny.png"
+  },
+  "wishiwashi": {
+    "normal": "res://assets/evolution_supplement/wishiwashi-normal.png",
+    "shiny": "res://assets/evolution_supplement/wishiwashi-shiny.png"
+  },
+  "xerneas": {
+    "normal": "res://assets/evolution_supplement/xerneas-normal.png",
+    "shiny": "res://assets/evolution_supplement/xerneas-shiny.png"
+  },
+  "xurkitree": {
+    "normal": "res://assets/evolution_supplement/xurkitree-normal.png",
+    "shiny": "res://assets/evolution_supplement/xurkitree-shiny.png"
+  },
+  "yamper": {
+    "normal": "res://assets/evolution_supplement/yamper-normal.png",
+    "shiny": "res://assets/evolution_supplement/yamper-shiny.png"
+  },
+  "yungoos": {
+    "normal": "res://assets/evolution_supplement/yungoos-normal.png",
+    "shiny": "res://assets/evolution_supplement/yungoos-shiny.png"
+  },
+  "yveltal": {
+    "normal": "res://assets/evolution_supplement/yveltal-normal.png",
+    "shiny": "res://assets/evolution_supplement/yveltal-shiny.png"
+  },
+  "zacian": {
+    "normal": "res://assets/evolution_supplement/zacian-normal.png",
+    "shiny": "res://assets/evolution_supplement/zacian-shiny.png"
+  },
+  "zamazenta": {
+    "normal": "res://assets/evolution_supplement/zamazenta-normal.png",
+    "shiny": "res://assets/evolution_supplement/zamazenta-shiny.png"
+  },
+  "zangoose": {
+    "normal": "res://assets/evolution_supplement/zangoose-normal.png",
+    "shiny": "res://assets/evolution_supplement/zangoose-shiny.png"
+  },
+  "zarude": {
+    "normal": "res://assets/evolution_supplement/zarude-normal.png",
+    "shiny": "res://assets/evolution_supplement/zarude-shiny.png"
+  },
+  "zebstrika": {
+    "normal": "res://assets/evolution_supplement/zebstrika-normal.png",
+    "shiny": "res://assets/evolution_supplement/zebstrika-shiny.png"
+  },
+  "zekrom": {
+    "normal": "res://assets/evolution_supplement/zekrom-normal.png",
+    "shiny": "res://assets/evolution_supplement/zekrom-shiny.png"
+  },
+  "zeraora": {
+    "normal": "res://assets/evolution_supplement/zeraora-normal.png",
+    "shiny": "res://assets/evolution_supplement/zeraora-shiny.png"
+  },
+  "zorua": {
+    "normal": "res://assets/evolution_supplement/zorua-normal.png",
+    "shiny": "res://assets/evolution_supplement/zorua-shiny.png"
+  },
+  "zygarde": {
+    "normal": "res://assets/evolution_supplement/zygarde-normal.png",
+    "shiny": "res://assets/evolution_supplement/zygarde-shiny.png"
+  }
+}

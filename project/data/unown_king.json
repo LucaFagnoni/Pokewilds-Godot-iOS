@@ -1,0 +1,96 @@
+{
+  "unown_king": {
+    "id": "unown_king",
+    "name": "UNOWN KING",
+    "dex": 201,
+    "types": [
+      "PSYCHIC",
+      "DARK"
+    ],
+    "stats": [
+      210,
+      190,
+      100,
+      120,
+      100,
+      30
+    ],
+    "catch_rate": 1,
+    "base_exp": 200,
+    "growth_rate": "GROWTH_SLOW",
+    "special": [],
+    "forced_off": [],
+    "fully_evolved": true,
+    "evolutions": [],
+    "learnset": [
+      {
+        "level": 1,
+        "move": "EARTHQUAKE"
+      },
+      {
+        "level": 1,
+        "move": "SURF"
+      },
+      {
+        "level": 1,
+        "move": "ANCIENTPOWER"
+      },
+      {
+        "level": 1,
+        "move": "DISABLE"
+      }
+    ],
+    "base_forms": [
+      {
+        "species": "unown_king",
+        "weight": 100
+      }
+    ],
+    "spawn_biomes": [
+      "NONE"
+    ],
+    "aggressive_biomes": [],
+    "disguise_tile": "",
+    "habitats": [],
+    "harvest": [],
+    "habitat_tokens": [
+      "TYPE"
+    ],
+    "harvest_tokens": [
+      "TYPE"
+    ],
+    "gender_ratio": "GENDER_UNKNOWN",
+    "egg_groups": [
+      "EGG_NONE",
+      "EGG_NONE"
+    ],
+    "egg_cycles": 10,
+    "egg_moves": [],
+    "tmhm": [
+      "EARTHQUAKE",
+      "SURF",
+      "ANCIENTPOWER",
+      "DISABLE"
+    ],
+    "wild_held_items": [
+      "BERRY"
+    ],
+    "base_happiness": 70,
+    "overworld_behavior": {
+      "swim_only": false,
+      "flee": false,
+      "lunge": false,
+      "aggression": 1,
+      "flip_walk_3": false,
+      "flip_walk_4": false,
+      "stationary": false,
+      "water_offset": 0
+    },
+    "growth_ticks": 12600,
+    "front": "res://assets/unown_king/front.png",
+    "back": "res://assets/unown_king/back.jpg",
+    "overworld": "res://assets/unown_king/overworld.png",
+    "overworld_shiny": "",
+    "cry": "res://assets/source_audio/cries/unown_king.ogg"
+  }
+}

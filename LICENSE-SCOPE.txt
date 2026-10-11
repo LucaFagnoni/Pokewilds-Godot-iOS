@@ -1,0 +1,28 @@
+LICENSE SCOPE
+
+The original code contributions in this port are licensed under GPL-3.0-only;
+the complete license is in LICENSE. The covered source is in project/scripts,
+project/scenes, project/tools and custom Android code. This scope statement does
+not claim ownership of separately sourced material or replace its license.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+Retain existing copyright/license notices. Godot-derived Android template code
+keeps its MIT notice; see LICENSES/Godot-MIT.txt and source headers. Third-party
+code with its own notices retains those notices and must be used compatibly with
+the combined program's GPL obligations. Independently imported mod code still
+requires applicable author permission where none is recorded.
+
+ASSETS ARE NOT LICENSED UNDER GPL BY THIS NOTICE.
+project/assets, project/data, project/credits and converted mod archives contain
+art, music, sounds, fonts, game data and third-party material with separate or
+unresolved terms. See LICENSE-STATUS.txt and the retained per-resource notices.
+No trademark rights or rights in underlying Pokemon content are granted here.
+
+Forking, modifying and distributing covered code is allowed under GPL-3.0.
+When distributing a covered binary, provide its complete corresponding source
+and build material as required by GPL-3.0; sharing only this source snapshot is
+not sufficient if the distributed binary was made from other source/changes.
+The project cannot presently promise fully open licensing for all bundled media.

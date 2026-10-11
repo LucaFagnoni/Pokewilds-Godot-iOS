@@ -1,0 +1,196 @@
+extends RefCounted
+## Host-owned transactional model. No generation or species rules live here.
+var revision := 0
+var records: Dictionary = {}
+var outcomes: Dictionary = {}
+var members: Dictionary = {}
+var authority: Dictionary = {}
+var commit_writer := Callable()
+const Patch = preload("res://scripts/coop_patch.gd")
+const MAX_CHANGES := 4096
+const RECENT_RESULTS := 128
+## Receipts exist so a request retried within seconds is not applied twice.
+## Older ones are kept as small stubs for a while, then dropped; without a
+## limit the world save and its memory grow for as long as the world is played.
+const REMEMBERED_RESULTS := 4096
+var _recent_outcomes:Array=[]
+var _old_outcomes:Array=[]
+## Commits that changed state but were not written to the journal: creature
+## movement, which the next world save captures. `unwritten` counts those since
+## the last journaled commit so a reload can tell a planned gap from a lost
+## line; `loose` counts those since the last world save.
+var unwritten := 0
+var loose := 0
+## Goes up whenever a record appears or disappears, never when one only changes
+## value. Lets callers keep a list of the keys they care about instead of
+## walking every record several times a second.
+var key_epoch := 0
+var _prints := {}
+## Host option: when false nothing is appended to the journal; the world is
+## written only by an explicit save. For telling save cost apart from the rest.
+static var journal_enabled := true
+
+static func fingerprint(value: Variant) -> String:
+    return JSON.stringify(value, "", true, true).sha256_text()
+
+## The fingerprint of a stored record, worked out once per change to it. A
+## player's record is a few hundred kilobytes and is asked about many times.
+func print_of(key: String, missing: Variant = null) -> String:
+    if not records.has(key): return fingerprint(missing)
+    if not _prints.has(key): _prints[key] = fingerprint(records[key])
+    return _prints[key]
+
+func enroll(actor: String, profile: Dictionary) -> bool:
+    if actor.is_empty() or actor.length() > 128: return false
+    # A returning player may have picked a new name, model or colour; the host
+    # must not keep showing the old one (their portrait in a player battle).
+    var area: Variant = members.get(actor, {}).get("area")
+    members[actor] = profile.duplicate(true)
+    if area != null: members[actor]["area"] = area
+    return true
+
+func enter(actor: String, area: String) -> String:
+    if not members.has(actor) or area.is_empty(): return ""
+    if members[actor].get("area", "") == area and authority.has(area):
+        return authority[area]
+    leave(actor)
+    members[actor]["area"] = area
+    if not authority.has(area): authority[area] = actor
+    return authority[area]
+
+func leave(actor: String) -> void:
+    if not members.has(actor): return
+    var area := String(members[actor].get("area", ""))
+    members[actor].erase("area")
+    if authority.get(area, "") != actor: return
+    authority.erase(area)
+    for other in members:
+        if members[other].get("area", "") == area:
+            authority[area] = other
+            break
+
+func transact(actor: String, id: String, changes: Array, command_hash: String = "", durable: bool = true) -> Dictionary:
+    if not members.has(actor) or id.is_empty() or id.length() > 80:
+        return {"ok":false,"reason":"invalid_request"}
+    var request_key := actor + "/" + id
+    var request_hash := fingerprint(changes)
+    if outcomes.has(request_key):
+        if outcomes[request_key].get("request_hash", "") != request_hash:
+            return {"ok":false,"reason":"reused_request_id"}
+        return outcomes[request_key].duplicate(true)
+    if changes.is_empty() or changes.size() > MAX_CHANGES:
+        return {"ok":false,"reason":"invalid_changes"}
+    var unique := {}
+    # Edited records, worked out once here and kept for apply_committed.
+    var staged := {}
+    for change in changes:
+        if not change is Dictionary: return {"ok":false,"reason":"invalid_changes"}
+        var key := String(change.get("key", ""))
+        if key.is_empty() or key.length() > 256 or unique.has(key):
+            return {"ok":false,"reason":"invalid_key"}
+        unique[key] = true
+        if not change.has("before") or not (change.has("after") or change.has("edits")):
+            return {"ok":false,"reason":"missing_value"}
+        # Edits must fit the record before anything is written to the journal.
+        if change.has("edits"):
+            var edited = Patch.apply(records.get(key), change.edits) if Patch.valid(change.edits) else null
+            if edited == null: return {"ok":false,"reason":"invalid_changes"}
+            staged[key] = edited
+        if print_of(key) != String(change.before):
+            return {"ok":false,"reason":"conflict","key":key,
+                "current":records.get(key),"revision":revision}
+    var result := {"ok":true,"revision":revision+1,"actor":actor,"command_hash":command_hash,
+        "id":id,"request_hash":request_hash,"changes":changes.duplicate(true)}
+    # Durable write before acknowledging or changing the visible state.
+    if not durable or not journal_enabled: unwritten += 1; loose += 1
+    elif commit_writer.is_valid():
+        if not commit_writer.call(_journal_form(result), unwritten): return {"ok":false,"reason":"save_failed"}
+        unwritten = 0
+    apply_committed(result, staged)
+    return result.duplicate(true)
+
+## Building, storing or picking something up hands back the player's whole
+## record. Players are still sent it whole; the journal keeps only what changed.
+func _journal_form(commit: Dictionary) -> Dictionary:
+    var slim: Array = []
+    var smaller := false
+    for change in commit.changes:
+        var key := String(change.key)
+        if key.begins_with("player/") and change.get("after") is Dictionary and records.get(key) is Dictionary:
+            var edits := Patch.diff(records[key], change.after)
+            if not edits.is_empty() and Patch.valid(edits):
+                slim.append({"key":key,"before":change.before,"edits":edits})
+                smaller = true
+                continue
+        slim.append(change)
+    if not smaller: return commit
+    var written := commit.duplicate()
+    written["changes"] = slim
+    return written
+
+func apply_committed(commit: Dictionary, staged: Dictionary = {}) -> bool:
+    if int(commit.get("revision", -1)) != revision + 1: return false
+    for change in commit.get("changes", []):
+        _prints.erase(String(change.key))
+        if change.has("edits"):
+            # A record changed in place: only the edits were sent and journaled.
+            var edited = staged[change.key] if staged.has(change.key) else Patch.apply(records.get(String(change.key)), change.edits)
+            if edited == null: return false
+            records[String(change.key)] = edited
+        elif change.after == null:
+            if records.erase(String(change.key)): key_epoch += 1
+        else:
+            if not records.has(String(change.key)): key_epoch += 1
+            records[String(change.key)] = change.after.duplicate(true) if change.after is Dictionary or change.after is Array else change.after
+    revision += 1
+    var request_key:=String(commit.actor)+"/"+String(commit.id)
+    var receipt:Dictionary=commit.duplicate(true)
+    # A player checkpoint is never replayed from its receipt (a retry only asks
+    # whether the id is known), and its changes are a whole player record.
+    if String(commit.id).begins_with("profile/"):receipt.erase("changes")
+    outcomes[request_key] = receipt
+    _recent_outcomes.append(request_key)
+    if _recent_outcomes.size()>RECENT_RESULTS:
+        var older:String=_recent_outcomes.pop_front()
+        if outcomes.has(older):
+            outcomes[older].erase("changes")
+            outcomes[older]["resync"]=true
+            _old_outcomes.append(older)
+    while _old_outcomes.size()>REMEMBERED_RESULTS:
+        outcomes.erase(_old_outcomes.pop_front())
+    return true
+
+func change(key: String, value: Variant) -> Dictionary:
+    return {"key":key,"before":print_of(key),"after":value}
+
+## The same change written as edits to the stored record, when it has one.
+## Returns {} when the record already equals `value`.
+func change_edits(key: String, value: Variant) -> Dictionary:
+    if not records.has(key): return change(key, value)
+    var edits := Patch.diff(records[key], value)
+    if edits.is_empty(): return {}
+    return {"key":key,"before":print_of(key),"edits":edits}
+
+func snapshot() -> Dictionary:
+    return {"revision":revision,"records":records.duplicate(true),
+        "outcomes":outcomes.duplicate(true),"members":members.duplicate(true)}
+
+func restore(data: Dictionary) -> bool:
+    if not data.get("records") is Dictionary or not data.get("outcomes") is Dictionary or not data.get("members") is Dictionary:
+        return false
+    revision = int(data.get("revision", 0))
+    unwritten = 0; loose = 0; key_epoch += 1
+    records = data.records.duplicate(true)
+    _prints.clear()
+    # No request survives a restart of the host, so only receipts that still
+    # carry their changes are worth keeping; stubs from earlier sessions go.
+    outcomes = {}
+    _recent_outcomes.clear();_old_outcomes.clear()
+    for key in data.outcomes:
+        var saved=data.outcomes[key]
+        if saved is Dictionary and saved.has("changes") and _recent_outcomes.size()<RECENT_RESULTS:
+            outcomes[key]=saved.duplicate(true);_recent_outcomes.append(key)
+    members = data.members.duplicate(true)
+    authority.clear()
+    for actor in members: members[actor].erase("area")
+    return true

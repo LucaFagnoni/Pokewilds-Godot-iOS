@@ -1,0 +1,17 @@
+[remap]
+
+importer="font_data_bmfont"
+type="FontFile"
+uid="uid://bdb3013mhr8rm"
+path="res://.godot/imported/source_text_font_gray.fnt-b58fd2f690f1bc90e58c6ee4350fcb27.fontdata"
+
+[deps]
+
+source_file="res://assets/source_text_font_gray.fnt"
+dest_files=["res://.godot/imported/source_text_font_gray.fnt-b58fd2f690f1bc90e58c6ee4350fcb27.fontdata"]
+
+[params]
+
+fallbacks=[]
+compress=true
+scaling_mode=2

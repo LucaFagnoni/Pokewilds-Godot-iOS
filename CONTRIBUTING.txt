@@ -1,0 +1,16 @@
+WORKING ON A FORK
+
+1. Read LICENSE-SCOPE.txt. Preserve code and asset notices.
+2. Import project/project.godot in the matching Godot Standard editor.
+3. Work on a branch with small, focused changes. Do not commit .godot, saves,
+credentials, export credentials, keystores or Android build caches.
+4. Test new and existing saves on copies, controller/touch navigation, LOCAL and
+ONLINE separately, host and guest behavior, and the Android device paths affected.
+5. Explain the change, how it was verified, and known limits in each contribution.
+6. Submit only contributions you have permission to contribute under compatible
+terms. Record the source and exact license of any third-party resource added.
+7. Preserve GPL notices and offer the complete corresponding source for released
+covered binaries as required by GPL-3.0. Rebuilds use your own signing identity.
+
+Do not assume the separately licensed media can be reused under GPL. Consult
+LICENSE-STATUS.txt before publishing bundles containing the existing media.
