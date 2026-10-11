@@ -1,5 +1,5 @@
 # Pokewilds-Godot
-A native port of pokewilds for Android.
+A native port of pokewilds for Android and PC remade in Godot.
 
 ## Source code
 
