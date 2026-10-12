@@ -3318,11 +3318,11 @@ func _set_field_helper(pokemon_data: Dictionary) -> bool:
         texture = FARM_POKEMON_TEXTURES.get(species) as Texture2D
     if texture == null:
         return false
-    if active_field_move in ["CUT", "BUILD", "DIG", "HEADBUTT"]:
+    if active_field_move in ["CUT", "BUILD", "DIG", "HEADBUTT", "SMASH"]:
         var front := _player_cell() + _facing_cell()
         var clear := _is_built_house_floor_cell(front) and not blocked.has(front) and not built_structures.has(front) and not deployed_pokemon.has(front)
         clear = clear or _field_helper_cell_is_clear(front)
-        if not clear or (active_field_move in ["CUT", "HEADBUTT"] and (_is_cuttable_grass_cell(front) or _cut_helper_tree_cell(front))):
+        if not clear or (active_field_move in ["CUT", "HEADBUTT"] and (_is_cuttable_grass_cell(front) or _cut_helper_tree_cell(front))) or (active_field_move == "SMASH" and _smash_helper_rock_cell(front)):
             world_message.emit("Leave one clear tile ahead for your POKEMON.")
             return false
     clear_field_helper()
@@ -3446,7 +3446,7 @@ func _place_field_helper_live() -> void:
         field_helper_sprite.offset = Vector2.ZERO
         return
 
-    if active_field_move in ["CUT", "BUILD", "DIG", "HEADBUTT"]:
+    if active_field_move in ["CUT", "BUILD", "DIG", "HEADBUTT", "SMASH"]:
         _place_controlled_work_pokemon(facing)
         return
 
@@ -3607,7 +3607,12 @@ func _field_helper_target_cell(move: String) -> Vector2i:
         return Vector2i(-2147483648, -2147483648)
     if field_helper_cell.x <= -2147483648:
         return Vector2i(-2147483648, -2147483648)
-    var target := field_helper_cell + _facing_cell() if move in ["CUT", "BUILD", "DIG", "HEADBUTT"] else field_helper_cell
+    # SMASH works on what the Pokemon faces, like the other moves. It used to
+    # work only on the tile the Pokemon stood on, so a GRAVE or STATUE, which
+    # cannot be stood on, could never be smashed.
+    var target := field_helper_cell + _facing_cell() if move in ["CUT", "BUILD", "DIG", "HEADBUTT", "SMASH"] else field_helper_cell
+    if move == "SMASH" and not _field_helper_can_use_work_target(target) and _field_helper_can_use_work_target(field_helper_cell):
+        target = field_helper_cell
     if not _field_helper_can_use_work_target(target):
         return Vector2i(-2147483648, -2147483648)
     return target
@@ -3638,6 +3643,15 @@ func _cut_helper_target_cell() -> Vector2i:
         var contact := Vector2i(floori(point.x / TILE), floori(point.y / TILE))
         if _field_helper_can_use_work_target(contact): return contact
     return Vector2i(-2147483648, -2147483648)
+
+func _smash_helper_rock_cell(cell: Vector2i) -> bool:
+    if String(built_structures.get(cell, {}).get("name", "")) in ["GRAVE", "STATUE"]:
+        return true
+    var exact_anchor := _exact_resource_anchor(cell)
+    if exact_anchor.x > -2147483648 and _exact_resource_kind(exact_anchor) == "rock":
+        return true
+    var anchor := _resource_object_anchor(cell)
+    return anchor.x > -2147483648 and String(resource_objects[anchor].get("type", "")) == "rock"
 
 func _cut_helper_tree_cell(cell: Vector2i) -> bool:
     var exact_anchor := _exact_resource_anchor(cell)
@@ -10876,7 +10890,7 @@ func constrain_player_motion(before: Vector2, after: Vector2) -> Vector2:
         if exact_world != null and active_area_id == "OVERWORLD":
             var dig_tile: SourceTile = exact_world.tile_at(after_cell)
             if dig_tile == null or dig_tile.is_ledge or not dig_tile.has_item.is_empty(): return before
-    if active_field_move in ["CUT", "BUILD", "DIG", "HEADBUTT"] and before_cell != after_cell:
+    if active_field_move in ["CUT", "BUILD", "DIG", "HEADBUTT", "SMASH"] and before_cell != after_cell:
         var structure: Dictionary = built_structures.get(after_cell, {})
         if bool(structure.get("solid", false)) or String(structure.get("name", "")) in ["ROOF", "WALL", "INTERIOR WALL"]:
             return before
@@ -10905,6 +10919,10 @@ func constrain_player_motion(before: Vector2, after: Vector2) -> Vector2:
                 _try_push_fenced_pokemon(after_cell, after_cell - before_cell)
                 return before
         if active_field_move in ["CUT", "HEADBUTT"] and (_is_cuttable_grass_cell(after_cell) or _cut_helper_tree_cell(after_cell)):
+            return before
+        # A SMASH Pokemon stops against a rock, tombstone or statue as a CUT
+        # Pokemon stops against a tree, so that A then smashes what it faces.
+        if active_field_move == "SMASH" and _smash_helper_rock_cell(after_cell):
             return before
         var blocking_wild_id := _wild_id_at_cell(after_cell)
         if blocking_wild_id >= 0:

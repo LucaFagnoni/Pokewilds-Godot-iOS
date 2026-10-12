@@ -88408,8 +88408,8 @@
 },
 {
 "path": "project/scripts/main.gd",
-"bytes": 629343,
-"sha256": "82e9f99971297bd05a3f2f0fc74df361d1920a071ad72026627f315b77c92d5d"
+"bytes": 629359,
+"sha256": "acb5f5a06cd171b50ed0e5d25241bedebc5392f154aaf7ea3a13886690a31b1c"
 },
 {
 "path": "project/scripts/main.gd.uid",
@@ -89178,8 +89178,8 @@
 },
 {
 "path": "project/scripts/world.gd",
-"bytes": 112560,
-"sha256": "813a9fc156c83c4e4a8e16c02ad141f1074cd359682d830be9cb7ce611db0806"
+"bytes": 112569,
+"sha256": "615c180d05d0c0e83ef93c52fc9cc84e4270c5ac267cd281b0994e6242619288"
 },
 {
 "path": "project/scripts/world.gd.uid",
@@ -89188,8 +89188,8 @@
 },
 {
 "path": "project/scripts/world_base_m74_3_9_14.gd",
-"bytes": 567588,
-"sha256": "82146bbae8d60302399de23ab9a25bd479ac7d40d8cccdaafedc6a33cbbe8af9"
+"bytes": 568810,
+"sha256": "fff146d221d4e483678f0540b8d91fbf85afb9036479a6e4af99cf0ad6f907fa"
 },
 {
 "path": "project/scripts/world_base_m74_3_9_14.gd.uid",

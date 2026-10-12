@@ -13149,10 +13149,10 @@ func switch_gen3_overhaul(next: bool) -> bool:
         world.remove_meta("gen3_art_refresh")
         if not field_name.is_empty() and not field_record.is_empty():
             world.player.facing = facing
-            if field_name in ["CUT","BUILD","DIG","HEADBUTT"]: world.player.position=trainer_position
+            if field_name in ["CUT","BUILD","DIG","HEADBUTT","SMASH"]: world.player.position=trainer_position
             if world.set_active_field_move(field_record,field_name):
                 world.player.position=leader_position
-                if field_name in ["CUT","BUILD","DIG","HEADBUTT"]:
+                if field_name in ["CUT","BUILD","DIG","HEADBUTT","SMASH"]:
                     world.work_trail.assign(trail)
                     world.work_trainer_position=trainer_position
                 world._place_field_helper_live()

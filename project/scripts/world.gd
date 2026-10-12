@@ -724,7 +724,7 @@ func _update_fly_shadow() -> void:
 func field_movement_direction(input_direction: Vector2) -> Vector2:
     if active_field_move == "FLY" and m3922_fly_phase in ["TAKEOFF", "LANDING"]:
         return Vector2.ZERO
-    if active_field_move in ["CUT", "BUILD", "DIG", "HEADBUTT"] and input_direction.length_squared() > 0.0001:
+    if active_field_move in ["CUT", "BUILD", "DIG", "HEADBUTT", "SMASH"] and input_direction.length_squared() > 0.0001:
         # Work Pokemon steer on the same cardinal axes as D-pad input.
         # Retain the current axis near a diagonal to prevent stick jitter.
         var horizontal := absf(input_direction.x)
