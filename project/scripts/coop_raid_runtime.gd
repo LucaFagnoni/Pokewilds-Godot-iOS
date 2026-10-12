@@ -67,7 +67,7 @@ func execute(actor:String,id:String,operation:String,args:Dictionary)->Dictionar
             if eligible_players.all(func(player):return player in next.caught):next.phase="done"
             changes.append(game.state.change("raid/"+args.boss,next))
         var result=game.state.transact(actor,prefix+id,changes,game.state.fingerprint([args]))
-        if result.get("ok",false):result["base"]=game.state.fingerprint(profile);result["pending"]=profile.save.get("coop_pending_pokemon",[])
+        if result.get("ok",false):result["base"]=game.state.print_of("player/"+actor,{});result["pending"]=profile.save.get("coop_pending_pokemon",[])
         return result
     return {"ok":false,"reason":"invalid_command"}
 

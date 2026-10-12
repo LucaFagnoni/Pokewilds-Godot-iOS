@@ -40,7 +40,7 @@ func execute(actor:String,id:String,op:String,args:Dictionary)->Dictionary:
     var prior:Dictionary=game.state.outcomes.get(actor+"/"+op+"/"+id,{})
     if not prior.is_empty():
         if prior.get("command_hash")!=game.state.fingerprint(args):return {"ok":false,"reason":"reused_request_id"}
-        return {"ok":true,"base":game.state.fingerprint(game.state.records.get("player/"+actor,{})),"pending":game.state.records.get("player/"+actor,{}).get("save",{}).get("coop_pending_pokemon",[])}
+        return {"ok":true,"base":game.state.print_of("player/"+actor,{}),"pending":game.state.records.get("player/"+actor,{}).get("save",{}).get("coop_pending_pokemon",[])}
     var key:String=args.key
     var claim_key="event_claim/"+key
     var changes:Array=[]
@@ -56,7 +56,7 @@ func execute(actor:String,id:String,op:String,args:Dictionary)->Dictionary:
     else:
         var claim:Dictionary=game.state.records.get(claim_key,{})
         if claim.get("actor")!=actor:return {"ok":false,"reason":"not_fighting"}
-        if args.base!=game.state.fingerprint(game.state.records.get("player/"+actor,{})):return {"ok":false,"reason":"profile_changed"}
+        if args.base!=game.state.print_of("player/"+actor,{}):return {"ok":false,"reason":"profile_changed"}
         changes=game.storage.profile_changes(actor,args.profile)
         changes.append(game.state.change(claim_key,null))
         if args.outcome in ["captured","defeated"]:
@@ -64,7 +64,7 @@ func execute(actor:String,id:String,op:String,args:Dictionary)->Dictionary:
             changes.append(game.state.change("event_result/"+key,{"id":id,"context":claim.context,"outcome":args.outcome,"cleared":clear}))
     var result=game.state.transact(actor,op+"/"+id,changes,game.state.fingerprint(args))
     if result.get("ok",false):
-        result["base"]=game.state.fingerprint(game.state.records.get("player/"+actor,{}))
+        result["base"]=game.state.print_of("player/"+actor,{})
         result["pending"]=game.state.records.get("player/"+actor,{}).get("save",{}).get("coop_pending_pokemon",[])
     return result
 func begin(context:Dictionary)->bool:

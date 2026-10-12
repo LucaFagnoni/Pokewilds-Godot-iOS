@@ -37,8 +37,34 @@ static func fingerprint(value: Variant) -> String:
 ## player's record is a few hundred kilobytes and is asked about many times.
 func print_of(key: String, missing: Variant = null) -> String:
     if not records.has(key): return fingerprint(missing)
-    if not _prints.has(key): _prints[key] = fingerprint(records[key])
+    if not _prints.has(key):
+        # A player's record is a few hundred kilobytes, and hashing it took
+        # about 45 ms on the host every time it changed: on every save of every
+        # player, and several times over for a cut or a build. Nothing needs
+        # to know what is in it, only whether it is still the one a player
+        # last saw, so it gets a fresh ticket each time it changes instead.
+        if key.begins_with("player/"):
+            _ticket += 1
+            _prints[key] = "t%08x-%d" % [_ticket_salt, _ticket]
+        else:
+            _prints[key] = fingerprint(records[key])
     return _prints[key]
+
+var _ticket_salt := randi()
+var _ticket := 0
+
+## The request hash of a set of changes. A whole player record in it is stood
+## in for by its quick built-in hash rather than written out and hashed.
+static func _request_print(changes: Array) -> String:
+    var light: Array = []
+    for change in changes:
+        if change is Dictionary and String(change.get("key", "")).begins_with("player/") and change.get("after") is Dictionary:
+            var stand_in: Dictionary = change.duplicate()
+            stand_in["after"] = (change.after as Dictionary).hash()
+            light.append(stand_in)
+        else:
+            light.append(change)
+    return fingerprint(light)
 
 func enroll(actor: String, profile: Dictionary) -> bool:
     if actor.is_empty() or actor.length() > 128: return false
@@ -73,7 +99,7 @@ func transact(actor: String, id: String, changes: Array, command_hash: String = 
     if not members.has(actor) or id.is_empty() or id.length() > 80:
         return {"ok":false,"reason":"invalid_request"}
     var request_key := actor + "/" + id
-    var request_hash := fingerprint(changes)
+    var request_hash := _request_print(changes)
     if outcomes.has(request_key):
         if outcomes[request_key].get("request_hash", "") != request_hash:
             return {"ok":false,"reason":"reused_request_id"}
@@ -101,27 +127,36 @@ func transact(actor: String, id: String, changes: Array, command_hash: String = 
                 "current":records.get(key),"revision":revision}
     var result := {"ok":true,"revision":revision+1,"actor":actor,"command_hash":command_hash,
         "id":id,"request_hash":request_hash,"changes":changes.duplicate(true)}
+    # What changed in each player's record, worked out once against the record
+    # as it was. The journal keeps this, and the owner is sent it, instead of
+    # the whole record, which runs to hundreds of kilobytes and took seconds
+    # to reach them after every pickup, chest or build.
+    var player_edits := {}
+    for change in changes:
+        var key := String(change.key)
+        if key.begins_with("player/") and change.get("after") is Dictionary and records.get(key) is Dictionary:
+            var edits := Patch.diff(records[key], change.after)
+            if not edits.is_empty() and Patch.valid(edits): player_edits[key] = edits
     # Durable write before acknowledging or changing the visible state.
     if not durable or not journal_enabled: unwritten += 1; loose += 1
     elif commit_writer.is_valid():
-        if not commit_writer.call(_journal_form(result), unwritten): return {"ok":false,"reason":"save_failed"}
+        if not commit_writer.call(_journal_form(result, player_edits), unwritten): return {"ok":false,"reason":"save_failed"}
         unwritten = 0
     apply_committed(result, staged)
+    if not player_edits.is_empty(): result["player_edits"] = player_edits
     return result.duplicate(true)
 
 ## Building, storing or picking something up hands back the player's whole
 ## record. Players are still sent it whole; the journal keeps only what changed.
-func _journal_form(commit: Dictionary) -> Dictionary:
+func _journal_form(commit: Dictionary, player_edits: Dictionary) -> Dictionary:
     var slim: Array = []
     var smaller := false
     for change in commit.changes:
         var key := String(change.key)
-        if key.begins_with("player/") and change.get("after") is Dictionary and records.get(key) is Dictionary:
-            var edits := Patch.diff(records[key], change.after)
-            if not edits.is_empty() and Patch.valid(edits):
-                slim.append({"key":key,"before":change.before,"edits":edits})
-                smaller = true
-                continue
+        if change.has("after") and player_edits.has(key):
+            slim.append({"key":key,"before":change.before,"edits":player_edits[key]})
+            smaller = true
+            continue
         slim.append(change)
     if not smaller: return commit
     var written := commit.duplicate()

@@ -94,3 +94,45 @@ static func _work(job:Dictionary)->Dictionary:
 
 func _exit_tree()->void:
     if _thread!=null:_thread.wait_to_finish();_thread=null
+
+## Every save of an area writes a new file here, named after what is in it, and
+## nothing ever removed the ones it replaced. A world hosted for three days
+## held 281 of them, 1.3 GB, of which one was in use. This removes the files
+## nothing refers to any more. It runs on its own thread when a host loads a
+## world, and leaves alone anything that the world, its journal, its backups
+## or the last quarter of an hour could still need.
+static func clean_up(snapshot_directory:String,world_home:String,in_use:Array)->int:
+    var keep:={}
+    for hash_value in in_use:keep[String(hash_value).to_lower()]=true
+    var sources:Array=[]
+    for file_name in ["world.json","world.json.bak","journal.jsonl","journal.previous.jsonl"]:sources.append(world_home.path_join(file_name))
+    var backups:=DirAccess.open(world_home.path_join("backups"))
+    if backups!=null:
+        for folder in backups.get_directories():
+            for file_name in ["world.json","journal.jsonl"]:sources.append(world_home.path_join("backups").path_join(folder).path_join(file_name))
+    var pattern:=RegEx.new()
+    if pattern.compile("sha256\\\\?\"\\s*:\\s*\\\\?\"([0-9a-fA-F]{64})")!=OK:return 0
+    for source in sources:
+        if not FileAccess.file_exists(source):continue
+        var file:=FileAccess.open(source,FileAccess.READ)
+        # A save that cannot be read might name files this would remove.
+        if file==null:return 0
+        var text:=file.get_as_text();file.close()
+        for found in pattern.search_all(text):keep[found.get_string(1).to_lower()]=true
+    if keep.is_empty():return 0
+    var listing:=DirAccess.open(snapshot_directory)
+    if listing==null:return 0
+    var now:=int(Time.get_unix_time_from_system())
+    var spare:Array=[]
+    for file_name in listing.get_files():
+        if not (file_name.ends_with(".bin") or file_name.ends_with(".bin.pending")):continue
+        if keep.has(file_name.get_slice(".",0).to_lower()):continue
+        var written:=int(FileAccess.get_modified_time(snapshot_directory.path_join(file_name)))
+        if now-written<900:continue
+        spare.append([written,file_name])
+    # The newest few are kept as well, whatever refers to them.
+    spare.sort_custom(func(first,second):return first[0]>second[0])
+    var removed:=0
+    for index in range(5,spare.size()):
+        if listing.remove(String(spare[index][1]))==OK:removed+=1
+    return removed

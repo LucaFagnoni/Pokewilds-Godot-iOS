@@ -14,7 +14,7 @@ func _run(actor:String,id:String,operation:String,args:Array)->Dictionary:
         return previous.duplicate(true)
     _command_hash=hash_value
     match operation:
-        "drop":return _drop(actor,id,args[0],args[1],args[2],args[3],args[4])
+        "drop":return _drop(actor,id,args[0],args[1],args[2],args[3],args[4],args[5])
         "pickup":return _pickup(actor,id,args[0])
         "storage_swap":return _swap(actor,id,args)
         "private_sync":return _private_sync(actor,id,args[0],args[1])
@@ -30,17 +30,29 @@ func _run(actor:String,id:String,operation:String,args:Array)->Dictionary:
 func _commit(actor:String,id:String,changes:Array)->Dictionary:
     return state.transact(actor,id,changes,_command_hash)
 
-func drop(actor:String,request_id:String,item:String,amount:int,area:String,x:int,y:int)->Dictionary:
-    return _run(actor,request_id,"drop",[item,amount,area,x,y])
+func drop(actor:String,request_id:String,item:String,amount:int,area:String,x:int,y:int,thrown:bool=false)->Dictionary:
+    return _run(actor,request_id,"drop",[item,amount,area,x,y,thrown])
 
-func _drop(actor:String,request_id:String,item:String,amount:int,area:String,x:int,y:int)->Dictionary:
+func _drop(actor:String,request_id:String,item:String,amount:int,area:String,x:int,y:int,thrown:bool=false)->Dictionary:
     var profile:Dictionary=state.records.get("player/"+actor,{})
     var inventory:Dictionary=profile.get("inventory",{})
-    if amount<=0 or amount>int(inventory.get(item,0)) or not _near(actor,area,x,y):return {"ok":false,"reason":"invalid_drop"}
+    var near:=_near(actor,area,x,y)
+    if thrown and not near:
+        # A thrown ball lands some way off, and the thrower may walk on meanwhile.
+        var player:Dictionary=presence.get(actor,{})
+        near=player.get("area","?")==area and absi(int(player.get("x",-999999))-x)+absi(int(player.get("y",-999999))-y)<=12
+    if amount<=0 or amount>int(inventory.get(item,0)) or not near:return {"ok":false,"reason":"invalid_drop"}
     for existing_key in state.records:
         if not String(existing_key).begins_with("drop/"):continue
         var existing:Dictionary=state.records[existing_key]
         if existing.get("area")==area and int(existing.x)==x and int(existing.y)==y:
+            if thrown and existing.get("item")==item:
+                # Lands on a pile of the same ball: the pile grows by one.
+                var lighter:=profile.duplicate(true)
+                lighter.inventory[item]=int(inventory[item])-amount
+                var pile:=existing.duplicate(true)
+                pile["amount"]=int(existing.amount)+amount
+                return _commit(actor,"drop/"+request_id,[state.change("player/"+actor,lighter),state.change(existing_key,pile)])
             return {"ok":false,"reason":"occupied"}
     var key:="drop/"+area+"/"+(actor+"/"+request_id).sha256_text()
     if state.records.has(key):return {"ok":false,"reason":"already_dropped"}

@@ -25,9 +25,13 @@ var requested_battler = ""
 var hud: Label
 var hud_box: PanelContainer
 var hud_seconds = 0.0
+var next_icon: TextureRect
+var next_shown = ""
+var next_seconds = 0.0
 var was_enabled = false
 var actor: Sprite2D
 var actor_origin = Vector2.ZERO
+var actor_member = {}
 var hop_origin = Vector2.ZERO
 var hopping = false
 var animation_debt = 0.0
@@ -232,11 +236,62 @@ func show_hud(text: String) -> void:
     hud.text = text
     # Sits under the FPS counter when that is showing in the same corner.
     (hud_box.get_parent() as Control).offset_top = 15 if main.GameOptions.enabled("fps_counter") else 4
+    # Left of the small picture of what the next throw will be.
+    (hud_box.get_parent() as Control).offset_right = -24
     hud_box.show()
     hud_seconds = 2.0
 
+## A small picture in the top right corner of what the throw button will send
+## out next: the ball it will throw, or the party Pokemon it will call. It
+## shows for eleven seconds each time the choice changes and then fades away,
+## so a MASTER BALL is not thrown into the sea by someone who thought a
+## surfing Pokemon was selected.
+func update_next_icon(delta: float) -> void:
+    var wanted = ""
+    var member = {}
+    if Options.enabled("ball_mechanics") and main.started and not main.generating and not main.battle_active and is_instance_valid(world()) and world().generated and not main._field_ui_blocks_gameplay(world().active_field_move=="BUILD"):
+        if state().mode=="PARTY":
+            member = party_member()
+            if not member.is_empty(): wanted = "P|"+str(member.get("party_ecology_id",""))+"|"+str(member.get("species",""))+"|"+str(member.get("form",""))+"|"+str(Data.is_shiny(member))
+        if wanted=="" and state().mode!="PARTY":
+            var ball = str(state().ball)
+            if int(main.inventory.get(ball,0))<=0:
+                var balls = bag_balls()
+                ball = balls[0] if not balls.is_empty() else ""
+            if ball!="": wanted = "B|"+ball
+    if wanted=="":
+        if is_instance_valid(next_icon): next_icon.hide()
+        return
+    if not is_instance_valid(next_icon):
+        next_icon = TextureRect.new()
+        next_icon.name = "BallMechanicsNext"
+        main.get_node("UI").add_child(next_icon)
+        next_icon.anchor_left = 1.0
+        next_icon.anchor_right = 1.0
+        next_icon.offset_left = -21
+        next_icon.offset_right = -5
+        next_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+        next_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+        next_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+        next_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        next_icon.z_index = 240
+        next_shown = ""
+    # Under the FPS counter when that is showing in the same corner.
+    next_icon.offset_top = 14 if Options.enabled("fps_counter") else 3
+    next_icon.offset_bottom = next_icon.offset_top+16
+    if wanted!=next_shown:
+        next_shown = wanted
+        next_seconds = 11.0
+        if wanted.begins_with("B|"): next_icon.texture = ball_texture(wanted.substr(2))
+        else: next_icon.texture = main._field_move_wheel_icon(str(member.get("species","")).to_lower(),Data.is_shiny(member),str(member.get("form","")).to_lower())
+    next_seconds = maxf(0.0,next_seconds-delta/maxf(Engine.time_scale,0.01))
+    # The last second is the fade.
+    next_icon.modulate.a = clampf(next_seconds,0.0,1.0)
+    next_icon.visible = next_seconds>0.0
+
 func _process(delta: float) -> void:
     if not is_instance_valid(main): return
+    update_next_icon(delta)
     if hud_seconds>0:
         hud_seconds -= delta
         if (hud_seconds<=0 or main.battle_active) and is_instance_valid(hud_box): hud_box.hide()
@@ -334,6 +389,13 @@ func launch(ball: String, member: Dictionary) -> void:
     world().add_child(projectile)
     projectile.position = world()._cell_center(origin)
     world().play_source_sound("throw_pokeball1")
+    var online = is_instance_valid(main.coop_game) and main.coop_game.active
+    if online:
+        var cells = []
+        for cell in path:
+            cells.append(cell.x)
+            cells.append(cell.y)
+        main.coop_game.visuals.effect({"fx":"ball","ball":ball,"cells":cells,"frames":Rules.frames_per_tile(ball),"ox":origin.x,"oy":origin.y,"serial":serial})
     if member.is_empty(): show_hud(ball+" x"+str(main.inventory.get(ball,0)))
     var flown = []
     for cell in path:
@@ -342,12 +404,14 @@ func launch(ball: String, member: Dictionary) -> void:
         if not await animate_flight(start,end,Rules.frames_per_tile(ball)/60.0,serial): return
         flown.append(cell)
         if protected_actor_at(cell):
+            if online: main.coop_game.visuals.effect({"fx":"ball_stop","serial":serial,"count":flown.size()})
             if member.is_empty(): await knock_away(ball,cell,direction,serial)
             else: await party_landing(member,cell-direction,cell,-1,serial)
             finish_flight(serial)
             return
         var target = target_at(cell)
         if target>=0:
+            if online: main.coop_game.visuals.effect({"fx":"ball_stop","serial":serial,"count":flown.size()})
             if member.is_empty(): await capture(target,ball,direction,serial)
             else: await party_landing(member,cell,cell,target,serial)
             finish_flight(serial)
@@ -355,7 +419,7 @@ func launch(ball: String, member: Dictionary) -> void:
     if member.is_empty():
         var candidates = flown.duplicate()
         candidates.reverse()
-        if not drop_ball(ball,candidates):
+        if not await drop_ball(ball,candidates):
             main._show_message("The ball sank!" if terrain(path.back(),direction)=="WATER" else "The ball was lost!")
     else:
         await party_landing(member,path.back() if not path.is_empty() else origin,blocked_cell,-1,serial)
@@ -381,15 +445,28 @@ func frames(count: int, serial: int) -> bool:
     return true
 
 func drop_ball(ball: String, candidates: Array) -> bool:
+    var online = is_instance_valid(main.coop_game) and main.coop_game.active
+    if online:
+        # Online the host puts the ball on the ground for everyone, and takes it
+        # out of the bag as it does. Hand back the one the throw already took.
+        main.inventory[ball] = int(main.inventory.get(ball,0))+1
+        var waited = 0
+        while main.coop_game.active and main.coop_game._request_busy and waited<120:
+            await get_tree().process_frame
+            waited += 1
     for cell in candidates:
         var tile = tile_at(cell)
         if tile==null or tile.is_water or tile.is_lava or tile.is_ledge or not tile.name_upper.is_empty(): continue
+        if online:
+            if await main.coop_game.drop_item(ball,1,cell,true): return true
+            continue
         var drops = world().dropped_items()
         var key = drops.key(cell)
         if drops.records.has(key) and drops.records[key].item==ball:
             drops.records[key].amount += 1
             return true
         if drops.drop(ball,1,cell): return true
+    if online: main.inventory[ball] = maxi(0,int(main.inventory.get(ball,0))-1)
     return false
 
 func abandon_flight() -> void:
@@ -498,7 +575,7 @@ func capture(id: int, ball: String, direction: Vector2i, serial: int) -> void:
     if not Rules.eligible(record):
         world().play_source_sound("bump2")
         var side = Vector2i(direction.y,-direction.x)
-        var recovered = drop_ball(ball,[cell+direction,cell+side,cell-side])
+        var recovered = await drop_ball(ball,[cell+direction,cell+side,cell-side])
         main._show_message("It knocked the ball away!"+("" if recovered else " The ball was lost!"))
         return
     var online=is_instance_valid(main.coop_game) and main.coop_game.active
@@ -680,7 +757,13 @@ func party_landing(member: Dictionary, cell: Vector2i, target_cell: Vector2i, wi
     var moves = FieldMoveData.field_moves_for(str(member.get("species","")))
     # AUTO explicitly means the normal follower, even when the throw hits a
     # resource or wild Pokemon. Specific moves retain their action paths.
-    if choice == "AUTO":
+    # A Pokemon that can only swim cannot follow on land. Thrown at water on
+    # AUTO it is surfed on, rather than appearing at the shore and going back.
+    if choice == "AUTO" and "SURF" in moves and bool(Data.info(str(member.get("species",""))).get("overworld_behavior",{}).get("swim_only",false)) and terrain(cell,flight_direction)=="WATER" and world().active_area_id=="OVERWORLD" and world().active_field_move not in ["SURF","RIDE"]:
+        choice = "SURF"
+    # AUTO thrown at a wild Pokemon sends this one out to fight it, as in the
+    # Java game. Thrown anywhere else it comes out to follow.
+    if choice == "AUTO" and wild_id < 0:
         var follow_cell = cell
         if not world()._is_walkable(follow_cell) or protected_actor_at(follow_cell) or world()._wild_id_at_cell(follow_cell) >= 0:
             follow_cell = world()._player_cell()
@@ -700,7 +783,7 @@ func party_landing(member: Dictionary, cell: Vector2i, target_cell: Vector2i, wi
         if not await appear_actor(member,at,serial): return
         wild.erase("ball_reserved")
         party_reserved={}
-        if "CHARM" in moves and choice in ["AUTO","CHARM"] and not world()._wild_chases_when_provoked(wild):
+        if "CHARM" in moves and choice == "CHARM" and not world()._wild_chases_when_provoked(wild):
             wild.charmed = true
             wild.ball_charm_until = world().world_elapsed_seconds+30.0
             world()._show_ecology_emote(wild.get("sprite"),"heart")
@@ -811,7 +894,7 @@ func knock_away(ball: String, cell: Vector2i, direction: Vector2i, serial: int) 
         keeper = world().follower_pokemon.get("sprite") as Sprite2D
     world()._show_ecology_emote(keeper,"heart")
     if landing.x<=-2147483648:
-        if not drop_ball(ball,[cell+direction,cell+side,cell-side]): main._show_message("The ball was lost!")
+        if not await drop_ball(ball,[cell+direction,cell+side,cell-side]): main._show_message("The ball was lost!")
         return
     var start: Vector2 = projectile.position
     var end: Vector2 = world()._cell_center(landing)
@@ -820,13 +903,14 @@ func knock_away(ball: String, cell: Vector2i, direction: Vector2i, serial: int) 
         var ratio = (frame+1)/14.0
         projectile.position = start.lerp(end,ratio)+Vector2(0,-sin(ratio*PI)*9)
         projectile.z_index = world()._depth_z(landing,22)
-    if not drop_ball(ball,[landing,cell+side,cell-side]): main._show_message("The ball was lost!")
+    if not await drop_ball(ball,[landing,cell+side,cell-side]): main._show_message("The ball was lost!")
 
 func protected_actor_at(cell: Vector2i) -> bool:
     return world().deployed_pokemon.has(cell) or world().wild_eggs.has(cell) or (not world().follower_pokemon.is_empty() and world().follower_cell==cell) or (not world().field_helper_pokemon.is_empty() and world().field_helper_cell==cell)
 
 func appear_actor(member: Dictionary, cell: Vector2i, serial: int) -> bool:
     actor = Sprite2D.new()
+    actor_member = member
     actor.texture = Data.record_texture(member,"overworld")
     if actor.texture==null: actor.queue_free(); actor=null; return false
     actor.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -885,6 +969,7 @@ func recall_follower(member: Dictionary) -> void:
     var serial=throw_serial
     active_scope=scope()
     actor=world().follower_sprite.duplicate()
+    actor_member=member
     world().add_child(actor)
     world().clear_follower()
     projectile=Sprite2D.new()

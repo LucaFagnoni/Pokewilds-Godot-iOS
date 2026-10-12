@@ -119,7 +119,9 @@ func execute(actor:String,id:String,args:Dictionary)->Dictionary:
     elif args.get("remove",false) and args.get("decoration",false):
         result=transaction.remove_decoration(actor,id,area,args.patches,String(args.profile_hash))
     elif args.get("remove",false):
-        result=transaction.remove(actor,id,area,Vector2i(int(args.x),int(args.y)),String(args.move),args.patches,String(args.profile_hash))
+        # Only the host may cut the last public box and empty the world's storage.
+        result=transaction.remove(actor,id,area,Vector2i(int(args.x),int(args.y)),String(args.move),args.patches,String(args.profile_hash),
+            args.get("wipe_public",false)==true and actor==game.session.actor)
     else:
         result=transaction.commit(actor,id,String(game.state.authority.get(area,"")),area,
             int(game.service.areas.epochs.get(area,0)),String(args.recipe),Vector2i(int(args.x),int(args.y)),
@@ -395,7 +397,7 @@ func paint(picture:int,cell:Vector2i)->void:
         else:game.end_session("FIELD ACTION COULD NOT BE SAVED. REJOIN THE WORLD.")
     busy=false
 
-func remove(cell:Vector2i,move:String)->void:
+func remove(cell:Vector2i,move:String,wipe_public:bool=false)->void:
     if busy or game._request_busy:return
     var world=game.main.world
     var piece:Dictionary=world.built_structures.get(cell,{})
@@ -414,8 +416,9 @@ func remove(cell:Vector2i,move:String)->void:
         if tile!=null:original_ground=[tile.name,tile.name_upper]
     world._remove_structure(cell,false)
     var patches=Delta.diff(before,Delta.flatten(capture()))
-    var result:Dictionary=await game.command("remove_build",{"area":area,"remove":true,"move":move,
-        "x":cell.x,"y":cell.y,"patches":patches})
+    var request:={"area":area,"remove":true,"move":move,"x":cell.x,"y":cell.y,"patches":patches}
+    if wipe_public:request["wipe_public"]=true
+    var result:Dictionary=await game.command("remove_build",request)
     last_result=result.duplicate(true)
     if result.get("ok",false):
         game.main._on_build_refund_requested(result.get("refund",{}),false)
@@ -425,6 +428,8 @@ func remove(cell:Vector2i,move:String)->void:
             world.world_message.emit("Something rose from the shattered GRAVE!")
             world.encounter_requested.emit(species,22)
     elif game.active:
+        if result.get("reason")=="last_box":
+            game.main._show_message("Sorry, a guest cannot cut the last public box in a world." if not game.hosting else "The last STORAGE BOX in this world cannot be cut this way.")
         if result.has("authoritative"):
             apply_records(area,result.authoritative)
             var terrain_key="source_interior_mutations/"+world._cell_key(cell).uri_encode()

@@ -3339,7 +3339,8 @@ func _field_move_wheel_icon(species: String, shiny: bool = false, form: String =
     if texture == null:
         return POKEMON_TEXTURES.get(species) as Texture2D
     if texture.has_meta("mega_gengar_walk"):
-        return _source_texture_region(texture,Rect2(128,0,32,32))
+        var mega_frame := texture.get_width() / 6.0
+        return _source_texture_region(texture,Rect2(mega_frame * 4.0,0,mega_frame,texture.get_height()))
     if texture.get_width() >= 16 and texture.get_height() >= 16:
         var frame := AtlasTexture.new()
         frame.atlas = texture
@@ -3594,7 +3595,8 @@ func _show_level_up_stats(pokemon: Dictionary) -> void:
     if stats_texture == null:
         stats_texture = PokemonData.record_texture(pokemon, "front")
     progression_sprite_top.texture = _battle_sprite_frame(stats_texture)
-    progression_sprite_top.position = Vector2(14, 20)
+    # Stands on the text box (top edge at 123), as it does during the battle.
+    progression_sprite_top.position = Vector2(14, 29)
     progression_sprite_top.size = Vector2(116, 94)
     progression_sprite_top.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
     progression_sprite_top.visible = progression_sprite_top.texture != null
@@ -6249,6 +6251,12 @@ func _remove_connected_sprite_background(texture: Texture2D) -> Texture2D:
     image.convert(Image.FORMAT_RGBA8)
     var width := image.get_width()
     var height := image.get_height()
+    # A sheet that already has a see-through background has nothing to remove.
+    # White that reaches its edge is part of the Pokemon (Noivern's white ruff
+    # on its back sprite), and erasing it left a hole that showed in dark mode.
+    for corner in [Vector2i.ZERO, Vector2i(width - 1, 0), Vector2i(0, height - 1), Vector2i(width - 1, height - 1)]:
+        if image.get_pixelv(corner).a < 0.01:
+            return texture
     var pending: Array[Vector2i] = []
     for x in range(width):
         pending.append(Vector2i(x, 0))
@@ -8833,7 +8841,10 @@ func _set_double_battle_layout() -> void:
     else:
         # Spread the two sprites into the added 16:9 side space while keeping
         # each sprite's aspect ratio intact.
-        player_battle_sprite.position = Vector2(26.0, 34.0)
+        # The back sprite stands on the text box, whose top edge is at 123.
+        # It used to stop seven pixels short, leaving a strip of background
+        # under every Pokemon drawn to be cut off by the box.
+        player_battle_sprite.position = Vector2(26.0, 41.0)
         player_battle_sprite.size = Vector2(84.0, 82.0)
         enemy_sprite.position = Vector2(210.0, 2.0)
         enemy_sprite.size = Vector2(82.0, 64.0)
@@ -9767,7 +9778,11 @@ func _activate_selected_field_move() -> void:
         return
     var activated := bool(world.set_active_field_move(entry, move))
     if not activated:
-        _show_message("%s cannot follow here." % PokemonData.battle_display_name(species))
+        # Gyarados and other fish follow only while their trainer is in water.
+        if move == "FOLLOW" and bool(PokemonData.info(species).get("overworld_behavior", {}).get("swim_only", false)):
+            _show_message("%s can only follow while swimming." % PokemonData.battle_display_name(species))
+        else:
+            _show_message("%s cannot follow here." % PokemonData.battle_display_name(species))
         return
     if move == "FLY":
         _play_pokemon_cry(entry)
@@ -11058,17 +11073,77 @@ func _on_structure_removal_requested(cell: Vector2i, move: String) -> void:
         else:
             world.remove_house_wall_decoration(cell, true)
         return
-    var box_key := _world_storage_key(world._cell_key(cell),current_world_grid)
+    var online: bool = is_instance_valid(coop_game) and coop_game.active
+    var wipe_public := false
     if world.built_structures.has(cell):
         var build_name := String((world.built_structures[cell] as Dictionary).get("name", ""))
-        if build_name == "STORAGE BOX" and not (pokemon_storage.get(box_key, []) as Array).is_empty():
-            _show_message("The STORAGE BOX cannot be removed while Pokemon are inside.")
-            return
-    if is_instance_valid(coop_game) and coop_game.active:
-        coop_game.building.remove(cell,move)
+        # A STORAGE BOX can be cut with Pokemon in it while another one stands
+        # in this world: its Pokemon stay reachable from the others. The last
+        # one takes every stored Pokemon with it, so only the host may cut it,
+        # and only after saying yes twice to prompts that start on NO.
+        # The box itself, or boxes inside a house that go with the piece of its
+        # outside being cut: the same questions either way.
+        var boxes_going := 1 if build_name == "STORAGE BOX" else 0
+        for inside_cell in world.house_interior_cells_behind(cell):
+            if String(world.built_structures.get(inside_cell, {}).get("name", "")) == "STORAGE BOX":
+                boxes_going += 1
+        if boxes_going > 0 and _public_box_count() - boxes_going < 1:
+            if online and not coop_game.hosting:
+                _show_message("Sorry, a guest cannot cut the last public box in a world.")
+                return
+            if not await _ask_yes_no_starting_on_no("Last STORAGE BOX in this world!\nCut it and lose stored POKEMON?"):
+                return
+            if not await _ask_yes_no_starting_on_no("Are you sure? Stored POKEMON\ncannot be brought back."):
+                return
+            if not world.built_structures.has(cell):
+                return
+            wipe_public = true
+    if online:
+        coop_game.building.remove(cell,move,wipe_public)
         return
+    if wipe_public:
+        # PRIVATE CHEST contents belong to the player, not to this world.
+        var private_keys: Array[String] = []
+        for built_cell in world.built_structures:
+            if String(world.built_structures[built_cell].get("name", "")) == "PRIVATE CHEST":
+                private_keys.append(_world_storage_key(world._cell_key(built_cell),current_world_grid))
+        for key in pokemon_storage.keys():
+            if not String(key) in private_keys: pokemon_storage.erase(key)
     if world.has_method("remove_structure_with_field_move"):
         world.call("remove_structure_with_field_move", cell, move)
+
+## How many public STORAGE BOXES stand in this world.
+func _public_box_count() -> int:
+    # Counted from the boxes that are actually built. Online the host makes
+    # the same count over the whole world and has the last word.
+    var count := 0
+    for cell in world.built_structures:
+        if String(world.built_structures[cell].get("name", "")) == "STORAGE BOX": count += 1
+    # Neighbouring sections belong to a single-player world. Online the host
+    # counts the whole world itself.
+    if is_instance_valid(coop_game) and coop_game.active: return count
+    for grid_key in adjacent_worlds:
+        if grid_key == _world_grid_key(current_world_grid): continue
+        for piece in adjacent_worlds[grid_key].get("state",{}).get("structures",[]):
+            if piece.get("name","") == "STORAGE BOX": count += 1
+    return count
+
+## A yes/no question whose cursor starts on NO, so that pressing A through it
+## answers no.
+func _ask_yes_no_starting_on_no(prompt: String) -> bool:
+    world.set_gameplay_enabled(false)
+    # The question is only sent button presses while this is set; without it
+    # the question appeared and then answered to nothing.
+    var was_active := progression_active
+    progression_active = true
+    _show_progression_yes_no(prompt)
+    progression_choice_index = 1
+    _refresh_progression_yes_no()
+    var result = await progression_choice_made
+    _hide_progression_overlay()
+    progression_active = was_active
+    world.set_gameplay_enabled(not _field_ui_blocks_gameplay(build_menu_open))
+    return int(result) == 1
 
 func _world_storage_key(cell_key: String, grid: Vector2i) -> String:
     var qualified := _world_grid_key(grid) + "|" + cell_key
@@ -12467,7 +12542,8 @@ func _party_overworld_frame(species: String, animation_frame: int = 0, shiny: bo
     if texture == null:
         return _battle_sprite_frame(PokemonData.texture(species, "front", shiny))
     if texture.has_meta("mega_gengar_walk"):
-        return _source_texture_region(texture, Rect2((4 + animation_frame % 2) * 32, 0, 32, 32))
+        var mega_frame := texture.get_width() / 6.0
+        return _source_texture_region(texture, Rect2((4 + animation_frame % 2) * mega_frame, 0, mega_frame, texture.get_height()))
     var front_pair := 4
     if species.to_lower() in ["krabby", "kingler"]:
         front_pair = 0
@@ -13015,15 +13091,17 @@ func _gen3_snapshot() -> Dictionary:
 func switch_gen3_overhaul(next: bool) -> bool:
     if gen3_switch_busy or generating: return false
     var overhaul := load("res://scripts/gen3_overhaul.gd")
-    if overhaul.enabled == next: return true
     if is_instance_valid(coop_game) and coop_game.active:
         # Applying it in place rebuilds the whole world beside the one already
         # loaded. In an online world that took the game to about 6 GB and
         # Android closed it. Keep the choice and apply it on the next load,
         # where the art is swapped before the world is built.
-        if GameOptions.change("gen3_overhaul",next) != OK: return false
-        _show_message("GEN3 OVERHAUL will change the next time this world is loaded.")
-        return true
+        # The choice is compared with what is saved, not with what is showing:
+        # the art has not changed yet, so comparing with that made a second
+        # press do nothing and the option could not be turned back off.
+        if GameOptions.enabled("gen3_overhaul") == next: return true
+        return GameOptions.change("gen3_overhaul",next) == OK
+    if overhaul.enabled == next: return true
     var previous: bool = overhaul.enabled
     if GameOptions.change("gen3_overhaul",next) != OK: return false
     gen3_switch_busy = true

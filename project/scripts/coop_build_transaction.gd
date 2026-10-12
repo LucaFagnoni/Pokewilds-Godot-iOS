@@ -32,7 +32,7 @@ func dig(actor:String,id:String,area:String,patches:Array,rewards:Dictionary,cho
         if info.is_empty():return {"ok":false,"reason":"invalid_soil"}
         cost[String(info.material)]=1
     var profile:Dictionary=state.records.get("player/"+actor,{})
-    if profile.is_empty() or state.fingerprint(profile)!=profile_hash:return {"ok":false,"reason":"profile_changed"}
+    if profile.is_empty() or state.print_of("player/"+actor,{})!=profile_hash:return {"ok":false,"reason":"profile_changed"}
     if not Crafting.can_afford(profile.get("inventory",{}),cost):return {"ok":false,"reason":"not_enough_materials"}
     var prepared=world_delta.prepare_changes(area,patches)
     if not prepared.get("ok",false):return prepared
@@ -65,7 +65,7 @@ func cut(actor:String,id:String,area:String,patches:Array,rewards:Dictionary,pro
         if item not in allowed or typeof(amount) not in [TYPE_INT,TYPE_FLOAT]:return {"ok":false,"reason":"invalid_reward"}
         if not is_finite(float(amount)) or float(amount)!=floor(float(amount)) or amount<1 or amount>64:return {"ok":false,"reason":"invalid_reward"}
     var profile:Dictionary=state.records.get("player/"+actor,{})
-    if profile.is_empty() or state.fingerprint(profile)!=profile_hash:return {"ok":false,"reason":"profile_changed"}
+    if profile.is_empty() or state.print_of("player/"+actor,{})!=profile_hash:return {"ok":false,"reason":"profile_changed"}
     var prepared=world_delta.prepare_changes(area,patches)
     if not prepared.get("ok",false):return prepared
     var changed=false
@@ -91,7 +91,7 @@ func paint(actor:String,id:String,area:String,patches:Array,profile_hash:String)
     var picture=Delta.decode(patch.after)
     if not picture is int or picture<1 or picture>20:return {"ok":false,"reason":"invalid_picture"}
     var profile:Dictionary=state.records.get("player/"+actor,{})
-    if profile.is_empty() or state.fingerprint(profile)!=profile_hash:return {"ok":false,"reason":"profile_changed"}
+    if profile.is_empty() or state.print_of("player/"+actor,{})!=profile_hash:return {"ok":false,"reason":"profile_changed"}
     if int(profile.get("inventory",{}).get("THIN PAPER",0))<1:return {"ok":false,"reason":"not_enough_materials"}
     var prepared=world_delta.prepare_changes(area,patches)
     if not prepared.get("ok",false):return prepared
@@ -120,7 +120,7 @@ func commit(builder:String,id:String,owner:String,area:String,epoch:int,recipe_n
             if Delta.decode(state.records.get("world/"+area+"/"+group+"/"+spot,Delta.encode(null))) is Dictionary:
                 return {"ok":false,"reason":"occupied"}
     var profile:Dictionary=state.records.get("player/"+builder,{})
-    if profile.is_empty() or state.fingerprint(profile)!=profile_hash:return {"ok":false,"reason":"profile_changed"}
+    if profile.is_empty() or state.print_of("player/"+builder,{})!=profile_hash:return {"ok":false,"reason":"profile_changed"}
     if not Crafting.can_afford(profile.get("inventory",{}),recipe.get("cost",{})):
         return {"ok":false,"reason":"not_enough_materials"}
     # A build may update neighboring shell attachments, stair mirrors and house
@@ -190,7 +190,7 @@ func remove_decoration(builder:String,id:String,area:String,patches:Array,profil
     var hung_name=String(hung.get("name",""))
     if hung_name!="CLOCK" and hung_name!="WINDOW" and not hung_name.begins_with("INDOOR WINDOW "):return {"ok":false,"reason":"invalid_removal"}
     var profile:Dictionary=state.records.get("player/"+builder,{})
-    if profile.is_empty() or state.fingerprint(profile)!=profile_hash:return {"ok":false,"reason":"profile_changed"}
+    if profile.is_empty() or state.print_of("player/"+builder,{})!=profile_hash:return {"ok":false,"reason":"profile_changed"}
     var prepared:Dictionary=world_delta.prepare_changes(area,patches)
     if not prepared.get("ok",false):return prepared
     var refund:Dictionary=Crafting.build_recipe(hung_name).get("cost",{})
@@ -203,9 +203,24 @@ func remove_decoration(builder:String,id:String,area:String,patches:Array,profil
     if result.get("ok",false):result["refund"]=refund.duplicate(true)
     return result
 
-func remove(builder:String,id:String,area:String,cell:Vector2i,move:String,patches:Array,profile_hash:String)->Dictionary:
+## Every public STORAGE BOX standing in this world, as "area|x,y". Counted
+## from the boxes that are actually built, in every area. The list of box
+## records is not a safe count: a box that has been cut stays in it, and it
+## let a guest cut the last box standing.
+func _public_boxes()->Array:
+    var result:Array=[]
+    for record_key in state.records:
+        var key:=String(record_key)
+        if not key.begins_with("world/"):continue
+        var parts:=key.split("/")
+        if parts.size()!=4 or parts[2]!="structures":continue
+        var built=Delta.decode(state.records[record_key])
+        if built is Dictionary and built.get("name")=="STORAGE BOX":result.append(parts[1]+"|"+parts[3].uri_decode())
+    return result
+
+func remove(builder:String,id:String,area:String,cell:Vector2i,move:String,patches:Array,profile_hash:String,wipe_public:bool=false)->Dictionary:
     if id.is_empty() or id.length()>48 or move not in ["CUT","SMASH"]:return {"ok":false,"reason":"invalid_request"}
-    var hash_value=state.fingerprint([area,cell,move,patches,profile_hash])
+    var hash_value=state.fingerprint([area,cell,move,patches,profile_hash,wipe_public])
     var previous:Dictionary=state.outcomes.get(builder+"/remove_build/"+id,{})
     if not previous.is_empty():
         if previous.get("command_hash")!=hash_value:return {"ok":false,"reason":"reused_request_id"}
@@ -219,9 +234,16 @@ func remove(builder:String,id:String,area:String,cell:Vector2i,move:String,patch
     var grave_or_statue=raw.get("name") in ["GRAVE","STATUE"]
     if (move=="CUT" and grave_or_statue) or (move=="SMASH" and not grave_or_statue):return {"ok":false,"reason":"wrong_field_move"}
     var removed=false
+    # What stood on the tile of the room behind a piece of a house's outside,
+    # and goes with it: [id of its box, its record].
+    var taken:Array=[]
     for patch in patches:
         if not patch is Dictionary or not patch.get("key") is String or not patch.get("after") is String:return {"ok":false,"reason":"invalid_changes"}
         var group=String(patch.key).get_slice("/",0)
+        if group=="structures" and patch.key!=key and patch.after==Delta.encode(null):
+            var gone=Delta.decode(state.records.get("world/"+area+"/"+String(patch.key),Delta.encode(null)))
+            if gone is Dictionary and not gone.get("generated_stair_pair",false):
+                taken.append([area+"|"+String(patch.key).get_slice("/",1).uri_decode(),gone])
         if group not in ["structures","built_house_decorations","built_house_floor_tiles","built_house_paintings","source_interior_mutations"]:return {"ok":false,"reason":"unrelated_change"}
         if group=="structures" and patch.after!=Delta.encode(null):
             # Removing a piece reshapes the pieces joined to it (a wall or fence
@@ -234,21 +256,46 @@ func remove(builder:String,id:String,area:String,cell:Vector2i,move:String,patch
         if patch.key==key and patch.after==Delta.encode(null):removed=true
     if not removed:return {"ok":false,"reason":"missing_removal"}
     var profile:Dictionary=state.records.get("player/"+builder,{})
-    if profile.is_empty() or state.fingerprint(profile)!=profile_hash:return {"ok":false,"reason":"profile_changed"}
+    if profile.is_empty() or state.print_of("player/"+builder,{})!=profile_hash:return {"ok":false,"reason":"profile_changed"}
     var box=area+"|%d,%d"%[cell.x,cell.y]
-    if raw.get("name")=="STORAGE BOX" and not state.records.get("box/"+box,[]).is_empty():return {"ok":false,"reason":"box_not_empty"}
+    # A public box may be cut with Pokemon in it while another stands in this
+    # world; they stay reachable from the others. The last one goes only when
+    # the host has chosen to empty the world's storage with it.
+    var going:Array=[[box,raw]]
+    going.append_array(taken)
+    var boxes_going:Array=[]
+    for entry in going:
+        if entry[1].get("name")=="STORAGE BOX":boxes_going.append(String(entry[0]))
+    var losing_last:=false
+    # Looked up only when a box is involved; it reads every built piece.
+    if not boxes_going.is_empty():
+        var standing:Array=_public_boxes()
+        var boxes_left:Array=standing.duplicate()
+        for gone in boxes_going:boxes_left.erase(gone)
+        losing_last=not standing.is_empty() and boxes_left.is_empty()
+    if losing_last and not wipe_public:return {"ok":false,"reason":"last_box"}
     var prepared:Dictionary=world_delta.prepare_changes(area,patches)
     if not prepared.get("ok",false):return prepared
-    var refund:Dictionary=Crafting.build_recipe(String(raw.get("recipe_name",raw.get("name","")))).get("cost",{})
+    var refund:Dictionary={}
+    for entry in going:
+        var cost:Dictionary=Crafting.build_recipe(String(entry[1].get("recipe_name",entry[1].get("name","")))).get("cost",{})
+        for item in cost:refund[item]=int(refund.get(item,0))+int(cost[item])
     var changed_profile=profile.duplicate(true)
     for item in refund:Crafting.grant(changed_profile.inventory,String(item),int(refund[item]))
     var changes:Array=prepared.changes
     changes.append(state.change("player/"+builder,changed_profile))
     changes.append(state.change("build_refund/"+builder+"/"+id,refund.duplicate(true)))
-    if state.records.has("chest/"+box):
-        var chest:Dictionary=state.records["chest/"+box].duplicate(true);chest["retired"]=true
-        changes.append(state.change("chest/"+box,chest))
-    if state.records.has("beacon/"+box):changes.append(state.change("beacon/"+box,null))
+    for entry in going:
+        var gone_box:=String(entry[0])
+        if state.records.has("chest/"+gone_box):
+            var chest:Dictionary=state.records["chest/"+gone_box].duplicate(true);chest["retired"]=true
+            changes.append(state.change("chest/"+gone_box,chest))
+        if state.records.has("beacon/"+gone_box):changes.append(state.change("beacon/"+gone_box,null))
+    if losing_last:
+        # The world goes back to having no storage: every public box is emptied.
+        for record_key in state.records.keys():
+            if String(record_key).begins_with("box/") and not (state.records[record_key] as Array).is_empty():
+                changes.append(state.change(String(record_key),[]))
     var result:Dictionary=state.transact(builder,"remove_build/"+id,changes,hash_value)
     if result.get("ok",false):
         # The caller displays the existing GOT popup; inventory was already

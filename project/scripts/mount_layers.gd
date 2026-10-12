@@ -19,6 +19,13 @@ static func apply(world: Node) -> void:
     var in_front := facing == Vector2i.DOWN
     if move == "RIDE" and species in ["rhyhorn", "probopass"]: in_front = false
     if move == "SURF" and species == "ludicolo": in_front = false
+    # The large Mega Gyarados sheet is drawn around its rider. Facing down its
+    # head and horns go in front of the trainer; facing up the trainer is on
+    # its back and goes in front of it. From the side its fins cover the
+    # trainer as any other mount does.
+    if move == "SURF" and mount.texture != null and mount.texture.get_height() / maxi(1, mount.vframes) > 32:
+        in_front = false
+        if facing == Vector2i.UP: mount.z_index = rider_z - 1
     var front := mount.get_node_or_null("RiderHead") as Sprite2D
     if not is_instance_valid(front):
         front = Sprite2D.new();front.name = "RiderHead"

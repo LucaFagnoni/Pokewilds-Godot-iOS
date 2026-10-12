@@ -1515,9 +1515,9 @@ color = Color(0, 0, 0, 0)
 
 [node name="PlayerSprite" type="TextureRect" parent="UI/BattlePanel"]
 offset_left = 26.0
-offset_top = 34.0
+offset_top = 41.0
 offset_right = 110.0
-offset_bottom = 116.0
+offset_bottom = 123.0
 expand_mode = 1
 stretch_mode = 5
 texture_filter = 1

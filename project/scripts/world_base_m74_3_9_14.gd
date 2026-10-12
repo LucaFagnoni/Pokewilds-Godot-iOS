@@ -257,6 +257,11 @@ var built_house_origins: Dictionary = {}
 var built_house_exit_doors: Dictionary = {}
 var built_house_room_size := Vector2i.ZERO
 var built_house_footprint: Dictionary = {}
+## Where each house's room was last drawn from: its place in the interior
+## strip -> [the outside corner the room was measured from, the room's size].
+## Lets a piece of the outside be matched to its tile of the room after the
+## piece has been cut off from the door, or the house has changed shape.
+var built_house_rooms_seen: Dictionary = {}
 var built_house_floor_capacity := 1
 var built_house_floor_tiles: Dictionary = {}
 var built_house_decorations: Dictionary = {}
@@ -599,6 +604,7 @@ func generate_world(
     source_interior_upper_sprites.clear()
     source_interior_mutations.clear()
     source_mine_pokemon.clear()
+    built_house_rooms_seen.clear()
     built_house_interior_cells.clear()
     built_house_paintable_walls.clear()
     built_house_paint_sprites.clear()
@@ -859,6 +865,7 @@ func _generate_exact_live_world(
         exact_world = adapter_job.wait_to_finish()
     else:
         exact_world = adapter_work.call()
+    _repair_orphaned_large_trees()
     exact_world_bounds = exact_world.bounds()
     map_w = exact_world_bounds.size.x
     map_h = exact_world_bounds.size.y
@@ -2280,7 +2287,7 @@ func _add_built_house_floor_cell(
             or local_cell.y >= built_house_room_size.y
         ):
         return false
-    if floor_index > 0 and not built_house_footprint.has(local_cell):
+    if (floor_index > 0 or not built_house_footprint.is_empty()) and not built_house_footprint.has(local_cell):
         return false
     if floor_index > 0 and persist:
         built_house_floor_tiles[_built_house_floor_tile_key(
@@ -2485,7 +2492,8 @@ func _set_active_built_house_floor(floor_index: int) -> void:
 
 func _draw_built_house_interior(
         parent: Node2D, collision_body: StaticBody2D, origin: Vector2i,
-        size: Vector2i, exit_local: Vector2i, exterior_doors: Dictionary = {}
+        size: Vector2i, exit_local: Vector2i, exterior_doors: Dictionary = {},
+        footprint_only: bool = false
     ) -> void:
     if size.x <= 0 or size.y <= 0:
         return
@@ -2496,9 +2504,16 @@ func _draw_built_house_interior(
 
     # Use the source interior floor for the entire connected exterior footprint.
     # The doorway gets the source red entry rug, matching the actual house maps.
+    # As in the Java game, a piece cut out of the outside of the house takes
+    # its tile of the room with it: that tile is black and cannot be walked on.
     for yy in range(size.y):
         for xx in range(size.x):
             var cell := origin + Vector2i(xx, yy)
+            if footprint_only and not built_house_footprint.has(Vector2i(xx, yy)):
+                built_house_void_collisions[cell] = _add_landmark_collision(
+                    collision_body, cell.x, cell.y
+                )
+                continue
             built_house_interior_cells[cell] = true
             _add_source_sprite(parent, _structure_display_texture("FLOOR"), cell, -5)
 
@@ -2617,6 +2632,7 @@ func _prepare_built_house_interior(door_cell: Vector2i, house_state: Dictionary)
     active_built_house_door = _canonical_house_door(door_cell)
     built_house_interior_origin = _house_origin_for(door_cell)
     built_house_room_size = room_size
+    built_house_rooms_seen[built_house_interior_origin.y] = [min_cell, room_size]
     built_house_floor_capacity = maxi(1, int(house_state.get("floor_count", 1)))
     for floor_index in range(built_house_floor_capacity):
         built_house_floor_origins[floor_index] = (
@@ -2641,7 +2657,7 @@ func _prepare_built_house_interior(door_cell: Vector2i, house_state: Dictionary)
     source_area_layers["HOUSE"] = layer
 
     _draw_built_house_interior(
-        layer, collision, built_house_interior_origin, room_size, exit_local, exterior_doors
+        layer, collision, built_house_interior_origin, room_size, exit_local, exterior_doors, true
     )
     for floor_index in range(1, built_house_floor_capacity):
         _draw_built_house_upper_floor(
@@ -2927,9 +2943,9 @@ func try_walk_into_door(position: Vector2, movement: Vector2) -> bool:
     if not generated or not gameplay_enabled or build_mode_active or \
             active_field_move == "FLY" or movement.length_squared() < 0.0001:
         return false
-    var direction := Vector2i(0, signi(roundi(movement.y)))
+    var direction := Vector2i(0, (1 if movement.y > 0.0 else -1 if movement.y < 0.0 else 0))
     if absf(movement.x) > absf(movement.y):
-        direction = Vector2i(signi(roundi(movement.x)), 0)
+        direction = Vector2i((1 if movement.x > 0.0 else -1 if movement.x < 0.0 else 0), 0)
     # Probe just beyond the player's existing 10x10 collision body (offset Y=3).
     # Solid doors stop the body before its centre can reach a step trigger.
     var probe := position + Vector2(0, 3) + Vector2(direction) * 6.0
@@ -3254,7 +3270,9 @@ func set_follower(
             world_message.emit("That Pokemon cannot follow here.")
         return false
     var behavior: Dictionary = PokemonData.info(species).get("overworld_behavior", {})
-    if bool(behavior.get("swim_only", false)) and terrain_kind_at(_player_cell()) != 0:
+    # Mega Gyarados rears up out of the water and follows on land as well;
+    # wild ones still keep to the water.
+    if bool(behavior.get("swim_only", false)) and species != "mega_gyarados" and terrain_kind_at(_player_cell()) != 0:
         if show_message:
             world_message.emit("%s can only follow while swimming." % PokemonData.battle_display_name(species))
         return false
@@ -4306,6 +4324,29 @@ func _exact_tile_is_large_tree(cell: Vector2i) -> bool:
         or "tree_savanna1" in key or "tree4" in key
     )
 
+## A giant tree is one visible tile and three invisible ones that only block.
+## The original generator turns any incomplete giant tree into a bush, and
+## runs that check again after placing the Regi cave. Here the cave (and the
+## mansion) can also be placed by a later fallback with no check after it,
+## which left invisible blocking tiles round the cave showing the sky. This
+## gives those the original's result, a bush, in worlds old and new.
+func _repair_orphaned_large_trees() -> void:
+    if exact_world == null:
+        return
+    for raw_tile in exact_world.tile_list():
+        var tile := raw_tile as SourceTile
+        if tile == null or tile.name != "tree_large1_noSprite":
+            continue
+        var rooted := false
+        for offset in [Vector2i(-16, 0), Vector2i(0, -16), Vector2i(-16, -16)]:
+            var anchor := exact_world.tiles.get(tile.position + offset) as SourceTile
+            if anchor != null and anchor.name == "tree_large1":
+                rooted = true
+                break
+        if not rooted:
+            tile.color = true
+            tile.set_names("bush1", "")
+
 func _exact_large_tree1_anchor(cell: Vector2i) -> Vector2i:
     if not exact_world_mode or exact_world == null:
         return Vector2i(-2147483648, -2147483648)
@@ -4339,6 +4380,57 @@ func _exact_large_tree1_anchor(cell: Vector2i) -> Vector2i:
         if complete:
             return candidate
     return Vector2i(-2147483648, -2147483648)
+
+## The Game Boy CUT effect, as CutTreeAnim.java draws it: the tree is sliced
+## down the middle, the halves sit two pixels apart, then step outward three
+## times with a blink before each step. It is only a picture laid over the
+## cell. The tile itself is cut at once, so nothing waits for it.
+func _show_cut_halves(cell: Vector2i) -> void:
+    var tile := exact_world.tile_at(cell)
+    if tile == null:
+        return
+    var spec: Dictionary = SourceWorldData.render_spec(tile, true)
+    if spec.is_empty() or spec.get("texture") == null:
+        # The giant tree keeps its whole picture on the base of its first part.
+        if "tree_large1" not in tile.name.to_lower():
+            return
+        spec = SourceWorldData.render_spec(tile, false)
+        if spec.is_empty() or spec.get("texture") == null:
+            return
+    var region: Rect2 = spec["region"]
+    var half := floorf(region.size.x / 2.0)
+    var corner: Vector2 = _cell_center(cell) - Vector2(TILE, TILE) / 2.0 + (spec.get("offset", Vector2.ZERO) as Vector2)
+    var holder := Node2D.new()
+    holder.z_index = 2
+    var over := get_node_or_null("DecorLayer")
+    (over if over != null else self).add_child(holder)
+    var halves: Array[Sprite2D] = []
+    for side in range(2):
+        var piece := Sprite2D.new()
+        piece.texture = spec["texture"]
+        piece.centered = false
+        piece.region_enabled = true
+        piece.region_rect = Rect2(region.position.x + half * side, region.position.y,
+            half if side == 0 else region.size.x - half, region.size.y)
+        piece.position = corner + Vector2(half * side + (-2.0 if side == 0 else 2.0), 0)
+        holder.add_child(piece)
+        halves.append(piece)
+    var steps := holder.create_tween()
+    steps.tween_interval(17.0 / 60.0)
+    for step in range(3):
+        steps.tween_callback(func(): holder.visible = false)
+        steps.tween_interval(2.0 / 60.0)
+        steps.tween_callback(func():
+            halves[0].position.x -= 2.0
+            halves[1].position.x += 2.0
+            holder.visible = true)
+        steps.tween_interval(2.0 / 60.0)
+    steps.tween_callback(holder.queue_free)
+    # Online, the other players see the same split. `collecting` is set only
+    # while this player's own cut is being carried out.
+    var coop = get_parent().get("coop_game") if get_parent() != null else null
+    if is_instance_valid(coop) and coop.active and coop.building.collecting:
+        coop.visuals.effect({"fx":"cut", "x":cell.x, "y":cell.y})
 
 func _cut_exact_large_tree1_component(anchor: Vector2i) -> void:
     var part_offsets: Array[Vector2i] = [
@@ -4420,6 +4512,8 @@ func _harvest_exact_resource(cell: Vector2i, move: String) -> void:
             material_collected.emit("MIRACLE SEED", 1)
 
     var giant_anchor := _exact_large_tree1_anchor(cell) if move == "CUT" else Vector2i(-2147483648, -2147483648)
+    if move == "CUT":
+        _show_cut_halves(giant_anchor if giant_anchor.x > -2147483648 else cell)
     if giant_anchor.x > -2147483648:
         _cut_exact_large_tree1_component(giant_anchor)
     else:
@@ -6215,10 +6309,83 @@ func _refresh_bridge_support(cell: Vector2i) -> void:
         deck.add_child(lower)
     if lower != null: lower.visible = visible_support
 
+## The connected pieces of a house reached from `start`, as if the piece at
+## `without` were already gone.
+func _house_pieces_from(start: Vector2i, without: Vector2i) -> Array[Vector2i]:
+    var pieces: Array[Vector2i] = []
+    var seen: Dictionary = {}
+    var queue: Array[Vector2i] = [start]
+    var index := 0
+    while index < queue.size():
+        var current: Vector2i = queue[index]
+        index += 1
+        if seen.has(current) or current == without or not built_structures.has(current):
+            continue
+        if String(built_structures[current].get("name", "")) not in ["WALL", "ROOF", "DOOR", "WINDOW", "CHIMNEY"]:
+            continue
+        seen[current] = true
+        pieces.append(current)
+        for direction in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+            queue.append(current + direction)
+    return pieces
+
+## What is built inside a house on the tile behind one piece of its outside,
+## on every floor. Cutting the piece cuts these with it, and nothing else:
+## whatever stands elsewhere in the house stays, reachable or not, for when
+## the way to it is rebuilt. A door is a piece like any other. Empty for a
+## piece that is not part of a house, and for a house nobody has been inside.
+func house_interior_cells_behind(cell: Vector2i) -> Array[Vector2i]:
+    var result: Array[Vector2i] = []
+    if active_area_id != "OVERWORLD":
+        return result
+    var house: Array[Vector2i] = _house_pieces_from(cell, Vector2i(2147483647, 2147483647))
+    if house.is_empty():
+        return result
+    var origin_y := -1
+    var corner := Vector2i(2147483647, 2147483647)
+    var far_corner := Vector2i(-2147483648, -2147483648)
+    for piece in house:
+        corner.x = mini(corner.x, piece.x)
+        corner.y = mini(corner.y, piece.y)
+        far_corner.x = maxi(far_corner.x, piece.x)
+        far_corner.y = maxi(far_corner.y, piece.y)
+        if origin_y < 0 and String(built_structures[piece].get("name", "")) == "DOOR" and built_house_origins.has(_cell_key(piece)):
+            origin_y = int(built_house_origins[_cell_key(piece)])
+    # The first cut into a house fixes where its room is measured from, so
+    # that cutting away its corner does not move every later tile along by one.
+    if origin_y >= 0 and not built_house_rooms_seen.has(origin_y):
+        built_house_rooms_seen[origin_y] = [corner, far_corner - corner + Vector2i.ONE]
+    # The room as it was last walked into decides which tile is behind the
+    # piece. Joined pieces alone cannot: a piece cut off from the door belongs
+    # to no house by that test, and a house whose corner has been cut away
+    # measures from a different place than its room was drawn from.
+    for seen_origin in built_house_rooms_seen:
+        var seen: Array = built_house_rooms_seen[seen_origin]
+        if Rect2i(seen[0], seen[1]).has_point(cell) and (origin_y < 0 or int(seen_origin) == origin_y):
+            origin_y = int(seen_origin)
+            corner = seen[0]
+            break
+    if origin_y < 0:
+        return result
+    var behind := cell - corner
+    for raw_cell in built_structures:
+        var built_cell := Vector2i(raw_cell)
+        var offset := built_cell - Vector2i(map_w + 9, origin_y)
+        if offset.x < 0 or offset.y != behind.y or offset.x % BUILT_HOUSE_FLOOR_STRIDE != behind.x:
+            continue
+        if not bool(built_structures[built_cell].get("generated_stair_pair", false)):
+            result.append(built_cell)
+    return result
+
 func _remove_structure(cell: Vector2i, refund: bool) -> void:
     map_art_revision += 1
     if not built_structures.has(cell):
         return
+    # As in the Java game, a piece cut out of the outside of a house takes its
+    # tile of the room with it, and whatever was built on that tile.
+    for inside_cell in house_interior_cells_behind(cell):
+        if built_structures.has(inside_cell):
+            _remove_structure(inside_cell, refund)
     if active_area_id == "HOUSE" and String(built_structures[cell].get("name","")) == "INTERIOR WALL":
         var key := _built_house_paint_key(cell)
         var hung := String(built_house_decorations.get(key,{}).get("name",""))
@@ -7534,6 +7701,9 @@ func restore_crafting_save_state(state: Dictionary) -> void:
     if state.has("discovered_cells"):
         discovered_cells.clear()
         var saved_discovery = state.get("discovered_cells", [])
+        # An online player's record keeps this packed into squares.
+        if typeof(saved_discovery) == TYPE_DICTIONARY:
+            saved_discovery = preload("res://scripts/coop_world_snapshot.gd").unpacked_discovery(saved_discovery)
         if typeof(saved_discovery) == TYPE_ARRAY:
             for raw_key in saved_discovery:
                 if Time.get_ticks_usec() >= restore_deadline:
@@ -8926,7 +9096,6 @@ func _enter_source_area_now(area_id: String, return_cell: Vector2i) -> void:
     last_player_cell = entry
     _sync_follower_to_player()
     _configure_camera()
-    world_message.emit("You entered the %s." % area_id.to_lower())
 
 func _leave_source_area() -> void:
     if house_transition_active: return
@@ -9096,7 +9265,6 @@ func _use_interior_interactable(action: String, action_cell: Vector2i = Vector2i
         return
     if action.begins_with("EXIT_AREA:"):
         _leave_source_area()
-        world_message.emit("You returned outside.")
         return
     if action.begins_with("GOTO_SOURCE_LAYER:"):
         var transition_parts := action.split(":")
@@ -9172,7 +9340,6 @@ func _use_interior_interactable(action: String, action_cell: Vector2i = Vector2i
                 var exterior: Vector2i = built_house_exit_doors[action_cell]
                 area_return_cells["HOUSE_RETURN"] = exterior + _house_door_outward(exterior)
             _leave_source_area()
-            world_message.emit("You returned outside.")
         "BED":
             structure_action.emit("BED")
         "TABLE":
@@ -10753,11 +10920,15 @@ func constrain_player_motion(before: Vector2, after: Vector2) -> Vector2:
     if before_cell == after_cell:
         return after
     var movement := after - before
+    # The direction is the sign of the step, however small. Rounding the step
+    # to a whole pixel first turned a short one (a light push on the stick, or
+    # sliding along the edge) into "no direction", and the ledge refused the
+    # jump: sometimes it let the player down and sometimes it did not.
     var direction := Vector2i.ZERO
     if absf(movement.x) > absf(movement.y):
-        direction = Vector2i(signi(roundi(movement.x)), 0)
+        direction = Vector2i((1 if movement.x > 0.0 else -1 if movement.x < 0.0 else 0), 0)
     else:
-        direction = Vector2i(0, signi(roundi(movement.y)))
+        direction = Vector2i(0, (1 if movement.y > 0.0 else -1 if movement.y < 0.0 else 0))
     var from_tile := exact_world.tile_at(before_cell)
     var to_tile := exact_world.tile_at(after_cell)
 

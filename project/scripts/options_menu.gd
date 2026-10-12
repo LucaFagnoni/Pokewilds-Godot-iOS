@@ -146,6 +146,10 @@ func label(parent: Node, text: String, at: Vector2, dimensions: Vector2, font_si
 
 func open() -> void:
     menu_rows=ROWS.duplicate(true)
+    # Online the art changes on the next load, not at once, for host and guests alike.
+    if is_instance_valid(main.coop_game) and main.coop_game.active:
+        for row in menu_rows:
+            if row[0]=="gen3_overhaul":row[2]="To see Gen 3 world, please turn on and then restart game."
     if is_instance_valid(main.coop_game) and main.coop_game.active and main.coop_game.hosting:
         menu_rows.append(["horde_mode","HORDE MODE","Rare cooperative night hordes. Host sets this world option."])
         menu_rows.append(["raids_mode","RAIDS","ALL: each fighter catches. LAST: finishing player catches."])

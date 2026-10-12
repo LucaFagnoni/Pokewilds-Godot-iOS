@@ -29,7 +29,9 @@ func configure(main:Node)->void:
     field_helper_sprite=Sprite2D.new();add_child(field_helper_sprite)
     follower_sprite=Sprite2D.new();add_child(follower_sprite)
     var rest_sprite=Sprite2D.new();add_child(rest_sprite)
-    _parts={"player":player.sprite,"helper":field_helper_sprite,"follower":follower_sprite,"rest":rest_sprite}
+    # The Pokemon this player has just thrown out of its ball.
+    var thrown_sprite=Sprite2D.new();add_child(thrown_sprite)
+    _parts={"player":player.sprite,"helper":field_helper_sprite,"follower":follower_sprite,"rest":rest_sprite,"thrown":thrown_sprite}
     for sprite in _parts.values():
         sprite.texture_filter=CanvasItem.TEXTURE_FILTER_NEAREST
         sprite.z_as_relative=false
@@ -114,12 +116,21 @@ func render_at(time_ms:int)->void:
         sprite.flip_h=bool(part.get("flip_h",false))
         sprite.centered=bool(part.get("centered",true))
         sprite.offset=Vector2(float(part.get("ox",0)),float(part.get("oy",0)))
+        if key=="thrown":sprite.scale=Vector2.ONE*clampf(float(part.get("s",1.0)),0.0,2.0)
         var destination=Vector2(float(part.get("x",0)),float(part.get("y",0)))
         var previous:Dictionary=first.data.parts.get(key,part)
         var origin=Vector2(float(previous.get("x",destination.x)),float(previous.get("y",destination.y)))
         # Area jumps/teleports snap instead of flying across the screen.
         sprite.global_position=(origin.lerp(destination,weight) if origin.distance_to(destination)<128 else destination).round()
         sprite.z_index=clampi(int(part.get("z",0)),-4096,4094)
+        # Two trainers on the ground: the one standing lower on the screen is
+        # nearer the camera and is drawn in front, on both players' screens.
+        # Each game used its own fixed layer, so one of the two always showed
+        # the far trainer's feet on top of the near trainer's head.
+        if key=="player":
+            var mine=_main.world.player
+            if sprite.z_index<1000 and mine.z_index<1000:
+                sprite.z_index=mine.z_index+(1 if sprite.global_position.y>mine.sprite.global_position.y else -1)
     player.z_index=player.sprite.z_index
     var head=field_helper_sprite.get_node_or_null("RiderHead")
     if head!=null:head.hide()
@@ -174,6 +185,14 @@ static func capture(main:Node)->Dictionary:
             result["pose"]="bed" if world.bed_rest_active else "sleep"
             result["running"]=false
         else:sprites["rest"]=world.sleeping_bag_sprite
+    # A Pokemon thrown out of its ball stands on the ground for a moment before
+    # its trainer hops on. Without it the others saw a leap onto nothing.
+    var balls=main.get("ball_mechanics")
+    if is_instance_valid(balls) and is_instance_valid(balls.actor) and balls.actor.visible and not balls.actor_member.is_empty():
+        sprites["thrown"]=balls.actor
+        result["thrown_species"]=String(balls.actor_member.get("species",""))
+        result["thrown_shiny"]=Pokemon.is_shiny(balls.actor_member)
+        result["thrown_form"]=String(balls.actor_member.get("form",""))
     for key in sprites:
         var sprite=sprites[key]
         if not is_instance_valid(sprite) or not sprite.visible:continue
@@ -181,6 +200,7 @@ static func capture(main:Node)->Dictionary:
             "frame":sprite.frame,"hframes":sprite.hframes,"vframes":sprite.vframes,"flip_h":sprite.flip_h,
             "ox":sprite.offset.x,"oy":sprite.offset.y,"centered":sprite.centered}
         if sprite==world.player.sprite:result.parts[key].z=world.player.z_index
+        if key=="thrown":result.parts[key]["s"]=sprite.scale.x
     if is_instance_valid(world.fly_shadow) and world.fly_shadow.visible:
         result.shadow={"x":world.fly_shadow.global_position.x,"y":world.fly_shadow.global_position.y,"z":world.fly_shadow.z_index}
     result["night"]=preload("res://scripts/coop_night_visuals.gd").capture(world)

@@ -16,8 +16,10 @@ func request(actor: String, other: String, kind: String) -> Dictionary:
     if first.get("battle",false) or second.get("battle",false):return {"ok":false,"reason":"in_battle"}
     if first.get("area","")!=second.get("area",""):return {"ok":false,"reason":"different_area"}
     var delta:=Vector2i(int(second.x)-int(first.x),int(second.y)-int(first.y))
-    if absi(delta.x)+absi(delta.y)!=1:return {"ok":false,"reason":"not_adjacent"}
-    if delta!=Vector2i(int(first.get("fx",0)),int(first.get("fy",0))):return {"ok":false,"reason":"not_facing"}
+    if absi(delta.x)>1 or absi(delta.y)>1:return {"ok":false,"reason":"not_adjacent"}
+    # Standing shoulder to shoulder the two may be counted in one tile, or in
+    # tiles that touch at a corner. The other must only not be behind.
+    if delta.x*int(first.get("fx",0))+delta.y*int(first.get("fy",0))<0:return {"ok":false,"reason":"not_facing"}
     var id:="interaction-"+preload("res://scripts/coop_random.gd").hex(16)
     sessions[id]={"id":id,"kind":kind,"a":actor,"b":other,"accepted":false,
         "offers":{},"confirmed":{},"created":Time.get_ticks_msec()}

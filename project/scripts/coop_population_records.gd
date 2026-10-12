@@ -107,7 +107,7 @@ func place(actor:String,id:String,area:String,slot:int,record:Dictionary,base:St
     var previous=_prior(actor,"deploy/"+id,args)
     if not previous.is_empty():return previous
     var profile:Dictionary=state.records.get("player/"+actor,{}).duplicate(true)
-    if state.fingerprint(profile)!=base:return {"ok":false,"reason":"profile_changed"}
+    if state.print_of("player/"+actor,{})!=base:return {"ok":false,"reason":"profile_changed"}
     if slot<0 or slot>=profile.get("party",[]).size():return {"ok":false,"reason":"missing_pokemon"}
     if not record.get("x") is int or not record.get("y") is int:return {"ok":false,"reason":"invalid_cell"}
     var cell=Vector2i(record.x,record.y)

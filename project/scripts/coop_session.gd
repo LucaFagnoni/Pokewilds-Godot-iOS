@@ -7,7 +7,7 @@ signal message(peer: int, actor: String, payload: Dictionary)
 signal rejected(reason: String)
 signal connection_lost
 const Transport = preload("res://scripts/coop_transport.gd")
-const PROTOCOL := "pokewilds-godot-coop-2"
+const PROTOCOL := "pokewilds-godot-coop-5"
 var transport: Node
 var hosting := false
 var world_id := ""
@@ -180,6 +180,7 @@ func _send_reliable(peer:int,payload:Dictionary)->Error:
     # profile and world remain available when it rejoins.
     if error!=OK:transport._drop(peer,"message_send_"+error_string(error))
     return error
+
 
 func _disconnected(peer: int) -> void:
     messages.drop(peer)

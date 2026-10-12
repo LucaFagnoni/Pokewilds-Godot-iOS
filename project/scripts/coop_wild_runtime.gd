@@ -169,7 +169,7 @@ func resolve(actor:String,id:String,args:Dictionary)->Dictionary:
     if not previous.is_empty():
         if previous.get("command_hash")!=expected:return {"ok":false,"reason":"reused_request_id"}
         var current:Dictionary=game.state.records.get("player/"+actor,{})
-        return {"ok":true,"base":game.state.fingerprint(current),"pending":current.get("save",{}).get("coop_pending_pokemon",[])}
+        return {"ok":true,"base":game.state.print_of("player/"+actor,{}),"pending":current.get("save",{}).get("coop_pending_pokemon",[])}
     if args.base!=game.state.print_of("player/"+actor,{}):return {"ok":false,"reason":"profile_changed"}
     var profile:Dictionary=args.profile.duplicate(true)
     var changes:Array=game.storage.profile_changes(actor,profile)
@@ -199,7 +199,7 @@ func resolve(actor:String,id:String,args:Dictionary)->Dictionary:
             if horde.get("id")!=horde_id or horde.get("phase") not in ["waiting","active"]:restored=null
     var result:Dictionary=model().complete(actor,id,args.area,int(args.wild_id),changes,restored,[args])
     if result.get("ok",false):
-        result["base"]=game.state.fingerprint(profile)
+        result["base"]=game.state.print_of("player/"+actor,{})
         result["pending"]=profile.save.get("coop_pending_pokemon",[])
     return result
 

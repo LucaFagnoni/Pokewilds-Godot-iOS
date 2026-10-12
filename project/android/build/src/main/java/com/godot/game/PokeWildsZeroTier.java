@@ -202,9 +202,12 @@ public final class PokeWildsZeroTier {
     /** "state\taddress\tmessage"; state is stopped, starting, joining, ready or error. */
     public static String status() {
         String note = message;
-        // Asked live each time: ZeroTier does not reliably send a "back online"
-        // event, so a remembered "offline" note could otherwise stay forever.
-        if (ready && note.isEmpty() && ZeroTierNative.zts_node_is_online() != 1) note = "Reconnecting...";
+        // Asked live each time, and asked of the game's own network. The node
+        // reports itself "offline" about thirty seconds after starting, which
+        // only means it no longer hears ZeroTier's central servers; players
+        // stay linked to each other and the game carries on. Showing that as
+        // "Reconnecting..." was a false alarm that never went away.
+        if (ready && note.isEmpty() && ZeroTierNative.zts_net_transport_is_ready(networkId) != 1) note = "Reconnecting...";
         return state + "\t" + address + "\t" + note;
     }
 

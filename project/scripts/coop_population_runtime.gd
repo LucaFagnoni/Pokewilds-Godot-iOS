@@ -71,6 +71,21 @@ const TIMERS=["move_timer","lay_egg_seconds","friend_seconds","harvest_progress"
 const TIMER_SEND_MS:=30000
 var _timers_sent:Dictionary={}
 var _scopes:Dictionary={}
+const EGGS_PER_BEAT:=12
+var _egg_cursor:=0
+var _bare:Dictionary={}
+
+## A stored record with its timers taken out, worked out once per record.
+func _without_timers(key:String,held:String)->String:
+    var known:Array=_bare.get(key,[])
+    if known.is_empty() or known[0]!=held:
+        if _bare.size()>2048:_bare.clear()
+        var old=Delta.decode(held)
+        if old is Dictionary:
+            for field in TIMERS:old.erase(field)
+        known=[held,Delta.encode(old)]
+        _bare[key]=known
+    return known[1]
 
 static func _timers_only(before:String,after:String)->bool:
     var old=Delta.decode(before);var next=Delta.decode(after)
@@ -85,11 +100,27 @@ func publish_motion()->void:
     if _timers_sent.size()>512:_timers_sent.clear()
     if _scopes.size()>2048:_scopes.clear()
     var nothing:String=Delta.encode(null)
+    # Eggs do not move; only their timers run. Checking every egg on every
+    # beat was most of a 28 ms stall three times every two seconds on the
+    # host. A dozen take their turn each beat, so each egg is looked at every
+    # few seconds; habitat Pokemon, which walk about, are still checked on
+    # every beat. An egg that is gone here but still recorded is always
+    # included, so a hatched or collected egg is cleared on the next beat.
+    var egg_keys:Dictionary={};var egg_turn:Dictionary={}
+    var egg_cells:Array=game.main.world.wild_eggs.keys()
+    for cell in egg_cells:egg_keys["wild_eggs/"+("%d,%d"%[cell.x,cell.y]).uri_encode()]=true
+    for _turn in range(mini(EGGS_PER_BEAT,egg_cells.size())):
+        _egg_cursor=(_egg_cursor+1)%egg_cells.size()
+        var turn_cell:Vector2i=egg_cells[_egg_cursor]
+        egg_turn["wild_eggs/"+("%d,%d"%[turn_cell.x,turn_cell.y]).uri_encode()]=true
     for group in GROUPS:
         for key in game.record_keys(prefix+group+"/"):
             var held=records.get(key)
             # A tile a Pokemon has left keeps an empty record; most are these.
             if held==null or held==nothing:continue
+            if group=="wild_eggs":
+                var egg_key:=String(key).trim_prefix(prefix)
+                if egg_keys.has(egg_key) and not egg_turn.has(egg_key):continue
             # Decoding every stored record on every beat was a regular small
             # stall; a record's scope only changes when the record does.
             var known:Array=_scopes.get(key,[])
@@ -112,10 +143,17 @@ func publish_motion()->void:
             var data:Dictionary=game.main.world.get(group)[cell]
             if not authority(Records.record_scope(data)):continue
             var key:String=group+"/"+("%d,%d"%[cell.x,cell.y]).uri_encode()
-            var next:String=Delta.encode(game.main.world._serializable_ecology_record(data,cell))
+            if group=="wild_eggs" and not egg_turn.has(key):continue
+            var serial:Dictionary=game.main.world._serializable_ecology_record(data,cell)
+            var next:String=Delta.encode(serial)
             # A Pokemon standing still only has its timers running. Those are
             # sent now and then, not on every beat.
-            if before.has(key) and next!=before[key] and now-int(_timers_sent.get(key,0))<TIMER_SEND_MS and _timers_only(before[key],next):next=before[key]
+            var quiet:=false
+            if before.has(key) and next!=before[key] and now-int(_timers_sent.get(key,0))<TIMER_SEND_MS:
+                var bare:Dictionary=serial.duplicate()
+                for field in TIMERS:bare.erase(field)
+                quiet=Delta.encode(bare)==_without_timers(key,before[key])
+            if quiet:next=before[key]
             elif not before.has(key) or next!=before[key]:_timers_sent[key]=now
             after[key]=next
     var patches=Delta.diff(before,after)

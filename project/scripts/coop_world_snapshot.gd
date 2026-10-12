@@ -6,6 +6,59 @@ const PERSONAL_KEYS=["follower_pokemon","active_field_move","active_field_pokemo
     "source_return_x","source_return_y","active_built_house_door_x","active_built_house_door_y",
     "active_built_house_floor","camera_zoom_level","respawn_house","respawn_x","respawn_y"]
 
+## The part of the map a player has uncovered, in a small form: the map cut
+## into squares of 32x32 cells, each square one short string with a bit for
+## every cell seen. It was a list naming every cell, over a hundred thousand
+## strings and more than a megabyte in a well explored world, and it sits in
+## the player's record. Every save, cut, pickup and build copied and compared
+## that whole list several times over, which stalled the host for a moment
+## each time. A square that has not changed costs nothing to copy or compare.
+const DISCOVERY_SQUARE:=32
+static var _squares:Dictionary={}
+static var _square_text:Dictionary={}
+static var _packed_cells:=0
+static var _packed_last:=""
+static var _packed_world:=0
+
+static func packed_discovery(world:Node)->Dictionary:
+    var cells:Dictionary=world.discovered_cells
+    var keys:Array=cells.keys()
+    var world_id:=world.get_instance_id()
+    # Cells are only ever added, at the end. Anything else means a different
+    # map is loaded, and the squares are worked out again from the start.
+    if world_id!=_packed_world or keys.size()<_packed_cells or (_packed_cells>0 and String(keys[_packed_cells-1])!=_packed_last):
+        _squares={};_square_text={};_packed_cells=0;_packed_world=world_id
+    if keys.size()>_packed_cells:
+        var changed:={}
+        for index in range(_packed_cells,keys.size()):
+            var parts:=String(keys[index]).split(",")
+            if parts.size()!=2:continue
+            var x:=int(parts[0]);var y:=int(parts[1])
+            var square_x:=floori(float(x)/DISCOVERY_SQUARE);var square_y:=floori(float(y)/DISCOVERY_SQUARE)
+            var square:="%d,%d"%[square_x,square_y]
+            var bits:PackedByteArray=_squares.get(square,PackedByteArray())
+            if bits.is_empty():bits.resize(DISCOVERY_SQUARE*DISCOVERY_SQUARE/8)
+            var bit:=(y-square_y*DISCOVERY_SQUARE)*DISCOVERY_SQUARE+(x-square_x*DISCOVERY_SQUARE)
+            bits[bit>>3]=bits[bit>>3]|(1<<(bit&7))
+            _squares[square]=bits
+            changed[square]=true
+        for square in changed:_square_text[square]=Marshalls.raw_to_base64(_squares[square])
+        _packed_cells=keys.size()
+        _packed_last=String(keys[keys.size()-1])
+    return _square_text.duplicate()
+
+## The cells named by a packed discovery, as "x,y" keys.
+static func unpacked_discovery(packed:Dictionary)->Array:
+    var result:Array=[]
+    for square in packed:
+        var parts:=String(square).split(",")
+        if parts.size()!=2 or not packed[square] is String:continue
+        var origin:=Vector2i(int(parts[0]),int(parts[1]))*DISCOVERY_SQUARE
+        var bits:PackedByteArray=Marshalls.base64_to_raw(String(packed[square]))
+        for bit in range(mini(DISCOVERY_SQUARE*DISCOVERY_SQUARE,bits.size()*8)):
+            if bits[bit>>3]&(1<<(bit&7)):result.append("%d,%d"%[origin.x+bit%DISCOVERY_SQUARE,origin.y+bit/DISCOVERY_SQUARE])
+    return result
+
 static func capture_personal(world:Node)->Dictionary:
     # Frequent player checkpoints must not serialize every tree, wild Pokemon,
     # furniture item and area mutation just to extract the personal fields.
@@ -13,7 +66,7 @@ static func capture_personal(world:Node)->Dictionary:
     var return_cell:Vector2i=world.area_return_cells.get("%s_RETURN"%world.active_area_id,world.spawn_cell)
     return {"follower_pokemon":follower,"active_field_move":world.active_field_move,
         "active_field_pokemon":world.active_field_pokemon.duplicate(true),"build_selection_index":world.build_selection_index,
-        "discovered_cells":world.discovered_cells.keys(),"repel_until_elapsed":world.repel_until_elapsed,
+        "discovered_cells":packed_discovery(world),"repel_until_elapsed":world.repel_until_elapsed,
         "active_area_id":world.active_area_id,"source_return_x":return_cell.x,"source_return_y":return_cell.y,
         "active_built_house_door_x":world.active_built_house_door.x if world.active_area_id=="HOUSE" else -2147483648,
         "active_built_house_door_y":world.active_built_house_door.y if world.active_area_id=="HOUSE" else -2147483648,

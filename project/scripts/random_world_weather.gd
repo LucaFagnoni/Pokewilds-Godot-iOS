@@ -233,7 +233,11 @@ func _draw() -> void:
         for seed in seeds:
             var point := _wrapped(seed, Vector2(-age*(22+seed.z*18)+sin(age*1.5+seed.z*TAU)*5,age*(18+seed.z*10)))
             if not allows(_tile(point),"snow"): continue
-            draw_circle(point,0.5+seed.z*0.5,Color(0.94,0.97,1.0,fade*(0.45+seed.z*0.4)))
+            # A flake is one or two pixels across. Drawn as a square of that
+            # size: at this scale it looks the same as a circle, and 240
+            # circles a frame took a device from 60 fps to the 20s.
+            var flake := 1.0 + seed.z
+            draw_rect(Rect2(point - Vector2(flake, flake) * 0.5, Vector2(flake, flake)), Color(0.94,0.97,1.0,fade*(0.45+seed.z*0.4)))
     if state.kind == "fire":
         for record in state.fires:
             var cell := Vector2i(int(record[0]),int(record[1]))

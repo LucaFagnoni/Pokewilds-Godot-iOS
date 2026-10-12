@@ -172,9 +172,16 @@ func _apply_pixel_render_lock() -> void:
             global_position + travel_offset
         ).round() - global_position
         return
-    # Locked to drawn frames the camera follows the player exactly, as the
-    # original's does; snapping both to whole pixels made the scroll uneven.
-    var pixel_offset := Vector2.ZERO if frame_locked else global_position.round() - global_position
+    # The camera follows the player to the nearest pixel of the screen, not of
+    # the game world. Whole world pixels made the scroll uneven; no rounding
+    # at all let the edges of the map's drawing blocks fall halfway between
+    # two screen pixels, where two blocks can round apart and show a one
+    # pixel line of sky down or across the whole screen. On whole screen
+    # pixels every block edge lands exactly on a pixel boundary.
+    var pixel_offset := global_position.round() - global_position
+    if frame_locked:
+        var per_pixel := camera.zoom.x * get_viewport().get_stretch_transform().get_scale().x
+        pixel_offset = Vector2.ZERO if per_pixel <= 0.0 else (global_position * per_pixel).round() / per_pixel - global_position
     sprite.position = pixel_offset + field_visual_offset
     camera.position = pixel_offset
 

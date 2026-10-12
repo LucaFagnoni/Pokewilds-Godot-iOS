@@ -33,7 +33,12 @@ func bind(connection, model) -> void:
 func _message(peer:int,actor:String,payload:Dictionary)->void:
     if not session.hosting or payload.get("kind","")!="command":return
     var result=execute(actor,payload)
-    var packet={"kind":"command_result","id":payload.get("id",""),"result":visible_result(result,actor)}
+    # The answer says whether it worked. What changed reaches every player,
+    # this one included, in the shared commit; sending it here as well put the
+    # player's whole record on the wire twice.
+    var answer:Dictionary=visible_result(result,actor)
+    answer.erase("changes");answer.erase("player_edits")
+    var packet={"kind":"command_result","id":payload.get("id",""),"result":answer}
     if session.send_to(peer,packet)==ERR_BUSY and _pending.size()<MAX_PENDING:
         _pending.append({"peer":peer,"packet":packet})
 
@@ -154,7 +159,7 @@ func execute(actor:String,payload:Dictionary)->Dictionary:
                 result=build_action.call(actor,id,args)
         "drop":
             if _strings(args,["item","area"]) and _integers(args,["amount","x","y"]):
-                result=items.drop(actor,id,args.item,int(args.amount),args.area,int(args.x),int(args.y))
+                result=items.drop(actor,id,args.item,int(args.amount),args.area,int(args.x),int(args.y),args.get("thrown",false)==true)
         "pickup":
             if _strings(args,["key"]):result=items.pickup(actor,id,args.key)
         "deposit":

@@ -538,8 +538,8 @@
 },
 {
 "path": "project/android/build/src/main/java/com/godot/game/PokeWildsZeroTier.java",
-"bytes": 25663,
-"sha256": "1e81bf7f1819c976a0f36b97da2e30016672ea35a8854243114462fcb7a62587"
+"bytes": 25902,
+"sha256": "f8aa18c708e79c086a375d0afa997069b9369daecd7ba668c2e21dc08c43996d"
 },
 {
 "path": "project/android/build/src/main/res/values/pokewilds_files.xml",
@@ -17900,6 +17900,26 @@
 "path": "project/assets/divinakra_megas/mega_gengar-overworld.png.import",
 "bytes": 989,
 "sha256": "159e91bf4f2196551a0e47ac86790d0b081d40dec021bf2cd510aa25eb682e2b"
+},
+{
+"path": "project/assets/divinakra_megas/mega_gyarados-menu.png",
+"sha256": "4c583827ee3cb802d7b2cc57db542490ff49c8ed35d8b8827405ff2ba953ed6f",
+"bytes": 1545
+},
+{
+"path": "project/assets/divinakra_megas/mega_gyarados-menu.png.import",
+"sha256": "94f2c891b55a1830fae4aa5da4012ad4561e99337db8b14d8d26c9de0e30e4ab",
+"bytes": 981
+},
+{
+"path": "project/assets/divinakra_megas/mega_gyarados-overworld.png",
+"sha256": "01ad2010aa4071dc6bbd048f29009c3b2ef63c699c1d06d51eb2e6a4b643cd0c",
+"bytes": 9955
+},
+{
+"path": "project/assets/divinakra_megas/mega_gyarados-overworld.png.import",
+"sha256": "afff0483182b7f4f6efa9626325a4ac6b11d67722fd5363985f800d0841d23ef",
+"bytes": 996
 },
 {
 "path": "project/assets/divinakra_megas/mega_venusaur-menu.png",
@@ -87619,7 +87639,7 @@
 {
 "path": "project/scenes/main.tscn",
 "bytes": 66154,
-"sha256": "1feb867aaaddb2d2ff7e83f65452fab47d42f0a1b08df00c2b854988f46be408"
+"sha256": "f99d688843096a03490470cb3da86eb52c6c54acfdaaf2b5443897318ae73e29"
 },
 {
 "path": "project/scripts/audio_balance.gd",
@@ -87653,8 +87673,8 @@
 },
 {
 "path": "project/scripts/ball_mechanics.gd",
-"bytes": 48257,
-"sha256": "be0bbabe5e6319d300e1c12a1c480594a0b0989bbcc1a07848ea510318ef7650"
+"bytes": 53222,
+"sha256": "6bff5edba6e5bafd11b6c7812d749b8f120598d545e354620fb2882504b679d1"
 },
 {
 "path": "project/scripts/ball_mechanics.gd.uid",
@@ -87753,8 +87773,8 @@
 },
 {
 "path": "project/scripts/coop_build_runtime.gd",
-"bytes": 31120,
-"sha256": "bcf0a6bf91a6450ef419dc33b0b21765f3d9acf37158e220f8f13aab26121ad7"
+"bytes": 31601,
+"sha256": "6168df0c0aec0eeb59731931fcc592d0dfcc47b1276a1948ab271032e2257e8d"
 },
 {
 "path": "project/scripts/coop_build_runtime.gd.uid",
@@ -87763,8 +87783,8 @@
 },
 {
 "path": "project/scripts/coop_build_transaction.gd",
-"bytes": 18316,
-"sha256": "e5ddf5ea939ac5b279620f13f21bb5fee8084fa97d244660b6cf813d06bb7127"
+"bytes": 20971,
+"sha256": "3ae6ca45805bfd5007c571b82b534a1cf1fa80984d8721f8440b43e86de5c060"
 },
 {
 "path": "project/scripts/coop_build_transaction.gd.uid",
@@ -87773,8 +87793,8 @@
 },
 {
 "path": "project/scripts/coop_commands.gd",
-"bytes": 15120,
-"sha256": "eb867b9654bcb20a9be69f899330d5a2c32aae55f53a5d4452e24b8dfc17b472"
+"bytes": 15443,
+"sha256": "67a9c93490d954c39e5f5f0f88faa6b80d5a10a587f03a8b52bae0f1d9a0fc1a"
 },
 {
 "path": "project/scripts/coop_commands.gd.uid",
@@ -87783,8 +87803,8 @@
 },
 {
 "path": "project/scripts/coop_game.gd",
-"bytes": 65718,
-"sha256": "6c1837ecd69fe06746d91b299be8b20c3753982d8c8b7687afbee9682ae1cb93"
+"bytes": 69509,
+"sha256": "e726a46feaa953bcef4216bc9d0044a7219e39fb2867f350f9c6ea303fad45b6"
 },
 {
 "path": "project/scripts/coop_game.gd.uid",
@@ -87843,8 +87863,8 @@
 },
 {
 "path": "project/scripts/coop_interactions.gd",
-"bytes": 6855,
-"sha256": "9d73ca4c7e68cf65225bd319a673af9b5ad069312642e95eaeea30b4ee7e27c4"
+"bytes": 7011,
+"sha256": "95ddde442a7e44a42a7083d970ef4927126ba1bef1d7887ca3aee3ddbc2aafaf"
 },
 {
 "path": "project/scripts/coop_interactions.gd.uid",
@@ -87933,8 +87953,8 @@
 },
 {
 "path": "project/scripts/coop_players.gd",
-"bytes": 9893,
-"sha256": "9690c50eb542ef8932c81bede8ca96cd1f3109182fb3e47edcb8f7df18235708"
+"bytes": 15200,
+"sha256": "cfe15102f7cf9e63d3393f3b1889c174cdaa9d2194c79da0a69a52afc5921cd7"
 },
 {
 "path": "project/scripts/coop_players.gd.uid",
@@ -87953,8 +87973,8 @@
 },
 {
 "path": "project/scripts/coop_population_records.gd",
-"bytes": 12062,
-"sha256": "2c4881fc15799aae0db76d8f105458d8cdde8edc71128a93bd2d29ad20437411"
+"bytes": 12070,
+"sha256": "3056e3637f09f4a7b4657d9010573d1ce548ac0eb5f4e63db033f11ca2d8a15a"
 },
 {
 "path": "project/scripts/coop_population_records.gd.uid",
@@ -87963,8 +87983,8 @@
 },
 {
 "path": "project/scripts/coop_population_runtime.gd",
-"bytes": 18652,
-"sha256": "ee22f1bf591dafa4df64e432baafe3c8bc2cb18b8a3a68a6671f75128213da80"
+"bytes": 20567,
+"sha256": "b81004576956419387f6a26476c2077553a7ba654839f5f3909fe52bc8ebc025"
 },
 {
 "path": "project/scripts/coop_population_runtime.gd.uid",
@@ -88003,8 +88023,8 @@
 },
 {
 "path": "project/scripts/coop_raid_runtime.gd",
-"bytes": 8393,
-"sha256": "25c6d82bd43335e10788ad5962c800aebad7c9202c40147c23877735072598e3"
+"bytes": 8401,
+"sha256": "fc38cad29b07dbc1c7a87644bc47ad7f8197a6c094fe9302217ad0a91cfd931c"
 },
 {
 "path": "project/scripts/coop_raid_runtime.gd.uid",
@@ -88033,8 +88053,8 @@
 },
 {
 "path": "project/scripts/coop_remote_player.gd",
-"bytes": 11849,
-"sha256": "aeb8aebdc897ecc8da30e2962e31861ad28bdf7aec2309edd51747d8972668b6"
+"bytes": 13271,
+"sha256": "8465a039c55a458bd48e2e6517766b3ee81abacb7c8c3646a309d10fb9bda4e8"
 },
 {
 "path": "project/scripts/coop_remote_player.gd.uid",
@@ -88053,8 +88073,8 @@
 },
 {
 "path": "project/scripts/coop_session.gd",
-"bytes": 9445,
-"sha256": "fd0406aa9af608783bfc7cdfded1bcb8be4ecebc5495a9a03363c5e8208e6682"
+"bytes": 9446,
+"sha256": "a5c9b2210ca84f695722381650dfcdf6b1f2d2bb151124af4fd0dcd41aefbeb0"
 },
 {
 "path": "project/scripts/coop_session.gd.uid",
@@ -88063,8 +88083,8 @@
 },
 {
 "path": "project/scripts/coop_shared_items.gd",
-"bytes": 11686,
-"sha256": "8d7f0c9d601e40329accc250602f22e56c66d7f40186b18147f8d39278351579"
+"bytes": 12533,
+"sha256": "f1bf4cde8fd772f10b648e0c0d39f655b30ca012d964a0f04e6b93029bd1bae9"
 },
 {
 "path": "project/scripts/coop_shared_items.gd.uid",
@@ -88073,8 +88093,8 @@
 },
 {
 "path": "project/scripts/coop_snapshot_store.gd",
-"bytes": 4036,
-"sha256": "a74adcf176781966a7cb5c576d284061c31d79b507babce81c570b120e99264a"
+"bytes": 6436,
+"sha256": "0d6338ea813cef78a8ecf63066a5ec2d3054b4e99d10cfbec9d68da5229c274a"
 },
 {
 "path": "project/scripts/coop_snapshot_store.gd.uid",
@@ -88083,8 +88103,8 @@
 },
 {
 "path": "project/scripts/coop_special_events.gd",
-"bytes": 10729,
-"sha256": "b48f378a39064a44e1b112f9916062a4a003cd3e1a364ae208aa5afc636a9f42"
+"bytes": 10648,
+"sha256": "350097aa2632938091960290ff5eea16d16c1cd7b2e2785643ff5cd9cd6e9abd"
 },
 {
 "path": "project/scripts/coop_special_events.gd.uid",
@@ -88093,8 +88113,8 @@
 },
 {
 "path": "project/scripts/coop_state.gd",
-"bytes": 9585,
-"sha256": "af8746d6b6c268fdea76f7d6c002d98ca69be6cd9e4e6fa18333fe70b7c28989"
+"bytes": 11377,
+"sha256": "69813e753185149447277c5acbf89cb694f4b9fbddee8f0091ec7d08ba466511"
 },
 {
 "path": "project/scripts/coop_state.gd.uid",
@@ -88153,8 +88173,8 @@
 },
 {
 "path": "project/scripts/coop_wild_runtime.gd",
-"bytes": 22030,
-"sha256": "20f2008baa8fe0466a48a20a720ff174c9ad7cc7402b0388fa70ae56a42fe8b7"
+"bytes": 22046,
+"sha256": "03842e9b1f6ad9c78d947fcf2e78777215e5bb6745ddde99feaef8c93ce8353b"
 },
 {
 "path": "project/scripts/coop_wild_runtime.gd.uid",
@@ -88183,8 +88203,8 @@
 },
 {
 "path": "project/scripts/coop_world_snapshot.gd",
-"bytes": 4612,
-"sha256": "c112ec0e5fe458be04095bea72ff7f6fda04673e810029da08d875e0922b9760"
+"bytes": 7578,
+"sha256": "f69c0b777a04efff65c57219b422ed6074b6f23c7a0e46db587d6cc985da5c5d"
 },
 {
 "path": "project/scripts/coop_world_snapshot.gd.uid",
@@ -88233,8 +88253,8 @@
 },
 {
 "path": "project/scripts/divinakra_mega_art.gd",
-"bytes": 981,
-"sha256": "e2c6dd1eba14a94997bb54e54ee9817afbf01b3bc08bda0ba3e828704ef98c9b"
+"bytes": 1312,
+"sha256": "0619d07817ec54ee8eb48406900d671f1daf6b86d7d6cc00364fa68b1ce711de"
 },
 {
 "path": "project/scripts/divinakra_mega_art.gd.uid",
@@ -88388,8 +88408,8 @@
 },
 {
 "path": "project/scripts/main.gd",
-"bytes": 624688,
-"sha256": "653f30f1b99c185794bee9e6c3d6be7a9110dd733ff4d4e021cd05b5ce12f3c4"
+"bytes": 629343,
+"sha256": "82e9f99971297bd05a3f2f0fc74df361d1920a071ad72026627f315b77c92d5d"
 },
 {
 "path": "project/scripts/main.gd.uid",
@@ -88468,8 +88488,8 @@
 },
 {
 "path": "project/scripts/mount_layers.gd",
-"bytes": 2121,
-"sha256": "c6c0b986ba53b3af1b4a77945a933f2de9729c3f6bd91bb4ad24efc4fc95858a"
+"bytes": 2593,
+"sha256": "e1b6f0234fee46e0366f669aa9a057a1c11be014eb9e03c5d4d05e92642406ec"
 },
 {
 "path": "project/scripts/mount_layers.gd.uid",
@@ -88498,8 +88518,8 @@
 },
 {
 "path": "project/scripts/options_menu.gd",
-"bytes": 24723,
-"sha256": "6deac06f878e2cf6142207e07f63921bd95cd75af784cfae5649a9109e5a0e12"
+"bytes": 25018,
+"sha256": "4130622aaf4fbf511647b114d33d65fefb321a790d81d0c4c8b43d33992d4e87"
 },
 {
 "path": "project/scripts/options_menu.gd.uid",
@@ -88538,8 +88558,8 @@
 },
 {
 "path": "project/scripts/player_controller.gd",
-"bytes": 11757,
-"sha256": "501717276e11bbd2caa579d84f750a75c13fa1e4c004028426000e5533c16271"
+"bytes": 12265,
+"sha256": "a84b623a98b2c8dd2a535c13c9929dcdf63e0207616d033a545fabe0efb80a34"
 },
 {
 "path": "project/scripts/player_controller.gd.uid",
@@ -88618,8 +88638,8 @@
 },
 {
 "path": "project/scripts/random_world_weather.gd",
-"bytes": 15114,
-"sha256": "9ce517f965db4b390a5fb734dfc06d56e7c928aae0e698388c3582e49f9ae0bf"
+"bytes": 15418,
+"sha256": "f4e4c03f8a7498aff79dfb199f018cdcb7bead13383044a0a693e7af040e22bd"
 },
 {
 "path": "project/scripts/random_world_weather.gd.uid",
@@ -89158,8 +89178,8 @@
 },
 {
 "path": "project/scripts/world.gd",
-"bytes": 112197,
-"sha256": "be352ab63aeea6c6a0f0061715bca052becc743520b777af5ce10b1a0e324c8a"
+"bytes": 112560,
+"sha256": "813a9fc156c83c4e4a8e16c02ad141f1074cd359682d830be9cb7ce611db0806"
 },
 {
 "path": "project/scripts/world.gd.uid",
@@ -89168,8 +89188,8 @@
 },
 {
 "path": "project/scripts/world_base_m74_3_9_14.gd",
-"bytes": 558265,
-"sha256": "64e26cc99c65787f8983e306cf0ceb569a8cd6c787de958f584370189dfdcd76"
+"bytes": 567588,
+"sha256": "82146bbae8d60302399de23ab9a25bd479ac7d40d8cccdaafedc6a33cbbe8af9"
 },
 {
 "path": "project/scripts/world_base_m74_3_9_14.gd.uid",

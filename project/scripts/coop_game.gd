@@ -173,9 +173,14 @@ func _install_cache(decoded:Dictionary)->bool:
     file.store_buffer(decoded.cache);file.flush();var error=file.get_error();file.close()
     return error==OK and DirAccess.rename_absolute(path+".pending",path)==OK
 
-func drop_item(item:String,amount:int,cell:Vector2i)->bool:
-    if not main.world.dropped_items().can_drop(cell):return false
-    var result:Dictionary=await command("drop",{"item":item,"amount":amount,"area":scope(),"x":cell.x,"y":cell.y})
+func drop_item(item:String,amount:int,cell:Vector2i,thrown:bool=false)->bool:
+    var drops=main.world.dropped_items()
+    # A thrown ball may land on a pile of the same ball.
+    var same_pile:bool=thrown and drops.records.has(drops.key(cell)) and drops.records[drops.key(cell)].get("item")==item
+    if not same_pile and not drops.can_drop(cell):return false
+    var request:={"item":item,"amount":amount,"area":scope(),"x":cell.x,"y":cell.y}
+    if thrown:request["thrown"]=true
+    var result:Dictionary=await command("drop",request)
     if result.get("ok",false):main.world.play_source_sound("seed1");return true
     return false
 
@@ -267,12 +272,17 @@ func handle_input(event:InputEvent)->bool:
     if not event.is_action_pressed("confirm"):return false
     if main.world.active_area_id=="OVERWORLD" and main.world.built_structures.get(main.world._player_cell(),{}).get("name")=="BEACON":
         beacons.open();return true
-    var target_cell:Vector2i=main.world._player_cell()+main.world._facing_cell()
+    # Players can now stand shoulder to shoulder, so the one being faced is
+    # found by where they stand, not by which tile they are counted in.
+    var here:Vector2=main.world.player.position
+    var facing:=Vector2(main.world._facing_cell())
     for actor in visuals.last_packets:
         if actor==session.actor:continue
         var packet:Dictionary=visuals.last_packets[actor]
         if packet.get("area")!=_area() or packet.get("layer")!=visuals._layer():continue
-        if Vector2i(int(packet.get("cell_x",-999999)),int(packet.get("cell_y",-999999)))!=target_cell:continue
+        var away:Vector2=Vector2(float(packet.get("body_x",int(packet.get("cell_x",-999999))*16+8)),float(packet.get("body_y",int(packet.get("cell_y",-999999))*16+8)))-here
+        var ahead:=away.dot(facing)
+        if ahead<4.0 or ahead>24.0 or absf(away.dot(Vector2(facing.y,facing.x)))>10.0:continue
         if packet.get("battle",false):main._show_message("That player is in a battle.")
         else:interaction_ui.open_for(actor)
         return true
@@ -409,7 +419,9 @@ func _walking_only(changes:Array,player_key:String)->bool:
         if key!=player_key or not change.has("edits"):return false
         for edit in change.edits:
             var path:Array=edit[1]
-            var walking:=false
+            # The countdowns of an egg in the party: ["party", slot, "hatch_steps"], and
+            # "hatch_cycles", which drops by one every sixteen steps.
+            var walking:bool=path.size()==3 and String(path[0])=="party" and String(path[2]) in ["hatch_steps","hatch_cycles"]
             for known in WALKING:
                 if path.size()>=known.size() and path.slice(0,known.size())==known:walking=true;break
             if not walking:return false
@@ -434,7 +446,18 @@ func _party_and_bag_saved()->bool:
     return _saved_stamp==_party_and_bag_stamp()
 
 func _party_and_bag_stamp()->Array:
-    return [main.caught_pokemon.hash(),main.inventory.hash()]
+    # An egg being carried counts down its steps on every step taken. That is
+    # walking, not a change to the party: left in, it made a full save run on
+    # every beat for as long as the player walked with an egg, a stall of
+    # about 40 ms three times every two seconds.
+    var party:Array=[]
+    for entry in main.caught_pokemon:
+        if entry is Dictionary and entry.has("hatch_steps"):
+            var steady:Dictionary=entry.duplicate()
+            steady.erase("hatch_steps");steady.erase("hatch_cycles")
+            party.append(steady.hash())
+        else:party.append(hash(entry))
+    return [party,main.inventory.hash()]
 
 func _berry_profile_is_current()->bool:
     # A berry grants inventory only. Reuse the last durable profile when its
@@ -524,12 +547,31 @@ func _committed(commit:Dictionary)->void:
         if peer==1:continue
         var actor=String(session.players[peer].actor)
         var visible=Commands.visible_result(commit,actor)
+        # A player's own record goes to them as what changed, not whole.
+        var own_edits=commit.get("player_edits",{}).get("player/"+actor)
+        if own_edits is Array:
+            for change in visible.get("changes",[]):
+                if String(change.get("key",""))=="player/"+actor and change.has("after"):
+                    change.erase("after");change["edits"]=own_edits
+        visible.erase("player_edits")
         visible["profile_base"]=state.print_of("player/"+actor,{})
         session.send_to(peer,{"kind":"shared_commit","result":visible})
-    _apply_visible(Commands.visible_result(commit,session.actor))
+    var own:Dictionary=Commands.visible_result(commit,session.actor)
+    own["profile_base"]=state.print_of("player/"+session.actor,{})
+    _apply_visible(own)
 
 func _apply_visible(result:Dictionary)->void:
     if result.get("resync",false) and not hosting:session.send_host({"kind":"state_request"})
+    # This player's own record arrives as edits to the copy held here.
+    for change in result.get("changes",[]):
+        if change is Dictionary and change.has("edits") and not change.has("after"):
+            var held=shared_records.get(String(change.get("key","")))
+            var edited=Patch.apply(held,change.edits) if held is Dictionary and Patch.valid(change.edits) else null
+            if edited==null:
+                # The copies have drifted apart: ask the host for everything again.
+                if not hosting:session.send_host({"kind":"state_request"})
+                return
+            change["after"]=edited
     var drops_changed=false
     var storage_changed=false
     for change in result.get("changes",[]):
@@ -607,7 +649,25 @@ func world_time(delta:float)->float:
     if _clock_received==0:return main.world.world_elapsed_seconds+delta
     return clock_seconds+minf(2.0,float(Time.get_ticks_msec()-_clock_received)/1000.0)*clock_speed
 
+var _area_cleanup:Thread
+
+## Removes the area files this world no longer uses; see the snapshot store.
+func _clean_up_area_files()->void:
+    if _area_cleanup!=null:return
+    var in_use:Array=[]
+    for key in state.records:
+        if not String(key).begins_with("area/"):continue
+        var metadata=state.records[key]
+        if metadata is Dictionary and metadata.get("sha256") is String:in_use.append(metadata.sha256)
+    if in_use.is_empty():return
+    var home:=ProjectSettings.globalize_path(Paths.path("online_worlds").path_join(world_id))
+    _area_cleanup=Thread.new()
+    if _area_cleanup.start(preload("res://scripts/coop_snapshot_store.gd").clean_up.bind(home.path_join("snapshots"),home,in_use))!=OK:_area_cleanup=null
+
 func _process(delta:float)->void:
+    if _area_cleanup!=null and not _area_cleanup.is_alive():
+        var removed:int=_area_cleanup.wait_to_finish();_area_cleanup=null
+        if removed>0:print("ONLINE removed ",removed," area files no longer in use")
     if not active or not session.trusted or not main.started:return
     session.set_loading(main.generating or main.edge_travel_busy)
     var now=Time.get_ticks_msec()
@@ -762,6 +822,7 @@ func _choose(action:String,value:String)->void:
     if action=="LOAD":store.backup()
     state=State.new();commands.state=state;commands.items.state=state;commands.interactions.state=state;visuals.state=state
     if action=="LOAD" and store.load_state(state).is_empty():_failure("ONLINE WORLD STATE COULD NOT LOAD");return
+    if action=="LOAD":_clean_up_area_files()
     if action=="LOAD":
         var latest:Dictionary=state.records.get("player/"+session.actor,{})
         var personal:Dictionary=latest.get("save",{})
@@ -1010,7 +1071,7 @@ func _admitted(peer:int,actor:String,profile:Dictionary)->void:
         var enrolled=state.transact(actor,"enroll/"+_id(),[state.change("player/"+actor,personal)])
         if not enrolled.get("ok",false):session.transport._drop(peer);return
     await _send_state(peer,actor)
-    var error:Error=session.send_to(peer,{"kind":"game_begin","area":destination,"game":data,"profile_base":State.fingerprint(personal)})
+    var error:Error=session.send_to(peer,{"kind":"game_begin","area":destination,"game":data,"profile_base":state.print_of("player/"+actor,{})})
     if error!=OK:session.transport._drop(peer)
 
 func _message(_peer:int,actor:String,packet:Dictionary)->void:
@@ -1132,4 +1193,5 @@ func _failure(reason:String)->void:
         lobby.stop_advertise();Network.host_close();Network.join_close()
 
 func _exit_tree()->void:
+    if _area_cleanup!=null:_area_cleanup.wait_to_finish();_area_cleanup=null
     Network.host_close();Network.join_close()

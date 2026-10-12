@@ -2189,7 +2189,10 @@ func constrain_player_motion(before:Vector2,after:Vector2)->Vector2:
     var result:Vector2=super.constrain_player_motion(before,after)
     var coordinator=get_parent().get("coop_game")
     if is_instance_valid(coordinator) and coordinator.active:
-        result=coordinator.visuals.constrain_motion(before,result)
+        var past:Vector2=coordinator.visuals.constrain_motion(before,result)
+        # Easing round another player moves sideways; the ground must allow it.
+        if past!=result and past!=before:past=super.constrain_player_motion(before,past)
+        result=past
     return result
 
 func _ledge_jump_landing_is_clear(cell:Vector2i)->bool:
@@ -2197,5 +2200,7 @@ func _ledge_jump_landing_is_clear(cell:Vector2i)->bool:
     var coordinator=get_parent().get("coop_game")
     if is_instance_valid(coordinator) and coordinator.active:
         var target=_cell_center(cell)
-        return coordinator.visuals.constrain_motion(player.position,target)==target
+        # Reached in several small steps, so compared with a little slack: an
+        # exact match failed at random and the jump was refused.
+        return coordinator.visuals.constrain_motion(player.position,target).distance_to(target)<0.5
     return true
