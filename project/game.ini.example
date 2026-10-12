@@ -1,0 +1,31 @@
+; Close the game before editing. Existing unknown keys are retained.
+; Volumes 0-100. Switches true/false.
+; text_speed: 0 Default, 1 Fast, 2 Faster.
+; frame: 0-123 corresponds to TYPE 1-124.
+; button_layout: 0 Nintendo, 1 Xbox. game_speed: 1, 2, 3 or 4.
+[options]
+music=100
+sound=100
+world_sound=100
+radial=true
+zoom=true
+minimap=true
+diagonal=true
+auto_run=false
+battle_animations=true
+held_emotes=true
+text_speed=0
+frame=0
+button_layout=0
+game_speed=1
+
+; Additional .98 options
+cries=100
+minimap_rotation=false
+
+; Overworld shiny sparkle effect
+shiny_sparkles=true
+
+; Independent movement-sound volume
+footsteps=100
+; Actual game.ini also stores per-game sections. New games use defaults.

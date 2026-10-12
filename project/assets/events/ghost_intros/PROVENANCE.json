@@ -1,0 +1,31 @@
+{
+  "jar_sha256": "9a6a61305f8933f260075e58eb8be0b61a0b6624daed0c983e872b1ac9ee14bc",
+  "source_classes": [
+    "Specie.java:ghost sprite and anim.asm repeat expansion",
+    "Pokemon.java:spookify/revealGhost",
+    "Battle.java:Silph Scope 96-tick reveal alongside FadeAnim(slow=8)",
+    "FadeAnim.java:144-tick stepped fade",
+    "DrawGhost.java:re-encounter retains the Pokemon; 128-tick grace"
+  ],
+  "files": {
+    "assets/events/ghost_intros/chandelure-shiny.png": "0be86711641fc88850a3a88ed4d3a574f10023c65090a5d36024e6b654c44323",
+    "assets/events/ghost_intros/chandelure.png": "3926f975648490d8086d7f4a31ae874b79008a91981598e683cb6b6a9aa79819",
+    "assets/events/ghost_intros/gastly-shiny.png": "72d2ce1f3227fd2812b45b15b7086ade82b305fa225edf87eb0381f1047a1910",
+    "assets/events/ghost_intros/gastly.png": "85d9f1393be2fd7e1ce6ec5d7c1b23e85fe335e1644dd8316677e758cf0e8b42",
+    "assets/events/ghost_intros/gengar-shiny.png": "021ec7ae15eb84812d9c6c703fbf657dcbdd36612f0843f683c76cce21504235",
+    "assets/events/ghost_intros/gengar.png": "ea6cfbfc3abbffdcfc70e6fedc3ce816b6ac9304614bcb7e91ea237053b84650",
+    "assets/events/ghost_intros/haunter-shiny.png": "dbd9f18303530573a0227fc6c06b1bb9aee7b61fc02b5c85d61d11cdb221bdaf",
+    "assets/events/ghost_intros/haunter.png": "c5e203beaf5e8cf3eabdfde18c717f102d99376bf8a09a8eabcb76339b3bb8f3",
+    "assets/events/ghost_intros/lampent-shiny.png": "7e8e66ffa648fac8132afe87aba6781e3ecfad0dc7bf4ca1a9412304fd6b1931",
+    "assets/events/ghost_intros/lampent.png": "83ebee9de31338aa6128b712f2e47bd96d97e37c4943c61625df50ebbe4860f4",
+    "assets/events/ghost_intros/litwick-shiny.png": "f0d6db1cd86af7ba5431ce222c1511c9ea70ccf2688a2cb52a36546e307895eb",
+    "assets/events/ghost_intros/litwick.png": "b78b513b465ae959741e55a26a8bfa0d17f49f7edb80d38c70139b3ba9dd7e2e",
+    "assets/events/ghost_intros/mimikyu-shiny.png": "c408f347a592e4d2c7269db157983048ea1c4c288f83602732a128aa2203abeb",
+    "assets/events/ghost_intros/mimikyu.png": "5defa3edaba71a75444a362743bb672ad09bbcb55d0600c19e1a5e501ba6ebd8",
+    "assets/events/ghost_intros/misdreavus-shiny.png": "5a1d3393577cf2c1e13c5e1d872b6d8fca46e0cb9af15740a33a82c9d2ac3a22",
+    "assets/events/ghost_intros/misdreavus.png": "e642762984d1042e6e928ec1f5e3295b3e564f2b705bdc484b5fe5413e76cd85",
+    "assets/events/ghost_intros/sableye-shiny.png": "ffb98d0874b61ae86127e1cb1ef8c5c370f553b4e275356be87f02a40ddc756d",
+    "assets/events/ghost_intros/sableye.png": "e3285b8d4296e6f5f68b22f5731c259dd97aa22f850ab3d7f804f02039f1b915"
+  },
+  "note": "Full source battle sheets; their two source shades map to the existing port normal palette, with shiny.pal replacements for shiny versions. Original Nintendo/Game Freak/Pokemon artwork and original PokeWilds credits remain applicable."
+}

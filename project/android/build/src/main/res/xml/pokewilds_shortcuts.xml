@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="game_files" android:enabled="true"
+        android:icon="@mipmap/icon" android:shortcutShortLabel="@string/pokewilds_game_files">
+        <intent android:action="android.intent.action.VIEW"
+            android:targetPackage="com.pokewilds.godot"
+            android:targetClass="com.godot.game.PokeWildsFilesActivity" />
+    </shortcut>
+</shortcuts>

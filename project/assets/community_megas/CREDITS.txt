@@ -1,0 +1,8 @@
+Mega Charizard X/Y, Mega Venusaur and Mega Blastoise sprites and palettes from RHH / pokeemerald-expansion.
+Revision: dfb0f84374230f4d462191601179b742f9f077df
+https://github.com/rh-hideout/pokeemerald-expansion
+Upstream Mega overworld credits: princess-phoenix, larryturbo, kidkatt. Full upstream credits retained in UPSTREAM-CREDITS.md.
+Converted indexed normal/shiny palettes to RGBA; reordered authored walking frames and stacked front frames for Godot. No artwork redrawn.
+Pokemon belongs to its respective rights holders.
+
+Mega Gyarados, Mega Sharpedo and Mega Kangaskhan artwork also from the same pinned RHH revision. Authored normal/shiny fronts, backs and six-frame walking sheets retained. Mega Sharpedo has a single authored front pose.

@@ -1,0 +1,11 @@
+name = "pokewilds-lobbies"
+main = "src/worker.js"
+compatibility_date = "2026-09-01"
+
+[[durable_objects.bindings]]
+name = "DIRECTORY"
+class_name = "LobbyDirectory"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["LobbyDirectory"]

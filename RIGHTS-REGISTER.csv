@@ -1,0 +1,8 @@
+Scope,Provenance,Status,Required evidence
+project/scripts and scenes,Mixed port and project code,GPL-3.0 scope; separately sourced portions need provenance review,Preserve third-party notices and review separate license scope
+project/assets/community_overworld,PokemonWorkshop/community artists; see CREDITS.md,Contains noncommercial adaptation terms,Preserve notices; verify originals; replace if fully open release
+project/assets/source_* and world_source,PokeWilds/underlying game resources,Redistribution/relicensing not established,Obtain applicable rights or replace
+project/assets/menu_frames,See FRAME-CREDITS.md,Extracted artwork needs review,Obtain applicable rights or replace
+project/assets/divinakra_megas,Divinakra,Credit recorded; license scope unverified,Record redistribution/modification license
+project/assets and data (remaining),"Multiple community packs, game resources and converted mods",Per-file clearance incomplete,Use retained credits/provenance; obtain grants or replace
+project/android/build,Godot template plus custom wrappers,Mixed notices; custom-source provenance requires review,Retain Godot MIT notice and review custom changes

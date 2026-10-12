@@ -1,0 +1,478 @@
+{
+  "red": {
+    "path": "res://assets/coop_trainers/red.png",
+    "color": [
+      176,
+      56,
+      64
+    ]
+  },
+  "leaf": {
+    "path": "res://assets/coop_trainers/leaf.png",
+    "color": [
+      80,
+      136,
+      176
+    ]
+  },
+  "gold": {
+    "path": "res://assets/coop_trainers/gold.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "kris": {
+    "path": "res://assets/coop_trainers/kris.png",
+    "color": [
+      56,
+      40,
+      248
+    ]
+  },
+  "brendan": {
+    "path": "res://assets/coop_trainers/brendan.png",
+    "color": [
+      99,
+      154,
+      90
+    ]
+  },
+  "may": {
+    "path": "res://assets/coop_trainers/may.png",
+    "color": [
+      198,
+      65,
+      66
+    ]
+  },
+  "hilbert": {
+    "path": "res://assets/coop_trainers/hilbert.png",
+    "color": [
+      112,
+      152,
+      216
+    ]
+  },
+  "hilda": {
+    "path": "res://assets/coop_trainers/hilda.png",
+    "color": [
+      192,
+      72,
+      104
+    ]
+  },
+  "rosa": {
+    "path": "res://assets/coop_trainers/rosa.png",
+    "color": [
+      112,
+      88,
+      64
+    ]
+  },
+  "calem": {
+    "path": "res://assets/coop_trainers/calem.png",
+    "color": [
+      89,
+      110,
+      173
+    ]
+  },
+  "serena": {
+    "path": "res://assets/coop_trainers/serena.png",
+    "color": [
+      200,
+      73,
+      50
+    ]
+  },
+  "chase": {
+    "path": "res://assets/coop_trainers/chase.png",
+    "color": [
+      246,
+      189,
+      32
+    ]
+  },
+  "elaine": {
+    "path": "res://assets/coop_trainers/elaine.png",
+    "color": [
+      220,
+      156,
+      75
+    ]
+  },
+  "gloria": {
+    "path": "res://assets/coop_trainers/gloria.png",
+    "color": [
+      189,
+      28,
+      90
+    ]
+  },
+  "mark": {
+    "path": "res://assets/coop_trainers/mark.png",
+    "color": [
+      0,
+      0,
+      66
+    ],
+    "background": [
+      0,
+      132,
+      0
+    ]
+  },
+  "mint": {
+    "path": "res://assets/coop_trainers/mint.png",
+    "color": [
+      0,
+      132,
+      0
+    ],
+    "background": [
+      66,
+      255,
+      99
+    ]
+  },
+  "lunick": {
+    "path": "res://assets/coop_trainers/lunick.png",
+    "color": [
+      231,
+      33,
+      57
+    ]
+  },
+  "summer": {
+    "path": "res://assets/coop_trainers/summer.png",
+    "color": [
+      0,
+      112,
+      216
+    ]
+  },
+  "kellyn": {
+    "path": "res://assets/coop_trainers/kellyn.png",
+    "color": [
+      152,
+      24,
+      32
+    ]
+  },
+  "agatha": {
+    "path": "res://assets/source_exact/player/agatha-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "blaine1": {
+    "path": "res://assets/source_exact/player/blaine1-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "blaine2": {
+    "path": "res://assets/source_exact/player/blaine2-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "blue": {
+    "path": "res://assets/source_exact/player/blue-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "brock": {
+    "path": "res://assets/source_exact/player/brock-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "bruno": {
+    "path": "res://assets/source_exact/player/bruno-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "bugsy": {
+    "path": "res://assets/source_exact/player/bugsy-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "chuck": {
+    "path": "res://assets/source_exact/player/chuck-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "clair": {
+    "path": "res://assets/source_exact/player/clair-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "erika": {
+    "path": "res://assets/source_exact/player/erika-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "falkner": {
+    "path": "res://assets/source_exact/player/falkner-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "giovanni1": {
+    "path": "res://assets/source_exact/player/giovanni1-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "giovanni2": {
+    "path": "res://assets/source_exact/player/giovanni2-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "janine": {
+    "path": "res://assets/source_exact/player/janine-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "jasmine": {
+    "path": "res://assets/source_exact/player/jasmine-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "karen1": {
+    "path": "res://assets/source_exact/player/karen1-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "karen2": {
+    "path": "res://assets/source_exact/player/karen2-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "koga": {
+    "path": "res://assets/source_exact/player/koga-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "lance": {
+    "path": "res://assets/source_exact/player/lance-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "lorelei": {
+    "path": "res://assets/source_exact/player/lorelei-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "lt. surge": {
+    "path": "res://assets/source_exact/player/lt. surge-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "misty1": {
+    "path": "res://assets/source_exact/player/misty1-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "misty2": {
+    "path": "res://assets/source_exact/player/misty2-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "morty": {
+    "path": "res://assets/source_exact/player/morty-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "pryce1": {
+    "path": "res://assets/source_exact/player/pryce1-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "pryce2": {
+    "path": "res://assets/source_exact/player/pryce2-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "sabrina1": {
+    "path": "res://assets/source_exact/player/sabrina1-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "sabrina2": {
+    "path": "res://assets/source_exact/player/sabrina2-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "whitney": {
+    "path": "res://assets/source_exact/player/whitney-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "will1": {
+    "path": "res://assets/source_exact/player/will1-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "will2": {
+    "path": "res://assets/source_exact/player/will2-front.png",
+    "color": [
+      176,
+      72,
+      40
+    ]
+  },
+  "ash": {
+    "path": "res://assets/coop_trainers/ash.png",
+    "color": [
+      75,
+      117,
+      203
+    ]
+  },
+  "wes": {
+    "path": "res://assets/coop_trainers/wes.png",
+    "color": [
+      40,
+      88,
+      144
+    ]
+  },
+  "rocket_M": {
+    "path": "res://assets/coop_trainers/rocket_M.png",
+    "color": [
+      160,
+      64,
+      40
+    ]
+  },
+  "rocket_F": {
+    "path": "res://assets/coop_trainers/rocket_F.png",
+    "color": [
+      152,
+      48,
+      64
+    ]
+  },
+  "gardenia": {
+    "path": "res://assets/coop_trainers/gardenia.png",
+    "color": [
+      165,
+      206,
+      115
+    ]
+  },
+  "plushbanshee": {
+    "path": "res://assets/coop_trainers/plushbanshee.png",
+    "color": [
+      150,
+      102,
+      28
+    ],
+    "tolerance": 20
+  },
+  "sapphire": {
+    "path": "res://assets/coop_trainers/sapphire.png",
+    "color": [
+      121,
+      129,
+      42
+    ]
+  },
+  "starbutterfarts": {
+    "path": "res://assets/coop_trainers/starbutterfarts.png",
+    "color": [
+      250,
+      235,
+      133
+    ],
+    "tolerance": 20
+  }
+}

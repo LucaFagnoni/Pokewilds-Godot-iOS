@@ -1,0 +1,33 @@
+RELEASE RIGHTS STATUS â€” 2026-10-09
+
+CODE LICENSE
+Code is released under GPL-3.0 within the scope described in LICENSE-SCOPE.txt.
+Separately sourced material retains its own notices and applicable terms.
+
+REMAINING ITEMS
+1. Java-derived code: earlier review found decompiled Java reference files and
+Godot systems developed from those references. Keep existing third-party author notices and identify any separately licensed
+portions. The public upstream repository page alone does not
+supply a blanket license for all code or media.
+2. Community overworld art: project/assets/community_overworld/CREDITS.md labels
+port adaptations CC BY-NC-SA 4.0. Noncommercial restrictions do not meet the Open
+Source Definition. Preserve terms and verify originals; replace incompatible
+resources if the goal is open licensing of every included file.
+3. Other Pokemon art, cries, music, fonts, frames, data and converted mods have
+separate provenance. Credit is not a substitute for redistribution permission.
+The code license does not change third-party asset licenses or underlying rights.
+4. Retain the Godot MIT notice and required dependency notices with engine builds.
+
+TO FINISH AN ALL-COMPONENTS OPEN RELEASE
+Complete RIGHTS-REGISTER.csv with specific sources, grants and scope. Replace or
+obtain compatible rights for unresolved resources. Preserve notices and publish
+the corresponding source for the exact binaries distributed. Obtain legal review
+of underlying IP and mixed-license distribution where needed. This package is not
+a legal clearance certificate, and no claim of zero legal risk is made.
+
+References:
+https://github.com/SheerSt/pokewilds
+https://choosealicense.com/no-permission/
+https://opensource.org/osd
+https://www.gnu.org/licenses/gpl-3.0.html
+https://godotengine.org/license/

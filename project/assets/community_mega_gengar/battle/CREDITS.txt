@@ -1,0 +1,7 @@
+Mega Gengar battle artwork and indexed normal/shiny palettes imported from RHH (Rom Hacking Hideout), pokeemerald-expansion.
+https://github.com/rh-hideout/pokeemerald-expansion/tree/master/graphics/pokemon/gengar/mega
+https://github.com/rh-hideout/pokeemerald-expansion/blob/master/CREDITS.md
+Back-sprite repository history: Blackforest92, 56f4c319a425fa80b39c881d5c922fd2bda4308d (folder/graphics maintenance; not asserted as original artist).
+The upstream contributor credits are retained in RHH-CREDITS.md. Pokemon belongs to its respective rights holders.
+Original indexed PNGs and palettes retained. Imported images apply the supplied normal/shiny palettes by index and make background index 0 transparent; no pixels redrawn or rescaled.
+Existing overworld art remains princess-phoenix's sheet. Existing normal boss battle composition and timing remain from PokeWilds Java.

@@ -1,0 +1,39 @@
+{
+  "generator": "GenIsland1 Java-to-Godot port",
+  "world_size_index": 0,
+  "manifests": {
+    "81102": {
+      "sha256": "bd6e866bd8efc736e990df3d7d722d6d40bbd788a3af513cafc64c5015550b4a",
+      "tile_count": 207390,
+      "edge_count": 1285,
+      "pokemon_count": 236,
+      "interior_pokemon_count": 5,
+      "interior_tile_count": 8642,
+      "populated_interior_layers": 7,
+      "spawn_cell": [81, -135],
+      "spawn_reachable_dry": 51945
+    },
+    "123456789": {
+      "sha256": "4d02d90a3a28ebc8ae82e3916ee19c0640f0d5740fb8f5c2b5eb41995259f56f",
+      "tile_count": 316523,
+      "edge_count": 1249,
+      "pokemon_count": 332,
+      "interior_pokemon_count": 5,
+      "interior_tile_count": 9386,
+      "populated_interior_layers": 7,
+      "spawn_cell": [100, 110],
+      "spawn_reachable_dry": 81728
+    },
+    "987654321": {
+      "sha256": "16589c149391df3e37128620beddf8d8d7f07fcdc1cd9f52d77d2b42142ed6fe",
+      "tile_count": 117273,
+      "edge_count": 645,
+      "pokemon_count": 147,
+      "interior_pokemon_count": 5,
+      "interior_tile_count": 8966,
+      "populated_interior_layers": 7,
+      "spawn_cell": [22, 79],
+      "spawn_reachable_dry": 35505
+    }
+  }
+}
