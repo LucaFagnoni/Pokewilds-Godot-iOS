@@ -982,6 +982,13 @@ var android_back_bridge_checked := false
 var caught_pokemon = []
 var inventory: Dictionary = CraftingData.ensure_inventory(STARTING_INVENTORY)
 var pokemon_storage: Dictionary = {}
+## Single-player only: the box under this name is what every purple SHARED
+## chest opens. It is kept in a file of its own beside the saves, so the same
+## Pokemon are in it whichever single-player save is loaded. STORAGE BOXES are
+## unchanged and belong to their own save.
+const SHARED_STORAGE_KEY := "SHARED"
+## The number the shared storage was last written under.
+var shared_storage_serial := 0
 var storage_menu: Control
 var storage_rows: Array[Dictionary] = []
 var storage_actions: Panel
@@ -5262,6 +5269,17 @@ func _start_game() -> void:
 
     if selected_mode == "LOAD" and not load_data.is_empty():
         await _restore_game_save(load_data)
+    if not coop_game.active:
+        var loading: bool = selected_mode == "LOAD" and not load_data.is_empty()
+        var held = pokemon_storage.get(SHARED_STORAGE_KEY, [])
+        var adopted: Dictionary = preload("res://scripts/shared_storage.gd").adopt(
+            {SHARED_STORAGE_KEY: held if held is Array else []} if loading else {},
+            loading and bool(load_data.get("storage_shared", false)),
+            int(load_data.get("storage_serial", 0)) if loading else 0)
+        var shared_box = adopted.storage.get(SHARED_STORAGE_KEY, [])
+        pokemon_storage[SHARED_STORAGE_KEY] = shared_box if shared_box is Array else []
+        shared_storage_serial = int(adopted.serial)
+        pokedex_progress.seed_owned(pokemon_storage[SHARED_STORAGE_KEY])
 
     _ensure_machop_lead(false)
     world.call("clear_active_field_move", false)
@@ -10599,6 +10617,8 @@ func _save_current_game() -> void:
         _show_message("SAVE FAILED.")
         return
 
+    data["storage_shared"] = true
+    data["storage_serial"] = shared_storage_serial + 1
     file.store_string(JSON.stringify(data))
     file.flush()
     file.close()
@@ -10608,6 +10628,7 @@ func _save_current_game() -> void:
         _show_message("SAVE FAILED.")
         return
 
+    _write_shared_storage()
     _write_save_index(world_name, save_path)
     world_edit.text = world_name
     _save_setup()
@@ -10617,6 +10638,17 @@ func _save_current_game() -> void:
     _close_game_menu()
     world.call("play_source_sound", "save1")
     _show_message("GAME SAVED.")
+
+## Writes the SHARED chest's contents after the save that goes with them, so
+## that what is stored always matches a saved party. If this write is lost,
+## that save's own copy is the newer one and is used when it is next loaded.
+func _write_shared_storage() -> void:
+    shared_storage_serial += 1
+    var held = pokemon_storage.get(SHARED_STORAGE_KEY, [])
+    var error: Error = preload("res://scripts/shared_storage.gd").write(
+        {SHARED_STORAGE_KEY: held if held is Array else []}, shared_storage_serial)
+    if error != OK:
+        push_error("Shared storage could not be written (%d)." % error)
 
 func _read_game_save(world_name: String):
     return _read_save_file(_find_save_path(world_name))
@@ -11113,7 +11145,7 @@ func _on_structure_removal_requested(cell: Vector2i, move: String) -> void:
             if String(world.built_structures[built_cell].get("name", "")) == "PRIVATE CHEST":
                 private_keys.append(_world_storage_key(world._cell_key(built_cell),current_world_grid))
         for key in pokemon_storage.keys():
-            if not String(key) in private_keys: pokemon_storage.erase(key)
+            if not String(key) in private_keys and String(key) != SHARED_STORAGE_KEY: pokemon_storage.erase(key)
     if world.has_method("remove_structure_with_field_move"):
         world.call("remove_structure_with_field_move", cell, move)
 
@@ -11173,7 +11205,7 @@ func _built_storage_keys() -> Array[String]:
             if not key in keys: keys.append(key)
     # Previously saved contents stay reachable even if the physical box was cut.
     for key in pokemon_storage:
-        if not String(key) in keys: keys.append(String(key))
+        if String(key) != SHARED_STORAGE_KEY and not String(key) in keys: keys.append(String(key))
     keys.sort()
     if preferred_storage_box in keys:
         keys.erase(preferred_storage_box)
@@ -11786,11 +11818,15 @@ func _open_storage_menu(box_key: String) -> void:
         # only needed for a box the shared world does not know yet.
         if not coop_game.storage.known(_world_storage_key(box_key,current_world_grid)):
             if not await coop_game.storage.prepare():_show_message("ONLINE STORAGE COULD NOT LOAD.");return
-    box_key = _world_storage_key(box_key,current_world_grid)
+    var shared_chest: bool = not (is_instance_valid(coop_game) and coop_game.active) and \
+        String(world.built_structures.get(world._cell_from_key(box_key), {}).get("name", "")) == "PRIVATE CHEST"
+    box_key = SHARED_STORAGE_KEY if shared_chest else _world_storage_key(box_key,current_world_grid)
     storage_pooled = false
     storage_box_key = box_key
     if is_instance_valid(coop_game) and coop_game.active:coop_game.storage.refresh()
-    preferred_storage_box = box_key
+    # A Pokemon caught with a full party goes to the last STORAGE BOX used,
+    # never to the SHARED chest.
+    if not shared_chest: preferred_storage_box = box_key
     if not pokemon_storage.has(storage_box_key):
         pokemon_storage[storage_box_key] = []
     storage_column = 0
@@ -11828,6 +11864,8 @@ func _storage_pool_locations() -> Array:
     var keys: Array = pokemon_storage.keys()
     keys.sort()
     for key in keys:
+        # The SHARED chest is opened only at a SHARED chest.
+        if String(key) == SHARED_STORAGE_KEY and not (is_instance_valid(coop_game) and coop_game.active): continue
         for index in range(pokemon_storage[key].size()):
             locations.append([key, index])
     if is_instance_valid(coop_game) and coop_game.active and not coop_game.storage.sort_mode.is_empty():
@@ -12329,6 +12367,8 @@ func _save_current_game_for_quit() -> bool:
     if file == null:
         return false
 
+    data["storage_shared"] = true
+    data["storage_serial"] = shared_storage_serial + 1
     file.store_string(JSON.stringify(data))
     file.flush()
     file.close()
@@ -12336,6 +12376,7 @@ func _save_current_game_for_quit() -> bool:
     if not FileAccess.file_exists(save_path):
         return false
 
+    _write_shared_storage()
     _write_save_index(world_name, save_path)
     _save_setup()
     world.call("play_source_sound", "save1")

@@ -88233,8 +88233,8 @@
 },
 {
 "path": "project/scripts/crafting_data.gd",
-"bytes": 14738,
-"sha256": "2acc0502ccc9316b4b1b50799fe0fb1720fcfcc5bda274baaa273bf3d5e43c17"
+"bytes": 15164,
+"sha256": "08cff185d827f4cb069c52437362d18cde231d0646e8c14215437d19c01816dc"
 },
 {
 "path": "project/scripts/crafting_data.gd.uid",
@@ -88408,8 +88408,8 @@
 },
 {
 "path": "project/scripts/main.gd",
-"bytes": 631044,
-"sha256": "24b59fa82c8322500cc889c53abb27049a8f5d386e612a1686afe160227066ab"
+"bytes": 633717,
+"sha256": "5693a6f72a748a4d60a1f036921fd76b18c906c7f51243233cd7d967176238f1"
 },
 {
 "path": "project/scripts/main.gd.uid",
@@ -88675,6 +88675,16 @@
 "path": "project/scripts/shared_save_folder.gd.uid",
 "bytes": 20,
 "sha256": "f163f75c404f6839cbf1537f16933f6aa1e435f3dcf349972497897d879655b1"
+},
+{
+"path": "project/scripts/shared_storage.gd",
+"bytes": 3596,
+"sha256": "25c4799a2b2577daaf23560588cc1327f3d81ee3bf7f7274e34910ddf92c663e"
+},
+{
+"path": "project/scripts/shared_storage.gd.uid",
+"bytes": 20,
+"sha256": "0eea5d13ae2a64daa444b9cb43f3b1880f92bba1cd299c2f3fa2fe81e572b922"
 },
 {
 "path": "project/scripts/shiny_sparkles.gd",
@@ -89188,8 +89198,8 @@
 },
 {
 "path": "project/scripts/world_base_m74_3_9_14.gd",
-"bytes": 573519,
-"sha256": "dd2b009a121df8fbb21c020ef6cf3c0e76905493d23fa23a4d0024be3ab00255"
+"bytes": 575352,
+"sha256": "065501f420dede3aa97f3e15d006855f43cc8e2c09fb964e290605bda8b809e8"
 },
 {
 "path": "project/scripts/world_base_m74_3_9_14.gd.uid",
