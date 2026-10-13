@@ -2222,7 +2222,7 @@ func _position_minimap_other_players(map_left: float, map_top: float, map_diamet
         var look := "%d:%d" % [int(visual.get("model", 0)), int(visual.get("color", 0))]
         if marker.texture == null or marker.texture.get_meta("look", "") != look:
             marker.texture = _coop_marker_texture(visual)
-        var cell := Vector2(float(packet.get("body_x", 0.0)), float(packet.get("body_y", 0.0))) / 16.0
+        var cell: Vector2 = world.outdoor_map_position(Vector2(float(packet.get("body_x", 0.0)), float(packet.get("body_y", 0.0))) / 16.0)
         var center := Vector2(
             map_left + ((cell.x - view_origin.x) / window_cells.x) * map_diameter,
             map_top + ((cell.y - view_origin.y) / window_cells.y) * map_diameter)
@@ -2246,7 +2246,7 @@ func _add_map_other_players(map_view: Control, bounds: Rect2i, image_size: Vecto
         other.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
         other.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
         other.z_index = 19
-        var cell := Vector2i(int(floor(float(packet.get("body_x", 0.0)) / 16.0)), int(floor(float(packet.get("body_y", 0.0)) / 16.0)))
+        var cell: Vector2i = Vector2i(world.outdoor_map_position(Vector2(floorf(float(packet.get("body_x", 0.0)) / 16.0), floorf(float(packet.get("body_y", 0.0)) / 16.0))).floor())
         var center := Vector2(float(cell.x - bounds.position.x) * SOURCE_MAP_TILE_PIXELS,
             float(cell.y - bounds.position.y) * SOURCE_MAP_TILE_PIXELS)
         other.position = Vector2(

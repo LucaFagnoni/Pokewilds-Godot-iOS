@@ -360,6 +360,7 @@ func launch(ball: String, member: Dictionary) -> void:
     var blocked_cell = origin
     var moves = FieldMoveData.field_moves_for(str(member.get("species",""))) if not member.is_empty() else []
     var choice = str(state().moves.get(str(member.get("party_ecology_id","")),"AUTO"))
+    var mega_action = ""
     for distance in range(1,Rules.throw_range(ball)+1):
         var cell = origin+direction*distance
         var ground = tile_at(cell)
@@ -369,12 +370,21 @@ func launch(ball: String, member: Dictionary) -> void:
         if not member.is_empty() and "DIG" in moves and choice in ["AUTO","DIG"] and ground!=null and (world()._dig_is_mountain(ground) or world()._m3924_dig_tile_is_fossil_site(ground) or not ground.has_item.is_empty()):
             blocked_cell=cell
             break
+        # A wild Mega stands on a closed tile as a special encounter. A ball or
+        # a party Pokemon thrown at one begins that encounter, as walking up
+        # to it does; either used to stop there as if thrown at a rock.
+        var encounter = str(world().interior_interactables.get(cell,""))
+        if encounter.begins_with("SPECIAL:") and preload("res://scripts/biome_megas.gd").is_mega(encounter.trim_prefix("SPECIAL:")):
+            mega_action = encounter
+            blocked_cell = cell
+            break
         if terrain(cell,direction) in ["NONE","BLOCKED"]:
             blocked_cell = cell
             break
         path.append(cell)
     if path.is_empty() and member.is_empty():
-        world().play_source_sound("bump2")
+        if not mega_action.is_empty(): world()._use_interior_interactable(mega_action,blocked_cell)
+        else: world().play_source_sound("bump2")
         return
     if member.is_empty(): main.inventory[ball] = maxi(0,int(main.inventory.get(ball,0))-1)
     busy = true
@@ -416,6 +426,22 @@ func launch(ball: String, member: Dictionary) -> void:
             else: await party_landing(member,cell,cell,target,serial)
             finish_flight(serial)
             return
+    if not mega_action.is_empty():
+        if online: main.coop_game.visuals.effect({"fx":"ball_stop","serial":serial,"count":flown.size()})
+        if member.is_empty():
+            # The ball is not spent: it comes back for the battle it began.
+            main.inventory[ball] = int(main.inventory.get(ball,0))+1
+            show_hud(ball+" x"+str(main.inventory.get(ball,0)))
+        elif world().active_field_move in ["SURF","RIDE"]:
+            world().play_source_sound("bump2")
+            finish_flight(serial)
+            return
+        else:
+            # The Pokemon thrown is the one sent out first.
+            requested_battler = str(member.get("party_ecology_id",""))
+        finish_flight(serial)
+        world()._use_interior_interactable(mega_action,blocked_cell)
+        return
     if member.is_empty():
         var candidates = flown.duplicate()
         candidates.reverse()

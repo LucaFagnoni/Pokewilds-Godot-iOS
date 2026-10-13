@@ -11644,6 +11644,24 @@ func _canonical_house_door(door: Vector2i) -> Vector2i:
             return cell
     return door
 
+## Where to mark, on the map of the open world, someone standing at `at`
+## (in tiles). The inside of a built house is kept far off to the east of the
+## map, so a player indoors was marked at the map's edge; they are marked at
+## that house's door instead. Anywhere else is returned unchanged.
+func outdoor_map_position(at: Vector2) -> Vector2:
+    if active_area_id != "OVERWORLD" or at.x < float(map_w + 8) or built_house_origins.is_empty():
+        return at
+    var door_key := ""
+    var nearest := -2147483648
+    for key in built_house_origins:
+        var origin_y := int(built_house_origins[key])
+        if float(origin_y - 2) <= at.y and origin_y > nearest:
+            nearest = origin_y
+            door_key = String(key)
+    if door_key.is_empty():
+        return at
+    return Vector2(_cell_from_key(door_key)) + Vector2(0.5, 0.5)
+
 func _house_origin_for(door: Vector2i) -> Vector2i:
     var canonical := _canonical_house_door(door)
     var key := _cell_key(canonical)
