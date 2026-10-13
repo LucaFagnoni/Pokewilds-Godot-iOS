@@ -5476,6 +5476,13 @@ func can_place_structure(
     var recipe: Dictionary = CraftingData.build_recipe(build_name)
     if recipe.is_empty():
         return false
+    # The pieces of a house's outside, and fences, are only kept on the open
+    # map. One built inside a house or a cave was lost on the next load, and
+    # online it ended the session for the other players, who could not place
+    # it. They are refused indoors; INTERIOR WALL is the wall for a room.
+    if not ignore_indoor_requirement and active_area_id != "OVERWORLD" and _house_piece_name(build_name) in ["FENCE", "WALL", "ROOF", "DOOR"]:
+        world_message.emit("%s can only be built outside." % build_name)
+        return false
     if not ignore_indoor_requirement:
         if String(built_structures.get(cell + Vector2i.DOWN, {}).get("name", "")) == "BED": return false
         if _couch_anchor_at(cell) != Vector2i(2147483647,2147483647): return false

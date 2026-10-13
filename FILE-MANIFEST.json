@@ -87773,8 +87773,8 @@
 },
 {
 "path": "project/scripts/coop_build_runtime.gd",
-"bytes": 31601,
-"sha256": "6168df0c0aec0eeb59731931fcc592d0dfcc47b1276a1948ab271032e2257e8d"
+"bytes": 31969,
+"sha256": "ccafc6b7702440cdd507345ad4979884f565bc257b17be5f5f75d806b5c04320"
 },
 {
 "path": "project/scripts/coop_build_runtime.gd.uid",
@@ -89188,8 +89188,8 @@
 },
 {
 "path": "project/scripts/world_base_m74_3_9_14.gd",
-"bytes": 568810,
-"sha256": "fff146d221d4e483678f0540b8d91fbf85afb9036479a6e4af99cf0ad6f907fa"
+"bytes": 569359,
+"sha256": "5d6646a5e7008dc5a3e4bca58c25ea1240ed2d8d6fc9d5f2b60590de495f9ccf"
 },
 {
 "path": "project/scripts/world_base_m74_3_9_14.gd.uid",

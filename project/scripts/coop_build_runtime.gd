@@ -530,6 +530,10 @@ func apply_records(area:String,records:Array,arriving:bool=false)->void:
         var value:Dictionary=record.value
         if existing.is_empty():
             if not world.place_structure(String(value.get("recipe_name",value.name)),cell,true,value,true):
+                # An outside piece recorded somewhere that is not on the open map
+                # (built inside a house by an older version) can never be placed.
+                # It is passed over; it used to end the session for everyone.
+                if String(value.get("name","")) in ["FENCE","WALL","ROOF","DOOR"] and not world._in_bounds(cell):continue
                 game.end_session("SHARED BUILD COULD NOT LOAD. REJOIN THE WORLD.");return
         else:
             for key in value:
