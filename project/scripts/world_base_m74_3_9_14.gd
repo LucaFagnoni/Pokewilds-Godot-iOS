@@ -7478,7 +7478,10 @@ func _update_pokemon_water_visual(data: Dictionary) -> void:
     var species := String(data.get("species", ""))
     var extra := float(WATER_FLOAT_OFFSETS.get(species, 0.0))
     var height := float(sprite.texture.get_height()) / sprite.vframes
-    if species in ["mega_gyarados", "mega_sharpedo"]: extra = 8.0 - height / 2.0
+    if species == "mega_sharpedo": extra = 8.0 - height / 2.0
+    # Half of this tall sprite under water left only its horns and eyes
+    # showing. It rides higher: the whole face and upper body are seen.
+    if species == "mega_gyarados": extra = 8.0 - roundf(height * 0.28)
     var key := Vector2(extra, height)
     if not water_pokemon_materials.has(key):
         var shader := Shader.new()
