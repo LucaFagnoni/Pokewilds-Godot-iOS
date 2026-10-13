@@ -11346,8 +11346,29 @@ func _recruit_friendly_wild(wild_id: int, species: String) -> void:
         _close_wild_pokemon_prompt()
         _show_message("Your party and storage are full.")
         return
+    # Online the host keeps the record of every wild Pokemon. It is claimed and
+    # then reported as taken, exactly as a capture in battle is. Taking it from
+    # this game alone left it on the host: it came back in the field and could
+    # be taken again and again.
+    var online: bool = is_instance_valid(coop_game) and coop_game.active
+    if online:
+        _close_wild_pokemon_prompt(false)
+        if not await coop_game.wild.reserve(wild_id):
+            if coop_game.active and not battle_active:
+                world.set_gameplay_enabled(not _field_ui_blocks_gameplay(build_menu_open))
+            return
+        coop_game.wild.applying = true
     var record = world.call("take_friendly_wild", wild_id)
+    if online:
+        coop_game.wild.applying = false
     if typeof(record) != TYPE_DICTIONARY or (record as Dictionary).is_empty():
+        if online:
+            var claimed_area := String(coop_game.wild.encounter.get("area", ""))
+            coop_game.wild.encounter.clear()
+            coop_game.wild.original_profile.clear()
+            await coop_game.command("wild_release", {"area":claimed_area, "wild_id":wild_id})
+            if coop_game.active:
+                world.set_gameplay_enabled(not _field_ui_blocks_gameplay(build_menu_open))
         _close_wild_pokemon_prompt()
         return
     var source := (record as Dictionary).duplicate(true)
@@ -11373,6 +11394,8 @@ func _recruit_friendly_wild(wild_id: int, species: String) -> void:
     var destination := _route_received_pokemon(pokemon)
     if not caught_species.has(normalized_species):
         caught_species.append(normalized_species)
+    if online and not await coop_game.wild.finish_encounter("captured"):
+        return
     _close_wild_pokemon_prompt()
     world.play_source_sound("seed1")
     var notice := _received_pokemon_notice(pokemon, destination)
