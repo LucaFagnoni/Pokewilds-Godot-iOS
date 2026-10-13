@@ -32,6 +32,11 @@ var status:Label
 var empty:Label
 var stick_y:=0
 var _scroll:=0
+## Shown beside a list longer than the four rows on screen: which entry the
+## cursor is on out of how many, and an arrow wherever more rows are hidden.
+var counter:Label
+var more_above:Polygon2D
+var more_below:Polygon2D
 var _refresh_at:=0
 var _hint:=""
 var backdrop:ColorRect
@@ -65,7 +70,18 @@ func configure(game:Node)->void:
     status=main._source_ui_label(panel,"Status",Vector2(12,115),Vector2(200,23),7,"")
     status.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
     entry=main._source_ui_label(panel,"Entry",Vector2(26,38),Vector2(182,18),12,"")
+    counter=main._source_ui_label(panel,"Counter",Vector2(150,13),Vector2(60,12),8,"")
+    counter.horizontal_alignment=HORIZONTAL_ALIGNMENT_RIGHT
+    more_above=_list_arrow(Vector2(206,30),true)
+    more_below=_list_arrow(Vector2(206,105),false)
     hide()
+
+func _list_arrow(at:Vector2,up:bool)->Polygon2D:
+    var arrow:=Polygon2D.new()
+    arrow.polygon=PackedVector2Array([Vector2(0,4),Vector2(7,4),Vector2(3.5,0)] if up else [Vector2(0,0),Vector2(7,0),Vector2(3.5,4)])
+    arrow.color=Color.BLACK;arrow.position=at
+    panel.add_child(arrow)
+    return arrow
 
 func _build_title()->void:
     # Lives in the startup artwork's own layer so it scales with the artwork.
@@ -154,6 +170,11 @@ func refresh()->void:
     empty.text=EMPTY_LOBBIES if page=="browse" else "No saved multiplayer worlds on this device yet. Go back and choose NEW WORLD."
     tick.visible=not names.is_empty() and not _typing() and page not in ["connecting","loading"]
     if tick.visible:main._align_menu_tick(tick,rows[selection-_scroll])
+    var scrolling:bool=listing and tick.visible and names.size()>VISIBLE_ROWS
+    counter.visible=listing and tick.visible
+    counter.text="%d/%d"%[selection+1,names.size()]
+    more_above.visible=scrolling and _scroll>0
+    more_below.visible=scrolling and _scroll+VISIBLE_ROWS<names.size()
     _update_status()
 
 func _update_status()->void:

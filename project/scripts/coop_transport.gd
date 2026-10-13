@@ -10,6 +10,10 @@ const MAX_QUEUE := 4 * 1024 * 1024
 const FRAME_BUDGET := 64 * 1024
 const TIMEOUT_MS := 20000
 const LOADING_TIMEOUT_MS := 120000
+## How long a joining player waits for the host's first word. Two devices that
+## have not spoken since their games were opened need time to find a path to
+## each other: it has taken 24 seconds, and the join gave up at 20.
+const FIRST_CONTACT_MS := 60000
 var server := TCPServer.new()
 var peers: Dictionary = {}
 var hosting := false
@@ -44,7 +48,7 @@ func _add(peer: int, socket: StreamPeerTCP) -> void:
     socket.set_no_delay(true)
     peers[peer] = {"socket": socket, "rx": PackedByteArray(), "tx": [],
         "offset": 0, "queued": 0, "ready": false,
-        "seen": Time.get_ticks_msec(), "ping": Time.get_ticks_msec(),
+        "seen": Time.get_ticks_msec(), "ping": Time.get_ticks_msec(), "heard": false,
         "local_loading_until": 0, "remote_loading_until": 0}
 
 func set_loading(peer:int, loading:bool, remote:bool=false)->void:
@@ -52,7 +56,8 @@ func set_loading(peer:int, loading:bool, remote:bool=false)->void:
     peers[peer]["remote_loading_until" if remote else "local_loading_until"] = Time.get_ticks_msec()+LOADING_TIMEOUT_MS if loading else 0
 
 func receive_expired(state:Dictionary, now:int)->bool:
-    return now-int(state.seen)>TIMEOUT_MS and now>int(state.get("local_loading_until",0)) and now>int(state.get("remote_loading_until",0))
+    var limit:=FIRST_CONTACT_MS if joining and not state.get("heard",false) else TIMEOUT_MS
+    return now-int(state.seen)>limit and now>int(state.get("local_loading_until",0)) and now>int(state.get("remote_loading_until",0))
 
 func send(peer: int, message: Dictionary) -> Error:
     return send_encoded(peer,JSON.stringify(message).to_utf8_buffer())
@@ -108,6 +113,7 @@ func _process(_delta:float)->void:
                 continue
             state.rx.append_array(data[1])
             state.seen = now
+            state.heard = true
         # Check the socket before timing out: world loading may have delayed this
         # process call while keepalives were already waiting in the receive buffer.
         if receive_expired(state,now):

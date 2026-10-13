@@ -547,8 +547,11 @@ func tick_dig_motion(input_direction: Vector2, speed: float, delta: float) -> vo
         var destination := _cell_center(_player_cell() + Vector2i(direction))
         # Check the whole stride before leaving its center. DIG keeps normal
         # physical collision, including mountain edges and buried rewards.
+        # The body's lower edge rests exactly on the tile line, so a solid
+        # tile below the path (water under the last shore tile) counted as a
+        # hit. Test one pixel higher: touching is not being in the way.
         if constrain_player_motion(before, destination) == destination and \
-                not player.test_move(player.transform, destination - before):
+                not player.test_move(player.transform.translated(Vector2.UP), destination - before):
             dig_step_direction = direction
             dig_step_target = destination
             dig_step_active = true
@@ -559,7 +562,9 @@ func tick_dig_motion(input_direction: Vector2, speed: float, delta: float) -> vo
         var coordinator=get_parent().get("coop_game")
         if is_instance_valid(coordinator) and coordinator.active:
             next=coordinator.visuals.constrain_motion(player.position,next)
-        player.move_and_collide(next - player.position)
+        # The stride was checked before it began; moving by collision would
+        # stop a hair short of a tile it only touches and never arrive.
+        player.position = next
         if player.position.distance_squared_to(dig_step_target) < 0.000001:
             player.position = dig_step_target
             dig_step_active = false

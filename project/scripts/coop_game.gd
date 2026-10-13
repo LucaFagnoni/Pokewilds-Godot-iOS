@@ -607,7 +607,7 @@ func _apply_visible(result:Dictionary)->void:
 ## never carried anything from this player to the host, which is what an
 ## isolated guest Wi-Fi network does: say so instead of blaming the host.
 var _host_answered:=false
-const UNREACHABLE:="COULD NOT REACH THE HOST.\nGUEST WI-FI? TRY THE MAIN ONE."
+const UNREACHABLE:="COULD NOT REACH THE HOST.\nTRY AGAIN, OR CHECK THE WI-FI."
 
 ## The records whose key starts with `prefix`, without walking all of them
 ## each time. A long-played world holds thousands of records; several systems

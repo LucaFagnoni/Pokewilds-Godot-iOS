@@ -69,14 +69,14 @@ func plant(cell: Vector2i, item: String, animate: bool = true) -> bool:
         world._connect_source_dig_holes(cell)
     store(cell,tile)
     world.play_source_sound("seed1")
-    world._refresh_exact_streams()
+    _redraw_around(cell)
     if animate and item not in ["MANURE","MIRACLE SEED"]:
         await animate_planted(cell,tile,upper)
     return true
 
 func animate_planted(cell:Vector2i,tile:SourceTile,upper:String,mutate_tile:bool=true)->void:
     if mutate_tile:tile.set_names(tile.name,"")
-    world._refresh_exact_streams()
+    _redraw_around(cell)
     var main=world.get_parent()
     main.field_item_busy=true
     world.set_gameplay_enabled(false)
@@ -107,9 +107,17 @@ func animate_planted(cell:Vector2i,tile:SourceTile,upper:String,mutate_tile:bool
     if mutate_tile:
         tile.set_names(tile.name,upper)
         store(cell,tile)
-    world._refresh_exact_streams()
+    _redraw_around(cell)
     main.field_item_busy=false
     world.set_gameplay_enabled(true)
+
+## Redraw the planted tile and the holes beside it that it may have rejoined.
+## Redrawing the whole map here froze the game for a moment on every planting.
+func _redraw_around(cell: Vector2i) -> void:
+    var cells: Array = []
+    for y in range(-1,2):
+        for x in range(-1,2): cells.append(cell+Vector2i(x,y))
+    world._refresh_exact_pickup_cells(cells)
 
 func store(cell: Vector2i, tile: SourceTile, rewards: Dictionary = {}) -> void:
     world.source_plant_farms[world._cell_key(cell)]={"base":tile.name,"upper":tile.name_upper,"day":day(),"rewards":rewards.duplicate(true)}

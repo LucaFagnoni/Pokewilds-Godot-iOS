@@ -1937,13 +1937,37 @@ func _refresh_house_structure_depths() -> void:
     for cell in built_structures:
         var data: Dictionary = built_structures[cell]
         var kind := String(data.get("name", ""))
-        if kind not in ["STATUE", "WALL", "ROOF", "DOOR"]: continue
+        # Furniture inside a house is ordered by its row as well. Its depth was
+        # only worked out once, from wherever the player stood when it was
+        # placed, so a couch could be drawn over the plant in front of it.
+        var furniture: bool = built_house_interior_cells.has(cell) and kind != "FLOOR"
+        if kind not in ["STATUE", "WALL", "ROOF", "DOOR"] and not furniture: continue
         var sprite := data.get("sprite") as Sprite2D
         if not is_instance_valid(sprite): continue
         if built_house_interior_cells.has(cell):
-            sprite.z_index = 0 if kind == "WALL" else _depth_z(cell,24)
+            sprite.z_index = 0 if kind == "WALL" else _house_piece_z(kind, cell)
         else:
             sprite.z_index = _depth_z(cell)
+    if active_area_id != "HOUSE": return
+    # Things hung on a wall stay just in front of that wall.
+    for hung in [built_house_decoration_sprites, built_house_paint_sprites]:
+        for cell in hung:
+            var hung_sprite := hung[cell] as Sprite2D
+            if is_instance_valid(hung_sprite) and hung_sprite.z_index >= 0:
+                hung_sprite.z_index = _depth_z(cell, HOUSE_FURNITURE_Z)
+
+## Depth of a piece inside a house. A row nearer the bottom of the screen is
+## in front: someone standing behind a dresser is covered by it, and someone
+## standing in front of it covers it.
+const HOUSE_FURNITURE_Z := 1
+
+func _house_piece_z(kind: String, cell: Vector2i) -> int:
+    if kind == "STAIRS": return HOUSE_STAIRS_Z
+    return _depth_z(cell, 0 if kind == "INTERIOR WALL" else HOUSE_FURNITURE_Z)
+
+## Stairs inside a house are part of the floor: over the floor and carpets,
+## under furniture, plants and anyone walking on them.
+const HOUSE_STAIRS_Z := -3
 
 func _depth_z(cell: Vector2i, offset: int = 0) -> int:
     if exact_world_mode:
@@ -2441,7 +2465,7 @@ func _create_generated_house_stair_pair(primary_cell: Vector2i) -> void:
     sprite.centered = false
     sprite.position = Vector2(upper_cell.x * TILE, upper_cell.y * TILE)
     sprite.z_as_relative = false
-    sprite.z_index = _depth_z(upper_cell)
+    sprite.z_index = HOUSE_STAIRS_Z
     var layer: Node2D = get_node_or_null("LandmarkLayer") as Node2D
     if layer != null:
         layer.add_child(sprite)
@@ -2709,7 +2733,7 @@ func _set_built_house_paint_sprite(cell: Vector2i, index: int) -> bool:
     sprite.centered = false
     sprite.position = Vector2(cell.x * TILE, cell.y * TILE)
     sprite.z_as_relative = false
-    sprite.z_index = _depth_z(cell, 24)
+    sprite.z_index = _depth_z(cell, HOUSE_FURNITURE_Z)
     layer.add_child(sprite)
     built_house_paint_sprites[cell] = sprite
     return true
@@ -5496,6 +5520,10 @@ func can_place_structure(
     if _is_window_recipe(build_name) and active_area_id == "OVERWORLD":
         var wall: Dictionary = built_structures.get(cell, {})
         return String(wall.get("name", "")) == "WALL" and not bool(wall.get("window", false))
+    # A torch goes on the ground or, as in the source game, on a wall.
+    if build_name == "TORCH" and not ignore_indoor_requirement and _torch_wall_at(cell):
+        var torch_wall: Dictionary = built_structures[cell]
+        return not bool(torch_wall.get("torch", false)) and not bool(torch_wall.get("window", false))
     if _is_house_decoration(build_name) and not (build_name == "CLOCK" and ignore_indoor_requirement):
         if active_area_id != "HOUSE": return false
         var on_wall := _is_window_recipe(build_name) or build_name == "CLOCK"
@@ -5586,6 +5614,10 @@ func place_structure(build_name: String, cell: Vector2i, restoring: bool = false
         built_structures[cell]["window_variant"] = 0
         _refresh_shell_attachment(cell)
         return true
+    if build_name == "TORCH" and not restoring and _torch_wall_at(cell):
+        built_structures[cell]["torch"] = true
+        _refresh_shell_attachment(cell)
+        return true
     if _is_house_decoration(build_name) and not (build_name == "CLOCK" and restoring):
         if build_name.begins_with("CARPET ") and not built_house_interior_cells.has(cell):
             var floor_index := _built_house_floor_index_for_cell(cell)
@@ -5634,7 +5666,8 @@ func place_structure(build_name: String, cell: Vector2i, restoring: bool = false
     sprite.centered = false
     sprite.position = Vector2(cell.x * TILE, cell.y * TILE - maxi(0, int(sprite.texture.get_height()) - TILE))
     sprite.z_as_relative = false
-    sprite.z_index = 10 if structure_name == "BRIDGE" else _depth_z(cell)
+    # A beacon is a floor tile that is stood on, like a bridge.
+    sprite.z_index = 10 if structure_name in ["BRIDGE", "BEACON"] else _depth_z(cell)
 
     var layer := get_node_or_null("LandmarkLayer") as Node2D
     if layer == null:
@@ -6781,7 +6814,7 @@ func _ghost_warded_at(cell: Vector2i) -> bool:
         if Vector2(structure_cell - cell).length_squared() > 64.0:
             continue
         var structure := built_structures[raw_cell] as Dictionary
-        if String(structure.get("name", "")) == "CAMPFIRE" or (
+        if String(structure.get("name", "")) == "CAMPFIRE" or bool(structure.get("torch", false)) or (
                 String(structure.get("name", "")) == "TORCH"
                 and bool(structure.get("lit", true))
             ):
@@ -11342,7 +11375,10 @@ func _configure_camera() -> void:
     if player.has_method("set_streamed_overworld_depth"):
         player.call(
             "set_streamed_overworld_depth",
-            exact_world_mode and active_area_id == "OVERWORLD"
+            # A built house orders its furniture round the player the same
+            # way the open map does; without this the player was simply
+            # drawn over everything in the room.
+            exact_world_mode and active_area_id in ["OVERWORLD", "HOUSE"]
         )
 
     if active_area_id == "HOUSE" or active_field_move == "BUILD":
@@ -11691,7 +11727,21 @@ func _refresh_shell_attachment(cell: Vector2i) -> void:
     var shell := data.get("sprite") as Sprite2D
     if not is_instance_valid(shell): return
     if built_house_interior_cells.has(cell) and String(data.get("name", "")) not in ["INTERIOR WALL", "WALL", "ROOF", "FLOOR"]:
-        shell.z_index = _depth_z(cell, 24)
+        shell.z_index = _house_piece_z(String(data.get("name", "")), cell)
+    var wall_torch := shell.get_node_or_null("TORCH") as Sprite2D
+    if bool(data.get("torch", false)) and shell.texture != null:
+        if wall_torch == null:
+            wall_torch = Sprite2D.new()
+            wall_torch.name = "TORCH"
+            wall_torch.centered = false
+            wall_torch.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+            shell.add_child(wall_torch)
+        wall_torch.texture = environment_structure_texture("TORCH", 0)
+        # Hung on the face of the wall, a little above the ground.
+        wall_torch.position = Vector2(0, shell.texture.get_height() - 24)
+    elif wall_torch != null:
+        shell.remove_child(wall_torch)
+        wall_torch.queue_free()
     for kind in ["WINDOW", "CHIMNEY"]:
         if not bool(data.get(kind.to_lower(), false)): continue
         var part := shell.get_node_or_null(kind) as Sprite2D
@@ -11761,6 +11811,9 @@ func _can_prompt_shore_surf(target: Vector2i) -> bool:
 func _is_house_decoration(build_name: String) -> bool:
     return build_name == "CLOCK" or build_name.begins_with("CARPET ") or _is_window_recipe(build_name)
 
+func _torch_wall_at(cell: Vector2i) -> bool:
+    return String(built_structures.get(cell, {}).get("name", "")) in ["WALL", "INTERIOR WALL"]
+
 func _is_window_recipe(build_name: String) -> bool:
     return build_name == "WINDOW" or build_name.begins_with("INDOOR WINDOW ")
 
@@ -11795,7 +11848,7 @@ func _draw_house_decoration(cell: Vector2i) -> void:
     var old_hole := sprite.get_node_or_null("DigHole")
     if is_instance_valid(old_hole): sprite.remove_child(old_hole);old_hole.queue_free()
     sprite.texture = _structure_display_texture(String(data.name), int(data.get("variant",0)))
-    sprite.z_index = -4 if String(data.name).begins_with("CARPET ") else _depth_z(cell,24)
+    sprite.z_index = -4 if String(data.name).begins_with("CARPET ") else _depth_z(cell, HOUSE_FURNITURE_Z)
 
 func _restore_house_decorations() -> void:
     for cell in built_house_interior_cells: _draw_house_decoration(cell)
