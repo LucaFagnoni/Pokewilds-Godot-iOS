@@ -267,6 +267,14 @@ var built_house_floor_tiles: Dictionary = {}
 var built_house_decorations: Dictionary = {}
 var built_house_decoration_sprites: Dictionary = {}
 var built_house_void_collisions: Dictionary = {}
+## The inside of a built house and the generated dungeons are laid out in the
+## same far-off stretch of coordinates, so a dungeon's walls could mark tiles
+## of a house's floor as blocked: BUILD and the other work moves then refused
+## to start on open floor ("Leave one clear tile ahead"), and furniture could
+## not be placed there. While a house is entered those marks are set aside
+## here, and put back when it is left.
+var built_house_displaced_blocks: Dictionary = {}
+var built_house_blocks_stale := false
 var normal_grass_front_sprite: Sprite2D
 var savanna_tree_front_sprite: Sprite2D
 var active_regi_pedestal_cell := Vector2i(-2147483648, -2147483648)
@@ -504,6 +512,8 @@ func generate_world(
     terrain.clear()
     biomes.clear()
     blocked.clear()
+    built_house_displaced_blocks.clear()
+    built_house_blocks_stale = false
     tall_grass.clear()
     landmarks.clear()
     resource_objects.clear()
@@ -2615,6 +2625,8 @@ func _draw_built_house_interior(
 func _prepare_built_house_interior(door_cell: Vector2i, house_state: Dictionary) -> void:
     # Clear the previous house runtime while preserving persistent floor expansion
     # records and player-built structures. Generated stair-pair mirrors are rebuilt.
+    _restore_displaced_house_blocks()
+    built_house_blocks_stale = true
     _remove_generated_house_stair_pairs()
     built_house_exit_doors.clear()
     for raw_cell in built_house_interior_cells.keys():
@@ -2695,6 +2707,25 @@ func _prepare_built_house_interior(door_cell: Vector2i, house_state: Dictionary)
     for furniture_cell in built_house_interior_cells:
         if built_structures.has(furniture_cell): _refresh_shell_attachment(furniture_cell)
     _set_active_built_house_floor(0)
+
+func _restore_displaced_house_blocks() -> void:
+    for cell in built_house_displaced_blocks:
+        blocked[cell] = true
+    built_house_displaced_blocks.clear()
+
+## Sets aside every blocked mark on this house's floors, and on the wall row
+## above each, that does not come from something built in the house.
+func _displace_foreign_house_blocks() -> void:
+    built_house_blocks_stale = false
+    for raw_index in built_house_floor_origins:
+        var origin := _built_house_floor_origin(int(raw_index))
+        for yy in range(-1, built_house_room_size.y):
+            for xx in range(built_house_room_size.x):
+                var cell := origin + Vector2i(xx, yy)
+                if not blocked.has(cell) or built_structures.has(cell): continue
+                if _couch_anchor_at(cell) != Vector2i(2147483647,2147483647): continue
+                built_house_displaced_blocks[cell] = true
+                blocked.erase(cell)
 
 func _built_house_paint_key(cell: Vector2i) -> String:
     if active_built_house_door.x <= -2147483648:
@@ -2789,6 +2820,10 @@ var held_emote_refresh_remaining := 0.0
 var window_display_cache: Dictionary = {}
 
 func _process(delta: float) -> void:
+    if active_area_id == "HOUSE":
+        if built_house_blocks_stale: _displace_foreign_house_blocks()
+    elif not built_house_displaced_blocks.is_empty():
+        _restore_displaced_house_blocks()
     held_emote_refresh_remaining -= delta
     if held_emote_refresh_remaining <= 0.0:
         held_emote_refresh_remaining = 0.1
