@@ -5269,6 +5269,11 @@ func _start_game() -> void:
 
     if coop_game.active and not await coop_game.game_started():
         generation_panel.hide();setup_panel.show();generating=false
+        # Leave properly and say so. Returning to this screen alone kept the
+        # link to the host open and the loaded world's music playing, with no
+        # word of what had gone wrong.
+        if coop_game.active:
+            coop_game.end_session("THE HOST DID NOT ANSWER.\nTRY AGAIN." if not coop_game.hosting else "ONLINE GAME COULD NOT START.")
         return
     generation_panel.visible = false
     started = true

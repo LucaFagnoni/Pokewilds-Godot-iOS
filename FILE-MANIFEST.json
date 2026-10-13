@@ -88173,8 +88173,8 @@
 },
 {
 "path": "project/scripts/coop_wild_runtime.gd",
-"bytes": 22046,
-"sha256": "03842e9b1f6ad9c78d947fcf2e78777215e5bb6745ddde99feaef8c93ce8353b"
+"bytes": 22489,
+"sha256": "249f0665bb40ba8762904eb2db251f9f8610086a794470a03c169b6bc6dd902b"
 },
 {
 "path": "project/scripts/coop_wild_runtime.gd.uid",
@@ -88408,8 +88408,8 @@
 },
 {
 "path": "project/scripts/main.gd",
-"bytes": 630681,
-"sha256": "4806bb4285e2a70a7bc4e53b843c93db3bbf8f497c91765b78c7784b560413e9"
+"bytes": 631044,
+"sha256": "24b59fa82c8322500cc889c53abb27049a8f5d386e612a1686afe160227066ab"
 },
 {
 "path": "project/scripts/main.gd.uid",
