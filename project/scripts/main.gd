@@ -12937,10 +12937,13 @@ func _travel_adjacent_world(direction: Vector2i) -> void:
     generating = true
     var travel_view: Control
     if destination.is_empty():
-        generation_panel.hide()
-        travel_view = preload("res://scripts/world_travel_view.gd").new()
-        $UI.add_child(travel_view)
-        travel_view.configure(world)
+        # A new area takes minutes to generate. It was shown as a plain grey
+        # screen with the player hovering in it and no word of what was
+        # happening, so it looked as if the game had stopped. It now has the
+        # same sky, trainer tips and message as every other loading screen.
+        generation_status.text = "GENERATING WORLD...\nPLEASE WAIT..."
+        _show_generation_tip()
+        generation_panel.show()
         await get_tree().process_frame
     else:
         generation_status.text = "LOADING...\nPLEASE WAIT...."
