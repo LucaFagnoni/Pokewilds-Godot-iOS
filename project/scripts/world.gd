@@ -779,12 +779,29 @@ func field_motion_completed(before: Vector2, after: Vector2, movement_direction:
     var after_tile = exact_world.tile_at(after_cell)
     var still_on_ice = after_tile != null and _source_tile_key(after_tile.name) == "ice2"
     var stopped := before.distance_squared_to(after) < 0.0025 and movement_direction.length_squared() > 0.0001
+    if not stopped and still_on_ice:
+        _align_ice_slide(after_cell)
     for index in range(player.get_slide_collision_count()):
         if player.get_slide_collision(index).get_normal().dot(m3922_ice_slide_direction) < -0.5:
             stopped = true
     if stopped: ice_blocked_direction = m3922_ice_slide_direction
     if not still_on_ice or stopped:
         m3922_ice_slide_direction = Vector2.ZERO
+
+## Slides on ice run along a row or column of tiles, as in the source game,
+## where the player is always on one tile. Here a player can be a pixel or two
+## off the middle of a row, and a slide along the foot of a wall then caught
+## the corner of the next tile of that wall and stopped dead on open ice. The
+## sideways offset is taken out a little at a time while sliding, never
+## through anything solid.
+func _align_ice_slide(cell: Vector2i) -> void:
+    var centre := _cell_center(cell)
+    var offset := Vector2(0.0, centre.y - player.position.y) if m3922_ice_slide_direction.x != 0.0 else Vector2(centre.x - player.position.x, 0.0)
+    if offset.length_squared() < 0.0001:
+        return
+    var step := offset.limit_length(1.0)
+    if not player.test_move(player.transform, step):
+        player.position += step
 
 func _ride_jump_over(obstacle: Vector2i) -> void:
     if active_field_move == "RIDE" and exact_world_mode and exact_world != null and active_area_id == "OVERWORLD":

@@ -12992,6 +12992,10 @@ func _travel_adjacent_world(direction: Vector2i) -> void:
     world.m3922_fly_height = 32.0
     world._place_field_helper_live()
     world.begin_encounter_grace()
+    # Generating a new area uncovers the map around wherever the player
+    # stood in the area they left, which in the new one is somewhere they
+    # have never been: a lone explored circle far from where they arrive.
+    if destination.is_empty(): world.discovered_cells.clear()
     world.reveal_player_area()
     _invalidate_travel_maps()
     _show_flying_edge_sky()
