@@ -87803,8 +87803,8 @@
 },
 {
 "path": "project/scripts/coop_game.gd",
-"bytes": 69509,
-"sha256": "d31f6f1bae060e2af11c31ec52a2ee973de081db9f36e5f156031794b2d378f2"
+"bytes": 70949,
+"sha256": "384597485d040ff27c330fd98ec6a4cfed0280a5f0f43454472477f41738fae7"
 },
 {
 "path": "project/scripts/coop_game.gd.uid",
@@ -87903,8 +87903,8 @@
 },
 {
 "path": "project/scripts/coop_messages.gd",
-"bytes": 3767,
-"sha256": "c9c1b16a63c11b1fc1adb83b0b46b8afb2e91cc7e6d79669528ab91d81bd1709"
+"bytes": 4423,
+"sha256": "f680bfa1417da65a358b795bbd33140b9efac3d0e7da4a78c8800120bbb4bcf4"
 },
 {
 "path": "project/scripts/coop_messages.gd.uid",
@@ -88073,8 +88073,8 @@
 },
 {
 "path": "project/scripts/coop_session.gd",
-"bytes": 9446,
-"sha256": "a5c9b2210ca84f695722381650dfcdf6b1f2d2bb151124af4fd0dcd41aefbeb0"
+"bytes": 9590,
+"sha256": "c15494b6119f6506a437b65a9928cc87edce56e6e1766553da9dd79c9e1af4ea"
 },
 {
 "path": "project/scripts/coop_session.gd.uid",
@@ -88408,8 +88408,8 @@
 },
 {
 "path": "project/scripts/main.gd",
-"bytes": 633717,
-"sha256": "5693a6f72a748a4d60a1f036921fd76b18c906c7f51243233cd7d967176238f1"
+"bytes": 634003,
+"sha256": "e5c5bf074df8d8349feb48a3e3516d63e49ec707efe24a4013917f0b12e474e8"
 },
 {
 "path": "project/scripts/main.gd.uid",
@@ -89188,8 +89188,8 @@
 },
 {
 "path": "project/scripts/world.gd",
-"bytes": 112944,
-"sha256": "221134052a41368131d216a33e7edd9cc74a35727ffce8de033c3a4011eb3356"
+"bytes": 113858,
+"sha256": "0ae37da74fb856a75b70aeacc20605daf0d75128517abae1550409f1b50d59d0"
 },
 {
 "path": "project/scripts/world.gd.uid",

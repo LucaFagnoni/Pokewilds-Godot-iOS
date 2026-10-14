@@ -121,15 +121,43 @@ func prepare_travel(grid:Vector2i)->Dictionary:
     if wild.authority():await wild.publish_motion()
     if population.authority() or population.authority(population.local_scope()):await population.publish_motion()
     if not await checkpoint_player() or not await publish_current():return {"error":"ONLINE SAVE FAILED"}
+    _area_discovery[_area()]=Snapshot.packed_discovery(main.world)
     _travel_target="%d,%d"%[grid.x,grid.y];_travel_offer={};_travel_token=""
     if hosting:service.request(session.actor,_travel_target)
     else:session.send_host({"kind":"area_request","area":_travel_target})
-    var deadline=Time.get_ticks_msec()+120000
-    while session.trusted and _travel_offer.is_empty() and Time.get_ticks_msec()<deadline:await get_tree().process_frame
-    if _travel_offer.is_empty():_travel_target="";return {"error":"ONLINE AREA DID NOT RESPOND"}
+    # The area may be one that another player is generating at this moment:
+    # the answer then comes only once their game has made it and sent it in,
+    # which takes minutes for a large world. Say so, and wait that long. The
+    # wait used to end after two minutes with nothing on screen.
+    var asked:=Time.get_ticks_msec()
+    var deadline=asked+600000
+    var told:=false
+    while session.trusted and _travel_offer.is_empty() and Time.get_ticks_msec()<deadline:
+        if not told and Time.get_ticks_msec()-asked>=3000:
+            told=true
+            main.generation_status.text="ANOTHER PLAYER IS\nCREATING THIS AREA.\nPLEASE WAIT..."
+            main.generation_panel.show()
+        await get_tree().process_frame
+    if _travel_offer.is_empty():
+        if told:main.generation_panel.hide()
+        _travel_target="";return {"error":"ONLINE AREA DID NOT RESPOND"}
     session.set_loading(true)
     await get_tree().process_frame
     return _travel_offer
+
+## What each area's map looked like when this player last left it, for this
+## session. A player's record holds one explored map, and it was carried into
+## whichever area they went to next: an area someone else had made arrived
+## already "explored" in the shape of the area just left.
+var _area_discovery:Dictionary={}
+
+## This player's own state on arriving in `area`: as it is now, but with that
+## area's explored map, or none if they have not been there this session.
+func _arrival_personal(area:String)->Dictionary:
+    var personal:Dictionary=Snapshot.capture_personal(main.world)
+    if _area_discovery.has(area):personal["discovered_cells"]=_area_discovery[area]
+    else:personal["discovered_cells"]={}
+    return personal
 
 func finish_travel()->bool:
     if not _travel_token.is_empty():
@@ -1160,7 +1188,7 @@ func _area_ready(actor:String,_area_name:String,_metadata:Dictionary,bytes:Packe
     if actor==session.actor and not _travel_target.is_empty() and _area_name==_travel_target:
         var arrived=Snapshot.decode(bytes)
         if arrived.is_empty() or not _install_cache(arrived):_travel_offer={"error":"ONLINE AREA COULD NOT LOAD"};return
-        _travel_offer={"seed":arrived.seed,"size":arrived["size"],"state":Snapshot.merge(wild.overlay(_area_name,population.overlay(_area_name,building.overlay(_area_name,arrived.shared,state.records if hosting else shared_records),state.records if hosting else shared_records),state.records if hosting else shared_records),Snapshot.capture_personal(main.world))}
+        _travel_offer={"seed":arrived.seed,"size":arrived["size"],"state":Snapshot.merge(wild.overlay(_area_name,population.overlay(_area_name,building.overlay(_area_name,arrived.shared,state.records if hosting else shared_records),state.records if hosting else shared_records),state.records if hosting else shared_records),_arrival_personal(_area_name))}
         return
     if hosting or actor!=session.actor or _guest_game.is_empty():return
     var decoded=Snapshot.decode(bytes)

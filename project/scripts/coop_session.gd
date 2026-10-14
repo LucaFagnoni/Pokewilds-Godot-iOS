@@ -106,7 +106,10 @@ func _process(_delta:float)->void:
 func _received(peer: int, payload: Dictionary) -> void:
     var kind:=String(payload.get("kind",""))
     if kind=="loading" and payload.get("active") is bool:
-        if (hosting and players.has(peer)) or (not hosting and trusted):transport.set_loading(peer,payload.active,true)
+        if (hosting and players.has(peer)) or (not hosting and trusted):
+            transport.set_loading(peer,payload.active,true)
+            if payload.active:messages.patient[peer]=true
+            elif messages.patient.has(peer):messages.patient[peer]=false
         return
     if kind=="session_blob":
         if (hosting and not players.has(peer)) or (not hosting and not trusted):transport._drop(peer,"fragment_before_handshake");return
