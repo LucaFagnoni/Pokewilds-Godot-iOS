@@ -2,9 +2,15 @@ extends RefCounted
 static var online_enabled:=false
 static var _online_recipes:Array=[]
 const PRIVATE_CHEST={"name":"PRIVATE CHEST","display_name":"PRIVATE","cost":{"LOG":2},"solid":true}
+## The same purple chest in single-player, where it holds the storage shared
+## by every single-player save on the device.
+const SHARED_CHEST={"name":"PRIVATE CHEST","display_name":"SHARED","cost":{"LOG":2},"solid":true}
+static var _offline_recipes:Array=[]
 
 static func build_recipes()->Array:
-    if not online_enabled:return BUILD_RECIPES
+    if not online_enabled:
+        if _offline_recipes.is_empty():_offline_recipes=BUILD_RECIPES.duplicate();_offline_recipes.append(SHARED_CHEST)
+        return _offline_recipes
     if _online_recipes.is_empty():_online_recipes=BUILD_RECIPES.duplicate();_online_recipes.append(PRIVATE_CHEST)
     return _online_recipes
 const ItemData = preload("res://scripts/item_data.gd")
@@ -201,7 +207,7 @@ static func recipes_for_station(station: String) -> Array:
     return []
 
 static func build_recipe(name: String) -> Dictionary:
-    if name=="PRIVATE CHEST":return PRIVATE_CHEST
+    if name=="PRIVATE CHEST":return PRIVATE_CHEST if online_enabled else SHARED_CHEST
     for recipe in BUILD_RECIPES:
         if String(recipe.get("name", "")) == name:
             if online_enabled and name=="BEACON":

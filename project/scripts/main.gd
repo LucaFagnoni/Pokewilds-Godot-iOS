@@ -982,6 +982,13 @@ var android_back_bridge_checked := false
 var caught_pokemon = []
 var inventory: Dictionary = CraftingData.ensure_inventory(STARTING_INVENTORY)
 var pokemon_storage: Dictionary = {}
+## Single-player only: the box under this name is what every purple SHARED
+## chest opens. It is kept in a file of its own beside the saves, so the same
+## Pokemon are in it whichever single-player save is loaded. STORAGE BOXES are
+## unchanged and belong to their own save.
+const SHARED_STORAGE_KEY := "SHARED"
+## The number the shared storage was last written under.
+var shared_storage_serial := 0
 var storage_menu: Control
 var storage_rows: Array[Dictionary] = []
 var storage_actions: Panel
@@ -2222,7 +2229,7 @@ func _position_minimap_other_players(map_left: float, map_top: float, map_diamet
         var look := "%d:%d" % [int(visual.get("model", 0)), int(visual.get("color", 0))]
         if marker.texture == null or marker.texture.get_meta("look", "") != look:
             marker.texture = _coop_marker_texture(visual)
-        var cell := Vector2(float(packet.get("body_x", 0.0)), float(packet.get("body_y", 0.0))) / 16.0
+        var cell: Vector2 = world.outdoor_map_position(Vector2(float(packet.get("body_x", 0.0)), float(packet.get("body_y", 0.0))) / 16.0)
         var center := Vector2(
             map_left + ((cell.x - view_origin.x) / window_cells.x) * map_diameter,
             map_top + ((cell.y - view_origin.y) / window_cells.y) * map_diameter)
@@ -2246,7 +2253,7 @@ func _add_map_other_players(map_view: Control, bounds: Rect2i, image_size: Vecto
         other.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
         other.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
         other.z_index = 19
-        var cell := Vector2i(int(floor(float(packet.get("body_x", 0.0)) / 16.0)), int(floor(float(packet.get("body_y", 0.0)) / 16.0)))
+        var cell: Vector2i = Vector2i(world.outdoor_map_position(Vector2(floorf(float(packet.get("body_x", 0.0)) / 16.0), floorf(float(packet.get("body_y", 0.0)) / 16.0))).floor())
         var center := Vector2(float(cell.x - bounds.position.x) * SOURCE_MAP_TILE_PIXELS,
             float(cell.y - bounds.position.y) * SOURCE_MAP_TILE_PIXELS)
         other.position = Vector2(
@@ -5262,6 +5269,17 @@ func _start_game() -> void:
 
     if selected_mode == "LOAD" and not load_data.is_empty():
         await _restore_game_save(load_data)
+    if not coop_game.active:
+        var loading: bool = selected_mode == "LOAD" and not load_data.is_empty()
+        var held = pokemon_storage.get(SHARED_STORAGE_KEY, [])
+        var adopted: Dictionary = preload("res://scripts/shared_storage.gd").adopt(
+            {SHARED_STORAGE_KEY: held if held is Array else []} if loading else {},
+            loading and bool(load_data.get("storage_shared", false)),
+            int(load_data.get("storage_serial", 0)) if loading else 0)
+        var shared_box = adopted.storage.get(SHARED_STORAGE_KEY, [])
+        pokemon_storage[SHARED_STORAGE_KEY] = shared_box if shared_box is Array else []
+        shared_storage_serial = int(adopted.serial)
+        pokedex_progress.seed_owned(pokemon_storage[SHARED_STORAGE_KEY])
 
     _ensure_machop_lead(false)
     world.call("clear_active_field_move", false)
@@ -5269,6 +5287,11 @@ func _start_game() -> void:
 
     if coop_game.active and not await coop_game.game_started():
         generation_panel.hide();setup_panel.show();generating=false
+        # Leave properly and say so. Returning to this screen alone kept the
+        # link to the host open and the loaded world's music playing, with no
+        # word of what had gone wrong.
+        if coop_game.active:
+            coop_game.end_session("THE HOST DID NOT ANSWER.\nTRY AGAIN." if not coop_game.hosting else "ONLINE GAME COULD NOT START.")
         return
     generation_panel.visible = false
     started = true
@@ -10594,6 +10617,8 @@ func _save_current_game() -> void:
         _show_message("SAVE FAILED.")
         return
 
+    data["storage_shared"] = true
+    data["storage_serial"] = shared_storage_serial + 1
     file.store_string(JSON.stringify(data))
     file.flush()
     file.close()
@@ -10603,6 +10628,7 @@ func _save_current_game() -> void:
         _show_message("SAVE FAILED.")
         return
 
+    _write_shared_storage()
     _write_save_index(world_name, save_path)
     world_edit.text = world_name
     _save_setup()
@@ -10612,6 +10638,17 @@ func _save_current_game() -> void:
     _close_game_menu()
     world.call("play_source_sound", "save1")
     _show_message("GAME SAVED.")
+
+## Writes the SHARED chest's contents after the save that goes with them, so
+## that what is stored always matches a saved party. If this write is lost,
+## that save's own copy is the newer one and is used when it is next loaded.
+func _write_shared_storage() -> void:
+    shared_storage_serial += 1
+    var held = pokemon_storage.get(SHARED_STORAGE_KEY, [])
+    var error: Error = preload("res://scripts/shared_storage.gd").write(
+        {SHARED_STORAGE_KEY: held if held is Array else []}, shared_storage_serial)
+    if error != OK:
+        push_error("Shared storage could not be written (%d)." % error)
 
 func _read_game_save(world_name: String):
     return _read_save_file(_find_save_path(world_name))
@@ -11108,7 +11145,7 @@ func _on_structure_removal_requested(cell: Vector2i, move: String) -> void:
             if String(world.built_structures[built_cell].get("name", "")) == "PRIVATE CHEST":
                 private_keys.append(_world_storage_key(world._cell_key(built_cell),current_world_grid))
         for key in pokemon_storage.keys():
-            if not String(key) in private_keys: pokemon_storage.erase(key)
+            if not String(key) in private_keys and String(key) != SHARED_STORAGE_KEY: pokemon_storage.erase(key)
     if world.has_method("remove_structure_with_field_move"):
         world.call("remove_structure_with_field_move", cell, move)
 
@@ -11168,7 +11205,7 @@ func _built_storage_keys() -> Array[String]:
             if not key in keys: keys.append(key)
     # Previously saved contents stay reachable even if the physical box was cut.
     for key in pokemon_storage:
-        if not String(key) in keys: keys.append(String(key))
+        if String(key) != SHARED_STORAGE_KEY and not String(key) in keys: keys.append(String(key))
     keys.sort()
     if preferred_storage_box in keys:
         keys.erase(preferred_storage_box)
@@ -11346,8 +11383,29 @@ func _recruit_friendly_wild(wild_id: int, species: String) -> void:
         _close_wild_pokemon_prompt()
         _show_message("Your party and storage are full.")
         return
+    # Online the host keeps the record of every wild Pokemon. It is claimed and
+    # then reported as taken, exactly as a capture in battle is. Taking it from
+    # this game alone left it on the host: it came back in the field and could
+    # be taken again and again.
+    var online: bool = is_instance_valid(coop_game) and coop_game.active
+    if online:
+        _close_wild_pokemon_prompt(false)
+        if not await coop_game.wild.reserve(wild_id):
+            if coop_game.active and not battle_active:
+                world.set_gameplay_enabled(not _field_ui_blocks_gameplay(build_menu_open))
+            return
+        coop_game.wild.applying = true
     var record = world.call("take_friendly_wild", wild_id)
+    if online:
+        coop_game.wild.applying = false
     if typeof(record) != TYPE_DICTIONARY or (record as Dictionary).is_empty():
+        if online:
+            var claimed_area := String(coop_game.wild.encounter.get("area", ""))
+            coop_game.wild.encounter.clear()
+            coop_game.wild.original_profile.clear()
+            await coop_game.command("wild_release", {"area":claimed_area, "wild_id":wild_id})
+            if coop_game.active:
+                world.set_gameplay_enabled(not _field_ui_blocks_gameplay(build_menu_open))
         _close_wild_pokemon_prompt()
         return
     var source := (record as Dictionary).duplicate(true)
@@ -11373,6 +11431,8 @@ func _recruit_friendly_wild(wild_id: int, species: String) -> void:
     var destination := _route_received_pokemon(pokemon)
     if not caught_species.has(normalized_species):
         caught_species.append(normalized_species)
+    if online and not await coop_game.wild.finish_encounter("captured"):
+        return
     _close_wild_pokemon_prompt()
     world.play_source_sound("seed1")
     var notice := _received_pokemon_notice(pokemon, destination)
@@ -11758,11 +11818,15 @@ func _open_storage_menu(box_key: String) -> void:
         # only needed for a box the shared world does not know yet.
         if not coop_game.storage.known(_world_storage_key(box_key,current_world_grid)):
             if not await coop_game.storage.prepare():_show_message("ONLINE STORAGE COULD NOT LOAD.");return
-    box_key = _world_storage_key(box_key,current_world_grid)
+    var shared_chest: bool = not (is_instance_valid(coop_game) and coop_game.active) and \
+        String(world.built_structures.get(world._cell_from_key(box_key), {}).get("name", "")) == "PRIVATE CHEST"
+    box_key = SHARED_STORAGE_KEY if shared_chest else _world_storage_key(box_key,current_world_grid)
     storage_pooled = false
     storage_box_key = box_key
     if is_instance_valid(coop_game) and coop_game.active:coop_game.storage.refresh()
-    preferred_storage_box = box_key
+    # A Pokemon caught with a full party goes to the last STORAGE BOX used,
+    # never to the SHARED chest.
+    if not shared_chest: preferred_storage_box = box_key
     if not pokemon_storage.has(storage_box_key):
         pokemon_storage[storage_box_key] = []
     storage_column = 0
@@ -11800,6 +11864,8 @@ func _storage_pool_locations() -> Array:
     var keys: Array = pokemon_storage.keys()
     keys.sort()
     for key in keys:
+        # The SHARED chest is opened only at a SHARED chest.
+        if String(key) == SHARED_STORAGE_KEY and not (is_instance_valid(coop_game) and coop_game.active): continue
         for index in range(pokemon_storage[key].size()):
             locations.append([key, index])
     if is_instance_valid(coop_game) and coop_game.active and not coop_game.storage.sort_mode.is_empty():
@@ -12301,6 +12367,8 @@ func _save_current_game_for_quit() -> bool:
     if file == null:
         return false
 
+    data["storage_shared"] = true
+    data["storage_serial"] = shared_storage_serial + 1
     file.store_string(JSON.stringify(data))
     file.flush()
     file.close()
@@ -12308,6 +12376,7 @@ func _save_current_game_for_quit() -> bool:
     if not FileAccess.file_exists(save_path):
         return false
 
+    _write_shared_storage()
     _write_save_index(world_name, save_path)
     _save_setup()
     world.call("play_source_sound", "save1")
@@ -12868,10 +12937,13 @@ func _travel_adjacent_world(direction: Vector2i) -> void:
     generating = true
     var travel_view: Control
     if destination.is_empty():
-        generation_panel.hide()
-        travel_view = preload("res://scripts/world_travel_view.gd").new()
-        $UI.add_child(travel_view)
-        travel_view.configure(world)
+        # A new area takes minutes to generate. It was shown as a plain grey
+        # screen with the player hovering in it and no word of what was
+        # happening, so it looked as if the game had stopped. It now has the
+        # same sky, trainer tips and message as every other loading screen.
+        generation_status.text = "GENERATING WORLD...\nPLEASE WAIT..."
+        _show_generation_tip()
+        generation_panel.show()
         await get_tree().process_frame
     else:
         generation_status.text = "LOADING...\nPLEASE WAIT...."
@@ -12923,6 +12995,10 @@ func _travel_adjacent_world(direction: Vector2i) -> void:
     world.m3922_fly_height = 32.0
     world._place_field_helper_live()
     world.begin_encounter_grace()
+    # Generating a new area uncovers the map around wherever the player
+    # stood in the area they left, which in the new one is somewhere they
+    # have never been: a lone explored circle far from where they arrive.
+    if destination.is_empty(): world.discovered_cells.clear()
     world.reveal_player_area()
     _invalidate_travel_maps()
     _show_flying_edge_sky()

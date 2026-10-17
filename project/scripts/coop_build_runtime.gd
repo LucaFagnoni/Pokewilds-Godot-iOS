@@ -195,7 +195,14 @@ func plant(cell:Vector2i,item:String,animate:bool=true)->bool:
     collecting=false
     if not planted:busy=false;return false
     var upper:String=tile.name_upper
-    var result:Dictionary=await game.command("field_dig",{"area":game._area(),"patches":Delta.diff(before,Delta.flatten(capture_cut(dig_cells(cell)))),"rewards":{},"choice":"PLANT:"+item})
+    var patches=Delta.diff(before,Delta.flatten(capture_cut(dig_cells(cell))))
+    # Say what the tile was by the shared records. A plant grows in each game
+    # by itself and its record drifts (the fruit it will give is random), so
+    # the host refused manure on a grown bush and the manure vanished again.
+    var known:Dictionary=game.state.records if game.hosting else game.shared_records
+    for patch in patches:
+        patch["before"]=game.state.fingerprint(known.get("world/"+game._area()+"/"+String(patch.key),Delta.encode(null)))
+    var result:Dictionary=await game.command("field_dig",{"area":game._area(),"patches":patches,"rewards":{},"choice":"PLANT:"+item})
     last_result=result.duplicate(true)
     if not result.get("ok",false):
         if game.active and result.has("authoritative"):
@@ -483,6 +490,7 @@ func apply_records(area:String,records:Array,arriving:bool=false)->void:
     var was_restoring:bool=world.restoring_saved_tiles
     var refresh_pending:bool=world.restored_tiles_need_refresh
     var changed_cells:Dictionary={}
+    var decorated:Dictionary={}
     world.restoring_saved_tiles=true
     for record in records:
         var group=String(record.key).get_slice("/",0)
@@ -515,6 +523,26 @@ func apply_records(area:String,records:Array,arriving:bool=false)->void:
         if group=="source_interior_mutations":
             if record.value is Dictionary:world._apply_source_interior_mutation(world._cell_from_key(key),record.value)
             continue
+        # A floor tile added upstairs is laid on its own. Rebuilding the whole
+        # inside of the house for each one made every floor blink black.
+        if group=="built_house_floor_tiles" and record.value!=null:
+            var parts=key.split("|")
+            if parts.size()==3 and world.active_area_id=="HOUSE":
+                var door=parts[0].split(",");var local=parts[2].split(",")
+                if door.size()==2 and local.size()==2 and Vector2i(int(door[0]),int(door[1]))==world.active_built_house_door:
+                    if world._add_built_house_floor_cell(int(parts[1]),Vector2i(int(local[0]),int(local[1])),false):continue
+                else:continue
+            elif world.active_area_id!="HOUSE":continue
+        # A carpet, clock or window is drawn or taken away on its own as well.
+        if group=="built_house_decorations":
+            if world.active_area_id!="HOUSE":continue
+            var pieces=key.split("|")
+            var door_at=pieces[0].split(",");var local_at=pieces[pieces.size()-1].split(",")
+            if pieces.size() not in [2,3] or door_at.size()!=2 or local_at.size()!=2:house_changed=true;continue
+            if Vector2i(int(door_at[0]),int(door_at[1]))!=world.active_built_house_door:continue
+            var storey:int=int(String(pieces[1]).trim_prefix("F")) if pieces.size()==3 else 0
+            decorated[world._built_house_global_cell(storey,Vector2i(int(local_at[0]),int(local_at[1])))]=record.value!=null
+            continue
         house_changed=true
     world.restoring_saved_tiles=was_restoring
     if not was_restoring:
@@ -530,6 +558,10 @@ func apply_records(area:String,records:Array,arriving:bool=false)->void:
         var value:Dictionary=record.value
         if existing.is_empty():
             if not world.place_structure(String(value.get("recipe_name",value.name)),cell,true,value,true):
+                # An outside piece recorded somewhere that is not on the open map
+                # (built inside a house by an older version) can never be placed.
+                # It is passed over; it used to end the session for everyone.
+                if String(value.get("name","")) in ["FENCE","WALL","ROOF","DOOR"] and not world._in_bounds(cell):continue
                 game.end_session("SHARED BUILD COULD NOT LOAD. REJOIN THE WORLD.");return
         else:
             for key in value:
@@ -541,6 +573,13 @@ func apply_records(area:String,records:Array,arriving:bool=false)->void:
             world._refresh_connected_structures_around(cell)
             world._refresh_shell_attachment(cell)
         if value.name=="STAIRS":house_changed=true
+    if not house_changed and world.active_area_id=="HOUSE":
+        for at in decorated:
+            if decorated[at]:world._draw_house_decoration(at)
+            else:
+                var hung=world.built_house_decoration_sprites.get(at)
+                if is_instance_valid(hung):hung.queue_free()
+                world.built_house_decoration_sprites.erase(at)
     if house_changed and world.active_area_id=="HOUSE":
         var floor_index:int=world._built_house_floor_index_for_cell(world._player_cell())
         var house:Dictionary=world._built_house_state(world.active_built_house_door)

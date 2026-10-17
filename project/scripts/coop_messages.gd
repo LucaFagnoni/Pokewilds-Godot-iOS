@@ -8,6 +8,14 @@ const DIRECT_LIMIT:=192*1024
 var blobs=Blob.new()
 var queues:Dictionary={}
 var queued_bytes:=0
+## Players who have said they are loading. While a player generates a new
+## area their game reads almost nothing for minutes, and the updates for them
+## pile up here. At the usual limit of 128 waiting messages the host dropped
+## them just as a large world finished generating. They are given far more
+## room; the limit on total bytes still applies. true while loading, false
+## once it is over and the pile is being worked off.
+const PATIENT_QUEUE:=8192
+var patient:Dictionary={}
 var send_frame:Callable
 var send_encoded:Callable
 
@@ -27,7 +35,9 @@ func send(peer:int,payload:Dictionary)->Error:
         if error!=ERR_BUSY:return error
         # A full socket queue is temporary. Retain this transaction and everything
         # following it in order instead of relying on every caller to retry.
-    if queued_bytes+bytes.size()>MAX_QUEUED or queues.get(peer,[]).size()>=128:return ERR_BUSY
+    var waiting:int=queues.get(peer,[]).size()
+    if patient.has(peer) and not patient[peer] and waiting<64:patient.erase(peer)
+    if queued_bytes+bytes.size()>MAX_QUEUED or waiting>=(PATIENT_QUEUE if patient.has(peer) else 128):return ERR_BUSY
     if not queues.has(peer):queues[peer]=[]
     queues[peer].append({"bytes":bytes,"payload":payload.duplicate(true) if bytes.size()<=DIRECT_LIMIT and not send_encoded.is_valid() else {}})
     queued_bytes+=bytes.size()
@@ -71,7 +81,7 @@ func receive(peer:int,packet:Dictionary)->Dictionary:
 
 func drop(peer:int)->void:
     for entry in queues.get(peer,[]):queued_bytes-=entry.bytes.size()
-    queues.erase(peer);blobs.drop(peer)
+    queues.erase(peer);blobs.drop(peer);patient.erase(peer)
 
 func clear()->void:
     for peer in queues.keys():drop(peer)

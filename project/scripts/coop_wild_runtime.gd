@@ -207,10 +207,16 @@ func initialize_ids()->bool:
     # Another request may be in flight at this instant (night events, hordes, a
     # checkpoint). "busy" means wait, not that hosting or joining has failed.
     var result:Dictionary={}
-    var deadline:=Time.get_ticks_msec()+15000
+    # A joining player also keeps asking while the link is up and the host has
+    # simply not answered yet. A host busy sending a large world could take
+    # longer than one request waits, and the join was abandoned at the last
+    # step after minutes of loading.
+    var deadline:=Time.get_ticks_msec()+(15000 if game.hosting else 60000)
     while true:
         result=await game.command("wild_namespace",{})
-        if result.get("ok",false) or result.get("reason","")!="busy" or Time.get_ticks_msec()>deadline:break
+        var reason:=String(result.get("reason",""))
+        var waiting:bool=reason=="busy" or (reason=="disconnected" and not game.hosting and game.session.trusted)
+        if result.get("ok",false) or not waiting or Time.get_ticks_msec()>deadline:break
         await game.get_tree().process_frame
     if not result.get("ok",false):
         print("ONLINE start failed at wild ids: ",result.get("reason","unknown"))

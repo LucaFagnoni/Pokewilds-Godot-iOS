@@ -547,8 +547,11 @@ func tick_dig_motion(input_direction: Vector2, speed: float, delta: float) -> vo
         var destination := _cell_center(_player_cell() + Vector2i(direction))
         # Check the whole stride before leaving its center. DIG keeps normal
         # physical collision, including mountain edges and buried rewards.
+        # The body's lower edge rests exactly on the tile line, so a solid
+        # tile below the path (water under the last shore tile) counted as a
+        # hit. Test one pixel higher: touching is not being in the way.
         if constrain_player_motion(before, destination) == destination and \
-                not player.test_move(player.transform, destination - before):
+                not player.test_move(player.transform.translated(Vector2.UP), destination - before):
             dig_step_direction = direction
             dig_step_target = destination
             dig_step_active = true
@@ -559,7 +562,9 @@ func tick_dig_motion(input_direction: Vector2, speed: float, delta: float) -> vo
         var coordinator=get_parent().get("coop_game")
         if is_instance_valid(coordinator) and coordinator.active:
             next=coordinator.visuals.constrain_motion(player.position,next)
-        player.move_and_collide(next - player.position)
+        # The stride was checked before it began; moving by collision would
+        # stop a hair short of a tile it only touches and never arrive.
+        player.position = next
         if player.position.distance_squared_to(dig_step_target) < 0.000001:
             player.position = dig_step_target
             dig_step_active = false
@@ -774,12 +779,29 @@ func field_motion_completed(before: Vector2, after: Vector2, movement_direction:
     var after_tile = exact_world.tile_at(after_cell)
     var still_on_ice = after_tile != null and _source_tile_key(after_tile.name) == "ice2"
     var stopped := before.distance_squared_to(after) < 0.0025 and movement_direction.length_squared() > 0.0001
+    if not stopped and still_on_ice:
+        _align_ice_slide(after_cell)
     for index in range(player.get_slide_collision_count()):
         if player.get_slide_collision(index).get_normal().dot(m3922_ice_slide_direction) < -0.5:
             stopped = true
     if stopped: ice_blocked_direction = m3922_ice_slide_direction
     if not still_on_ice or stopped:
         m3922_ice_slide_direction = Vector2.ZERO
+
+## Slides on ice run along a row or column of tiles, as in the source game,
+## where the player is always on one tile. Here a player can be a pixel or two
+## off the middle of a row, and a slide along the foot of a wall then caught
+## the corner of the next tile of that wall and stopped dead on open ice. The
+## sideways offset is taken out a little at a time while sliding, never
+## through anything solid.
+func _align_ice_slide(cell: Vector2i) -> void:
+    var centre := _cell_center(cell)
+    var offset := Vector2(0.0, centre.y - player.position.y) if m3922_ice_slide_direction.x != 0.0 else Vector2(centre.x - player.position.x, 0.0)
+    if offset.length_squared() < 0.0001:
+        return
+    var step := offset.limit_length(1.0)
+    if not player.test_move(player.transform, step):
+        player.position += step
 
 func _ride_jump_over(obstacle: Vector2i) -> void:
     if active_field_move == "RIDE" and exact_world_mode and exact_world != null and active_area_id == "OVERWORLD":
