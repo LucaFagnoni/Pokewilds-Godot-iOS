@@ -60,6 +60,9 @@ jobs:
           echo "::notice::stripped engine lib $(du -h "$lib" | cut -f1)"
           rm "$TPL/ios.zip" && (cd "$work" && zip -qry "$TPL/ios.zip" .)
 
+      - name: Minify JSON data
+        run: python3 .github/engine/minify_json.py project
+
       - name: Export Xcode project
         working-directory: project
         run: |
@@ -121,6 +124,9 @@ jobs:
             disable_path_overrides=no \
             x11=no wayland=no alsa=no pulseaudio=no dbus=no speechd=no fontconfig=no udev=no \
             cache_path="$HOME/.scons_cache" -j"$(nproc)"
+
+      - name: Minify JSON data
+        run: python3 .github/engine/minify_json.py project
 
       - name: Export the iOS pack
         working-directory: project
