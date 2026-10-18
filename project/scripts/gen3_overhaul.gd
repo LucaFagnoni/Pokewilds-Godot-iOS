@@ -1,7 +1,7 @@
 extends RefCounted
 
 const PACK := "res://data/gen3_overhaul.pwmod"
-const PACK_HASH := "ca6b46de779d46a6852de6fe340c2391ba08ec41b607ed0bf2f57034234ab074"
+const PACK_HASH := "3ce142decbe36d4c413177fa1a7690da04225f209771297e7719a8ccc2a02225"
 const CACHE := "user://builtin_gen3_overhaul.pwmod"
 const TextureSwitch = preload("res://scripts/gen3_texture.gd")
 static var enabled := false
@@ -92,7 +92,7 @@ static func _clear_derived_art() -> void:
 static func _load_replacements(tree: SceneTree) -> bool:
     if not prepare_pack(): return false
     var reader := ZIPReader.new()
-    if reader.open(CACHE) != OK:
+    if reader.open(CACHE if OS.get_name() == "Android" else PACK) != OK:
         error = "Cannot read built-in overhaul."
         return false
     var prepared := {}
@@ -122,6 +122,8 @@ static func _load_replacements(tree: SceneTree) -> bool:
     return true
 
 static func prepare_pack() -> bool:
+    # Only Android packs res:// in compressed APK assets; elsewhere read it in place.
+    if OS.get_name() != "Android": return true
     # A ZIP inside compressed Android assets must not be repeatedly seeked.
     # Materialize one verified private cache, then read entries from that file.
     if FileAccess.file_exists(CACHE) and FileAccess.get_sha256(CACHE) == PACK_HASH:
