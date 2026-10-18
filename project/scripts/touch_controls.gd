@@ -8,34 +8,38 @@ signal touch_config_requested
 signal safe_area_changed(bounds: Rect2)
 
 const SAVE_PATH := "user://touch_layout_m43.cfg"
-const SETTINGS_SCHEMA_VERSION := 7
+const SETTINGS_SCHEMA_VERSION := 8
 const THEME_SYSTEM := 0
 const THEME_LIGHT := 1
 const THEME_DARK := 2
 
 # Each touch button emits the same InputMap action as its physical control.
+# One stick drives movement (and the radial wheels); the D-pad duplicated it
+# and the right stick had no game mapping, so both were dropped.
 const ACTIONS := {
-    "Controls": [], "DPad": [], "LeftStick": [], "RightStick": [],
+    "Controls": [], "LeftStick": [],
     "A": ["confirm"], "B": ["cancel"], "X": ["run"], "Y": ["pokedex"],
     "Start": ["start"], "Select": ["map_open"],
-    "L1": ["shoulder_left", "zoom_out"], "L2": ["field_move_wheel"],
-    "R1": ["shoulder_right", "zoom_in"], "R2": ["ball_mechanics"]
+    "L1": ["shoulder_left"], "L2": ["field_move_wheel"],
+    "R1": ["shoulder_right"], "R2": ["ball_mechanics"]
 }
+# Bumpers only page menus/wheels; in free roam zoom is a pinch, so they hide.
+const SHOULDERS := ["L1", "R1"]
+const PINCH_STEP := 1.2
 # Baseline dimensions are fractions of the usable 320x180 game canvas.
-# Face buttons occupy 13.3% of its short side; sticks 22.2%.
+# Everything hugs the edges so the field around the player stays clear.
+const FACE_CENTER := Vector2(282,136)
 const CONTROL_LAYOUT := {
-    "Controls": Rect2(148,8,24,18),
-    "LeftStick": Rect2(40,80,40,40),
-    "RightStick": Rect2(173,125,40,40),
-    "DPad": Rect2(88,127,36,36),
-    "X": Rect2(253,76,24,24),
-    "Y": Rect2(229,100,24,24),
-    "A": Rect2(277,100,24,24),
-    "B": Rect2(253,124,24,24),
-    "L1": Rect2(42,33,24,18),
-    "L2": Rect2(25,55,18,24),
-    "R1": Rect2(269,33,24,18),
-    "R2": Rect2(291,55,18,24),
+    "Controls": Rect2(240,8,24,18),
+    "LeftStick": Rect2(14,122,44,44),
+    "X": Rect2(270,102,24,24),
+    "Y": Rect2(248,124,24,24),
+    "A": Rect2(292,124,24,24),
+    "B": Rect2(270,146,24,24),
+    "L1": Rect2(36,98,24,18),
+    "L2": Rect2(12,94,18,24),
+    "R1": Rect2(264,80,24,18),
+    "R2": Rect2(298,96,18,24),
     "Select": Rect2(272,8,18,16),
     "Start": Rect2(298,8,18,16)
 }
@@ -55,6 +59,9 @@ var pressed_actions: Dictionary = {}
 var touch_owners: Dictionary = {}
 var button_layout := 0
 var face_event_epoch := 0
+var shoulders_visible := true
+var pinch_points: Dictionary = {}
+var pinch_base := 0.0
 const JOY_BUTTONS := {
     # Node names retain their original Nintendo-position slots.
     "A": JOY_BUTTON_B, "B": JOY_BUTTON_A, "X": JOY_BUTTON_Y,
@@ -106,7 +113,7 @@ func _create_reference_controls() -> void:
         control.caption = {"L1":"LB","R1":"RB","L2":"LT","R2":"RT"}.get(control_name,control_name)
         control.size = CONTROL_LAYOUT[control_name].size
         add_child(control)
-    $EditHint.text = "DRAG CONTROLS - ANDROID BACK SAVES"
+    $EditHint.text = "DRAG CONTROLS - TAP CONTROLS TO SAVE"
     $EditHint.add_theme_font_override("font", preload("res://assets/touch_ui/Anton-Regular.ttf"))
     $EditHint.add_theme_font_size_override("font_size", 7)
     $EditHint.add_theme_color_override("font_color", Color.WHITE)
@@ -174,6 +181,17 @@ func _dispatch_virtual_button(event: InputEventJoypadButton, epoch: int) -> void
     if event.pressed and epoch != face_event_epoch: return
     Input.parse_input_event(event)
 
+func set_shoulders_visible(enabled: bool) -> void:
+    enabled = enabled or edit_mode
+    if enabled == shoulders_visible: return
+    shoulders_visible = enabled
+    for control_name in SHOULDERS:
+        get_node(control_name).visible = enabled
+        if enabled: continue
+        for index in touch_owners.keys():
+            if touch_owners[index] == control_name: touch_owners.erase(index)
+        if pressed_actions.has(control_name): _set_virtual_button(control_name, false)
+
 func set_game_active(enabled: bool) -> void:
     game_active = enabled
     _refresh_visibility()
@@ -202,7 +220,7 @@ func set_control_scale(value: float) -> void:
         var control := get_node(control_name) as Control
         var center := control.position+control.size*previous*0.5
         if control_name in ["A","B","X","Y"]:
-            center = Vector2(265,112)+(center-Vector2(265,112))*maxf(1.0,control_scale)/maxf(1.0,previous)
+            center = FACE_CENTER+(center-FACE_CENTER)*maxf(1.0,control_scale)/maxf(1.0,previous)
         control.position = center-control.size*control_scale*0.5
     _release_all()
     _apply_control_scale()
@@ -285,16 +303,39 @@ func _input(event: InputEvent) -> void:
     if not is_visible_in_tree(): return
     if event is InputEventScreenTouch:
         _route_contact(event.index, event.position, event.pressed, event.canceled)
+        if not event.pressed or event.canceled:
+            pinch_points.erase(event.index)
+        elif not touch_owners.has(event.index) and not edit_mode:
+            pinch_points[event.index] = event.position
+        pinch_base = 0.0
     elif event is InputEventScreenDrag:
         if touch_owners.has(event.index):
             _move_contact(event.index,event.position,event.relative)
             get_viewport().set_input_as_handled()
+        elif pinch_points.has(event.index):
+            pinch_points[event.index] = event.position
+            _update_pinch()
     elif event is InputEventMouseButton and event.device != InputEvent.DEVICE_ID_EMULATION:
         if event.button_index == MOUSE_BUTTON_LEFT:
             _route_contact(-1, event.position, event.pressed, false)
     elif event is InputEventMouseMotion and touch_owners.has(-1):
         _move_contact(-1,event.position,event.relative)
         get_viewport().set_input_as_handled()
+
+# Two free fingers (not on a control) zoom in steps, like the old bumpers did.
+func _update_pinch() -> void:
+    if pinch_points.size() != 2: return
+    var points := pinch_points.values()
+    var distance: float = points[0].distance_to(points[1])
+    if pinch_base <= 0.0:
+        pinch_base = distance
+        return
+    var ratio := distance / maxf(pinch_base, 1.0)
+    if ratio >= PINCH_STEP or ratio <= 1.0 / PINCH_STEP:
+        pinch_base = distance
+        var action := "zoom_in" if ratio > 1.0 else "zoom_out"
+        _emit_action.call_deferred(action, true)
+        _emit_action.call_deferred(action, false)
 
 func _move_contact(index: int, point: Vector2, relative: Vector2) -> void:
     var control_name: String = touch_owners[index]
@@ -355,6 +396,7 @@ func _route_contact(index: int, point: Vector2, pressed: bool, canceled: bool) -
     var chosen := ""
     var nearest := INF
     for control_name in ACTIONS:
+        if not (get_node(control_name) as Control).visible: continue
         var rect: Rect2 = (get_node(control_name) as Control).get_global_rect()
         if rect.grow(2.0*control_scale).has_point(point):
             var distance := rect.get_center().distance_squared_to(point)
@@ -414,6 +456,7 @@ func _release_all() -> void:
         control.queue_redraw()
     touch_owners.clear()
     pointer_positions.clear()
+    pinch_points.clear()
     if not movement_contacts.is_empty():
         movement_contacts.clear()
         _send_movement()
@@ -435,7 +478,7 @@ func _apply_default_layout() -> void:
         var extent := button.size * control_scale
         var center: Vector2 = CONTROL_LAYOUT[control_name].get_center()
         if control_name in ["A","B","X","Y"]:
-            center = Vector2(265,112)+(center-Vector2(265,112))*maxf(1.0,control_scale)
+            center = FACE_CENTER+(center-FACE_CENTER)*maxf(1.0,control_scale)
         var canonical: Vector2 = center-extent*0.5
         var fraction := canonical / (DESIGN_SIZE-extent).max(Vector2.ONE)
         button.position = usable_rect.position+fraction.clamp(Vector2.ZERO,Vector2.ONE)*(usable_rect.size-extent).max(Vector2.ZERO)

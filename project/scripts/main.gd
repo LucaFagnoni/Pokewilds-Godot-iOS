@@ -1456,6 +1456,8 @@ func _ready() -> void:
     $UI/TouchConfig/VBox.add_child(files_button)
     $UI/TouchConfig/VBox.move_child(files_button,$UI/TouchConfig/VBox/Close.get_index())
     files_button.pressed.connect(_open_game_files_menu)
+    # iOS exposes user:// directly in the Files app; the folder picker is Android-only.
+    files_button.visible = OS.get_name() == "Android"
     var mods_button := Button.new()
     mods_button.name="Modding";mods_button.text="MODDING"
     $UI/TouchConfig/VBox.add_child(mods_button)
@@ -3087,6 +3089,7 @@ func _process(delta: float) -> void:
         _warm_map_cache()
 
     _poll_android_back_bridge()
+    touch_controls.set_shoulders_visible(not started or field_move_wheel_open or _field_ui_blocks_gameplay())
     if is_instance_valid(edge_sky):
         var flying_overworld: bool = world.active_field_move in ["FLY", "SURF"] and world.active_area_id == "OVERWORLD"
         if edge_sky.visible and not flying_overworld:
