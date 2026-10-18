@@ -4840,7 +4840,7 @@ func _menu_stick_event_is_blocked(event: InputEvent) -> bool:
     return true
 
 func _is_android_touch_runtime() -> bool:
-    return OS.has_feature("android") or (
+    return OS.has_feature("mobile") or (
         is_instance_valid(touch_controls)
         and bool(touch_controls.get("android_runtime"))
     )

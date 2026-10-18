@@ -68,7 +68,7 @@ var safe_area_poll := 0.0
 const DESIGN_SIZE := Vector2(320, 180)
 
 func _ready() -> void:
-    android_runtime = OS.has_feature("android")
+    android_runtime = OS.has_feature("mobile")
     if android_runtime:
         DisplayServer.screen_set_orientation(DisplayServer.SCREEN_SENSOR_LANDSCAPE)
     _create_reference_controls()
@@ -134,7 +134,7 @@ static func safe_rect_in_canvas(screen_safe: Rect2, screen_transform: Transform2
 func _refresh_display_layout() -> void:
     var bounds := Rect2(Vector2.ZERO, size)
     if not bounds.has_area(): return
-    if OS.has_feature("android"):
+    if OS.has_feature("mobile"):
         var screen_transform := get_viewport().get_screen_transform() * get_global_transform_with_canvas()
         bounds = safe_rect_in_canvas(Rect2(DisplayServer.get_display_safe_area()), screen_transform, bounds)
     _apply_safe_rect(bounds)

@@ -1,0 +1,49 @@
+name: iOS unsigned IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+env:
+  GODOT_VERSION: 4.7.2
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Godot + export templates
+        run: |
+          base=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
+          curl -sSL -o godot.zip "$base/Godot_v${GODOT_VERSION}-stable_macos.universal.zip"
+          curl -sSL -o templates.tpz "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          unzip -q godot.zip
+          tpl="$HOME/Library/Application Support/Godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p "$tpl"
+          unzip -q -j templates.tpz 'templates/ios.zip' 'templates/version.txt' -d "$tpl"
+          echo "GODOT=$PWD/Godot.app/Contents/MacOS/Godot" >> "$GITHUB_ENV"
+
+      - name: Export Xcode project
+        working-directory: project
+        run: |
+          mkdir -p ../build/ios
+          "$GODOT" --headless --import
+          "$GODOT" --headless --export-release "iOS" ../build/ios/Pokewilds.ipa
+
+      - name: Build unsigned .app and pack IPA
+        working-directory: build/ios
+        run: |
+          xcodebuild -project Pokewilds.xcodeproj -scheme Pokewilds -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath dd \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+          mkdir Payload
+          cp -R dd/Build/Products/Release-iphoneos/Pokewilds.app Payload/
+          zip -qry Pokewilds-unsigned.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pokewilds-unsigned-ipa
+          path: build/ios/Pokewilds-unsigned.ipa
