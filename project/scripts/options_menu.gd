@@ -146,6 +146,9 @@ func label(parent: Node, text: String, at: Vector2, dimensions: Vector2, font_si
 
 func open() -> void:
     menu_rows=ROWS.duplicate(true)
+    # Builds that leave out the alternate pack (iOS) hide its toggle.
+    if not ResourceLoader.exists("res://assets/lofi/music/route_1.ogg"):
+        menu_rows=menu_rows.filter(func(row): return row[0]!="lofi_music")
     # Online the art changes on the next load, not at once, for host and guests alike.
     if is_instance_valid(main.coop_game) and main.coop_game.active:
         for row in menu_rows:
