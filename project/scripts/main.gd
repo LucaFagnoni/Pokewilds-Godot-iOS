@@ -12276,7 +12276,7 @@ func _open_quit_prompt() -> void:
     quit_prompt_open = true
     quit_prompt_stage = 0
     quit_prompt_index = 0
-    quit_prompt_title.text = "QUIT GAME?"
+    quit_prompt_title.text = "QUIT GAME?" if _app_can_quit() else "EXIT TO TITLE?"
     quit_prompt.visible = true
     if started:
         world.set_gameplay_enabled(false)
@@ -12317,7 +12317,7 @@ func _handle_quit_prompt_input(event: InputEvent) -> void:
                 # User confirmed quit. Ask whether to save before leaving.
                 quit_prompt_stage = 1
                 quit_prompt_index = 0
-                quit_prompt_title.text = "SAVE BEFORE QUIT?"
+                quit_prompt_title.text = "SAVE BEFORE QUIT?" if _app_can_quit() else "SAVE BEFORE EXIT?"
                 _update_quit_prompt_cursor()
         else:
             if quit_prompt_index == 0:
@@ -12328,10 +12328,17 @@ func _handle_quit_prompt_input(event: InputEvent) -> void:
                     quit_prompt_index = 1
                     _update_quit_prompt_cursor()
                     return
+            if not _app_can_quit():
+                # iOS apps may not close themselves: go back to the title screen.
+                get_tree().reload_current_scene()
+                return
             set_process_input(false)
             await shared_save_folder.export_files(self)
             get_tree().quit()
         get_viewport().set_input_as_handled()
+
+func _app_can_quit() -> bool:
+    return OS.get_name() != "iOS" and not OS.get_cmdline_user_args().has("--no-app-quit")
 
 func _save_current_game_for_quit() -> bool:
     _sync_pokedex_owned()
@@ -12342,36 +12349,10 @@ func _save_current_game_for_quit() -> bool:
     if not _ensure_save_directory():
         return false
 
-    var player = world.get_node("Player")
-    var world_name = world_edit.text.strip_edges()
-    if world_name.is_empty():
-        world_name = "PokeWilds"
-
-    var data = {
-        "version": 3,
-        "world_seed": int(world.get("world_seed")),
-        "world_size": int(world.get("map_size_index")),
-        "world_name": world_name,
-        "player_name": player_model_name.text,
-        "player_name_custom": not custom_player_name.is_empty(),
-        "player_color": player_color_index,
-        "player_model": player_model_index,
-        "player_x": player.position.x,
-        "player_y": player.position.y,
-        "options": GameOptions.values.duplicate(),
-        "waypoints": map_waypoints.duplicate(true),
-        "pokedex": pokedex_progress.entries.duplicate(),
-        "pokedex_shiny": pokedex_progress.shiny_entries.duplicate(),
-        "caught_pokemon": caught_pokemon,
-        "pokemon_storage": pokemon_storage,
-        "preferred_storage_box": preferred_storage_box,
-        "inventory": inventory,
-        "source_key_items_initialized": true,
-        "adjacent_worlds": adjacent_worlds,
-        "world_grid_x": current_world_grid.x,
-        "world_grid_y": current_world_grid.y,
-        "crafting_state": world.get_crafting_save_state()
-    }
+    # Same record as the SAVE menu (the old hand-built one dropped egg/friendship
+    # timers and ecology ids).
+    var data = _capture_game_save()
+    var world_name := String(data.world_name)
 
     var save_path = _save_path_for_world(world_name)
     var file = FileAccess.open(save_path, FileAccess.WRITE)

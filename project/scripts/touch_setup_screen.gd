@@ -114,8 +114,7 @@ func _card(at: Vector2, dimensions: Vector2, heading: String) -> Panel:
 func _field(parent: Control, at: Vector2, dimensions: Vector2) -> Control:
     var field: Control = ui.make_button(parent, "", dimensions, 10)
     field.position = at
-    (field.get_node("Text") as Label).horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-    (field.get_node("Text") as Label).offset_left = 8
+    (field.get_node("Text") as Label).set_meta("align_left", true)
     return field
 
 func _arrow(parent: Control, pointing_left: bool, at: Vector2) -> Control:
@@ -124,20 +123,10 @@ func _arrow(parent: Control, pointing_left: bool, at: Vector2) -> Control:
     return arrow
 
 static func _set_selected(button: Control, selected: bool) -> void:
-    var label := button.get_node("Text") as Label
-    label.add_theme_font_override("font", WHITE_FONT if selected else JOHTO_FONT)
-    label.add_theme_color_override("font_color", Color.WHITE if selected else Color.BLACK)
-    var fill := button.get_node_or_null("Fill") as ColorRect
-    if fill == null:
-        fill = ColorRect.new()
-        fill.name = "Fill"
-        fill.color = Color.BLACK
-        fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
-        fill.set_anchors_preset(Control.PRESET_FULL_RECT)
-        fill.offset_left = 3; fill.offset_top = 3; fill.offset_right = -3; fill.offset_bottom = -3
-        button.add_child(fill)
-        button.move_child(fill, 0)
-    fill.visible = selected
+    preload("res://scripts/touch_ui.gd").set_selected(button, selected)
+
+func _set_field(control: Control, text: String) -> void:
+    if (control.get_node("Text") as Label).text != text: ui.set_text(control, text)
 
 func _joining() -> bool:
     return not String(main.coop_game.join_setup_code).is_empty()
@@ -163,8 +152,8 @@ func refresh() -> void:
     load_list.visible = showing_load and not m.coop_game.new_setup_pending
     for i in size_chips.size(): _set_selected(size_chips[i], i == m.selected_world_size)
     var typing: String = m.text_entry_target
-    (world_field.get_node("Text") as Label).text = (m.text_entry_buffer + "_") if typing == "world" else String(m.world_edit.text)
-    (player_field.get_node("Text") as Label).text = (m.text_entry_buffer + "_") if typing == "player" else String(m.player_model_name.text)
+    _set_field(world_field, (m.text_entry_buffer + "_") if typing == "world" else String(m.world_edit.text))
+    _set_field(player_field, (m.text_entry_buffer + "_") if typing == "player" else String(m.player_model_name.text))
     swatch.texture = m.player_color_swatch.texture
     var sprite: Sprite2D = m.player_preview
     if sprite.texture != null:
@@ -174,7 +163,7 @@ func refresh() -> void:
         frame.region = Rect2(frame_width * sprite.frame, 0, frame_width, sprite.texture.get_height())
         if not (preview.texture is AtlasTexture) or preview.texture.atlas != frame.atlas or preview.texture.region != frame.region:
             preview.texture = frame
-    (start_button.get_node("Text") as Label).text = "JOIN!" if joining else ("CHOOSE SAVE" if showing_load and m.coop_game.new_setup_pending else "START!")
+    _set_field(start_button, "JOIN!" if joining else ("CHOOSE SAVE" if showing_load and m.coop_game.new_setup_pending else "START!"))
     start_button.visible = not showing_load or m.coop_game.new_setup_pending
     status.text = String(m.menu_status.text) if String(m.menu_status.text) not in ["SINGLE PLAYER", ""] else ""
     if load_list.visible: _refresh_saves()

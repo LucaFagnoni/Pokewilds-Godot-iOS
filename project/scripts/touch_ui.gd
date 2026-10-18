@@ -50,26 +50,66 @@ func configure(owner_main: Node, ui: CanvasLayer) -> void:
     close_button = make_button(chrome, "X", Vector2(22, 20))
     close_button.hide()
 
-## A framed, game-styled button; hit-testing is done by this node, not the GUI.
+const WHITE_FONT := preload("res://assets/source_text_font_white.fnt")
+const BUTTON_PADDING := 4.0
+
+## Thin pixel button: the 8 px dialogue frame leaves no room for text in a
+## finger-sized button. Hit-testing is done by this node, not the GUI.
+static func button_style(selected: bool) -> StyleBoxFlat:
+    var style := StyleBoxFlat.new()
+    style.bg_color = Color.BLACK if selected else Color.WHITE
+    style.border_color = Color.BLACK
+    style.set_border_width_all(1)
+    style.set_corner_radius_all(2)
+    style.shadow_color = Color(0, 0, 0, 0.35)
+    style.shadow_size = 1
+    style.shadow_offset = Vector2(1, 1)
+    style.anti_aliasing = false
+    return style
+
 func make_button(parent: Node, text: String, size: Vector2, font_size: int = 10) -> Control:
     var button := Panel.new()
     button.size = size
     button.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    button.add_theme_stylebox_override("panel", main._classic_dialogue_style())
+    button.add_theme_stylebox_override("panel", button_style(false))
     var label := Label.new()
     label.name = "Text"
-    label.text = text
     label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    label.set_anchors_preset(Control.PRESET_FULL_RECT)
     label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    label.clip_text = false
     label.add_theme_font_override("font", JOHTO_FONT)
     label.add_theme_font_size_override("font_size", font_size)
     label.add_theme_color_override("font_color", Color.BLACK)
-    label.offset_top = 2  # The bitmap font sits high in its line box.
     button.add_child(label)
     parent.add_child(button)
+    set_text(button, text)
+    button.resized.connect(func(): set_text(button, label.text))
     return button
+
+## Centers the text inside the border and squeezes it if it would not fit.
+## (A Label grows to its text, so size it to the text and place it ourselves.)
+static func set_text(button: Control, text: String) -> void:
+    var label := button.get_node("Text") as Label
+    label.text = text
+    var font := label.get_theme_font("font")
+    var font_size := label.get_theme_font_size("font_size")
+    var inner := button.size - Vector2(BUTTON_PADDING, 2.0) * 2.0
+    var width := maxf(1.0, font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x)
+    var squeeze := minf(1.0, inner.x / width)
+    var left_aligned := bool(label.get_meta("align_left", false))
+    var x := BUTTON_PADDING + (0.0 if left_aligned else (inner.x - width * squeeze) * 0.5)
+    label.pivot_offset = Vector2.ZERO
+    label.scale = Vector2(squeeze, 1.0)
+    label.size = Vector2(width, inner.y)
+    # The bitmap glyphs sit high in their line box; nudge them to the optical center.
+    label.position = Vector2(roundf(x), 2.0 + roundf(font_size * 0.15))
+
+static func set_selected(button: Control, selected: bool) -> void:
+    button.add_theme_stylebox_override("panel", button_style(selected))
+    var label := button.get_node("Text") as Label
+    label.add_theme_font_override("font", WHITE_FONT if selected else JOHTO_FONT)
+    label.add_theme_color_override("font_color", Color.WHITE if selected else Color.BLACK)
 
 ## A button showing the game's own triangle cursor (the font maps < > to PK MN).
 func make_arrow(parent: Node, pointing_left: bool, size: Vector2) -> Control:
@@ -81,7 +121,7 @@ func make_arrow(parent: Node, pointing_left: bool, size: Vector2) -> Control:
 
 func _process(_delta: float) -> void:
     if not enabled: return
-    surfaces.refresh_visuals()
+    surfaces.refresh_visuals(_delta)
     surface = surfaces.build()
     var bounds: Rect2 = main.touch_controls.usable_rect
     var has_back := surface.has("back")
@@ -90,15 +130,22 @@ func _process(_delta: float) -> void:
         close_button.position = Vector2(bounds.end.x - close_button.size.x - 4, bounds.position.y + 4)
     var wanted: Array = surface.get("buttons", [])
     while extra_buttons.size() < wanted.size():
-        extra_buttons.append(make_button(chrome, "", Vector2(10, 10)))
+        extra_buttons.append(make_arrow(chrome, false, Vector2(10, 10)))
     for i in extra_buttons.size():
         var button := extra_buttons[i]
         button.visible = i < wanted.size()
         if not button.visible: continue
         var rect: Rect2 = wanted[i][2]
         button.position = rect.position
-        button.size = rect.size
-        (button.get_node("Text") as Label).text = String(wanted[i][0])
+        if button.size != rect.size: button.size = rect.size
+        # "<" and ">" draw the game's triangle (the font maps them to PK/MN).
+        var text := String(wanted[i][0])
+        var arrow := button.get_node("Arrow") as TextureRect
+        arrow.visible = text in ["<", ">"]
+        arrow.flip_h = text == "<"
+        arrow.position = (button.size - arrow.size) * 0.5
+        if arrow.visible: text = ""
+        if (button.get_node("Text") as Label).text != text: set_text(button, text)
     # The gamepad overlay would cover a touch-driven screen.
     main.touch_controls.set_menu_hidden(not surface.is_empty() and surface.get("hide_pad", surface.get("modal", true)))
 

@@ -15,10 +15,12 @@ var start_tiles: Array[Panel] = []
 var start_subtitles: Array[Label] = []
 var setup_screen: Control
 var backdrop: ColorRect
+var field_hud: RefCounted
 
 func _init(owner_main: Node, owner_ui: Node) -> void:
     main = owner_main
     ui = owner_ui
+    field_hud = preload("res://scripts/touch_field_hud.gd").new(owner_main, owner_ui)
 
 func press(action: String) -> void:
     ui.press(action)
@@ -34,6 +36,13 @@ func build() -> Dictionary:
         return setup_screen.surface() if is_instance_valid(setup_screen) else {}
     if m.generating: return {}
     if not m.game_menu_open: map_from_minimap = false
+    if m.touch_controls.edit_mode:
+        var bounds: Rect2 = m.touch_controls.usable_rect
+        return {"modal": false, "hide_pad": false, "buttons": [["DONE", func(): _finish_layout_edit(),
+            Rect2(Vector2(bounds.get_center().x - 30, bounds.position.y + 4), Vector2(60, 20))]]}
+    if m.touch_config.visible:
+        # The touch settings panel has real sliders and buttons.
+        return {"modal": false, "hide_pad": true}
     if is_instance_valid(m.waypoint_ui) and m.waypoint_ui.naming:
         # The naming panel has real buttons and a text field.
         return {"modal": false, "hide_pad": true}
@@ -51,16 +60,28 @@ func build() -> Dictionary:
     if not prompt.is_empty(): return prompt
     return _field()
 
+func _field_active() -> bool:
+    var m := main
+    return m.started and not m.generating and not m.game_menu_open and not m.battle_active         and not m._field_ui_blocks_gameplay() and not m.field_move_wheel_open and not m._sleeping_bag_active()
+
 func _field() -> Dictionary:
     var m := main
+    if not _field_active(): return {}
     var minimap: Control = m.m3924_minimap_root
-    if not is_instance_valid(minimap) or not minimap.is_visible_in_tree(): return {}
-    if m._field_ui_blocks_gameplay() or m.field_move_wheel_open or m._sleeping_bag_active(): return {}
+    var rows := []
+    if is_instance_valid(minimap) and minimap.is_visible_in_tree(): rows.append(minimap.get_global_rect())
+    var buttons: Array = field_hud.buttons()
+    if rows.is_empty() and buttons.is_empty(): return {}
     return {
         "modal": false,
-        "rows": [minimap.get_global_rect()],
+        "rows": rows,
         "tap": func(_i): _open_map_from_minimap(),
+        "buttons": buttons,
     }
+
+func _finish_layout_edit() -> void:
+    main.touch_controls.end_edit()
+    main._open_touch_config(true)
 
 func _open_map_from_minimap() -> void:
     map_from_minimap = true
@@ -292,8 +313,9 @@ func _place_map_cursor(point: Vector2) -> void:
 # --- visuals ------------------------------------------------------------------
 
 ## Called every frame: shows the touch start menu in place of the classic box.
-func refresh_visuals() -> void:
+func refresh_visuals(delta: float = 0.0) -> void:
     var m := main
+    field_hud.refresh(delta, _field_active())
     if not is_instance_valid(start_menu): _build_start_menu()
     if not is_instance_valid(setup_screen):
         setup_screen = preload("res://scripts/touch_setup_screen.gd").new()

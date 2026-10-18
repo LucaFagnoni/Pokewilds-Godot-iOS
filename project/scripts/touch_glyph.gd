@@ -6,6 +6,8 @@ var ink := Color.WHITE
 var fill := Color(0.10,0.10,0.10,0.8)
 var held := false
 var stick_vector := Vector2.ZERO
+# LANCIO draws the ball or Pokemon a tap would throw over its own icon.
+var icon: Texture2D
 var textures: Dictionary = {}
 const KNOB = preload("res://assets/touch_ui/stick_knob.svg")
 
@@ -27,6 +29,9 @@ func _draw() -> void:
     if textures.is_empty(): return
     var state := "pressed" if held else ("dark" if fill.a>0.6 else "light")
     draw_texture_rect(textures[state],Rect2(Vector2.ZERO,size),false)
+    if icon != null:
+        var icon_size := size*0.62
+        draw_texture_rect(icon,Rect2((size-icon_size)*0.5,icon_size),false)
     if held and kind in ["LeftStick","RightStick"]:
         var knob_size := size*0.36
         var center := size*0.5+stick_vector*size*0.23

@@ -8,7 +8,7 @@ signal touch_config_requested
 signal safe_area_changed(bounds: Rect2)
 
 const SAVE_PATH := "user://touch_layout_m43.cfg"
-const SETTINGS_SCHEMA_VERSION := 10
+const SETTINGS_SCHEMA_VERSION := 11
 const THEME_SYSTEM := 0
 const THEME_LIGHT := 1
 const THEME_DARK := 2
@@ -16,8 +16,9 @@ const THEME_DARK := 2
 # Each touch button emits the same InputMap action as its physical control.
 # One stick drives movement (and the radial wheels); the D-pad duplicated it
 # and the right stick had no game mapping, so both were dropped.
+# MOSSE (L2) and LANCIO (R2) replace the triggers; touch settings live in OPTIONS.
 const ACTIONS := {
-    "Controls": [], "LeftStick": [],
+    "LeftStick": [],
     # B also runs while held (see _set_virtual_button); the Pokedex lives in the menu.
     "A": ["confirm"], "B": ["cancel"],
     "Start": ["start"],
@@ -29,17 +30,21 @@ const SHOULDERS := ["L1", "R1"]
 const PINCH_STEP := 1.2
 # Baseline dimensions are fractions of the usable 320x180 game canvas.
 # Everything hugs the edges so the field around the player stays clear.
-const FACE_CENTER := Vector2(287,140)
+const FACE_CENTER := Vector2(285,134)
+# Dragging from MOSSE/LANCIO steers the wheel, like the stick did.
+const WHEEL_BUTTONS := ["L2", "R2"]
+const WHEEL_DRAG_DEADZONE := 0.35
 const CANCEL_TAP_MSEC := 250
 const CONTROL_LAYOUT := {
-    "Controls": Rect2(268,8,24,18),
     "LeftStick": Rect2(14,122,44,44),
-    "A": Rect2(290,114,26,26),
-    "B": Rect2(258,138,26,26),
-    "L1": Rect2(36,98,24,18),
-    "L2": Rect2(12,94,18,24),
-    "R1": Rect2(264,80,24,18),
-    "R2": Rect2(298,84,18,24),
+    # Right thumb arc: A largest, B below-left, MOSSE and LANCIO above.
+    "A": Rect2(287,116,28,28),
+    "B": Rect2(253,140,26,26),
+    "L2": Rect2(250,102,24,24),
+    "R2": Rect2(290,78,26,26),
+    # Wheel pages: on the left, free while the right thumb steers the wheel.
+    "L1": Rect2(12,94,24,18),
+    "R1": Rect2(40,94,24,18),
     "Start": Rect2(298,8,18,16)
 }
 const GLYPH = preload("res://scripts/touch_glyph.gd")
@@ -61,6 +66,10 @@ var face_event_epoch := 0
 var shoulders_visible := true
 # Touch-driven menus (touch_ui.gd) take the whole screen; the pad steps aside.
 var menu_hidden := false
+var stick_home := Vector2.ZERO
+var floating_stick_index := -1
+var wheel_drag_index := -1
+var throw_icon_poll := 0.0
 var cancel_down_msec := -100000
 var pinch_points: Dictionary = {}
 var pinch_base := 0.0
@@ -111,10 +120,10 @@ func _create_reference_controls() -> void:
         var control := GLYPH.new()
         control.name = control_name
         control.kind = control_name
-        control.caption = {"L1":"LB","R1":"RB","L2":"LT","R2":"RT"}.get(control_name,control_name)
+        control.caption = {"L1":"LB","R1":"RB","L2":"MOSSE","R2":"LANCIO"}.get(control_name,control_name)
         control.size = CONTROL_LAYOUT[control_name].size
         add_child(control)
-    $EditHint.text = "DRAG CONTROLS - TAP CONTROLS TO SAVE"
+    $EditHint.text = "DRAG CONTROLS - TAP DONE TO SAVE"
     $EditHint.add_theme_font_override("font", preload("res://assets/touch_ui/Anton-Regular.ttf"))
     $EditHint.add_theme_font_size_override("font_size", 7)
     $EditHint.add_theme_color_override("font_color", Color.WHITE)
@@ -128,6 +137,10 @@ func _check_launch_control_sizes() -> void:
 
 func _process(delta: float) -> void:
     if not android_runtime: return
+    throw_icon_poll -= delta
+    if throw_icon_poll <= 0.0 and visible:
+        throw_icon_poll = 0.4
+        _refresh_throw_icon()
     safe_area_poll += delta
     if safe_area_poll >= 0.5:
         safe_area_poll = 0.0
@@ -352,6 +365,25 @@ func _move_contact(index: int, point: Vector2, relative: Vector2) -> void:
         _clamp_button(control)
     elif control_name in ["LeftStick","RightStick","DPad"]:
         _update_direction(index,control_name,point)
+    elif control_name in WHEEL_BUTTONS and index == wheel_drag_index:
+        _steer_wheel(control, point)
+
+## Dragging away from a held MOSSE/LANCIO picks a wedge, so one thumb does it all.
+func _steer_wheel(control: Control, point: Vector2) -> void:
+    var rect := control.get_global_rect()
+    var vector := ((point - rect.get_center()) / (rect.size * 1.2)).limit_length()
+    if vector.length() < WHEEL_DRAG_DEADZONE: return
+    for axis in [JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y]:
+        var event := InputEventJoypadMotion.new()
+        event.axis = axis
+        event.axis_value = vector.x if axis == JOY_AXIS_LEFT_X else vector.y
+        Input.parse_input_event.call_deferred(event)
+
+func _end_wheel_steer() -> void:
+    wheel_drag_index = -1
+    # The wheel reads its wedge when the trigger lifts; centre the stick afterwards.
+    await get_tree().create_timer(0.08).timeout
+    _send_movement()
 
 func _update_direction(index: int, control_name: String, point: Vector2) -> void:
     var control = get_node(control_name)
@@ -392,6 +424,11 @@ func _route_contact(index: int, point: Vector2, pressed: bool, canceled: bool) -
         if movement_contacts.has(index):
             movement_contacts.erase(index)
             _send_movement()
+        if index == floating_stick_index:
+            floating_stick_index = -1
+            (get_node("LeftStick") as Control).position = stick_home
+        if index == wheel_drag_index:
+            _end_wheel_steer.call_deferred()
         if edit_mode:
             _save_layout()
         elif not touch_owners.values().has(control_name):
@@ -409,14 +446,20 @@ func _route_contact(index: int, point: Vector2, pressed: bool, canceled: bool) -
             if distance < nearest:
                 nearest = distance
                 chosen = control_name
+    if chosen.is_empty() and not edit_mode and _in_floating_stick_zone(point):
+        # The stick jumps under the thumb anywhere in the lower-left area.
+        var stick := get_node("LeftStick") as Control
+        if not touch_owners.values().has("LeftStick"):
+            stick_home = stick.position
+            floating_stick_index = index
+            stick.position = point - stick.size * control_scale * 0.5
+            chosen = "LeftStick"
     if chosen.is_empty(): return
     var already_held := touch_owners.values().has(chosen)
     touch_owners[index] = chosen
     pointer_positions[index] = point
     get_viewport().set_input_as_handled()
-    if chosen == "Controls":
-        touch_config_requested.emit.call_deferred()
-        return
+    if chosen in WHEEL_BUTTONS and not edit_mode: wheel_drag_index = index
     if not edit_mode:
         if chosen in ["LeftStick","RightStick","DPad"]:
             _update_direction(index,chosen,point)
@@ -465,7 +508,18 @@ func _emit_action(action: String, pressed: bool) -> void:
     action_event.strength = 1.0 if pressed else 0.0
     Input.parse_input_event(action_event)
 
+func _in_floating_stick_zone(point: Vector2) -> bool:
+    var stick := get_node("LeftStick") as Control
+    if not stick.visible: return false
+    var zone := Rect2(usable_rect.position + Vector2(0, usable_rect.size.y * 0.4),
+        Vector2(usable_rect.size.x * 0.42, usable_rect.size.y * 0.6))
+    return zone.has_point(point)
+
 func _release_all() -> void:
+    if floating_stick_index >= 0:
+        floating_stick_index = -1
+        (get_node("LeftStick") as Control).position = stick_home
+    wheel_drag_index = -1
     cancel_down_msec = -100000  # Releasing everything is not a B tap.
     for control_name in pressed_actions.keys():
         _set_virtual_button(String(control_name), false)
@@ -561,3 +615,22 @@ func _load_layout() -> void:
         # settings but migrate old positions to the requested reference layout.
         _apply_default_layout()
         _save_layout()
+
+func _refresh_throw_icon() -> void:
+    var main := get_tree().current_scene
+    var mechanics = main.get("ball_mechanics") if main != null else null
+    var icon: Texture2D = null
+    if is_instance_valid(mechanics) and main.started:
+        var member: Dictionary = mechanics.party_member()
+        if not member.is_empty():
+            icon = main._field_move_wheel_icon(str(member.get("species","")), PokemonData.is_shiny(member), str(member.get("form","")))
+        else:
+            var ball := str(mechanics.state().get("ball", ""))
+            if int(main.inventory.get(ball, 0)) <= 0:
+                var balls: Array = mechanics.bag_balls()
+                ball = str(balls[0]) if not balls.is_empty() else ""
+            if not ball.is_empty(): icon = mechanics.ball_texture(ball)
+    var glyph = get_node("R2")
+    if glyph.icon != icon:
+        glyph.icon = icon
+        glyph.queue_redraw()
