@@ -11,7 +11,7 @@ env:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
 
@@ -42,7 +42,7 @@ jobs:
           xcodebuild -project Pokewilds.xcodeproj -scheme Pokewilds -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath dd \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build 2>&1 | tee xb.log \
-            || { grep -E 'error[:]|FAILED' xb.log | sort -u | head -30 | sed 's/^/::error::/'; exit 1; }
+            || { grep -E -A3 'error[:]|FAILED|ld: |Undefined sym|referenced from|warning: .*(built for|newer)' xb.log | head -80 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}' | sed 's/^/::error::/'; echo; exit 1; }
           mkdir Payload
           cp -R dd/Build/Products/Release-iphoneos/Pokewilds.app Payload/
           zip -qry Pokewilds-unsigned.ipa Payload
