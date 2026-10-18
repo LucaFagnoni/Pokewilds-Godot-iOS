@@ -36,9 +36,13 @@ jobs:
       - name: Build unsigned .app and pack IPA
         working-directory: build/ios
         run: |
+          set -o pipefail
+          ls; xcodebuild -list -project Pokewilds.xcodeproj | sed 's/^/::notice::/'
+          # Surface compiler errors as annotations (readable without log access).
           xcodebuild -project Pokewilds.xcodeproj -scheme Pokewilds -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath dd \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build 2>&1 | tee xb.log \
+            || { grep -E 'error[:]|FAILED' xb.log | sort -u | head -30 | sed 's/^/::error::/'; exit 1; }
           mkdir Payload
           cp -R dd/Build/Products/Release-iphoneos/Pokewilds.app Payload/
           zip -qry Pokewilds-unsigned.ipa Payload
