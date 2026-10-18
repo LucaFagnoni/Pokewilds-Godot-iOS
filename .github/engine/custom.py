@@ -1,6 +1,6 @@
-# SCons profile for a stripped Godot 4.7.2 export template (pass profile=<this file>).
+# SCons profile for a stripped Godot 4.7.2 export template: pass profile=<this file>
+# plus target=template_release on the command line (a profile cannot set target).
 # PokeWilds is 2D-only on the GL Compatibility renderer; everything else goes.
-target = "template_release"
 optimize = "size_extra"
 debug_symbols = "no"
 

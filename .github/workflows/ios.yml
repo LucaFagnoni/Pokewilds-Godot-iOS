@@ -45,7 +45,7 @@ jobs:
       - name: Build stripped engine (iOS arm64)
         working-directory: godot-src
         run: |
-          "$RUNNER_TEMP/scons/bin/scons" platform=ios arch=arm64 profile="$ENGINE_PROFILE" lto=thin \
+          "$RUNNER_TEMP/scons/bin/scons" platform=ios arch=arm64 target=template_release profile="$ENGINE_PROFILE" lto=thin \
             cache_path="$HOME/.scons_cache" -j"$(sysctl -n hw.ncpu)"
           ls -la bin
 
@@ -117,7 +117,8 @@ jobs:
       - name: Build stripped engine (Linux, headless only)
         working-directory: godot-src
         run: |
-          "$RUNNER_TEMP/scons/bin/scons" platform=linuxbsd profile="$ENGINE_PROFILE" \
+          "$RUNNER_TEMP/scons/bin/scons" platform=linuxbsd target=template_release profile="$ENGINE_PROFILE" \
+            disable_path_overrides=no \
             x11=no wayland=no alsa=no pulseaudio=no dbus=no speechd=no fontconfig=no udev=no \
             cache_path="$HOME/.scons_cache" -j"$(nproc)"
 
