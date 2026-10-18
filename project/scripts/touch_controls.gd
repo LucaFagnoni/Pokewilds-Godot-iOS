@@ -8,7 +8,7 @@ signal touch_config_requested
 signal safe_area_changed(bounds: Rect2)
 
 const SAVE_PATH := "user://touch_layout_m43.cfg"
-const SETTINGS_SCHEMA_VERSION := 8
+const SETTINGS_SCHEMA_VERSION := 10
 const THEME_SYSTEM := 0
 const THEME_LIGHT := 1
 const THEME_DARK := 2
@@ -18,8 +18,9 @@ const THEME_DARK := 2
 # and the right stick had no game mapping, so both were dropped.
 const ACTIONS := {
     "Controls": [], "LeftStick": [],
-    "A": ["confirm"], "B": ["cancel"], "X": ["run"], "Y": ["pokedex"],
-    "Start": ["start"], "Select": ["map_open"],
+    # B also runs while held (see _set_virtual_button); the Pokedex lives in the menu.
+    "A": ["confirm"], "B": ["cancel"],
+    "Start": ["start"],
     "L1": ["shoulder_left"], "L2": ["field_move_wheel"],
     "R1": ["shoulder_right"], "R2": ["ball_mechanics"]
 }
@@ -28,19 +29,17 @@ const SHOULDERS := ["L1", "R1"]
 const PINCH_STEP := 1.2
 # Baseline dimensions are fractions of the usable 320x180 game canvas.
 # Everything hugs the edges so the field around the player stays clear.
-const FACE_CENTER := Vector2(282,136)
+const FACE_CENTER := Vector2(287,140)
+const CANCEL_TAP_MSEC := 250
 const CONTROL_LAYOUT := {
-    "Controls": Rect2(240,8,24,18),
+    "Controls": Rect2(268,8,24,18),
     "LeftStick": Rect2(14,122,44,44),
-    "X": Rect2(270,102,24,24),
-    "Y": Rect2(248,124,24,24),
-    "A": Rect2(292,124,24,24),
-    "B": Rect2(270,146,24,24),
+    "A": Rect2(290,114,26,26),
+    "B": Rect2(258,138,26,26),
     "L1": Rect2(36,98,24,18),
     "L2": Rect2(12,94,18,24),
     "R1": Rect2(264,80,24,18),
-    "R2": Rect2(298,96,18,24),
-    "Select": Rect2(272,8,18,16),
+    "R2": Rect2(298,84,18,24),
     "Start": Rect2(298,8,18,16)
 }
 const GLYPH = preload("res://scripts/touch_glyph.gd")
@@ -60,12 +59,14 @@ var touch_owners: Dictionary = {}
 var button_layout := 0
 var face_event_epoch := 0
 var shoulders_visible := true
+# Touch-driven menus (touch_ui.gd) take the whole screen; the pad steps aside.
+var menu_hidden := false
+var cancel_down_msec := -100000
 var pinch_points: Dictionary = {}
 var pinch_base := 0.0
 const JOY_BUTTONS := {
     # Node names retain their original Nintendo-position slots.
-    "A": JOY_BUTTON_B, "B": JOY_BUTTON_A, "X": JOY_BUTTON_Y,
-    "Y": JOY_BUTTON_X, "Start": JOY_BUTTON_START, "Select": JOY_BUTTON_BACK,
+    "A": JOY_BUTTON_B, "B": JOY_BUTTON_A, "Start": JOY_BUTTON_START,
     "L1": JOY_BUTTON_LEFT_SHOULDER, "R1": JOY_BUTTON_RIGHT_SHOULDER
 }
 
@@ -173,7 +174,7 @@ func set_button_layout(layout: int) -> void:
     _release_all()
     face_event_epoch += 1
     button_layout = layout
-    for slot in ["A", "B", "X", "Y"]:
+    for slot in ["A", "B"]:
         get_node(slot).set_face_letter(face_letter(slot))
     _apply_nintendo_styles()
 
@@ -191,6 +192,11 @@ func set_shoulders_visible(enabled: bool) -> void:
         for index in touch_owners.keys():
             if touch_owners[index] == control_name: touch_owners.erase(index)
         if pressed_actions.has(control_name): _set_virtual_button(control_name, false)
+
+func set_menu_hidden(hidden: bool) -> void:
+    if hidden == menu_hidden: return
+    menu_hidden = hidden
+    _refresh_visibility()
 
 func set_game_active(enabled: bool) -> void:
     game_active = enabled
@@ -286,7 +292,7 @@ func _on_controller_state_changed(connected: bool) -> void:
 func _refresh_visibility() -> void:
     var hidden_by_controller := auto_hide_controller and controller_connected
     var should_show := android_runtime and game_active and (
-        edit_mode or (touch_enabled and not hidden_by_controller)
+        edit_mode or (touch_enabled and not hidden_by_controller and not menu_hidden)
     )
     if visible and not should_show:
         _release_all()
@@ -426,6 +432,19 @@ func _set_virtual_button(control_name: String, pressed: bool) -> void:
         pressed_actions[control_name] = button_actions(control_name).duplicate()
     else:
         pressed_actions.erase(control_name)
+    if button_actions(control_name) == ["cancel"]:
+        # Hold to run, quick tap to cancel: a held B never lands a FLY by accident.
+        _emit_action.call_deferred("run", pressed)
+        if pressed:
+            cancel_down_msec = Time.get_ticks_msec()
+            return
+        if Time.get_ticks_msec() - cancel_down_msec > CANCEL_TAP_MSEC: return
+        for state in [true, false]:
+            var tap := InputEventJoypadButton.new()
+            tap.button_index = JOY_BUTTONS[control_name]
+            tap.pressed = state
+            _dispatch_virtual_button.call_deferred(tap, face_event_epoch)
+        return
     # Defer injection until the original pointer event has finished propagating.
     # One joypad event preserves context-sensitive dual bindings (bumper/zoom).
     if JOY_BUTTONS.has(control_name):
@@ -447,6 +466,7 @@ func _emit_action(action: String, pressed: bool) -> void:
     Input.parse_input_event(action_event)
 
 func _release_all() -> void:
+    cancel_down_msec = -100000  # Releasing everything is not a B tap.
     for control_name in pressed_actions.keys():
         _set_virtual_button(String(control_name), false)
     for control_name in touch_owners.values():

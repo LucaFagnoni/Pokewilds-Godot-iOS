@@ -10,6 +10,8 @@ var adjacent_worlds: Dictionary = {}
 var current_world_grid := Vector2i.ZERO
 var map_waypoints: Dictionary = {}
 var waypoint_ui: Node
+# Finger input for menus and the minimap (touch_ui.gd); active on phones.
+var touch_ui: Node
 var edge_travel_busy := false
 var edge_sky: Node2D
 signal progression_confirmed
@@ -1493,6 +1495,9 @@ func _ready() -> void:
     _update_menu_cursor()
     $UI.set_script(preload("res://scripts/proportional_ui_layout.gd"))
     $UI._ready()
+    touch_ui = preload("res://scripts/touch_ui.gd").new()
+    add_child(touch_ui)
+    touch_ui.configure(self, $UI)
     setup_panel.show()
     $UI.show()
     $StartupSplash.hide()
@@ -4314,6 +4319,9 @@ func _handle_android_controls_gesture() -> void:
         _open_touch_config()
 
 func _input(event: InputEvent) -> void:
+    if is_instance_valid(touch_ui) and touch_ui.handle(event):
+        get_viewport().set_input_as_handled()
+        return
     if startup_complete and _menu_stick_event_is_blocked(event):
         get_viewport().set_input_as_handled()
         return
