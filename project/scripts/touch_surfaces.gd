@@ -5,6 +5,7 @@ extends RefCounted
 
 const JOHTO_FONT := preload("res://assets/source_text_font.fnt")
 const GameOptions = preload("res://scripts/game_options.gd")
+const CraftingData = preload("res://scripts/crafting_data.gd")
 const START_LABELS := ["POKEDEX", "POKEMON", "ITEM", "STORAGE", "MAP", "GUIDE", "OPTIONS", "SAVE", "EXIT"]
 
 var main: Node
@@ -13,9 +14,17 @@ var map_from_minimap := false
 var start_menu: Control
 var start_tiles: Array[Panel] = []
 var start_subtitles: Array[Label] = []
+var start_icons: Array[TextureRect] = []
+var party_slots: Array[Control] = []
+const Icons = preload("res://scripts/touch_icons.gd")
 var setup_screen: Control
 var backdrop: ColorRect
 var field_hud: RefCounted
+var move_cards: Control
+var bag_tabs: Control
+var bag_tab_buttons: Array[Control] = []
+const POCKET_NAMES := ["ITEMS", "BALLS", "MATERIALS", "KEY ITEMS", "MEDICINE"]
+var move_card_nodes: Array[Panel] = []
 
 func _init(owner_main: Node, owner_ui: Node) -> void:
     main = owner_main
@@ -56,6 +65,8 @@ func build() -> Dictionary:
     if m.storage_menu_open: return _storage()
     if is_instance_valid(m.bag_action_ui): return _bag_actions()
     if m.game_menu_open: return _game_menu()
+    if m.craft_menu_open: return _crafting()
+    if m.build_menu_open: return _build_menu()
     var prompt := _field_prompt()
     if not prompt.is_empty(): return prompt
     return _field()
@@ -94,7 +105,11 @@ func _game_menu() -> Dictionary:
     if m.overworld_evolution_item != "": return _party_rows(func(i): m.pokemon_menu_index = i; m._refresh_evolution_item_target(); press("confirm"))
     if m.item_pocket_menu.visible and m.item_pocket_context == "OVERWORLD": return _items(func(): press("cancel"))
     if m.pokemon_action_open: return _pokemon_actions()
-    if m.pokemon_menu_open: return _party_rows(func(i): m.pokemon_menu_index = i; m._refresh_pokemon_category_menu(); press("confirm"))
+    if m.pokemon_menu_open:
+        var party := _party_rows(func(i): m.pokemon_menu_index = i; m._refresh_pokemon_category_menu(); press("confirm"))
+        party["long_press"] = func(i): _pick_party(i)
+        party["drop"] = func(i, p): _drop_party(i, p, party.rows)
+        return party
     if m.save_confirm_open: return _yes_no(m.save_confirm, func(i): m.save_confirm_index = i; m._update_save_confirm_cursor())
     if m.guide_topic_open: return {"back": func(): press("cancel"), "tap_at": func(_p): press("cancel")}
     if m.guide_menu_open: return _guide()
@@ -150,9 +165,15 @@ func _items(back: Callable) -> Dictionary:
     var page_start: int = int(m.battle_item_menu_index / m.ITEM_MENU_VISIBLE_ROWS) * m.ITEM_MENU_VISIBLE_ROWS
     var visible_rows: int = mini(m.ITEM_MENU_VISIBLE_ROWS, count - page_start)
     var pocket_frame := Rect2(m.item_pocket_label.get_global_rect().position - Vector2(20, 12), Vector2(82, 123))
+    var tabs := []
+    for i in bag_tab_buttons.size():
+        tabs.append(["", func(): m._switch_battle_item_pocket(i - int(m.battle_item_pocket_index)), bag_tab_buttons[i].get_global_rect()])
     return {
+        "hotspots": tabs,
         "rows": ui.label_lines(m.item_pocket_list, visible_rows, 200),
         "tap": func(i): m.battle_item_menu_index = page_start + i; m._refresh_battle_item_pocket_menu(); press("confirm"),
+        # Long press reads the description without using the item.
+        "long_press": func(i): m.battle_item_menu_index = page_start + i; m._refresh_battle_item_pocket_menu(),
         "scroll": func(d): press("move_down" if d > 0 else "move_up"),
         "swipe": func(d): press("move_right" if d > 0 else "move_left"),
         "tap_at": func(p: Vector2): if pocket_frame.has_point(p): press("move_right"),
@@ -193,6 +214,7 @@ func _guide() -> Dictionary:
 
 func _pokedex() -> Dictionary:
     var dex: Control = main.pokedex_menu
+    if dex.touch_grid: return _pokedex_grid(dex)
     var first: int = int(dex.selection / dex.PAGE_SIZE) * dex.PAGE_SIZE
     var rows := []
     for row in dex.rows: rows.append(row.get_global_rect())
@@ -222,15 +244,7 @@ func _options() -> Dictionary:
     for row in menu.row_nodes: rows.append(Rect2(row.global_position - Vector2(10, 2), Vector2(298, 16)))
     return {
         "rows": rows,
-        "tap": func(i, p: Vector2):
-            var index: int = menu.first + i
-            if menu.controls_page:
-                menu.control_index = mini(index, menu.control_rows.size() - 1); menu.refresh(); return
-            if index >= menu.menu_rows.size(): return
-            menu.selection = index; menu.refresh()
-            # Left of the value steps it down; anywhere else steps up / toggles / opens.
-            var value_left: float = menu.row_nodes[i].global_position.x + 132.0
-            press("move_left" if p.x >= value_left and p.x < value_left + 70.0 else "confirm"),
+        "tap": func(i, p: Vector2): menu.touch_tap(i, p),
         "scroll": func(d): press("move_down" if d > 0 else "move_up"),
         "back": back,
     }
@@ -264,6 +278,8 @@ func _storage() -> Dictionary:
     return {
         "rows": rows,
         "tap": func(i): m.storage_index = window_start + i; m._refresh_storage_menu(); press("confirm"),
+        "long_press": func(i): _pick_storage(window_start + i),
+        "drop": func(i, p): _drop_storage(window_start, i, p, rows),
         "scroll": func(d): press("move_down" if d > 0 else "move_up"),
         "row_height": 19.0,
         "swipe": func(d): press("move_right" if d > 0 else "move_left"),
@@ -322,8 +338,8 @@ func refresh_visuals(delta: float = 0.0) -> void:
         setup_screen.configure(m, ui)
     setup_screen.refresh()
     _refresh_backdrop()
-    # Taller move rows for fingers; four lines still fit the move box.
-    m.battle_move_list.add_theme_constant_override("line_spacing", 4)
+    _refresh_move_cards()
+    _refresh_bag_tabs()
     var top_level: bool = m.started and m.game_menu_open and m.game_menu.visible \
         and m.game_menu_box.visible and not m.game_menu_detail_open and not m.save_confirm_open \
         and not m.guide_menu_open and not m.pokemon_menu_open and not m.item_pocket_menu.visible \
@@ -331,8 +347,7 @@ func refresh_visuals(delta: float = 0.0) -> void:
         and not (is_instance_valid(m.options_menu) and m.options_menu.visible)
     start_menu.visible = top_level
     m.game_menu_box.modulate.a = 0.0
-    if top_level:
-        start_subtitles[1].text = "%d / 6" % mini(6, m.caught_pokemon.size())
+    if top_level: _refresh_start_details()
     if m.game_menu_map_screen.visible:
         m.get_node("UI/GameMenu/MapScreen/Hint").text = "DRAG: MOVE   PINCH: ZOOM   TAP: CURSOR" if not m.teleport_map_mode else ""
 
@@ -350,6 +365,28 @@ func _build_start_menu() -> void:
     card.add_theme_stylebox_override("panel", m._classic_dialogue_style())
     start_menu.add_child(card)
     m._source_ui_label(card, "Title", Vector2(14, 8), Vector2(120, 14), 11, "MENU")
+    # Party strip: who is with you and how they are doing, at a glance.
+    for i in 6:
+        var slot := Control.new()
+        slot.position = Vector2(118 + i * 28, 4)
+        slot.size = Vector2(24, 22)
+        slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        card.add_child(slot)
+        var sprite: TextureRect = m._source_texture_rect(slot, "Sprite", Vector2(3, 0), Vector2(18, 18))
+        var track := ColorRect.new()
+        track.name = "Track"
+        track.position = Vector2(2, 19)
+        track.size = Vector2(20, 3)
+        track.color = Color("404040")
+        track.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        slot.add_child(track)
+        var fill := ColorRect.new()
+        fill.name = "Fill"
+        fill.position = Vector2(2, 19)
+        fill.size = Vector2(20, 3)
+        fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        slot.add_child(fill)
+        party_slots.append(slot)
     for i in START_LABELS.size():
         var tile := Panel.new()
         tile.position = Vector2(12 + (i % 3) * 94, 28 + int(i / 3) * 44)
@@ -357,12 +394,15 @@ func _build_start_menu() -> void:
         tile.mouse_filter = Control.MOUSE_FILTER_IGNORE
         tile.add_theme_stylebox_override("panel", m._classic_dialogue_style())
         card.add_child(tile)
-        var title: Label = m._source_ui_label(tile, "Text", Vector2(0, 7), Vector2(88, 14), 10, START_LABELS[i])
-        title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-        var subtitle: Label = m._source_ui_label(tile, "Sub", Vector2(0, 21), Vector2(88, 10), 7, "")
-        subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+        var picture: TextureRect = m._source_texture_rect(tile, "Icon", Vector2(8, 7), Vector2(24, 24), Icons.icon(START_LABELS[i]))
+        picture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+        var title: Label = m._source_ui_label(tile, "Text", Vector2(34, 9), Vector2(50, 12), 9, START_LABELS[i])
+        var width := title.get_theme_font("font").get_string_size(title.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 9).x
+        title.scale.x = minf(1.0, 48.0 / maxf(1.0, width))
+        var subtitle: Label = m._source_ui_label(tile, "Sub", Vector2(34, 21), Vector2(50, 10), 7, "")
         start_tiles.append(tile)
         start_subtitles.append(subtitle)
+        start_icons.append(picture)
     start_menu.visible = false
     m.get_node("UI").add_child(start_menu)
     GameOptions.refresh_frames(start_menu)
@@ -391,7 +431,8 @@ func _refresh_backdrop() -> void:
 
 func _battle() -> Dictionary:
     var m := main
-    var advance := {"tap_at": func(_p): press("confirm")}
+    # Holding a finger down fast-forwards battle text.
+    var advance := {"tap_at": func(_p): press("confirm"), "hold": func(): if m.battle_text_busy: m._finish_battle_text()}
     if m.battle_entry_pending: return advance
     # The command prompt re-types itself; a command tap must not wait for it.
     if String(m.battle_ui_mode) == "COMMAND" and not m.battle_submenu.visible and not m.item_pocket_menu.visible:
@@ -435,9 +476,11 @@ func _battle_command(i: int) -> void:
 
 func _battle_moves() -> Dictionary:
     var m := main
-    var count: int = mini(4, m.battle_move_list.get_line_count())
+    var count: int = mini(4, (m._command_pokemon().get("moves", []) as Array).size())
+    var rows := []
+    for i in count: rows.append(move_card_nodes[i].get_global_rect())
     return {
-        "rows": ui.label_lines(m.battle_move_list, count, 190),
+        "rows": rows,
         "tap": func(i): m.battle_move_index = i; m._refresh_battle_move_menu(); press("confirm"),
         "back": func(): press("cancel"),
     }
@@ -550,3 +593,215 @@ func _wild_choice(i: int) -> void:
 func _mansion_choice(i: int) -> void:
     main.mansion_switch_index = i
     main._align_menu_tick(main.egg_choice_cursor, main.egg_choice_panel.get_node("Yes" if i == 0 else "No"))
+
+# --- battle move cards ----------------------------------------------------------
+
+const TYPE_COLORS := {
+    "NORMAL": "a8a878", "FIRE": "f08030", "WATER": "6890f0", "ELECTRIC": "f8d030",
+    "GRASS": "78c850", "ICE": "98d8d8", "FIGHTING": "c03028", "POISON": "a040a0",
+    "GROUND": "e0c068", "FLYING": "a890f0", "PSYCHIC": "f85888", "BUG": "a8b820",
+    "ROCK": "b8a038", "GHOST": "705898", "DRAGON": "7038f8", "DARK": "705848",
+    "STEEL": "b8b8d0", "FAIRY": "ee99ac",
+}
+
+func _build_move_cards() -> void:
+    var m := main
+    move_cards = Control.new()
+    move_cards.name = "TouchMoveCards"
+    move_cards.size = Vector2(320, 180)
+    move_cards.z_index = 30
+    move_cards.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    for i in 4:
+        var card := Panel.new()
+        card.position = Vector2(4 + (i % 2) * 158, 117 + int(i / 2) * 31)
+        card.size = Vector2(154, 28)
+        card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        move_cards.add_child(card)
+        m._source_ui_label(card, "Name", Vector2(7, 4), Vector2(140, 12), 9, "")
+        var info: Label = m._source_ui_label(card, "Info", Vector2(7, 16), Vector2(140, 9), 7, "")
+        info.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+        move_card_nodes.append(card)
+    move_cards.visible = false
+    m.get_node("UI").add_child(move_cards)
+
+## Four big type-coloured cards replace the classic move list on touch.
+func _refresh_move_cards() -> void:
+    var m := main
+    if not is_instance_valid(move_cards): _build_move_cards()
+    var showing: bool = m.battle_active and String(m.battle_ui_mode) == "MOVE" and m.battle_move_box.visible
+    move_cards.visible = showing
+    m.battle_move_box.modulate.a = 0.0 if showing else 1.0
+    m.battle_move_type_box.modulate.a = 0.0 if showing else 1.0
+    if not showing: return
+    var actor: Dictionary = m._command_pokemon()
+    var moves: Array = actor.get("moves", [])
+    for i in 4:
+        var card := move_card_nodes[i]
+        card.visible = i < moves.size()
+        if not card.visible: continue
+        var move := String(moves[i])
+        var data: Dictionary = PokemonData.move_info(move)
+        var type := String(data.get("type", "NORMAL"))
+        var colour := Color(String(TYPE_COLORS.get(type, "a8a878")))
+        var maximum := int(data.get("pp", 0))
+        var current := int((actor.get("pp", {}) as Dictionary).get(move, maximum))
+        var style := StyleBoxFlat.new()
+        style.bg_color = colour.lerp(Color.WHITE, 0.55)
+        style.border_color = colour.darkened(0.45) if i != m.battle_move_index else Color.BLACK
+        style.set_border_width_all(2 if i == m.battle_move_index else 1)
+        style.set_corner_radius_all(3)
+        style.anti_aliasing = false
+        card.add_theme_stylebox_override("panel", style)
+        (card.get_node("Name") as Label).text = move.replace("_", " ")
+        (card.get_node("Info") as Label).text = "%s   PP %d/%d" % [type, current, maximum]
+
+func _refresh_start_details() -> void:
+    var m := main
+    var party: Array = m.caught_pokemon
+    start_subtitles[1].text = "%d / 6" % mini(6, party.size())
+    start_subtitles[0].text = "SEEN %d" % m.pokedex_progress.entries.size()
+    var bag := 0
+    for item in m.inventory: bag += int(m.inventory[item])
+    start_subtitles[2].text = "%d ITEMS" % bag
+    # The lead Pokemon and the live minimap stand in for two of the icons.
+    start_icons[1].texture = m._party_record_frame(party[0]) if not party.is_empty() else Icons.icon("POKEMON")
+    var minimap := m.m3924_minimap_root.get_node_or_null("Map") as TextureRect if is_instance_valid(m.m3924_minimap_root) else null
+    start_icons[4].texture = minimap.texture if minimap != null and minimap.texture != null else Icons.icon("MAP")
+    for i in party_slots.size():
+        var slot := party_slots[i]
+        slot.visible = i < party.size()
+        if not slot.visible: continue
+        var record: Dictionary = party[i]
+        (slot.get_node("Sprite") as TextureRect).texture = m._party_record_frame(record)
+        var egg := bool(record.get("is_egg", false))
+        var ratio := clampf(float(record.get("hp", 0)) / maxf(1.0, float(record.get("max_hp", 1))), 0.0, 1.0)
+        var fill := slot.get_node("Fill") as ColorRect
+        fill.visible = not egg
+        (slot.get_node("Track") as ColorRect).visible = not egg
+        fill.size.x = 20.0 * ratio
+        fill.color = Color("58c048") if ratio > 0.5 else (Color("f0c040") if ratio > 0.2 else Color("e04038"))
+
+# --- reorder by drag ------------------------------------------------------------
+
+func _pick_party(i: int) -> void:
+    var m := main
+    m.pokemon_menu_index = i
+    m.pokemon_switch_selecting = true
+    m.pokemon_switch_source_index = i
+    m._refresh_pokemon_category_menu()
+
+func _drop_party(_from: int, point: Vector2, rows: Array) -> void:
+    var m := main
+    for j in rows.size():
+        if Rect2(rows[j]).has_point(point):
+            m.pokemon_menu_index = j
+            m._finish_pokemon_switch()
+            return
+    m.pokemon_switch_selecting = false
+    m.pokemon_switch_source_index = -1
+    m._refresh_pokemon_category_menu()
+
+func _pick_storage(index: int) -> void:
+    var m := main
+    m.storage_index = index
+    m.storage_switch_from = index
+    m.storage_mode = "SWITCH"
+    m._refresh_storage_menu()
+
+func _drop_storage(window_start: int, _from: int, point: Vector2, rows: Array) -> void:
+    var m := main
+    for j in rows.size():
+        if Rect2(rows[j]).has_point(point):
+            m.storage_index = window_start + j
+            m._refresh_storage_menu()
+            press("confirm")
+            return
+    m.storage_mode = "LIST"
+    m.storage_switch_from = -1
+    m._refresh_storage_menu()
+
+# --- bag pocket tabs ------------------------------------------------------------
+
+func _refresh_bag_tabs() -> void:
+    var m := main
+    if not is_instance_valid(bag_tabs):
+        bag_tabs = Control.new()
+        bag_tabs.name = "TouchPocketTabs"
+        bag_tabs.position = Vector2(8, 8)
+        bag_tabs.size = Vector2(74, 116)
+        bag_tabs.z_index = 5
+        bag_tabs.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        m.item_pocket_menu.add_child(bag_tabs)
+        for i in POCKET_NAMES.size():
+            var tab: Control = ui.make_button(bag_tabs, POCKET_NAMES[i], Vector2(72, 19), 8)
+            tab.position = Vector2(0, i * 23)
+            bag_tab_buttons.append(tab)
+    var showing: bool = m.item_pocket_menu.visible
+    bag_tabs.visible = showing
+    # The tabs take the place of the pocket picture and name.
+    m.item_pocket_label.modulate.a = 0.0
+    m.item_pocket_bag.modulate.a = 0.0
+    if not showing: return
+    for i in bag_tab_buttons.size():
+        ui.set_selected(bag_tab_buttons[i], i == int(m.battle_item_pocket_index))
+
+func _pokedex_grid(dex: Control) -> Dictionary:
+    var rows := []
+    for i in dex.grid_page_items.size(): rows.append(dex.grid_cells[i].get_global_rect())
+    var bounds: Rect2 = main.touch_controls.usable_rect
+    var search := "DONE" if dex.searching else ("CLEAR" if not String(dex.query).is_empty() else "SEARCH")
+    return {
+        "rows": rows,
+        "tap": func(i): _pokedex_pick(dex, i),
+        "swipe": func(d): dex.turn_page(d),
+        "buttons": [[search, func(): _pokedex_search(dex), Rect2(Vector2(bounds.end.x - 92, bounds.position.y + 4), Vector2(62, 20))]],
+        "back": func():
+            if dex.searching: dex.end_search(true)
+            else: dex.close(),
+    }
+
+func _pokedex_pick(dex: Control, i: int) -> void:
+    if i >= dex.grid_page_items.size(): return
+    var index := int(dex.grid_page_items[i])
+    if index == dex.selection: dex.play_cry()
+    else:
+        dex.selection = index
+        dex.refresh()
+
+func _pokedex_search(dex: Control) -> void:
+    if dex.searching: dex.end_search(false)
+    elif not String(dex.query).is_empty(): dex.end_search(true)
+    else: dex.begin_search()
+
+# --- crafting and building --------------------------------------------------------
+
+func _crafting() -> Dictionary:
+    var panel: Rect2 = main.crafting_panel.get_global_rect()
+    var y := panel.get_center().y - 11
+    return {
+        "buttons": [
+            ["<", func(): press("move_left"), Rect2(Vector2(panel.position.x - 28, y), Vector2(24, 22))],
+            [">", func(): press("move_right"), Rect2(Vector2(panel.end.x + 4, y), Vector2(24, 22))],
+            ["CRAFT", func(): press("confirm"), Rect2(Vector2(panel.get_center().x - 36, panel.end.y + 4), Vector2(72, 22))],
+        ],
+        "swipe": func(d): press("move_right" if d > 0 else "move_left"),
+        "back": func(): press("cancel"),
+    }
+
+## BUILD keeps the pad: the player walks to place the preview, A builds.
+func _build_menu() -> Dictionary:
+    var m := main
+    var recipes: Array = CraftingData.build_recipes()
+    var name := String((recipes[m.build_menu_index] as Dictionary).get("display_name", "")).to_upper() if not recipes.is_empty() else ""
+    var bounds: Rect2 = m.touch_controls.usable_rect
+    var top := bounds.position.y + 4
+    var centre := bounds.get_center().x
+    return {
+        "modal": false,
+        "buttons": [
+            ["<", func(): press("shoulder_left"), Rect2(Vector2(centre - 98, top), Vector2(22, 20))],
+            [name, func(): press("shoulder_right"), Rect2(Vector2(centre - 72, top), Vector2(92, 20))],
+            [">", func(): press("shoulder_right"), Rect2(Vector2(centre + 24, top), Vector2(22, 20))],
+            ["DONE", func(): press("cancel"), Rect2(Vector2(centre + 52, top), Vector2(46, 20))],
+        ],
+    }

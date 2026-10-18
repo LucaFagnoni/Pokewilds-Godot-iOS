@@ -32,7 +32,12 @@ const ROWS := [
     ["game_speed","GAME SPEED","Speed up gameplay, music and effects together."],
     ["text_speed","TEXT SPEED","Choose how quickly dialogue appears."],
     ["frame","FRAME","Choose a frame."],
-    ["swipe_menu","TOUCH CONTROLS","Button size, opacity, layout, game files and mods."]]
+    ["swipe_menu","TOUCH CONTROLS","Button size, opacity, layout, game files and mods."],
+    ["haptics","HAPTICS","Vibrate softly when you tap."],
+    ["touch_size","BUTTON SIZE","Size of the on-screen buttons."]]
+const TOUCH_ONLY := ["swipe_menu", "haptics", "touch_size"]
+const VOLUME_KEYS := ["music","sound","world_sound","cries","footsteps"]
+const TouchUI = preload("res://scripts/touch_ui.gd")
 var menu_rows: Array = ROWS.duplicate(true)
 var main: Node
 var selection := 0
@@ -149,6 +154,8 @@ func open() -> void:
     # Builds that leave out optional packs (iOS) hide their toggles.
     if not ResourceLoader.exists("res://assets/lofi/music/route_1.ogg"):
         menu_rows=menu_rows.filter(func(row): return row[0]!="lofi_music")
+    if not TouchUI.touch_runtime():
+        menu_rows=menu_rows.filter(func(row): return row[0] not in TOUCH_ONLY)
     if not FileAccess.file_exists("res://data/gen3_overhaul.pwmod"):
         menu_rows=menu_rows.filter(func(row): return row[0]!="gen3_overhaul")
     # Online the art changes on the next load, not at once, for host and guests alike.
@@ -243,6 +250,8 @@ func handle(event: InputEvent) -> void:
         internet_setup=preload("res://scripts/coop_zerotier_setup.gd").new()
         main.get_node("UI").add_child(internet_setup);internet_setup.configure(main)
         return
+    if direction and key=="touch_size":
+        main.touch_controls.set_control_scale(main.touch_controls.control_scale+0.1*direction);refresh();return
     if direction and key=="join_code":
         main.coop_game.cycle_endpoint(direction);refresh();return
     if direction and key=="autosave":
@@ -333,6 +342,9 @@ func refresh() -> void:
             label(row,main.coop_game.join_code(),Vector2(132,0),Vector2(144,14),8)
             continue
         if key in ["controls","back","swipe_menu"]:continue
+        if key=="touch_size":
+            label(row,"%d%%" % roundi(main.touch_controls.control_scale*100.0),Vector2(132,0),Vector2(142,14),8)
+            continue
         if key in ["music","sound","world_sound","cries","footsteps"]:
             var bar:=ColorRect.new();bar.position=Vector2(138,6);bar.size=Vector2(98,1);bar.color=Color.BLACK;row.add_child(bar)
             var knob:=ColorRect.new();knob.position=Vector2(138+float(Settings.values[key])*0.98,3);knob.size=Vector2(2,7);knob.color=Color8(192,40,40);row.add_child(knob)
@@ -354,6 +366,9 @@ func refresh() -> void:
             elif key=="raids_mode":choices=["ALL","LAST"];selected=0 if main.coop_game.hordes.settings().get("raids","ALL")=="ALL" else 1
             if key in ["frame","button_layout"]:choices=["TYPE 1","TYPE 2"];selected=int(Settings.values[key])
             elif key=="text_speed":choices=["DEFAULT","FAST","FASTER"];selected=int(Settings.values.text_speed)
+            if TouchUI.touch_runtime() and choices==["ON","OFF"]:
+                toggle(row,selected==0)
+                continue
             for c in range(choices.size()):
                 var x:=132.0+c*(52.0 if choices.size()==3 else 78.0)
                 if key=="text_speed" and c==1: x+=4.0
@@ -397,3 +412,42 @@ func joy_button_name(button: int) -> String:
     var face := input_router.face_button_name(button)
     if not face.is_empty(): return face
     return {JOY_BUTTON_A:"A",JOY_BUTTON_B:"B",JOY_BUTTON_X:"X",JOY_BUTTON_Y:"Y",JOY_BUTTON_START:"START",JOY_BUTTON_BACK:"SELECT",JOY_BUTTON_LEFT_SHOULDER:"LB / L1",JOY_BUTTON_RIGHT_SHOULDER:"RB / R1",JOY_BUTTON_DPAD_UP:"D-UP",JOY_BUTTON_DPAD_DOWN:"D-DOWN",JOY_BUTTON_DPAD_LEFT:"D-LEFT",JOY_BUTTON_DPAD_RIGHT:"D-RIGHT"}.get(button,"BUTTON %d" % button)
+
+## Touch: an ON/OFF switch instead of two words.
+func toggle(row: Control, on: bool) -> void:
+    label(row,"ON" if on else "OFF",Vector2(204,0),Vector2(28,14),7).horizontal_alignment=HORIZONTAL_ALIGNMENT_RIGHT
+    var pill:=Panel.new();pill.position=Vector2(236,1);pill.size=Vector2(30,12);pill.mouse_filter=Control.MOUSE_FILTER_IGNORE
+    var style:=StyleBoxFlat.new();style.bg_color=Color8(88,192,72) if on else Color8(160,160,168)
+    style.border_color=Color.BLACK;style.set_border_width_all(1);style.set_corner_radius_all(6);style.anti_aliasing=false
+    pill.add_theme_stylebox_override("panel",style);row.add_child(pill)
+    var knob:=Panel.new();knob.position=Vector2(19 if on else 2,2);knob.size=Vector2(9,8);knob.mouse_filter=Control.MOUSE_FILTER_IGNORE
+    var knob_style:=StyleBoxFlat.new();knob_style.bg_color=Color.WHITE;knob_style.border_color=Color.BLACK
+    knob_style.set_border_width_all(1);knob_style.set_corner_radius_all(4);knob_style.anti_aliasing=false
+    knob.add_theme_stylebox_override("panel",knob_style);pill.add_child(knob)
+
+## Touch: a tap lands on the exact value (volume position, speed, layout).
+func touch_tap(row_index: int, point: Vector2) -> void:
+    var index:=first+row_index
+    if controls_page:
+        control_index=mini(index,control_rows.size()-1);refresh();return
+    if index>=menu_rows.size():return
+    selection=index;refresh()
+    var key:String=menu_rows[index][0]
+    var x:=point.x-row_nodes[row_index].global_position.x
+    if key in VOLUME_KEYS and x>=130.0:
+        touch_set(key,clampi(roundi((x-138.0)/0.98/5.0)*5,0,100));return
+    if key=="game_speed" and x>=132.0:
+        touch_set(key,Settings.GAME_SPEEDS[clampi(int((x-132.0)/30.0),0,Settings.GAME_SPEEDS.size()-1)]);return
+    if key=="text_speed" and x>=132.0:
+        touch_set(key,clampi(int((x-132.0)/52.0),0,2));return
+    if key=="button_layout" and x>=132.0:
+        touch_set(key,clampi(int((x-132.0)/78.0),0,1));return
+    if key in ["frame","touch_size"] and x>=132.0:
+        main.touch_ui.press("move_left" if x<200.0 else "move_right");return
+    main.touch_ui.press("confirm")
+
+func touch_set(key: String, value: Variant) -> void:
+    var saved:=Settings.change(key,value)
+    main._apply_game_options()
+    refresh()
+    if saved!=OK:description.text="Could not save options. Check device storage."

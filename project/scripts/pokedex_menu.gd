@@ -15,6 +15,17 @@ var panels: Array[Panel] = []
 var silhouette: ShaderMaterial
 var backdrop: ColorRect
 const PAGE_SIZE := 6
+# Touch: a sprite grid with name search replaces the six-row list.
+const GRID_COLUMNS := 4
+const GRID_ROWS := 5
+const GRID_PAGE := GRID_COLUMNS * GRID_ROWS
+var touch_grid := false
+var grid_cells: Array[Control] = []
+var grid_page_items: Array = []
+var query := ""
+var searching := false
+var search_label: Label
+var footer_label: Label
 
 func configure(owner_main: Node) -> void:
     main = owner_main
@@ -34,7 +45,7 @@ func configure(owner_main: Node) -> void:
     get_viewport().size_changed.connect(_fit_backdrop)
     var header := panel(Vector2(2,2), Vector2(636,44))
     text(header,"POKEDEX",Vector2(18,12),Vector2(190,22),20)
-    text(header,"WILDS FIELD GUIDE",Vector2(318,15),Vector2(298,18),14)
+    var subtitle := text(header,"WILDS FIELD GUIDE",Vector2(318,15),Vector2(298,18),14)
     var totals := panel(Vector2(2,48),Vector2(636,32))
     counter = text(totals,"",Vector2(16,9),Vector2(602,18),13)
     var list_panel := panel(Vector2(2,82),Vector2(246,240))
@@ -42,9 +53,22 @@ func configure(owner_main: Node) -> void:
         var row := Control.new();row.position=Vector2(12,10+i*33);row.size=Vector2(222,33)
         list_panel.add_child(row);rows.append(row)
     paging=text(list_panel,"",Vector2(14,216),Vector2(218,16),12)
+    touch_grid = preload("res://scripts/touch_ui.gd").touch_runtime()
+    if touch_grid:
+        for i in range(GRID_PAGE):
+            var cell := Control.new()
+            cell.position = Vector2(8 + (i % GRID_COLUMNS) * 58, 6 + int(i / GRID_COLUMNS) * 41)
+            cell.size = Vector2(56, 40)
+            cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
+            list_panel.add_child(cell)
+            grid_cells.append(cell)
+        paging.position.y = 214
+        subtitle.hide()
+        search_label = text(header,"",Vector2(250,15),Vector2(200,18),14)
     detail=panel(Vector2(250,82),Vector2(388,240))
     var footer:=panel(Vector2(2,324),Vector2(636,34))
-    text(footer,"UP/DOWN: SELECT  LEFT/RIGHT: PAGE  A: CRY  B: BACK",Vector2(14,11),Vector2(606,17),12)
+    footer_label = text(footer,"UP/DOWN: SELECT  LEFT/RIGHT: PAGE  A: CRY  B: BACK",Vector2(14,11),Vector2(606,17),12)
+    if touch_grid: footer_label.text = "TAP: SELECT   TAP AGAIN: CRY   SWIPE: PAGE"
     cry=AudioStreamPlayer.new();add_child(cry)
     roster=JSON.parse_string(FileAccess.get_file_as_string("res://data/pokedex_roster.json"))
     hide()
@@ -92,6 +116,9 @@ func close() -> void:
         main.world.set_gameplay_enabled(not main._field_ui_blocks_gameplay() and not main._sleeping_bag_active())
 
 func handle(event: InputEvent) -> void:
+    if searching and event is InputEventKey and event.pressed:
+        _search_key(event as InputEventKey)
+        return
     if event.is_echo():return
     if event.is_action_pressed("cancel") or event.is_action_pressed("start") or event.is_action_pressed("pokedex"):
         close();return
@@ -137,8 +164,10 @@ func refresh() -> void:
         if state>0:seen+=1
         if state==2:caught+=1
     counter.text="SEEN %d   CAUGHT %d   %d ENTRIES / FORMS" % [seen,caught,roster.size()]
+    if touch_grid:
+        _refresh_grid()
     var first:=int(selection/PAGE_SIZE)*PAGE_SIZE
-    for i in range(PAGE_SIZE):
+    for i in range(0 if touch_grid else PAGE_SIZE):
         var row:=rows[i];clear_children(row)
         if first+i>=roster.size():continue
         var record: Dictionary=roster[first+i]
@@ -149,7 +178,8 @@ func refresh() -> void:
         if first+i==selection:
             var tick: TextureRect=main._source_texture_rect(row,"Tick",Vector2(0,0),Vector2(5,7),main.source_command_cursor.texture)
             tick.position.y = roundf((30.0-tick.size.y)*0.5)
-    paging.text="PREV   %d / %d   NEXT" % [int(selection/PAGE_SIZE)+1,ceili(float(roster.size())/PAGE_SIZE)]
+    if not touch_grid:
+        paging.text="PREV   %d / %d   NEXT" % [int(selection/PAGE_SIZE)+1,ceili(float(roster.size())/PAGE_SIZE)]
     clear_children(detail)
     var selected: Dictionary=roster[selection]
     var data:=PokemonData.info(String(selected.species))
@@ -180,3 +210,75 @@ func refresh() -> void:
     text(detail,"FIELD SKILLS",Vector2(14,194),Vector2(360,15),12)
     var skills:=FieldMoveData.field_moves_for(String(selected.species), String(selected.get("form", "")))
     wrapped(detail,", ".join(skills) if not skills.is_empty() else "NONE",Vector2(14,210),Vector2(360,24),11)
+
+# --- touch grid and search --------------------------------------------------------
+
+## Roster indices that match the search (only names the player has seen).
+func visible_indices() -> Array:
+    var result := []
+    var needle := query.strip_edges().to_upper()
+    for i in roster.size():
+        if needle.is_empty() or record_name(roster[i]).contains(needle): result.append(i)
+    return result
+
+func grid_page() -> int:
+    var items := visible_indices()
+    var at := maxi(0, items.find(selection))
+    return int(at / GRID_PAGE)
+
+func page_count() -> int:
+    return maxi(1, ceili(float(visible_indices().size()) / GRID_PAGE))
+
+func turn_page(direction: int) -> void:
+    var items := visible_indices()
+    if items.is_empty(): return
+    var page := clampi(grid_page() + direction, 0, page_count() - 1)
+    selection = int(items[page * GRID_PAGE])
+    refresh()
+
+func _refresh_grid() -> void:
+    var items := visible_indices()
+    if not items.is_empty() and not items.has(selection): selection = int(items[0])
+    var first := grid_page() * GRID_PAGE
+    grid_page_items = items.slice(first, first + GRID_PAGE)
+    for i in grid_cells.size():
+        var cell := grid_cells[i]
+        clear_children(cell)
+        if i >= grid_page_items.size(): continue
+        var index := int(grid_page_items[i])
+        var record: Dictionary = roster[index]
+        if index == selection:
+            var frame := ColorRect.new()
+            frame.size = cell.size
+            frame.color = Color8(248, 208, 64, 140)
+            frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+            cell.add_child(frame)
+        portrait(cell, record, Vector2(14, 1), Vector2(28, 28))
+        var number := text(cell, "%03d" % int(PokemonData.info(String(record.species)).get("dex", 0)), Vector2(0, 30), Vector2(56, 10), 8)
+        number.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    paging.text = "PAGE %d / %d" % [grid_page() + 1, page_count()]
+    search_label.text = ("SEARCH: " + query + "_") if searching else (("FILTER: " + query) if not query.is_empty() else "")
+
+func begin_search() -> void:
+    searching = true
+    query = ""
+    refresh()
+    if DisplayServer.has_feature(DisplayServer.FEATURE_VIRTUAL_KEYBOARD):
+        DisplayServer.virtual_keyboard_show("", Rect2i(), DisplayServer.KEYBOARD_TYPE_DEFAULT, 16)
+
+func end_search(clear: bool) -> void:
+    searching = false
+    if clear: query = ""
+    if DisplayServer.has_feature(DisplayServer.FEATURE_VIRTUAL_KEYBOARD):
+        DisplayServer.virtual_keyboard_hide()
+    refresh()
+
+func _search_key(event: InputEventKey) -> void:
+    if event.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_ESCAPE]:
+        end_search(event.keycode == KEY_ESCAPE)
+    elif event.keycode == KEY_BACKSPACE:
+        query = query.left(-1)
+        refresh()
+    elif event.unicode >= 32 and query.length() < 16:
+        query += char(event.unicode).to_upper()
+        refresh()

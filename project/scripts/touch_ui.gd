@@ -15,12 +15,17 @@ extends Node
 ##   back: Callable()         shows the close button
 ##   buttons: Array of [text, Callable, Rect2]  extra touch-only buttons
 ##   hotspots: Array of [_, Callable, Rect2]  tap areas over existing visuals
+##   hold: Callable()         called every frame while one finger rests (after HOLD_DELAY)
+##   long_press: Callable(int) a row was pressed for LONG_PRESS seconds
+##   drop: Callable(int, Vector2) the finger lifted after a long press (drag and drop)
 ##   modal: bool              swallow every touch (default true)
 ##   hide_pad: bool           hide the gamepad overlay (default: modal)
 
 const JOHTO_FONT := preload("res://assets/source_text_font.fnt")
 const TAP_SLOP := 6.0
 const SWIPE_DISTANCE := 36.0
+const HOLD_DELAY := 0.3
+const LONG_PRESS := 0.45
 
 var main: Node
 var surfaces: RefCounted
@@ -34,6 +39,9 @@ var start_points: Dictionary = {}
 var moved := false
 var scroll_accum := 0.0
 var pinch_distance := 0.0
+var held_time := 0.0
+var hold_used := false
+var picked_row := -1
 
 static func touch_runtime() -> bool:
     return OS.has_feature("mobile") or OS.get_cmdline_user_args().has("--touch-ui")
@@ -88,22 +96,26 @@ func make_button(parent: Node, text: String, size: Vector2, font_size: int = 10)
     return button
 
 ## Centers the text inside the border and squeezes it if it would not fit.
-## (A Label grows to its text, so size it to the text and place it ourselves.)
+## The Label is left-aligned and placed by hand: right after a text change it
+## still reports a size shaped with the default font and would grow to that.
 static func set_text(button: Control, text: String) -> void:
     var label := button.get_node("Text") as Label
     label.text = text
+    label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+    label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
     var font := label.get_theme_font("font")
     var font_size := label.get_theme_font_size("font_size")
-    var inner := button.size - Vector2(BUTTON_PADDING, 2.0) * 2.0
+    var inner_width := button.size.x - BUTTON_PADDING * 2.0
     var width := maxf(1.0, font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x)
-    var squeeze := minf(1.0, inner.x / width)
+    var squeeze := minf(1.0, inner_width / width)
     var left_aligned := bool(label.get_meta("align_left", false))
-    var x := BUTTON_PADDING + (0.0 if left_aligned else (inner.x - width * squeeze) * 0.5)
+    var x := BUTTON_PADDING + (0.0 if left_aligned else (inner_width - width * squeeze) * 0.5)
+    # Bitmap glyphs sit high in their line box; this lands them on the optical center.
+    var y := (button.size.y - font.get_height(font_size)) * 0.5 + roundf(font_size * 0.25)
     label.pivot_offset = Vector2.ZERO
     label.scale = Vector2(squeeze, 1.0)
-    label.size = Vector2(width, inner.y)
-    # The bitmap glyphs sit high in their line box; nudge them to the optical center.
-    label.position = Vector2(roundf(x), 2.0 + roundf(font_size * 0.15))
+    label.size = Vector2.ZERO
+    label.position = Vector2(roundf(x), roundf(y))
 
 static func set_selected(button: Control, selected: bool) -> void:
     button.add_theme_stylebox_override("panel", button_style(selected))
@@ -146,6 +158,22 @@ func _process(_delta: float) -> void:
         arrow.position = (button.size - arrow.size) * 0.5
         if arrow.visible: text = ""
         if (button.get_node("Text") as Label).text != text: set_text(button, text)
+    # One resting finger: fast-forward (hold) or a long press on a row.
+    if points.size() == 1 and not moved:
+        held_time += _delta
+        if surface.has("hold") and held_time >= HOLD_DELAY:
+            hold_used = true
+            surface.hold.call()
+        elif surface.has("long_press") and held_time >= LONG_PRESS and not hold_used:
+            var start: Vector2 = start_points.values()[0]
+            var rows: Array = surface.get("rows", [])
+            for i in rows.size():
+                if Rect2(rows[i]).has_point(start):
+                    hold_used = true
+                    picked_row = i
+                    surface.long_press.call(i)
+                    if haptics_on(): Input.vibrate_handheld(25, 0.6)
+                    break
     # The gamepad overlay would cover a touch-driven screen.
     main.touch_controls.set_menu_hidden(not surface.is_empty() and surface.get("hide_pad", surface.get("modal", true)))
 
@@ -169,6 +197,9 @@ func handle(event: InputEvent) -> bool:
             if points.size() == 1:
                 moved = false
                 scroll_accum = 0.0
+                held_time = 0.0
+                hold_used = false
+                picked_row = -1
             pinch_distance = _pinch_span()
             return true
         if not start_points.has(event.index): return modal
@@ -177,7 +208,10 @@ func handle(event: InputEvent) -> bool:
         points.erase(event.index)
         start_points.erase(event.index)
         pinch_distance = _pinch_span()
-        if single and not moved:
+        if single and picked_row >= 0 and surface.has("drop"):
+            surface.drop.call(picked_row, event.position)
+            picked_row = -1
+        elif single and not moved and not hold_used:
             _tap(start)
         elif single and surface.has("swipe"):
             var travel: Vector2 = event.position - start
@@ -220,7 +254,11 @@ func _hit(point: Vector2) -> String:
         if Rect2(rect).has_point(point): return "row"
     return "tap_at" if surface.has("tap_at") else ""
 
+static func haptics_on() -> bool:
+    return bool(preload("res://scripts/game_options.gd").values.get("haptics", true))
+
 func _tap(point: Vector2) -> void:
+    if haptics_on(): Input.vibrate_handheld(10, 0.35)
     if close_button.visible and close_button.get_global_rect().grow(4).has_point(point):
         surface.back.call()
         return

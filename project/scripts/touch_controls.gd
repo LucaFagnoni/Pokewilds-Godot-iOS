@@ -455,6 +455,7 @@ func _route_contact(index: int, point: Vector2, pressed: bool, canceled: bool) -
             stick.position = point - stick.size * control_scale * 0.5
             chosen = "LeftStick"
     if chosen.is_empty(): return
+    if not edit_mode and preload("res://scripts/touch_ui.gd").haptics_on(): Input.vibrate_handheld(8, 0.3)
     var already_held := touch_owners.values().has(chosen)
     touch_owners[index] = chosen
     pointer_positions[index] = point
