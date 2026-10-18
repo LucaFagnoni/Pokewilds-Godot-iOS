@@ -8,12 +8,20 @@ on:
 
 env:
   GODOT_VERSION: 4.7.2
+  # Stripped engine profile shared by the iOS template and the Linux smoke test.
+  ENGINE_PROFILE: ${{ github.workspace }}/.github/engine/custom.py
 
 jobs:
   build:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: godotengine/godot
+          ref: ${{ env.GODOT_VERSION }}-stable
+          path: godot-src
 
       - name: Install Godot + export templates
         run: |
@@ -25,6 +33,32 @@ jobs:
           mkdir -p "$tpl"
           unzip -q -j templates.tpz 'templates/ios.zip' 'templates/version.txt' -d "$tpl"
           echo "GODOT=$PWD/Godot.app/Contents/MacOS/Godot" >> "$GITHUB_ENV"
+          echo "TPL=$tpl" >> "$GITHUB_ENV"
+          python3 -m venv "$RUNNER_TEMP/scons" && "$RUNNER_TEMP/scons/bin/pip" -q install scons
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.scons_cache
+          key: scons-ios-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py') }}-${{ github.sha }}
+          restore-keys: scons-ios-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py') }}-
+
+      - name: Build stripped engine (iOS arm64)
+        working-directory: godot-src
+        run: |
+          "$RUNNER_TEMP/scons/bin/scons" platform=ios arch=arm64 profile="$ENGINE_PROFILE" lto=thin \
+            cache_path="$HOME/.scons_cache" -j"$(sysctl -n hw.ncpu)"
+          ls -la bin
+
+      - name: Swap engine library into the iOS template
+        run: |
+          work="$RUNNER_TEMP/ios_template"
+          unzip -q "$TPL/ios.zip" -d "$work"
+          lib="$work/libgodot.ios.release.xcframework/ios-arm64/libgodot.a"
+          test -f "$lib" || { find "$work" -name '*.a'; exit 1; }
+          echo "::notice::official engine lib $(du -h "$lib" | cut -f1)"
+          cp godot-src/bin/libgodot.ios.template_release.arm64.a "$lib"
+          echo "::notice::stripped engine lib $(du -h "$lib" | cut -f1)"
+          rm "$TPL/ios.zip" && (cd "$work" && zip -qry "$TPL/ios.zip" .)
 
       - name: Export Xcode project
         working-directory: project
@@ -37,7 +71,6 @@ jobs:
         working-directory: build/ios
         run: |
           set -o pipefail
-          ls; xcodebuild -list -project Pokewilds.xcodeproj | sed 's/^/::notice::/'
           # Surface compiler errors as annotations (readable without log access).
           xcodebuild -project Pokewilds.xcodeproj -scheme Pokewilds -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath dd \
@@ -54,3 +87,51 @@ jobs:
         with:
           name: Pokewilds-unsigned-ipa
           path: build/ios/Pokewilds-unsigned.ipa
+
+  # Same engine profile on Linux (headless), run against the iOS pack: catches a
+  # class or module the game needs but the profile dropped before it hits a phone.
+  smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: godotengine/godot
+          ref: ${{ env.GODOT_VERSION }}-stable
+          path: godot-src
+
+      - name: Install Godot editor and SCons
+        run: |
+          curl -sSL -o godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip
+          echo "GODOT=$PWD/Godot_v${GODOT_VERSION}-stable_linux.x86_64" >> "$GITHUB_ENV"
+          python3 -m venv "$RUNNER_TEMP/scons" && "$RUNNER_TEMP/scons/bin/pip" -q install scons
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.scons_cache
+          key: scons-linux-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py') }}-${{ github.sha }}
+          restore-keys: scons-linux-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py') }}-
+
+      - name: Build stripped engine (Linux, headless only)
+        working-directory: godot-src
+        run: |
+          "$RUNNER_TEMP/scons/bin/scons" platform=linuxbsd profile="$ENGINE_PROFILE" \
+            x11=no wayland=no alsa=no pulseaudio=no dbus=no speechd=no fontconfig=no udev=no \
+            cache_path="$HOME/.scons_cache" -j"$(nproc)"
+
+      - name: Export the iOS pack
+        working-directory: project
+        run: |
+          "$GODOT" --headless --import
+          "$GODOT" --headless --export-pack "iOS" "$RUNNER_TEMP/game.pck"
+
+      - name: Load every script/scene, then run the game
+        run: |
+          engine=godot-src/bin/godot.linuxbsd.template_release.x86_64
+          timeout 600 "$engine" --headless --main-pack "$RUNNER_TEMP/game.pck" -s "$PWD/.github/engine/smoke.gd" 2>&1 | tee smoke.log
+          timeout 300 "$engine" --headless --main-pack "$RUNNER_TEMP/game.pck" --quit-after 900 2>&1 | tee -a smoke.log || true
+          grep -E "ERROR|SMOKE" smoke.log | sort | uniq -c | sed 's/^/::notice::/'
+          grep -q "SMOKE: checked [0-9]*, failed 0" smoke.log
+          ! grep -E "SMOKE FAIL|SCRIPT ERROR|Parse Error|Cannot get class|Failed to load|not declared in the current scope" smoke.log
