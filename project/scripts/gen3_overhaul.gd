@@ -42,6 +42,9 @@ static func initialize(overrides: Dictionary) -> void:
             audio_baseline[path] = original.packet_sequence
 
 static func apply(next: bool, tree: SceneTree) -> bool:
+    # Builds without the pack (iOS) keep the original art instead of failing,
+    # so saves and hosts with the option on still load.
+    if next and not FileAccess.file_exists(PACK): next = false
     if enabled == next: return true
     if not error.is_empty(): return false
     var native := load("res://scripts/native_mod_pack.gd")
