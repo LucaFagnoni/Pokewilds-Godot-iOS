@@ -24,6 +24,10 @@ var access_proof := ""
 ## turned into the proof once the host's challenge brings the salt.
 var access_salt := ""
 var access_password := ""
+## Host: the one-time value each joining connection was challenged with. The
+## proof comes back hashed with it, so one overheard on the way cannot be
+## replayed. The bare proof of older builds is still accepted.
+var _nonces: Dictionary = {}
 ## Host only: true for a player this world's host has banned. A player is the
 ## identity their copy of the game made on first run, not a name or appearance.
 var blocked := Callable()
@@ -90,9 +94,12 @@ static func device_print(world: String) -> String:
 
 ## The host answers the first hello with the world's id; the second carries
 ## the device print for that world.
-func _hello(peer: int, world: String) -> void:
+func _hello(peer: int, world: String, nonce: String = "") -> void:
+    var access := access_proof if nonce.is_empty() or access_proof.is_empty() else (nonce+"|"+access_proof).sha256_text()
+    # A typed address may cross the internet: its proof only ever travels hashed.
+    if world.is_empty() and not access_password.is_empty():access = ""
     var hello := {"kind":"hello","protocol":PROTOCOL,"mods":mod_digest,
-        "identity":identity,"profile":profile,"access":access_proof}
+        "identity":identity,"profile":profile,"access":access}
     if not world.is_empty(): hello["device"] = device_print(world)
     transport.send(peer, hello)
 
@@ -137,8 +144,11 @@ func _received(peer: int, payload: Dictionary) -> void:
             # The salt rides on the challenge so a player who typed the address
             # (and so never saw the lobby entry) can still prove the password.
             if device.length()!=64 or not device.is_valid_hex_number():
-                transport.send(peer,{"kind":"challenge","world":world_id,"salt":access_salt});return
-            if not access_proof.is_empty() and String(payload.get("access",""))!=access_proof:_reject(peer,"Wrong password.");return
+                _nonces[peer]=preload("res://scripts/coop_random.gd").hex(16)
+                transport.send(peer,{"kind":"challenge","world":world_id,"salt":access_salt,"nonce":_nonces[peer]});return
+            var access:=String(payload.get("access",""))
+            if not access_proof.is_empty() and access!=access_proof and access!=(String(_nonces.get(peer,""))+"|"+access_proof).sha256_text():_reject(peer,"Wrong password.");return
+            _nonces.erase(peer)
             if blocked.is_valid() and blocked.call(id,device):_reject(peer,BANNED);return
             var details=payload.get("profile",{})
             if not details is Dictionary:_reject(peer,"Invalid player profile.");return
@@ -159,7 +169,7 @@ func _received(peer: int, payload: Dictionary) -> void:
         if kind=="challenge" and not trusted:
             if not access_password.is_empty() and payload.get("salt") is String:
                 access_proof=preload("res://scripts/coop_lobby.gd").proof(String(payload.salt),access_password)
-            if payload.get("world") is String and String(payload.world).length()<=64:_hello(peer,String(payload.world))
+            if payload.get("world") is String and String(payload.world).length()<=64:_hello(peer,String(payload.world),String(payload.get("nonce","")).left(64))
             return
         if kind=="welcome" and not trusted:
             if payload.get("protocol")!=PROTOCOL or payload.get("actor")!=actor:
@@ -196,6 +206,7 @@ func _send_reliable(peer:int,payload:Dictionary)->Error:
 
 func _disconnected(peer: int) -> void:
     messages.drop(peer)
+    _nonces.erase(peer)
     if not hosting:
         trusted=false
         connection_lost.emit()
@@ -205,4 +216,4 @@ func _disconnected(peer: int) -> void:
         departed.emit(peer,id)
 
 func stop() -> void:
-    transport.stop();messages.clear();players.clear();_reject_pending.clear();trusted=false;hosting=false;loading=false;access_proof="";access_salt="";access_password=""
+    transport.stop();messages.clear();players.clear();_reject_pending.clear();trusted=false;hosting=false;loading=false;access_proof="";access_salt="";access_password="";_nonces.clear()

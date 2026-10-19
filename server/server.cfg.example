@@ -14,3 +14,5 @@ password=""
 max_players=4
 ; Minutes between automatic saves.
 autosave_minutes=5
+; Open the port on the router by itself (UPnP) while the server runs.
+open_router_port=true

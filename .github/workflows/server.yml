@@ -4,6 +4,9 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+  # Pull requests build and run the smoke test, but publish nothing.
+  pull_request:
+    branches: [main]
 
 env:
   GODOT_VERSION: 4.7.2
@@ -57,6 +60,7 @@ jobs:
           ls -la ../../PokeWilds-Server-win64.zip
 
       - name: Publish release
+        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

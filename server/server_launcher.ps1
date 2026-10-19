@@ -3,8 +3,32 @@
 # the server never owns the console: Ctrl+C here sends it "stop", and closing
 # this window closes its input pipe, which the server also takes as "stop".
 # Either way it saves the world before it exits. Typed lines are sent as commands.
+$exe = Join-Path $PSScriptRoot 'PokeWilds.exe'
+
+# Windows asks once whether the server may be reached, and by default only on
+# "private" networks, while many home networks are set to "public"; a refusal
+# becomes a block rule. One allow rule for this program on every network type
+# (and no block rule) avoids all of that. Adding it needs administrator rights,
+# so Windows asks for permission the first time only.
+$rules = @(Get-NetFirewallApplicationFilter -Program $exe -ErrorAction SilentlyContinue | Get-NetFirewallRule -ErrorAction SilentlyContinue | Where-Object { $_.Direction -eq 'Inbound' -and $_.Enabled -eq 'True' })
+$allowed = $rules | Where-Object { $_.Action -eq 'Allow' -and $_.Profile -eq 'Any' }
+$blocked = $rules | Where-Object { $_.Action -eq 'Block' }
+if (-not $allowed -or $blocked) {
+    Write-Host 'Letting PokeWilds through the Windows firewall (Windows asks for permission once)...'
+    $quoted = $exe.Replace("'", "''")
+    $fix = "Get-NetFirewallApplicationFilter -Program '$quoted' | Get-NetFirewallRule | Where-Object { `$_.Direction -eq 'Inbound' -and `$_.Action -eq 'Block' } | Remove-NetFirewallRule; " +
+        "New-NetFirewallRule -DisplayName 'PokeWilds server' -Direction Inbound -Program '$quoted' -Action Allow -Profile Any | Out-Null"
+    try { Start-Process powershell -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '-NoProfile', '-Command', $fix }
+    catch { Write-Host 'Firewall not changed: players may not reach the server (see README_SERVER.md).' }
+}
+
+# A sleeping PC drops every player: stay awake while the server runs (the
+# screen may still turn off). Windows lifts this when this window closes.
+Add-Type -Namespace PokeWilds -Name Power -MemberDefinition '[DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint flags);'
+[void][PokeWilds.Power]::SetThreadExecutionState([uint32]2147483649)  # ES_CONTINUOUS | ES_SYSTEM_REQUIRED
+
 $psi = New-Object System.Diagnostics.ProcessStartInfo
-$psi.FileName = Join-Path $PSScriptRoot 'PokeWilds.exe'
+$psi.FileName = $exe
 $psi.Arguments = (@('--headless', '--server') + $args) -join ' '
 $psi.WorkingDirectory = $PSScriptRoot
 $psi.UseShellExecute = $false

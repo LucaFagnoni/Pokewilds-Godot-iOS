@@ -3,26 +3,34 @@ extends Node
 ## [--world NAME] [--size S|M|L|XL|XXL] [--password P] [--data DIR]`.
 ## The server is the ordinary online host (see coop_game.gd) whose own player
 ## never shows: it stands still at the spawn, sends no presence, is not counted
-## in the lobby and cannot be met. Everything else (areas, journal, saves) is
-## the host code players already use, so a phone hosting keeps working as before.
+## in the lobby, cannot be met or chased, and never plays. Everything else
+## (areas, journal, saves) is the host code players already use, so a phone
+## hosting keeps working as before. New areas are made here, not on phones
+## (server_area_maker.gd), and the router port is opened by UPnP when it can be.
 ## Settings come from server.cfg beside the exe (or --config PATH), then the
 ## command line. Without --server this node does nothing.
-## `--join HOST[:PORT] [--password P] [--data DIR] [--quit-after-join]` instead
-## joins a game at startup, for PCs and for the server smoke test.
+## `--join HOST[:PORT] [--password P] [--data DIR] [--quit-after-join]
+## [--travel]` instead joins a game at startup, for PCs and for the smoke test.
 const Paths=preload("res://scripts/game_data_paths.gd")
 const Identity=preload("res://scripts/coop_identity.gd")
 const JoinCode=preload("res://scripts/coop_join_code.gd")
+const AreaMaker=preload("res://scripts/server_area_maker.gd")
 const SIZES:=["S","M","L","XL","XXL"]
+const COMMANDS:="stop, save, players, address, kick NAME, ban NAME, bans, unban NAME"
 static var active:=false
 var joining:=""
 var _quit_after_join:=false
+var _travel:=false
+var _area_job:=""
 var port:=JoinCode.PORT
 var world_name:="PokeWilds"
 var size:=1
 var password:=""
 var max_players:=4
 var autosave_minutes:=5.0
+var open_router_port:=true
 var main:Node
+var maker:Node
 var _saving:=false
 var _quitting:=false
 var _next_save:=0
@@ -32,13 +40,16 @@ func _init()->void:
     active="--server" in args
     joining="" if active else _arg(args,"--join","")
     _quit_after_join="--quit-after-join" in args
+    _travel="--travel" in args
+    _area_job="" if active else _arg(args,"--generate-area","")
+    if not _area_job.is_empty():_use_data(_area_job.get_base_dir());return
     if not active and joining.is_empty():return
     var base:=OS.get_executable_path().get_base_dir() if not OS.has_feature("editor") else ProjectSettings.globalize_path("user://")
     var data:=_arg(args,"--data",base.path_join("server_data") if active else "")
     if data.is_relative_path():data=base.path_join(data)
     password=_arg(args,"--password","").strip_edges().left(16)
     if not active:
-        if not data.is_empty():DirAccess.make_dir_recursive_absolute(data);Paths.directory=data
+        if not data.is_empty():_use_data(data)
         return
     var config:=ConfigFile.new()
     var config_path:=_arg(args,"--config",base.path_join("server.cfg"))
@@ -50,10 +61,17 @@ func _init()->void:
     if password.is_empty():password=String(config.get_value("server","password","")).strip_edges().left(16)
     max_players=clampi(int(config.get_value("server","max_players",max_players)),1,4)
     autosave_minutes=maxf(1.0,float(config.get_value("server","autosave_minutes",autosave_minutes)))
+    open_router_port=bool(config.get_value("server","open_router_port",true)) and not "--no-upnp" in args
+    maker=AreaMaker.new()
+    var area_size:=_arg(args,"--area-size","").to_upper()
+    if area_size in SIZES:maker.area_size=SIZES.find(area_size)
     # Everything the server writes (identity, world, area caches) lives here.
-    DirAccess.make_dir_recursive_absolute(data)
-    Paths.directory=data
-    # The folder is new, not a phone's external storage: nothing to migrate.
+    _use_data(data)
+
+## The folder is new, not a phone's external storage: nothing to migrate.
+static func _use_data(folder:String)->void:
+    DirAccess.make_dir_recursive_absolute(folder)
+    Paths.directory=folder
     if not FileAccess.file_exists(Paths.path(".private-saves-migrated")):
         var marker:=FileAccess.open(Paths.path(".private-saves-migrated"),FileAccess.WRITE)
         if marker!=null:marker.store_string("Dedicated server data.\n")
@@ -66,14 +84,17 @@ static func _arg(args:PackedStringArray,name:String,fallback:String)->String:
     return fallback
 
 func _ready()->void:
-    if not active and joining.is_empty():queue_free();return
+    if not active and joining.is_empty() and _area_job.is_empty():queue_free();return
     process_mode=Node.PROCESS_MODE_ALWAYS
     if active:
         get_tree().auto_accept_quit=false
+        add_child(maker)
         print("SERVER PokeWilds dedicated server, data in ",ProjectSettings.globalize_path(Paths.root_path()))
     while not (get_tree().current_scene!=null and get_tree().current_scene.get("startup_complete")):
         await get_tree().process_frame
     main=get_tree().current_scene
+    if not _area_job.is_empty():
+        var area_maker:=AreaMaker.new();add_child(area_maker);area_maker.generate(main,_area_job);return
     if not active:_join();return
     var coop:Node=main.coop_game
     coop.host_port=port;coop.max_players=max_players
@@ -88,19 +109,111 @@ func _ready()->void:
     print("SERVER ",("loading world \"%s\" (%s)"%[world_name,saved]) if not saved.is_empty() else ("creating world \"%s\" size %s"%[world_name,SIZES[size]]))
     await coop.choose("LOAD" if not saved.is_empty() else "NEW",saved)
     if not main.started or not coop.active:_fail(String(main.menu_status.text));return
-    # The server's own player never plays: nothing may start a battle for it.
+    # The server's own player never plays: nothing may start a battle for it,
+    # and with gameplay off the area is simulated the way it is for a host
+    # who has a menu open.
     for pair in [["encounter_requested","_on_encounter_requested"],["battle_requested","_on_battle_requested"]]:
         if main.world.has_signal(pair[0]) and main.world.is_connected(pair[0],Callable(main,pair[1])):main.world.disconnect(pair[0],Callable(main,pair[1]))
+    main.world.set_gameplay_enabled(false)
+    coop.commands.presence.erase(coop.session.actor)
+    coop.generate_area=func(actor,area,area_token):return await maker.make(main,actor,area,area_token)
     coop.session.transport.max_peers=max_players
     coop.session.admitted.connect(func(peer,_actor,profile):print("SERVER join: ",profile.get("name","PLAYER")," from ",_address(peer)," (",coop.session.players.size()-1,"/",max_players,")"))
     coop.session.departed.connect(func(_peer,_actor):print("SERVER leave (",coop.session.players.size()-1,"/",max_players,")"))
     print("SERVER world ready, listening on TCP port ",port,(" with a password" if coop.lobby_private else ""))
-    for endpoint in JoinCode.local_endpoints():
-        print("SERVER   LAN ",endpoint.address,":",port,"  join code ",endpoint.code,"" if port==JoinCode.PORT else " (code works only on port %d)"%JoinCode.PORT)
-    print("SERVER commands: stop, save, players")
+    print("SERVER commands: ",COMMANDS)
     _next_save=Time.get_ticks_msec()+int(autosave_minutes*60000)
     _stdin=Thread.new();_stdin.start(_read_stdin)
+    show_addresses()
 
+# --- Reaching the server from outside -----------------------------------------
+## Opens the port on the router (UPnP), finds the address players outside use
+## and says plainly when a line cannot be reached from outside at all (CGNAT).
+## UPNP is created by name: the iOS engine is built without that module, and
+## this script is loaded there too.
+var _upnp:Object
+const UPNP_OK:=0
+var _router_thread:Thread
+var _lease_renew_at:=0
+var _ip_request:HTTPRequest
+const LEASE_SECONDS:=24*3600
+
+func show_addresses()->void:
+    if _router_thread!=null:return
+    _router_thread=Thread.new()
+    _router_thread.start(_router_work)
+    while _router_thread.is_alive():await get_tree().process_frame
+    var router:Dictionary=_router_thread.wait_to_finish();_router_thread=null
+    var outside:=String(router.get("external",""))
+    if outside.is_empty() or not outside.is_valid_ip_address():outside=await _public_address()
+    var lan:=JoinCode.local_endpoints()
+    var line:="SERVER ------------------------------------------------------------"
+    print(line)
+    for endpoint in lan:
+        # Tailscale (and other carrier-grade ranges) are a VPN here, not the Wi-Fi.
+        var label:="Tailscale/VPN:  " if address_kind(endpoint.address)=="cgnat" else "Same Wi-Fi:     "
+        print("SERVER  ",label,endpoint.address,":",port,_code(JoinCode.encode(endpoint.address)))
+    var kind:=address_kind(outside)
+    if outside.is_empty():
+        print("SERVER  From outside:   could not find this line's public address (no internet?)")
+    elif kind=="private":
+        print("SERVER  From outside:   not yet: this router is behind another router (its internet")
+        print("SERVER    address is ",outside,"). Open TCP port ",port," on the first router too, towards")
+        print("SERVER    this router, or set the first one to bridge mode (README_SERVER.md).")
+    elif kind=="cgnat":
+        print("SERVER  From outside:   NOT POSSIBLE on this internet line.")
+        print("SERVER    The provider shares one public address among many homes (CGNAT,")
+        print("SERVER    router address ",outside,"), so nobody outside can reach this PC.")
+        print("SERVER    Ask the provider for a public IPv4 address, or use Tailscale on this")
+        print("SERVER    PC and on the phones (see README_SERVER.md).")
+        for address in IP.get_local_addresses():
+            if ":" in address and (address.begins_with("2") or address.begins_with("3")):
+                print("SERVER    Phones with IPv6 may still try [",address,"]:",port," if the router lets it in.");break
+    else:
+        print("SERVER  From outside:   ",outside,":",port,_code(JoinCode.encode_internet(outside)))
+        if router.get("mapped",false):print("SERVER    Router port opened automatically (UPnP).")
+        elif not open_router_port:print("SERVER    Automatic router setup is off: forward TCP port ",port," to this PC by hand.")
+        else:
+            print("SERVER    The router did not open the port by itself (UPnP off?). Turn UPnP on in the")
+            print("SERVER    router, or forward TCP port ",port," to ",lan[0].address if not lan.is_empty() else "this PC"," by hand (README_SERVER.md).")
+    print(line)
+
+func _code(code:String)->String:
+    return "   code "+code if port==JoinCode.PORT and not code.is_empty() else ""
+
+## Router work blocks for seconds, so it runs on a thread.
+func _router_work()->Dictionary:
+    if _upnp==null:
+        if not ClassDB.class_exists("UPNP"):return {}
+        _upnp=ClassDB.instantiate("UPNP")
+        if _upnp.discover(2000,2,"InternetGatewayDevice")!=UPNP_OK or _upnp.get_gateway()==null or not _upnp.get_gateway().is_valid_gateway():
+            _upnp=null;return {}
+    var result:={"external":_upnp.query_external_address()}
+    if not open_router_port:return result
+    # Some routers only take permanent mappings, others only ones that expire.
+    if _upnp.add_port_mapping(port,port,"PokeWilds server","TCP",0)==UPNP_OK:
+        _lease_renew_at=0;result["mapped"]=true
+    elif _upnp.add_port_mapping(port,port,"PokeWilds server","TCP",LEASE_SECONDS)==UPNP_OK:
+        _lease_renew_at=Time.get_ticks_msec()+LEASE_SECONDS*500;result["mapped"]=true
+    return result
+
+func _public_address()->String:
+    if _ip_request==null:_ip_request=HTTPRequest.new();_ip_request.timeout=8.0;add_child(_ip_request)
+    if _ip_request.request("https://api.ipify.org")!=OK:return ""
+    var answer:Array=await _ip_request.request_completed
+    var text:=PackedByteArray(answer[3]).get_string_from_utf8().strip_edges()
+    return text if answer[0]==HTTPRequest.RESULT_SUCCESS and int(answer[1])==200 and text.is_valid_ip_address() else ""
+
+## "private" for a home network address, "cgnat" for the range providers (and
+## Tailscale) share, "" for an address the internet can reach.
+static func address_kind(address:String)->String:
+    var parts:=address.split(".")
+    if parts.size()!=4:return ""
+    var a:=int(parts[0]);var b:=int(parts[1])
+    if a==100 and b>=64 and b<128:return "cgnat"
+    return "private" if a==10 or a==127 or (a==172 and b>=16 and b<32) or (a==192 and b==168) or (a==169 and b==254) else ""
+
+# --- Console ------------------------------------------------------------------
 ## Release builds stop at once on Ctrl+C or when their console closes, so the
 ## clean way out is a command, or start_server.bat: it owns the console, turns
 ## Ctrl+C into "stop", and closing it closes this pipe, which also means stop.
@@ -112,26 +225,54 @@ func _read_stdin()->void:
         if line.is_empty():
             if OS.get_stdin_type()==OS.STD_HANDLE_PIPE:_shutdown.call_deferred()
             return
-        _command.call_deferred(line.strip_edges().to_lower())
+        _command.call_deferred(line.strip_edges())
 
 func _command(line:String)->void:
-    match line:
+    var word:=line.get_slice(" ",0).to_lower()
+    var rest:=line.substr(word.length()).strip_edges()
+    var coop:Node=main.coop_game
+    match word:
         "stop","quit","exit":_shutdown()
         "save":save()
+        "address":show_addresses()
         "players":
-            var session:Node=main.coop_game.session
-            print("SERVER ",session.players.size()-1,"/",max_players," players")
-            for peer in session.players:
-                if peer!=1:print("SERVER   ",session.players[peer].profile.get("name","PLAYER")," from ",_address(peer))
+            var listed:Array=coop.kick_candidates()
+            print("SERVER ",listed.size(),"/",max_players," players")
+            for player in listed:print("SERVER   ",player.order,"  ",player.name,"  from ",_address(int(player.peer)))
+        "kick","ban":
+            var peer:=_player(rest)
+            if peer<0:print("SERVER no player \"",rest,"\" (see: players)");return
+            print("SERVER ",("banned " if word=="ban" else "kicked ") if coop.kick(peer,word=="ban") else "could not remove ",rest)
+        "bans":
+            for key in coop.record_keys("blocked/"):print("SERVER   banned: ",coop.state.records[key].get("name","PLAYER"))
+        "unban":
+            var changes:Array=[]
+            for key in coop.state.records.keys():
+                if (String(key).begins_with("blocked/") or String(key).begins_with("blocked_device/")) and String(coop.state.records[key].get("name","")).to_lower()==rest.to_lower():
+                    changes.append(coop.state.change(key,null))
+            if changes.is_empty():print("SERVER nobody called \"",rest,"\" is banned (see: bans)");return
+            var result:Dictionary=coop.state.transact(coop.session.actor,"unblock/"+coop._id(),changes)
+            print("SERVER unbanned ",rest if result.get("ok",false) else "failed: "+String(result.get("reason","")))
         "":pass
-        _:print("SERVER unknown command \"",line,"\" (stop, save, players)")
+        _:print("SERVER unknown command \"",word,"\" (",COMMANDS,")")
+
+## A player by name or by their place in the `players` list (1ST, 2, ...).
+func _player(text:String)->int:
+    for player in main.coop_game.kick_candidates():
+        if String(player.name)==text.to_upper() or String(player.order)==text.to_upper() or str(int(player.order.to_int()))==text:return int(player.peer)
+    return -1
 
 func _address(peer:int)->String:
     var peers:Dictionary=main.coop_game.session.transport.peers
     return String(peers[peer].socket.get_connected_host()) if peers.has(peer) else "?"
 
 func _process(_delta:float)->void:
-    if _next_save==0 or _quitting or Time.get_ticks_msec()<_next_save:return
+    if _next_save==0 or _quitting:return
+    # Keep the server's player out of play whatever re-enabled it.
+    if main.world.gameplay_enabled:main.world.set_gameplay_enabled(false)
+    if _lease_renew_at>0 and Time.get_ticks_msec()>=_lease_renew_at and _router_thread==null:
+        _lease_renew_at=0;show_addresses()
+    if Time.get_ticks_msec()<_next_save:return
     _next_save=Time.get_ticks_msec()+int(autosave_minutes*60000)
     save()
 
@@ -152,6 +293,9 @@ func _shutdown()->void:
     print("SERVER stopping...")
     while _saving:await get_tree().process_frame
     if main!=null and main.coop_game.active:await save()
+    while _router_thread!=null:await get_tree().process_frame
+    # The port is closed again while the server is off.
+    if _upnp!=null and open_router_port:_upnp.delete_port_mapping(port,"TCP")
     get_tree().quit()
 
 func _join()->void:
@@ -170,11 +314,18 @@ func _join()->void:
         if Time.get_ticks_msec()>deadline or (not coop.active and not coop._choosing):_fail(String(main.menu_status.text));return
         await get_tree().process_frame
     print("CLIENT joined world ",coop.world_id," in area ",coop._area()," with ",main.caught_pokemon.size()," pokemon")
+    if _travel:
+        # Walk off the east edge into an area nobody has been to yet.
+        main.edge_travel_busy=true
+        await main._travel_adjacent_world(Vector2i.RIGHT)
+        main.edge_travel_busy=false
+        if not is_instance_valid(main) or main.current_world_grid!=Vector2i(1,0):_fail("travel to the next area failed");return
+        print("CLIENT travelled to area ",coop._area())
     if not _quit_after_join:return
     # Let this player's first checkpoint reach the host before leaving.
     await coop.checkpoint_player()
     get_tree().quit(0)
 
 func _fail(reason:String)->void:
-    printerr("SERVER ERROR: could not start: " if active else "CLIENT ERROR: could not join: ",reason.replace("\n"," "))
+    printerr("SERVER ERROR: could not start: " if active else "CLIENT ERROR: ",reason.replace("\n"," "))
     get_tree().quit(1)

@@ -1,5 +1,6 @@
 """Dedicated server smoke test: start a headless server, join it with a headless
-client, and check that the client received the world and that the server saved it.
+client (a wrong password first), walk into a new area the server has to make,
+and check that the client received the world and that the server saved it.
 
     python server/smoke_test.py GODOT            (GODOT = editor binary, runs project/)
     python server/smoke_test.py PokeWilds.console.exe --exe
@@ -45,8 +46,15 @@ def send(process, line):
     process.stdin.write((line + "\n").encode()); process.stdin.flush()
 
 
+# The address parser and the outside-address check first: seconds, not minutes.
+if "--exe" not in sys.argv:
+    check = subprocess.run(command + ["--headless", "-s", os.path.abspath("server/address_check.gd")], capture_output=True, text=True, errors="replace")
+    if "ADDRESS CHECK: 0 failed" not in check.stdout: print(check.stdout[-2000:], check.stderr[-2000:]); print("SMOKE FAIL: address check"); sys.exit(1)
+    print("address check ok")
+
 server_data, client_data = os.path.join(work, "server"), os.path.join(work, "client")
-server = start("server", ["--server", "--port", port, "--world", "Smoke", "--size", "S", "--data", server_data, "--password", "smoke"])
+server = start("server", ["--server", "--port", port, "--world", "Smoke", "--size", "S", "--data", server_data, "--password", "smoke",
+                         "--no-upnp", "--area-size", "S"])
 try:
     started = time.time()
     wait_for("server", server, "listening on TCP port " + port, 900)
@@ -59,12 +67,15 @@ try:
     if "WRONG PASSWORD" not in text("intruder"): fail("wrong password was not refused")
     print("wrong password refused")
 
-    client = start("client", ["--join", "127.0.0.1:" + port, "--password", "smoke", "--quit-after-join", "--data", client_data])
+    # The client also walks into a new area, which the server must make for it.
+    client = start("client", ["--join", "127.0.0.1:" + port, "--password", "smoke", "--travel", "--quit-after-join", "--data", client_data])
     try: client.wait(900)
     except subprocess.TimeoutExpired: client.kill(); fail("client did not finish joining")
     joined = re.search(r"CLIENT joined world (\w+)", text("client"))
     if client.returncode != 0 or not joined: fail(f"client exit {client.returncode}, no join")
     print(joined.group(0))
+    if "CLIENT travelled to area 1,0" not in text("client") or "SERVER made area 1,0" not in text("server"): fail("the server did not make the new area")
+    print("the server made the new area the client walked into")
     wait_for("server", server, "SERVER join:", 30)
 
     saves_before = text("server").count("SERVER world saved")
@@ -86,6 +97,6 @@ try:
     try: server.wait(120)
     except subprocess.TimeoutExpired: fail("server did not stop")
     if text("server").count("SERVER world saved") < saves_before + 2: fail("server did not save on stop")
-    print("SMOKE OK: server started, client joined and received the world, server saved and stopped")
+    print("SMOKE OK: server started, client joined, got the world and a server-made area, server saved and stopped")
 finally:
     if server.poll() is None: server.kill()

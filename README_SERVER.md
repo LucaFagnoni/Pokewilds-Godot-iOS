@@ -2,60 +2,102 @@
 
 Il server dedicato tiene acceso un mondo co-op su un PC Windows, senza un
 giocatore davanti: i telefoni (e i PC) si collegano con indirizzo IP e porta,
-giocano quando vogliono, e il mondo resta sul server anche quando escono tutti.
+in casa o da fuori, giocano quando vogliono, e il mondo resta sul server anche
+quando escono tutti.
 
-Il server è l'"host" del co-op di sempre, con un giocatore suo invisibile fermo
-allo spawn: nessuno lo vede, non conta tra i giocatori e non può essere sfidato.
+## In tre passi
 
-## Scaricare
+1. **Scarica** da GitHub, pagina **Releases**, l'ultima `server-build-N`:
+   il file `PokeWilds-Server-win64.zip`. Estrailo in una cartella, per esempio
+   `C:\PokeWilds-Server`.
+2. **Doppio clic su `start_server.bat`.** La prima volta Windows chiede il
+   permesso di aprire il firewall per PokeWilds: rispondi **Sì**. Dopo qualche
+   istante (qualche minuto per un mondo grande) il server scrive:
 
-Su GitHub, nella pagina **Releases**, prendi l'ultima `server-build-N` e scarica
-`PokeWilds-Server-win64.zip`. Estrailo in una cartella (per esempio
-`C:\PokeWilds-Server`). Dentro ci sono:
+   ```
+   SERVER  Same Wi-Fi:     192.168.1.14:54555   code 1HGE13I2
+   SERVER  From outside:   93.40.12.34:54555   code 4K2J9XQ1
+   SERVER    Router port opened automatically (UPnP).
+   ```
 
-| File | A cosa serve |
-| --- | --- |
-| `start_server.bat` | **Avvio consigliato**: doppio clic e parte il server |
-| `PokeWilds.exe`, `PokeWilds.pck` | il gioco (in modalità server) |
-| `PokeWilds.console.exe` | lo stesso, con la console, per chi vuole lanciarlo a mano |
-| `server_launcher.ps1` | usato da `start_server.bat` |
-| `server.cfg.example` | esempio di impostazioni |
+3. **Sul telefono**: PokeWilds > **MULTIPLAYER** > **JOIN BY IP**, scrivi
+   l'indirizzo (oppure il codice di 8 caratteri) e premi A:
+   - in casa, sulla stessa Wi-Fi: quello di **Same Wi-Fi**;
+   - fuori casa (rete mobile, casa di un amico): quello di **From outside**.
 
-Il server e i telefoni devono avere **la stessa versione** del gioco e le stesse
-mod attive: altrimenti il telefono viene rifiutato ("Game versions do not
-match" o "Enabled mods ... must match"). Aggiorna il server ogni volta che
-installi una nuova build iOS.
+   Scegli il personaggio e premi **JOIN!**. Il gioco ricorda l'ultimo
+   indirizzo (e la password, se c'è): la volta dopo basta premere A.
 
-## Avviare
+Il server apre da solo la porta sul router (UPnP) e la richiude quando si
+spegne, apre da solo il firewall di Windows e tiene sveglio il PC finché è
+acceso (lo schermo può spegnersi): di solito non serve toccare nient'altro.
 
-**Doppio clic su `start_server.bat`.** La prima volta crea il mondo (qualche
-minuto per le taglie grandi), poi scrive qualcosa come:
+Server e telefoni devono avere **la stessa versione** del gioco e le stesse mod
+attive, altrimenti il telefono viene rifiutato ("Game versions do not match" o
+"Enabled mods ... must match"). Aggiorna il server ogni volta che installi una
+nuova build iOS.
 
-```
-SERVER world ready, listening on TCP port 54555
-SERVER   LAN 192.168.1.14:54555  join code 1HGE13I2
-SERVER commands: stop, save, players
-```
+## Se "From outside" dice altro
 
-L'indirizzo `LAN` è quello da usare dalla stessa rete Wi-Fi.
+- **"The router did not open the port by itself"**: il router ha l'UPnP
+  spento. Accendilo nelle impostazioni del router (di solito sotto "Rete",
+  "NAT" o "Avanzate"; si chiama "UPnP" o "UPnP IGD") e riavvia il server.
+  In alternativa apri la porta a mano:
+  1. dai al PC un **IP fisso** nella rete di casa (dal router: "DHCP statico"
+     o "prenotazione indirizzo");
+  2. crea un **port forwarding** (a volte "Virtual server"): porta **TCP
+     54555** verso l'IP del PC (quello di "Same Wi-Fi").
+- **"this router is behind another router"**: in casa ci sono due router in
+  fila (per esempio il modem dell'operatore e un tuo router). Metti il primo
+  in modalità **bridge**, oppure apri la porta TCP 54555 anche sul primo,
+  verso l'indirizzo del secondo.
+- **"NOT POSSIBLE on this internet line"**: l'operatore mette più case dietro
+  un solo indirizzo pubblico (**CGNAT**), e da fuori nessuno può raggiungere
+  il PC, qualunque cosa si faccia sul router. Le strade:
+  - chiedere all'operatore un **IP pubblico** (spesso gratis o pochi euro, a
+    volte basta chiedere di "uscire dal CGNAT");
+  - usare **Tailscale** (gratis): installalo sul PC del server e sui telefoni,
+    entra con lo stesso account e usa sul telefono l'indirizzo che il server
+    mostra alla riga **Tailscale/VPN** (inizia con `100.`), per esempio
+    `100.x.y.z:54555`;
+  - se compare la riga "Phones with IPv6 may still try ...", i telefoni con
+    IPv6 (molte reti mobili) possono provare quell'indirizzo, se il router lo
+    lascia passare.
+- **L'indirizzo è cambiato**: molte linee cambiano IP pubblico quando il
+  router si riavvia. Il server lo mostra a ogni avvio; scrivi `address` nella
+  sua finestra per vederlo di nuovo. Per un indirizzo che non cambia mai puoi
+  usare un nome DNS dinamico gratuito (DuckDNS, No-IP...): nel gioco si può
+  scrivere anche un nome, per esempio `casa.duckdns.org:54555`.
+- Il **codice** di 8 caratteri funziona solo con la porta predefinita 54555.
+
+## Fermare il server e comandi
 
 Per fermarlo: **Ctrl+C**, oppure chiudi la finestra, oppure scrivi `stop` e
-Invio. In tutti e tre i casi il server salva il mondo prima di uscire.
+Invio. In tutti e tre i casi il server salva il mondo prima di uscire e
+richiude la porta sul router.
 
 Comandi che puoi scrivere nella finestra:
 
-- `stop` salva e spegne
-- `save` salva subito
-- `players` elenca chi è collegato
+| Comando | Cosa fa |
+| --- | --- |
+| `stop` | salva e spegne |
+| `save` | salva subito |
+| `players` | elenca chi è collegato (1ST, 2ND...) |
+| `address` | mostra di nuovo gli indirizzi per collegarsi |
+| `kick NOME` | butta fuori un giocatore (può rientrare); va bene anche `kick 1` |
+| `ban NOME` | lo butta fuori e non lo fa più entrare in questo mondo |
+| `bans` | elenca i giocatori bannati |
+| `unban NOME` | toglie il ban |
 
 Il server salva anche da solo ogni 5 minuti, e ogni azione dei giocatori
 (costruzioni, scambi, catture...) viene scritta subito nel diario del mondo:
 anche se il PC si spegne di colpo si perde al massimo qualche minuto di
 movimento dei Pokémon.
 
-### Opzioni
+## Opzioni
 
-Si possono dare a `start_server.bat` o a `PokeWilds.console.exe --headless --server`:
+Si possono dare a `start_server.bat` (per esempio
+`start_server.bat --world Isola --size L`) o scrivere in `server.cfg`:
 
 | Opzione | Significato | Predefinito |
 | --- | --- | --- |
@@ -63,88 +105,46 @@ Si possono dare a `start_server.bat` o a `PokeWilds.console.exe --headless --ser
 | `--world NOME` | nome del mondo: lo carica se esiste, altrimenti lo crea | `PokeWilds` |
 | `--size S` | taglia di un mondo nuovo: `S`, `M`, `L`, `XL`, `XXL` | `M` |
 | `--password P` | password per entrare (max 16 caratteri) | nessuna |
+| `--no-upnp` | non aprire la porta sul router da solo | (la apre) |
 | `--data CARTELLA` | dove tenere i mondi | `server_data` accanto all'exe |
 | `--config FILE` | file di impostazioni | `server.cfg` accanto all'exe |
 
-Esempio: `start_server.bat --world Isola --size L --port 50000`
+Per usare il file copia `server.cfg.example` in `server.cfg` e modificalo
+(porta, mondo, taglia, password, giocatori massimi da 1 a 4, minuti tra un
+salvataggio automatico e l'altro, apertura automatica della porta). Le opzioni
+da riga di comando vincono sul file.
 
-Al posto delle opzioni puoi copiare `server.cfg.example` in `server.cfg` e
-modificarlo (porta, mondo, taglia, password, numero massimo di giocatori da 1 a
-4, minuti tra un salvataggio automatico e l'altro). Le opzioni da riga di
-comando vincono sul file.
+Se il server è raggiungibile da Internet, **metti una password**: chi conosce
+l'indirizzo può provare a entrare. Il telefono la chiede una volta sola e poi
+la ricorda.
 
-**Nota:** se lanci direttamente `PokeWilds.console.exe --headless --server`,
-Ctrl+C e la chiusura della finestra spengono il server **senza** salvare (è un
-limite di Godot): in quel caso usa il comando `stop`. Con `start_server.bat`
-invece salvano sempre.
+`PokeWilds.console.exe --headless --server` avvia il server senza il
+lanciatore: lì però Ctrl+C e la chiusura della finestra lo spengono **senza**
+salvare (limite di Godot), quindi usa `stop`.
 
-### I dati
+## Cosa fa il server per i telefoni
 
-Tutto il mondo sta in `server_data` (accanto all'exe): per un backup copia la
-cartella a server spento. Il server tiene anche da sé le ultime 5 copie in
+- Le **zone nuove** della mappa, quando un giocatore ci entra per la prima
+  volta, le crea il server (una seconda copia del gioco, invisibile, che si
+  chiude da sola): il telefono aspetta "THIS AREA IS BEING CREATED" senza
+  fare il lavoro pesante. Se il server non ci riesce, la crea il telefono
+  come nel co-op normale.
+- Il server ha un suo giocatore **invisibile** fermo allo spawn: nessuno lo
+  vede, non conta tra i giocatori, i Pokémon non lo inseguono e le orde non
+  lo prendono di mira.
+
+## I dati
+
+Tutto sta in `server_data` (accanto all'exe): per un backup copia la cartella
+a server spento. Il server tiene anche da sé le ultime 5 copie in
 `server_data\online_worlds\<id>\backups`. Più mondi possono convivere: cambia
 `--world` per passare dall'uno all'altro.
 
-## Aprire la porta
+## Limiti
 
-### Firewall di Windows
-
-Al primo avvio Windows chiede se consentire a PokeWilds l'accesso alla rete:
-spunta almeno **Reti private** e conferma. Se hai detto di no, o vuoi farlo a
-mano, apri PowerShell **come amministratore** e scrivi:
-
-```
-New-NetFirewallRule -DisplayName "PokeWilds server" -Direction Inbound -Protocol TCP -LocalPort 54555 -Action Allow
-New-NetFirewallRule -DisplayName "PokeWilds lobby" -Direction Inbound -Protocol UDP -LocalPort 54556 -Action Allow
-```
-
-(la seconda regola serve solo perché il server compaia da solo in
-MULTIPLAYER > JOIN GAME sulla stessa rete Wi-Fi; se usi un'altra porta,
-cambia `54555`).
-
-### Router (per giocare fuori casa)
-
-Dalla stessa Wi-Fi basta il firewall. Per collegarti da fuori (rete mobile,
-casa di un amico):
-
-1. Dai al PC del server un **IP fisso** nella rete di casa (dal router:
-   "DHCP statico" / "prenotazione indirizzo"), così non cambia.
-2. Nel router apri il **port forwarding** (a volte "Virtual server" o "NAT"):
-   porta esterna **TCP 54555** verso l'IP del PC, porta interna 54555.
-3. Trova il tuo **IP pubblico** (per esempio cercando "what is my ip"): è
-   l'indirizzo da usare da fuori, insieme alla porta.
-
-Se l'IP pubblico cambia spesso puoi usare un nome DNS dinamico gratuito
-(DuckDNS, No-IP...): nel gioco si può scrivere anche un nome, per esempio
-`casa.duckdns.org:54555`.
-
-Se dopo il port forwarding da fuori non si collega niente, il tuo operatore
-potrebbe usare il **CGNAT** (l'IP "WAN" mostrato dal router è diverso dall'IP
-pubblico, o inizia con `100.64`–`100.127`): in quel caso la porta non si può
-aprire. Alternative: chiedere all'operatore un IP pubblico, oppure installare
-una VPN come Tailscale o ZeroTier sul PC e sui telefoni e usare l'indirizzo
-che la VPN dà al PC.
-
-## Collegarsi dal telefono
-
-1. Apri PokeWilds, scegli **MULTIPLAYER**, poi **JOIN BY IP**.
-2. Scrivi l'indirizzo del server con la porta, per esempio
-   `192.168.1.14:54555` in casa oppure `93.40.12.34:54555` da fuori. Se la
-   porta è quella predefinita puoi scrivere solo l'IP. Va bene anche il
-   **join code** di 8 caratteri che il server mostra all'avvio (solo sulla
-   porta 54555). Il gioco ricorda l'ultimo indirizzo usato.
-3. Premi A (o Invio sulla tastiera), scegli il personaggio e premi **JOIN!**.
-4. Se il server ha una password il gioco te la chiede.
-
-Sulla stessa Wi-Fi il server compare anche da solo in **JOIN GAME**.
-
-## Limiti da sapere
-
-- Fino a 4 giocatori insieme.
-- Ogni zona nuova della mappa viene creata dal dispositivo del primo giocatore
-  che ci entra (come nel co-op normale): su un telefono può richiedere qualche
-  minuto; poi è salvata sul server e gli altri la ricevono già pronta.
-- La password protegge l'ingresso, ma il traffico non è cifrato: non usare una
-  password che usi altrove.
-- Chi conosce l'indirizzo e la porta può provare a entrare: se apri la porta
-  su Internet metti una password.
+- Fino a 4 giocatori insieme (il limite del co-op del gioco).
+- La password protegge l'ingresso (non viaggia mai in chiaro), ma il resto del
+  traffico non è cifrato: non usare una password che usi altrove.
+- Firewall fatto a mano: se hai rifiutato la richiesta di Windows, apri
+  PowerShell **come amministratore** e scrivi (cambia il percorso):
+  `New-NetFirewallRule -DisplayName "PokeWilds server" -Direction Inbound -Program "C:\PokeWilds-Server\PokeWilds.exe" -Action Allow -Profile Any`

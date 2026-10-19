@@ -13,7 +13,7 @@ const PASSWORD_LENGTH:=16
 const ADDRESS_LENGTH:=48
 const JoinCode=preload("res://scripts/coop_join_code.gd")
 const Paths=preload("res://scripts/game_data_paths.gd")
-## The last address joined, so it need not be typed again on a phone.
+## The last address joined and its password, so neither is typed again on a phone.
 const ADDRESS_FILE:="coop_direct.cfg"
 const CHOICES:={"title":["SINGLE PLAYER","MULTIPLAYER"],"multi":["CREATE GAME","JOIN GAME","JOIN BY IP"],
     "access":["PUBLIC","PRIVATE"],"world":["NEW WORLD","SAVED WORLD"]}
@@ -296,22 +296,29 @@ func submit_password()->void:
         main.coop_game.lobby_private=true;main.coop_game.lobby_password=value;_go("world")
     elif page=="password_join":
         main.coop_game.join_password=value
+        if bool(main.coop_game.join_lobby.get("direct",false)):
+            var config:=_remembered();config.set_value("join","password",value);config.save(Paths.path(ADDRESS_FILE))
         _hide_keyboard()
         chosen.emit("JOIN_SETUP",String(main.coop_game.join_lobby.get("address","")))
 
-## "1.2.3.4:5000", "my.server.net" (default port) or an 8-letter join code.
+## "1.2.3.4:5000", "my.server.net" (default port), an IPv6 address
+## ("[2001:db8::1]:5000" or bare), or an 8-letter join code.
 static func parse_address(text:String)->Dictionary:
     text=text.strip_edges()
     var code:=JoinCode.decode(text)
     if not code.is_empty():return {"address":code,"port":JoinCode.PORT}
     var host:=text
+    var digits:=""
+    if text.begins_with("[") and "]" in text:
+        host=text.substr(1,text.find("]")-1);digits=text.substr(text.find("]")+1).trim_prefix(":")
+    elif text.count(":")==1:
+        host=text.get_slice(":",0);digits=text.get_slice(":",1)
     var port:=JoinCode.PORT
-    if text.count(":")==1:
-        host=text.get_slice(":",0)
-        var digits:=text.get_slice(":",1)
+    if not digits.is_empty():
         if not digits.is_valid_int() or int(digits)<1 or int(digits)>65535:return {}
         port=int(digits)
     if host.is_empty() or host.length()>ADDRESS_LENGTH:return {}
+    if ":" in host:return {"address":host,"port":port} if host.is_valid_ip_address() else {}
     for character in host:
         if not (character.to_lower() in "abcdefghijklmnopqrstuvwxyz0123456789.-"):return {}
     return {"address":host,"port":port}
@@ -319,15 +326,21 @@ static func parse_address(text:String)->Dictionary:
 func submit_address()->void:
     var target:=parse_address(buffer)
     if target.is_empty():_hint="TYPE IP:PORT, OR A JOIN CODE.";_update_status();return
-    var config:=ConfigFile.new();config.set_value("join","address",buffer.strip_edges());config.save(Paths.path(ADDRESS_FILE))
-    main.coop_game.join_lobby={"name":buffer.strip_edges().left(24),"address":target.address,"port":target.port,"direct":true,"private":false,"salt":""}
-    main.coop_game.join_password=""
+    var typed:=buffer.strip_edges()
+    var config:=_remembered()
+    var password:=String(config.get_value("join","password","")) if String(config.get_value("join","address",""))==typed else ""
+    config.set_value("join","address",typed);config.set_value("join","password",password);config.save(Paths.path(ADDRESS_FILE))
+    main.coop_game.join_lobby={"name":typed.left(24),"address":target.address,"port":target.port,"direct":true,"private":false,"salt":""}
+    main.coop_game.join_password=password
     _hide_keyboard()
     chosen.emit("JOIN_SETUP",String(target.address))
 
+static func _remembered()->ConfigFile:
+    var config:=ConfigFile.new();config.load(Paths.path(ADDRESS_FILE))
+    return config
+
 static func _last_address()->String:
-    var config:=ConfigFile.new()
-    return String(config.get_value("join","address","")) if config.load(Paths.path(ADDRESS_FILE))==OK else ""
+    return String(_remembered().get_value("join","address",""))
 
 func _typing()->bool:
     return page in ["password_set","password_join","address"]

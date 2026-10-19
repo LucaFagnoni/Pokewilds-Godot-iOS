@@ -40,6 +40,10 @@ var lobby_name:=""
 ## Where hosting listens and how many may play; a dedicated server sets both.
 var host_port:=preload("res://scripts/coop_join_code.gd").PORT
 var max_players:=4
+## A dedicated server makes new areas itself: (actor, area, token) -> true once
+## handled. Without it, or when it fails, the arriving player's device makes it.
+var generate_area:Callable
+const Server=preload("res://scripts/dedicated_server.gd")
 var join_lobby:Dictionary={}
 var join_password:=""
 var notice:=""
@@ -138,7 +142,7 @@ func prepare_travel(grid:Vector2i)->Dictionary:
     while session.trusted and _travel_offer.is_empty() and Time.get_ticks_msec()<deadline:
         if not told and Time.get_ticks_msec()-asked>=3000:
             told=true
-            main.generation_status.text="ANOTHER PLAYER IS\nCREATING THIS AREA.\nPLEASE WAIT..."
+            main.generation_status.text="THIS AREA IS BEING\nCREATED.\nPLEASE WAIT..."
             main.generation_panel.show()
         await get_tree().process_frame
     if _travel_offer.is_empty():
@@ -193,6 +197,7 @@ func _generation_requested(actor:String,area:String,token:String)->void:
     if actor==session.actor:
         if area==_travel_target:_travel_token=token;_travel_offer={"new":true}
         return
+    if generate_area.is_valid() and await generate_area.call(actor,area,token):return
     for peer in session.players:
         if session.players[peer].actor==actor:session.send_to(peer,{"kind":"area_generate","area":area,"token":token})
 
@@ -512,7 +517,9 @@ func command(operation:String,args:Dictionary,berry_pickup:bool=false)->Dictiona
     if operation in ["build","remove_build","paint","field_cut","field_dig"]:args["profile_hash"]=profile_base
     if operation=="deploy":args["base"]=profile_base
     var result:Dictionary
-    if hosting:
+    # A dedicated server's own player is nowhere: no presence to be found by.
+    if hosting and Server.active:result=commands.execute(session.actor,packet)
+    elif hosting:
         commands.presence[session.actor]={"area":scope(),"x":cell.x,"y":cell.y,"battle":main.battle_active,"fx":int(main.world.player.facing.x),"fy":int(main.world.player.facing.y),"population_scope":population.local_scope()}
         for index in range(main.caught_pokemon.size()):
             if main._storage_is_active(main.caught_pokemon[index]):commands.presence[session.actor]["helper_slot"]=index;break
@@ -767,7 +774,7 @@ func _mode_label(text:String)->void:
 func _lobby_record()->Dictionary:
     if not active or not hosting:return {}
     # A dedicated server's own player is not one of the players.
-    var players:int=session.players.size()-(1 if preload("res://scripts/dedicated_server.gd").active else 0)
+    var players:int=session.players.size()-(1 if Server.active else 0)
     return {"name":lobby_name,"host":String(session.profile.get("name","PLAYER")),"private":lobby_private,
         "players":players,"max":max_players,"salt":lobby_salt,"protocol":Session.PROTOCOL,"mods":session.mod_digest,"port":host_port}
 
