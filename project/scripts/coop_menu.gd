@@ -2,20 +2,26 @@ extends Control
 ## Start menu and MULTIPLAYER flow. Uses the game's font, frame and tick alignment helpers.
 ## The first choice is plain text over the startup artwork, which stays up until a mode is picked.
 ##   SINGLE PLAYER -> the normal world setup screen
-##   MULTIPLAYER   -> CREATE GAME (PUBLIC / PRIVATE + password) or JOIN GAME (lobby list)
+##   MULTIPLAYER   -> CREATE GAME (PUBLIC / PRIVATE + password), JOIN GAME (lobby list)
+##                    or JOIN BY IP (a server's address:port, or a join code)
 signal chosen(action:String,value:String)
 const Settings=preload("res://scripts/game_options.gd")
 const Network=preload("res://scripts/coop_network.gd")
 const EMPTY_LOBBIES:="No active public or private games at this time, go back and create a game if you want to play online."
 const VISIBLE_ROWS:=4
 const PASSWORD_LENGTH:=16
-const CHOICES:={"title":["SINGLE PLAYER","MULTIPLAYER"],"multi":["CREATE GAME","JOIN GAME"],
+const ADDRESS_LENGTH:=48
+const JoinCode=preload("res://scripts/coop_join_code.gd")
+const Paths=preload("res://scripts/game_data_paths.gd")
+## The last address joined and its password, so neither is typed again on a phone.
+const ADDRESS_FILE:="coop_direct.cfg"
+const CHOICES:={"title":["SINGLE PLAYER","MULTIPLAYER"],"multi":["CREATE GAME","JOIN GAME","JOIN BY IP"],
     "access":["PUBLIC","PRIVATE"],"world":["NEW WORLD","SAVED WORLD"]}
 const TITLES:={"title":"POKEWILDS","multi":"MULTIPLAYER","access":"CREATE GAME","world":"CREATE GAME",
     "load":"SAVED WORLDS","browse":"JOIN GAME","password_set":"SET A PASSWORD",
-    "password_join":"ENTER PASSWORD","connecting":"JOIN GAME","loading":"SAVED WORLDS"}
+    "password_join":"ENTER PASSWORD","connecting":"JOIN GAME","loading":"SAVED WORLDS","address":"JOIN BY IP"}
 const BACK:={"multi":"title","access":"multi","password_set":"access","world":"access","load":"world",
-    "browse":"multi","password_join":"browse","connecting":"browse"}
+    "browse":"multi","password_join":"browse","connecting":"browse","address":"multi"}
 var main:Node
 var page:=""
 var selection:=0
@@ -70,6 +76,10 @@ func configure(game:Node)->void:
     status=main._source_ui_label(panel,"Status",Vector2(12,115),Vector2(200,23),7,"")
     status.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
     entry=main._source_ui_label(panel,"Entry",Vector2(26,38),Vector2(182,18),12,"")
+    # Tapping the text brings the phone keyboard back if it was put away.
+    entry.mouse_filter=Control.MOUSE_FILTER_STOP
+    entry.gui_input.connect(func(event):
+        if event is InputEventMouseButton and event.pressed and event.button_index==MOUSE_BUTTON_LEFT and _typing():_show_keyboard())
     counter=main._source_ui_label(panel,"Counter",Vector2(150,13),Vector2(60,12),8,"")
     counter.horizontal_alignment=HORIZONTAL_ALIGNMENT_RIGHT
     more_above=_list_arrow(Vector2(206,30),true)
@@ -121,13 +131,17 @@ func _go(target:String,keep_selection:bool=false)->void:
     if not keep_selection:selection=0;_scroll=0
     _hint=""
     main.coop_game.lobby.browse(page in ["browse","password_join"])
-    if page in ["password_set","password_join"]:
-        buffer=""
+    if _typing():
+        buffer=_last_address() if page=="address" else ""
         refresh()
-        if OS.has_feature("mobile"):
-            DisplayServer.virtual_keyboard_show(buffer,Rect2i(),DisplayServer.KEYBOARD_TYPE_DEFAULT,PASSWORD_LENGTH,0,0)
+        _show_keyboard()
         return
     refresh()
+
+func _show_keyboard()->void:
+    if not OS.has_feature("mobile"):return
+    if page=="address":DisplayServer.virtual_keyboard_show(buffer,Rect2i(),DisplayServer.KEYBOARD_TYPE_URL,ADDRESS_LENGTH,buffer.length(),buffer.length())
+    else:DisplayServer.virtual_keyboard_show(buffer,Rect2i(),DisplayServer.KEYBOARD_TYPE_DEFAULT,PASSWORD_LENGTH,0,0)
 
 func _names()->Array:
     if CHOICES.has(page):return CHOICES[page]
@@ -148,6 +162,7 @@ func refresh()->void:
     var unseen:=on_title or page in ["loading","connecting"]
     backdrop.visible=not unseen;panel.visible=not unseen
     entry.visible=_typing();entry.text=buffer+"_"
+    entry.add_theme_font_size_override("font_size",8 if buffer.length()>18 else 12)
     if on_title:
         var chosen_row:Label=title_rows[clampi(selection,0,title_rows.size()-1)]
         var width:float=main.JOHTO_FONT.get_string_size(chosen_row.text,HORIZONTAL_ALIGNMENT_LEFT,-1,12).x
@@ -184,6 +199,7 @@ func _update_status()->void:
         "title":lines.append("A: SELECT")
         "password_set":lines.append("FRIENDS NEED THIS PASSWORD TO JOIN.");lines.append("A: OK   B: BACK")
         "password_join":lines.append("ASK THE HOST FOR THE PASSWORD.");lines.append("A: JOIN   B: BACK")
+        "address":lines.append("SERVER IP:PORT, OR A JOIN CODE.");lines.append("A: JOIN   B: BACK")
         "browse":
             var trouble:=String(main.coop_game.lobby.list_error)
             lines.append(Network.status_text() if trouble.is_empty() else trouble);lines.append("A: JOIN   B: BACK")
@@ -213,7 +229,8 @@ func activate()->void:
             else:Network.start();_go("multi")
         "multi":
             if selection==0:_go("access")
-            else:lobbies=[];_go("browse")
+            elif selection==1:lobbies=[];_go("browse")
+            else:_go("address")
         "access":
             if selection==0:
                 main.coop_game.lobby_private=false;main.coop_game.lobby_password="";_go("world")
@@ -231,6 +248,7 @@ func activate()->void:
             if lobby.private:_go("password_join")
             else:chosen.emit("JOIN_SETUP",String(lobby.address))
         "password_set","password_join":submit_password()
+        "address":submit_address()
 
 ## A saved world can take a while to read. The game's own loading screen goes up
 ## at once; this menu stays in place, unseen, only to swallow button presses.
@@ -254,7 +272,9 @@ func connecting_text(text:String)->void:
 func connecting_failed(reason:String)->void:
     if not visible or page!="connecting":return
     main.generation_panel.hide()
-    _go("browse")
+    # A typed address goes back to where it was typed, or on to the password.
+    var direct:=bool(main.coop_game.join_lobby.get("direct",false))
+    _go("browse" if not direct else ("password_join" if "PASSWORD" in reason else "address"))
     _hint=reason;_update_status()
 
 func loading_finished(reason:String)->void:
@@ -276,11 +296,54 @@ func submit_password()->void:
         main.coop_game.lobby_private=true;main.coop_game.lobby_password=value;_go("world")
     elif page=="password_join":
         main.coop_game.join_password=value
+        if bool(main.coop_game.join_lobby.get("direct",false)):
+            var config:=_remembered();config.set_value("join","password",value);config.save(Paths.path(ADDRESS_FILE))
         _hide_keyboard()
         chosen.emit("JOIN_SETUP",String(main.coop_game.join_lobby.get("address","")))
 
+## "1.2.3.4:5000", "my.server.net" (default port), an IPv6 address
+## ("[2001:db8::1]:5000" or bare), or an 8-letter join code.
+static func parse_address(text:String)->Dictionary:
+    text=text.strip_edges()
+    var code:=JoinCode.decode(text)
+    if not code.is_empty():return {"address":code,"port":JoinCode.PORT}
+    var host:=text
+    var digits:=""
+    if text.begins_with("[") and "]" in text:
+        host=text.substr(1,text.find("]")-1);digits=text.substr(text.find("]")+1).trim_prefix(":")
+    elif text.count(":")==1:
+        host=text.get_slice(":",0);digits=text.get_slice(":",1)
+    var port:=JoinCode.PORT
+    if not digits.is_empty():
+        if not digits.is_valid_int() or int(digits)<1 or int(digits)>65535:return {}
+        port=int(digits)
+    if host.is_empty() or host.length()>ADDRESS_LENGTH:return {}
+    if ":" in host:return {"address":host,"port":port} if host.is_valid_ip_address() else {}
+    for character in host:
+        if not (character.to_lower() in "abcdefghijklmnopqrstuvwxyz0123456789.-"):return {}
+    return {"address":host,"port":port}
+
+func submit_address()->void:
+    var target:=parse_address(buffer)
+    if target.is_empty():_hint="TYPE IP:PORT, OR A JOIN CODE.";_update_status();return
+    var typed:=buffer.strip_edges()
+    var config:=_remembered()
+    var password:=String(config.get_value("join","password","")) if String(config.get_value("join","address",""))==typed else ""
+    config.set_value("join","address",typed);config.set_value("join","password",password);config.save(Paths.path(ADDRESS_FILE))
+    main.coop_game.join_lobby={"name":typed.left(24),"address":target.address,"port":target.port,"direct":true,"private":false,"salt":""}
+    main.coop_game.join_password=password
+    _hide_keyboard()
+    chosen.emit("JOIN_SETUP",String(target.address))
+
+static func _remembered()->ConfigFile:
+    var config:=ConfigFile.new();config.load(Paths.path(ADDRESS_FILE))
+    return config
+
+static func _last_address()->String:
+    return String(_remembered().get_value("join","address",""))
+
 func _typing()->bool:
-    return page in ["password_set","password_join"]
+    return page in ["password_set","password_join","address"]
 
 func _hide_keyboard()->void:
     if OS.has_feature("mobile"):DisplayServer.virtual_keyboard_hide()
@@ -296,9 +359,9 @@ func handle(event:InputEvent)->void:
         if event.keycode==KEY_BACKSPACE:
             buffer=buffer.left(buffer.length()-1);refresh();return
         if event.keycode in [KEY_ENTER,KEY_KP_ENTER]:
-            submit_password();return
+            activate();return
         if event.keycode not in [KEY_ESCAPE,KEY_BACK] and event.unicode>=32 and event.unicode!=127:
-            if buffer.length()<PASSWORD_LENGTH:buffer+=String.chr(event.unicode);refresh()
+            if buffer.length()<(ADDRESS_LENGTH if page=="address" else PASSWORD_LENGTH):buffer+=String.chr(event.unicode);refresh()
             return
     var direction=0
     if event.is_action_pressed("move_down") or event.is_action_pressed("move_right"):direction=1
@@ -306,7 +369,9 @@ func handle(event:InputEvent)->void:
     if event.is_action_pressed("cancel") or (event is InputEventKey and event.pressed and event.keycode in [KEY_ESCAPE,KEY_BACK]):
         if page=="title":return
         main.coop_game.cancel_join()
-        _go(String(BACK.get(page,"title")))
+        var back:=String(BACK.get(page,"title"))
+        if page in ["connecting","password_join"] and bool(main.coop_game.join_lobby.get("direct",false)):back="address"
+        _go(back)
     elif event.is_action_pressed("confirm") or (event is InputEventKey and event.pressed and event.keycode in [KEY_ENTER,KEY_KP_ENTER]):activate()
     elif direction!=0 and not _typing() and page!="connecting":
         var count:=_count()

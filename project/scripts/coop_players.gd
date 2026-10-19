@@ -4,6 +4,8 @@ signal presence_received(actor:String,packet:Dictionary)
 const Remote=preload("res://scripts/coop_remote_player.gd")
 const SEND_INTERVAL_MS:=50
 const AFK_MS:=180000
+## A dedicated server's own player is never seen, and it draws nobody.
+const Server=preload("res://scripts/dedicated_server.gd")
 var main:Node
 var session:Node
 var state
@@ -33,7 +35,7 @@ func _input(event:InputEvent)->void:
     _last_input=Time.get_ticks_msec()
 
 func _process(_delta:float)->void:
-    if main==null or session==null or not session.trusted or area.is_empty() or not main.started or main.generating:return
+    if main==null or session==null or not session.trusted or area.is_empty() or not main.started or main.generating or Server.active:return
     var now=Time.get_ticks_msec()
     if now-_last_send<SEND_INTERVAL_MS:return
     _last_send=now
@@ -85,7 +87,7 @@ func _relay(sender_peer:int,actor:String,packet:Dictionary)->void:
         var other_actor=String(session.players[peer].actor)
         if state!=null and state.members.get(other_actor,{}).get("area","")==packet.area:
             session.send_to(peer,outgoing)
-    if actor!=session.actor:_show(actor,outgoing)
+    if actor!=session.actor and not Server.active:_show(actor,outgoing)
 
 func _show(actor:String,packet:Dictionary)->void:
     last_packets[actor]=packet.duplicate(true)
@@ -132,7 +134,7 @@ func _relay_effect(sender_peer:int,actor:String,packet:Dictionary)->void:
         var other_actor=String(session.players[peer].actor)
         if state!=null and state.members.get(other_actor,{}).get("area","")==packet.area:
             session.send_to(peer,outgoing)
-    if actor!=session.actor:_show_effect(actor,outgoing)
+    if actor!=session.actor and not Server.active:_show_effect(actor,outgoing)
 
 static func valid_effect(packet:Dictionary)->bool:
     if not packet.get("area") is String or packet.area.length()>80:return false

@@ -183,8 +183,9 @@ static func _clean(address:String,source:Dictionary,now:int)->Dictionary:
         "name":String(source.get("name","WORLD")).strip_edges().left(24),
         "host":String(source.get("host","PLAYER")).strip_edges().left(24),
         "private":bool(source.get("private",false)),
-        "players":clampi(int(source.get("players",1)),1,4),
+        "players":clampi(int(source.get("players",1)),0,4),
         "max":clampi(int(source.get("max",4)),1,4),
         "salt":String(source.get("salt","")).left(64),
         "protocol":String(source.get("protocol","")).left(48),
-        "mods":String(source.get("mods","")).left(64)}
+        "mods":String(source.get("mods","")).left(64),
+        "port":clampi(int(source.get("port",Network.GAME_PORT)),1,65535)}

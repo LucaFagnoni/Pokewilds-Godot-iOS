@@ -38,7 +38,8 @@ func refresh_players()->void:
         players[actor]={"area":game._area()+"|OVERWORLD","x":int(packet.cell_x),"y":int(packet.cell_y),"battle":bool(packet.get("battle",false)),"move":String(packet.visual.get("move",""))}
         players[actor]["field_level"]=int(packet.get("field_level",1))
         players[actor]["party_level"]=int(packet.get("party_level",1))
-    if game.main.world.active_area_id=="OVERWORLD":
+    # A dedicated server's own player is not there to be chased or bumped into.
+    if game.main.world.active_area_id=="OVERWORLD" and not preload("res://scripts/dedicated_server.gd").active:
         var cell:Vector2i=game.main.world._player_cell()
         players[game.session.actor]={"area":game._area()+"|OVERWORLD","x":cell.x,"y":cell.y,"battle":game.main.battle_active or game.main.battle_entry_pending,"move":game.main.world.active_field_move}
     else:players.erase(game.session.actor)
