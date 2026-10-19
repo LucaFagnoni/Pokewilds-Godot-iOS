@@ -32,10 +32,25 @@ const ROWS := [
     ["game_speed","GAME SPEED","Speed up gameplay, music and effects together."],
     ["text_speed","TEXT SPEED","Choose how quickly dialogue appears."],
     ["frame","FRAME","Choose a frame."],
-    ["swipe_menu","TOUCH CONTROLS","Button size, opacity, layout, game files and mods."],
+    ["touch_size","BUTTON SIZE","Size of the on-screen buttons."],
+    ["touch_opacity","BUTTON OPACITY","How see-through the on-screen buttons are."],
+    ["touch_theme","BUTTON THEME","Follow the system, or always light or dark buttons."],
+    ["touch_autohide","HIDE WITH CONTROLLER","Hide the on-screen buttons while a controller is connected."],
     ["haptics","HAPTICS","Vibrate softly when you tap."],
-    ["touch_size","BUTTON SIZE","Size of the on-screen buttons."]]
-const TOUCH_ONLY := ["swipe_menu", "haptics", "touch_size"]
+    ["touch_move","MOVE BUTTONS","Drag the on-screen buttons where you like, then tap DONE."],
+    ["touch_reset","RESET BUTTONS","Put the on-screen buttons back in their places."]]
+const TOUCH_ONLY := ["touch_size", "touch_opacity", "touch_theme", "touch_autohide", "haptics", "touch_move", "touch_reset"]
+## Options are grouped; the first page lists the groups.
+const CATEGORIES := [
+    ["AUDIO", "Music, effects, cries and footsteps.", ["music","sound","world_sound","cries","footsteps","lofi_music"]],
+    ["GAMEPLAY", "Speed, running, movement, wheels and throwing.", ["game_speed","text_speed","auto_run","diagonal","radial","ball_mechanics","zoom","weather_events"]],
+    ["DISPLAY", "Frame, dark mode, minimap and visual extras.", ["frame","dark_mode","minimap","fps_counter","battle_animations","held_emotes","shiny_sparkles","hd_emotes","circle_lights","map_waypoint","gen3_overhaul"]],
+    ["CONTROLS", "On-screen buttons, vibration and button mapping.", ["touch_size","touch_opacity","touch_theme","touch_autohide","haptics","touch_move","touch_reset","button_layout","controls"]],
+    ["ONLINE", "Settings for the world you host.", ["horde_mode","raids_mode","players","autosave"]],
+]
+const THEME_NAMES := ["SYSTEM","LIGHT","DARK"]
+var all_rows: Array = []
+var category := -1
 const VOLUME_KEYS := ["music","sound","world_sound","cries","footsteps"]
 const TouchUI = preload("res://scripts/touch_ui.gd")
 var menu_rows: Array = ROWS.duplicate(true)
@@ -169,7 +184,30 @@ func open() -> void:
         menu_rows.append(["autosave","AUTOSAVE","OFF: the world is only written when you SAVE. Resets to ON each launch."])
     kick_index=0;players_page=false;kick_prompt.hide();action_prompt.hide();password_view.hide()
     controls_page=false;selection=0;first=0
+    all_rows=menu_rows
+    show_categories()
     main.game_menu_box.hide();show();refresh()
+
+func show_categories(select: int = 0) -> void:
+    category=-1
+    menu_rows=[]
+    for i in CATEGORIES.size():
+        if not rows_in(i).is_empty(): menu_rows.append(["@%d" % i,CATEGORIES[i][0],CATEGORIES[i][1]])
+    selection=clampi(select,0,maxi(0,menu_rows.size()-1));first=0
+
+func rows_in(index: int) -> Array:
+    var keys: Array=CATEGORIES[index][2]
+    var result:=[]
+    for key in keys:
+        for row in all_rows:
+            if row[0]==key: result.append(row)
+    return result
+
+func open_category(index: int) -> void:
+    category=index
+    menu_rows=rows_in(index)
+    selection=0;first=0
+    refresh()
 
 func close() -> void:
     hide();main.game_menu_box.show();main._update_game_menu_cursor()
@@ -227,6 +265,7 @@ func handle(event: InputEvent) -> void:
         refresh();return
     if event.is_action_pressed("cancel") or event.is_action_pressed("start"):
         if controls_page: controls_page=false;refresh()
+        elif category>=0: show_categories(_category_row(category));refresh()
         else: close()
         return
     var direction:=0
@@ -238,6 +277,10 @@ func handle(event: InputEvent) -> void:
         refresh();return
     if controls_page:return
     var key:String=menu_rows[selection][0]
+    if key.begins_with("@"):
+        if event.is_action_pressed("confirm") or event.is_action_pressed("move_right"): open_category(int(key.substr(1)))
+        return
+    if _touch_row(key,event):return
     if event.is_action_pressed("confirm") and key=="controls":
         build_controls();controls_page=true;control_index=0;refresh();return
     if event.is_action_pressed("confirm") and key=="back":close();return
@@ -250,8 +293,6 @@ func handle(event: InputEvent) -> void:
         internet_setup=preload("res://scripts/coop_zerotier_setup.gd").new()
         main.get_node("UI").add_child(internet_setup);internet_setup.configure(main)
         return
-    if direction and key=="touch_size":
-        main.touch_controls.set_control_scale(main.touch_controls.control_scale+0.1*direction);refresh();return
     if direction and key=="join_code":
         main.coop_game.cycle_endpoint(direction);refresh();return
     if direction and key=="autosave":
@@ -306,7 +347,7 @@ func refresh() -> void:
         else:description.text="Nobody else is in your world.\nB: BACK" if players.is_empty() else "A: KICK or KICK AND BAN\nB: BACK"
         return
     cursor.visible=true
-    title.text="CONTROLS" if controls_page else "OPTIONS"
+    title.text="CONTROLS" if controls_page else ("OPTIONS" if category<0 else "OPTIONS - "+String(CATEGORIES[category][0]))
     title.position.y = 8 if int(Settings.values.frame) + 1 in [118, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 27, 29, 30, 32, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100] else 6
     var index:=control_index if controls_page else selection
     var count:=control_rows.size() if controls_page else menu_rows.size()
@@ -325,6 +366,9 @@ func refresh() -> void:
             continue
         var key:String=menu_rows[actual][0]
         var row_label := label(row,menu_rows[actual][1],Vector2.ZERO,Vector2(128,14),8)
+        if key.begins_with("@"):
+            row_label.size.x=270
+            continue
         var text_width := row_label.get_theme_font("font").get_string_size(row_label.text,HORIZONTAL_ALIGNMENT_LEFT,-1,8).x
         row_label.scale.x = minf(1.0,118.0/maxf(1.0,text_width))
         if key=="players":
@@ -345,6 +389,16 @@ func refresh() -> void:
         if key=="touch_size":
             stepper(row,"%d%%" % roundi(main.touch_controls.control_scale*100.0))
             continue
+        if key=="touch_opacity":
+            stepper(row,"%d%%" % roundi(main.touch_controls.control_opacity*100.0))
+            continue
+        if key=="touch_theme":
+            stepper(row,THEME_NAMES[int(main.touch_controls.theme_mode)])
+            continue
+        if key=="touch_autohide":
+            toggle(row,bool(main.touch_controls.auto_hide_controller))
+            continue
+        if key in ["touch_move","touch_reset"]:continue
         if key in ["music","sound","world_sound","cries","footsteps"]:
             var bar:=ColorRect.new();bar.position=Vector2(138,6);bar.size=Vector2(98,1);bar.color=Color.BLACK;row.add_child(bar)
             var knob:=ColorRect.new();knob.position=Vector2(138+float(Settings.values[key])*0.98,3);knob.size=Vector2(2,7);knob.color=Color8(192,40,40);row.add_child(knob)
@@ -444,7 +498,9 @@ func touch_tap(row_index: int, point: Vector2) -> void:
         touch_set(key,clampi(int((x-132.0)/52.0),0,2));return
     if key=="button_layout" and x>=132.0:
         touch_set(key,clampi(int((x-132.0)/78.0),0,1));return
-    if key in ["frame","touch_size"] and x>=128.0:
+    if key.begins_with("@"):
+        open_category(int(key.substr(1)));return
+    if key in ["frame","touch_size","touch_opacity","touch_theme"] and x>=128.0:
         main.touch_ui.press("move_left" if x<STEPPER_SPLIT else "move_right");return
     main.touch_ui.press("confirm")
 
@@ -469,3 +525,34 @@ func arrow_button(row: Control, at: Vector2, pointing_left: bool) -> void:
     var arrow:TextureRect=main._source_texture_rect(button,"Arrow",Vector2(6.5,3.5),Vector2(5,7),main.source_command_cursor.texture)
     arrow.stretch_mode=TextureRect.STRETCH_SCALE
     arrow.flip_h=pointing_left
+
+func _category_row(index: int) -> int:
+    var position:=0
+    for i in index:
+        if not rows_in(i).is_empty(): position+=1
+    return position
+
+## The on-screen button settings (they used to be a separate panel).
+func _touch_row(key: String, event: InputEvent) -> bool:
+    if key not in TOUCH_ONLY or key=="haptics": return false
+    var pad=main.touch_controls
+    var direction:=-1 if event.is_action_pressed("move_left") else 1 if event.is_action_pressed("move_right") or event.is_action_pressed("confirm") else 0
+    if direction==0: return true
+    match key:
+        "touch_size": pad.set_control_scale(pad.control_scale+0.1*direction)
+        "touch_opacity": pad.set_control_opacity(pad.control_opacity+0.05*direction)
+        "touch_theme": pad.set_theme_mode(wrapi(int(pad.theme_mode)+direction,0,THEME_NAMES.size()))
+        "touch_autohide": pad.set_auto_hide_controller(not pad.auto_hide_controller)
+        "touch_reset":
+            pad.reset_layout()
+            description.text="Buttons are back in their places.\nB: BACK"
+            return true
+        "touch_move":
+            # Leave the menus so the buttons can be dragged; DONE brings us back here.
+            close()
+            main._close_game_menu()
+            pad.set_game_active(true)
+            pad.begin_edit()
+            return true
+    refresh()
+    return true

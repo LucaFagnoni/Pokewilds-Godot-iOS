@@ -28,7 +28,14 @@ func set_face_letter(letter: String) -> void:
 func _draw() -> void:
     if textures.is_empty(): return
     var state := "pressed" if held else ("dark" if fill.a>0.6 else "light")
-    draw_texture_rect(textures[state],Rect2(Vector2.ZERO,size),false)
+    if icon != null:
+        # Only the ring: the Poke Ball artwork under the icon read as two icons.
+        var radius := minf(size.x, size.y) * 0.46
+        var centre := size * 0.5
+        draw_circle(centre, radius, Color("404040", 0.9) if held else Color("191919", 0.8 if state == "dark" else 0.45))
+        draw_arc(centre, radius - size.x * 0.04, 0.0, TAU, 48, Color("f0c040"), size.x * 0.08, true)
+    else:
+        draw_texture_rect(textures[state],Rect2(Vector2.ZERO,size),false)
     if icon != null:
         var icon_size := size*0.62
         draw_texture_rect(icon,Rect2((size-icon_size)*0.5,icon_size),false)

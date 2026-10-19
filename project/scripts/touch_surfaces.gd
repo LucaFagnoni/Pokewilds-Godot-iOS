@@ -53,9 +53,7 @@ func build() -> Dictionary:
     if m.touch_config.visible:
         # The touch settings panel has real sliders and buttons.
         return {"modal": false, "hide_pad": true}
-    if is_instance_valid(m.waypoint_ui) and m.waypoint_ui.naming:
-        # The naming panel has real buttons and a text field.
-        return {"modal": false, "hide_pad": true}
+    if is_instance_valid(m.waypoint_ui) and m.waypoint_ui.naming: return _waypoint_naming()
     if m.progression_active: return _progression()
     if m.quit_prompt_open: return _yes_no(m.quit_prompt, func(i): m.quit_prompt_index = i; m._update_quit_prompt_cursor())
     if is_instance_valid(m.pokedex_menu) and m.pokedex_menu.visible: return _pokedex()
@@ -92,8 +90,12 @@ func _field() -> Dictionary:
     }
 
 func _finish_layout_edit() -> void:
-    main.touch_controls.end_edit()
-    main._open_touch_config(true)
+    var m := main
+    m.touch_controls.end_edit()
+    m._open_game_menu()
+    m.options_menu.open()
+    for i in m.options_menu.CATEGORIES.size():
+        if m.options_menu.CATEGORIES[i][0] == "CONTROLS": m.options_menu.open_category(i)
 
 func _open_map_from_minimap() -> void:
     map_from_minimap = true
@@ -115,8 +117,8 @@ func _game_menu() -> Dictionary:
     if m.guide_topic_open: return {"back": func(): press("cancel"), "tap_at": func(_p): press("cancel")}
     if m.guide_menu_open: return _guide()
     if m.game_menu_box.visible and not m.game_menu_detail_open: return _start_menu()
-    # Anything else inside the menu: never leave the player without a way back.
-    return {"back": func(): press("cancel"), "tap_at": func(_p): press("confirm")}
+    # Anything else inside the menu: never leave the player without a way out.
+    return {"back": func(): m._close_game_menu(), "tap_at": func(_p): press("confirm")}
 
 func _yes_no(panel: Control, select: Callable) -> Dictionary:
     return {
@@ -807,3 +809,15 @@ func _build_menu() -> Dictionary:
             ["DONE", func(): press("cancel"), Rect2(Vector2(need_box.end.x - 54, y), Vector2(52, 20))],
         ],
     }
+
+## The keyboard covers the lower half: the panel moves to the top and its
+## SAVE/DELETE/BACK move into the strip the keyboard leaves free.
+func _waypoint_naming() -> Dictionary:
+    var waypoints = main.waypoint_ui
+    waypoints.panel.position.y = 2
+    var bounds: Rect2 = main.touch_controls.usable_rect
+    var buttons := [["SAVE", func(): waypoints.save_name(), Rect2(Vector2(bounds.end.x - 82, bounds.position.y + 4), Vector2(54, 20))]]
+    if waypoints.editing_existing:
+        buttons.append(["DELETE", func(): waypoints.delete_marker(), Rect2(Vector2(bounds.end.x - 82, bounds.position.y + 28), Vector2(54, 20))])
+    # Taps on the panel's own buttons and text field still reach them.
+    return {"modal": false, "hide_pad": true, "buttons": buttons, "back": func(): waypoints.cancel_name()}

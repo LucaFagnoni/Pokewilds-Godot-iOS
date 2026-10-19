@@ -34,7 +34,7 @@ const FACE_CENTER := Vector2(285,134)
 # Dragging from MOSSE/LANCIO steers the wheel, like the stick did.
 const WHEEL_BUTTONS := ["L2", "R2"]
 const WHEEL_DRAG_DEADZONE := 0.35
-const CANCEL_TAP_MSEC := 250
+const CANCEL_TAP_MSEC := 350
 const CONTROL_LAYOUT := {
     "LeftStick": Rect2(14,122,44,44),
     # Right thumb arc: A largest, B below-left, MOSSE and LANCIO above.
@@ -482,7 +482,11 @@ func _set_virtual_button(control_name: String, pressed: bool) -> void:
         if pressed:
             cancel_down_msec = Time.get_ticks_msec()
             return
-        if Time.get_ticks_msec() - cancel_down_msec > CANCEL_TAP_MSEC: return
+        # A long hold only means "run" while the player can move; resting in a
+        # sleeping bag, on a stool or in a paused scene, B always cancels.
+        var main := get_tree().current_scene
+        var can_move: bool = main != null and is_instance_valid(main.get("world")) and bool(main.world.gameplay_enabled)
+        if can_move and Time.get_ticks_msec() - cancel_down_msec > CANCEL_TAP_MSEC: return
         for state in [true, false]:
             var tap := InputEventJoypadButton.new()
             tap.button_index = JOY_BUTTONS[control_name]
