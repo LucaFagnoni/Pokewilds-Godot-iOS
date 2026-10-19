@@ -523,7 +523,12 @@ func _prepare_gpu() -> void:
     var bounds := Rect2i(resident_fingerprints.origin, Vector2i(resident_fingerprints.width, resident_fingerprints.height))
     gpu_cells = Image.create(bounds.size.x, bounds.size.y, false, Image.FORMAT_RG8)
     gpu_cells_texture = ImageTexture.create_from_image(gpu_cells)
-    gpu_table = Image.create(GPU_TABLE_WIDTH, GPU_MAX_IDS / GPU_TABLE_WIDTH, false, Image.FORMAT_RGBAF)
+    # Half floats, not RGBAF: where float textures cannot be filtered (every iPhone),
+    # Godot converts an RGBAF image to half floats in place when it uploads it, and
+    # every later update() is then refused for a format mismatch: the table stayed
+    # all zeros and every cell drew the sheet's first tile. Positions (< 2048) and
+    # pages are exact in half floats.
+    gpu_table = Image.create(GPU_TABLE_WIDTH, GPU_MAX_IDS / GPU_TABLE_WIDTH, false, Image.FORMAT_RGBAH)
     gpu_table_texture = ImageTexture.create_from_image(gpu_table)
     gpu_view = Node2D.new()
     gpu_view.name = "TerrainView"
