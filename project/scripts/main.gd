@@ -3081,6 +3081,11 @@ func _update_fps_counter(delta: float) -> void:
         fps_label.add_theme_constant_override("outline_size", 3)
         fps_refresh = 0.0
     fps_label.show()
+    var menu_button := touch_controls.get_node_or_null("Start") as Control
+    if is_instance_valid(touch_ui) and touch_ui.enabled and menu_button != null and menu_button.is_visible_in_tree():
+        # The corner belongs to the menu button on touch: sit just under it.
+        var corner := menu_button.get_global_rect()
+        fps_label.global_position = Vector2(corner.end.x - fps_label.size.x, corner.end.y + 2)
     fps_refresh -= delta / maxf(Engine.time_scale, 0.01)
     if fps_refresh <= 0.0:
         fps_refresh = 0.25

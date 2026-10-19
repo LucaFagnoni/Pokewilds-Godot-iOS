@@ -14,6 +14,12 @@ boot_splash/stretch_mode=5
 boot_splash/use_filter=true
 boot_splash/bg_color=Color(0.965, 0.957, 0.906, 1)
 
+[audio]
+
+; iOS: play through the silent switch (Playback) and keep other apps' music going.
+general/ios/session_category=3
+general/ios/mix_with_others=true
+
 [autoload]
 OriginalModsSingleton="*res://scripts/original_mods.gd"
 InputRouterSingleton="*res://scripts/input_router.gd"

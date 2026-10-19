@@ -57,6 +57,12 @@ var auto_hide_controller := true
 var controller_connected := false
 var control_opacity := 0.72
 var control_scale := 1.0
+# Per-button size on top of control_scale, set by pinching in edit mode.
+var control_factors: Dictionary = {}
+const FACTOR_RANGE := Vector2(0.6, 1.8)
+const EDIT_GRID := 8.0
+var edit_grid: Control
+var edit_pinch: Dictionary = {}
 var theme_mode := THEME_SYSTEM
 var dragging: Control = null
 var pressed_actions: Dictionary = {}
@@ -123,7 +129,7 @@ func _create_reference_controls() -> void:
         control.caption = {"L1":"LB","R1":"RB","L2":"MOSSE","R2":"LANCIO"}.get(control_name,control_name)
         control.size = CONTROL_LAYOUT[control_name].size
         add_child(control)
-    $EditHint.text = "DRAG CONTROLS - TAP DONE TO SAVE"
+    $EditHint.text = "DRAG TO MOVE  -  PINCH TO RESIZE  -  DONE TO SAVE"
     $EditHint.add_theme_font_override("font", preload("res://assets/touch_ui/Anton-Regular.ttf"))
     $EditHint.add_theme_font_size_override("font_size", 7)
     $EditHint.add_theme_color_override("font_color", Color.WHITE)
@@ -167,7 +173,7 @@ func _apply_safe_rect(bounds: Rect2) -> void:
     usable_rect = bounds
     for control_name in ACTIONS:
         var button := get_node(control_name) as Control
-        var extent := button.size * control_scale
+        var extent := button.size * scale_of(control_name)
         var fraction := (button.position - previous.position) / (previous.size - extent).max(Vector2.ONE)
         button.position = bounds.position + fraction.clamp(Vector2.ZERO, Vector2.ONE) * (bounds.size - extent).max(Vector2.ZERO)
         _clamp_button(button)
@@ -237,10 +243,10 @@ func set_control_scale(value: float) -> void:
     control_scale = clampf(value, 0.65, 1.40)
     for control_name in ACTIONS:
         var control := get_node(control_name) as Control
-        var center := control.position+control.size*previous*0.5
+        var center := control.position+control.size*previous*float(control_factors.get(control_name,1.0))*0.5
         if control_name in ["A","B","X","Y"]:
             center = FACE_CENTER+(center-FACE_CENTER)*maxf(1.0,control_scale)/maxf(1.0,previous)
-        control.position = center-control.size*control_scale*0.5
+        control.position = center-control.size*scale_of(control_name)*0.5
     _release_all()
     _apply_control_scale()
     _save_layout()
@@ -271,11 +277,59 @@ func resolved_theme_is_dark() -> bool:
         and DisplayServer.is_dark_mode()
     )
 
+func _update_edit_pinch() -> void:
+    var a: Vector2 = pointer_positions.get(edit_pinch.indices[0], Vector2.ZERO)
+    var b: Vector2 = pointer_positions.get(edit_pinch.indices[1], Vector2.ZERO)
+    var factor := clampf(float(edit_pinch.factor) * a.distance_to(b) / float(edit_pinch.distance), FACTOR_RANGE.x, FACTOR_RANGE.y)
+    var control := get_node(String(edit_pinch.target)) as Control
+    var center := control.position + control.size * scale_of(control.name) * 0.5
+    control_factors[String(edit_pinch.target)] = factor
+    control.scale = Vector2.ONE * scale_of(control.name)
+    control.position = center - control.size * scale_of(control.name) * 0.5
+    _clamp_button(control)
+
+func _snap_to_grid(control: Control) -> void:
+    var center := control.position + control.size * scale_of(control.name) * 0.5
+    var origin := usable_rect.position
+    center = origin + ((center - origin) / EDIT_GRID).round() * EDIT_GRID
+    control.position = center - control.size * scale_of(control.name) * 0.5
+    _clamp_button(control)
+
+func scale_of(control_name: String) -> float:
+    return control_scale * float(control_factors.get(control_name, 1.0))
+
+func _show_edit_grid(show: bool) -> void:
+    if edit_grid == null:
+        edit_grid = Control.new()
+        edit_grid.name = "EditGrid"
+        edit_grid.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        edit_grid.show_behind_parent = true
+        edit_grid.draw.connect(func():
+            var area := usable_rect
+            var colour := Color(1, 1, 1, 0.18)
+            var x := area.position.x
+            while x <= area.end.x:
+                edit_grid.draw_line(Vector2(x, area.position.y), Vector2(x, area.end.y), colour, 1.0)
+                x += EDIT_GRID
+            var y := area.position.y
+            while y <= area.end.y:
+                edit_grid.draw_line(Vector2(area.position.x, y), Vector2(area.end.x, y), colour, 1.0)
+                y += EDIT_GRID)
+        add_child(edit_grid)
+        move_child(edit_grid, 0)
+    edit_grid.size = size
+    edit_grid.visible = show
+    edit_grid.queue_redraw()
+
 func begin_edit() -> void:
     if not android_runtime or not game_active:
         return
     edit_mode = true
     dragging = null
+    edit_pinch.clear()
+    _show_edit_grid(true)
+    # Under the DONE button, not behind it.
+    $EditHint.position = Vector2(usable_rect.get_center().x - $EditHint.size.x * 0.5, usable_rect.position.y + 28)
     $EditHint.visible = true
     input_router.set_touch_edit(true)
     _release_all()
@@ -284,6 +338,8 @@ func begin_edit() -> void:
 func end_edit() -> void:
     edit_mode = false
     dragging = null
+    edit_pinch.clear()
+    _show_edit_grid(false)
     $EditHint.visible = false
     input_router.set_touch_edit(false)
     _release_all()
@@ -292,6 +348,7 @@ func end_edit() -> void:
 
 func reset_layout() -> void:
     _release_all()
+    control_factors.clear()
     _apply_default_layout()
     _apply_control_scale()
     _save_layout()
@@ -360,6 +417,9 @@ func _move_contact(index: int, point: Vector2, relative: Vector2) -> void:
     var control_name: String = touch_owners[index]
     var control := get_node(control_name) as Control
     pointer_positions[index] = point
+    if edit_mode and not edit_pinch.is_empty() and index in edit_pinch.indices:
+        _update_edit_pinch()
+        return
     if edit_mode:
         control.position += relative
         _clamp_button(control)
@@ -430,6 +490,10 @@ func _route_contact(index: int, point: Vector2, pressed: bool, canceled: bool) -
         if index == wheel_drag_index:
             _end_wheel_steer.call_deferred()
         if edit_mode:
+            if not edit_pinch.is_empty() and index in edit_pinch.indices:
+                edit_pinch.clear()
+            else:
+                _snap_to_grid(get_node(control_name) as Control)
             _save_layout()
         elif not touch_owners.values().has(control_name):
             _set_virtual_button(control_name,false)
@@ -446,13 +510,24 @@ func _route_contact(index: int, point: Vector2, pressed: bool, canceled: bool) -
             if distance < nearest:
                 nearest = distance
                 chosen = control_name
+    if edit_mode and not touch_owners.is_empty() and edit_pinch.is_empty():
+        # A second finger while one holds a button: pinch that button's size.
+        var held_index: int = touch_owners.keys()[0]
+        var target: String = touch_owners[held_index]
+        touch_owners[index] = target
+        pointer_positions[index] = point
+        edit_pinch = {"target": target, "indices": [held_index, index],
+            "distance": maxf(1.0, Vector2(pointer_positions[held_index]).distance_to(point)),
+            "factor": float(control_factors.get(target, 1.0))}
+        get_viewport().set_input_as_handled()
+        return
     if chosen.is_empty() and not edit_mode and _in_floating_stick_zone(point):
         # The stick jumps under the thumb anywhere in the lower-left area.
         var stick := get_node("LeftStick") as Control
         if not touch_owners.values().has("LeftStick"):
             stick_home = stick.position
             floating_stick_index = index
-            stick.position = point - stick.size * control_scale * 0.5
+            stick.position = point - stick.size * scale_of("LeftStick") * 0.5
             chosen = "LeftStick"
     if chosen.is_empty(): return
     if not edit_mode and preload("res://scripts/touch_ui.gd").haptics_on(): Input.vibrate_handheld(8, 0.3)
@@ -546,7 +621,7 @@ func _notification(what: int) -> void:
         _release_all()
 
 func _clamp_button(button: Control) -> void:
-    var scaled_size := button.size * control_scale
+    var scaled_size := button.size * scale_of(String(button.name))
     var max_pos := usable_rect.end - scaled_size
     button.position.x = clampf(button.position.x, usable_rect.position.x, maxf(usable_rect.position.x, max_pos.x))
     button.position.y = clampf(button.position.y, usable_rect.position.y, maxf(usable_rect.position.y, max_pos.y))
@@ -554,7 +629,7 @@ func _clamp_button(button: Control) -> void:
 func _apply_default_layout() -> void:
     for control_name in CONTROL_LAYOUT:
         var button := get_node(control_name) as Control
-        var extent := button.size * control_scale
+        var extent := button.size * scale_of(control_name)
         var center: Vector2 = CONTROL_LAYOUT[control_name].get_center()
         if control_name in ["A","B","X","Y"]:
             center = FACE_CENTER+(center-FACE_CENTER)*maxf(1.0,control_scale)
@@ -566,7 +641,7 @@ func _apply_control_scale() -> void:
     for control_name in ACTIONS:
         var button := get_node(control_name) as Control
         button.pivot_offset = Vector2.ZERO
-        button.scale = Vector2(control_scale, control_scale)
+        button.scale = Vector2.ONE * scale_of(control_name)
         _clamp_button(button)
 
 func _apply_nintendo_styles() -> void:
@@ -586,6 +661,7 @@ func _save_layout() -> void:
     cfg.set_value("settings", "auto_hide_controller", auto_hide_controller)
     cfg.set_value("settings", "opacity", control_opacity)
     cfg.set_value("settings", "scale", control_scale)
+    cfg.set_value("settings", "factors", control_factors)
     cfg.set_value("settings", "theme_mode", theme_mode)
     for control_name in ACTIONS:
         cfg.set_value(
@@ -595,7 +671,7 @@ func _save_layout() -> void:
     cfg.save(SAVE_PATH)
 
 func _canonical_position(button: Control) -> Vector2:
-    var extent := button.size * control_scale
+    var extent := button.size * scale_of(String(button.name))
     var fraction := (button.position - usable_rect.position) / (usable_rect.size - extent).max(Vector2.ONE)
     return fraction.clamp(Vector2.ZERO, Vector2.ONE) * (DESIGN_SIZE - extent).max(Vector2.ZERO)
 
@@ -610,6 +686,8 @@ func _load_layout() -> void:
     ) if saved_schema >= 3 else true
     control_opacity = clampf(float(cfg.get_value("settings", "opacity", 0.72)), 0.15, 1.0)
     control_scale = clampf(float(cfg.get_value("settings", "scale", 1.0)), 0.65, 1.40)
+    var saved_factors = cfg.get_value("settings", "factors", {})
+    control_factors = saved_factors if saved_factors is Dictionary else {}
     theme_mode = clampi(int(cfg.get_value("settings", "theme_mode", THEME_SYSTEM)), THEME_SYSTEM, THEME_DARK)
     if saved_schema >= SETTINGS_SCHEMA_VERSION:
         for control_name in ACTIONS:

@@ -36,9 +36,31 @@ func _draw() -> void:
         draw_arc(centre, radius - size.x * 0.04, 0.0, TAU, 48, Color("f0c040"), size.x * 0.08, true)
     else:
         draw_texture_rect(textures[state],Rect2(Vector2.ZERO,size),false)
-    if icon != null:
-        var icon_size := size*0.62
-        draw_texture_rect(icon,Rect2((size-icon_size)*0.5,icon_size),false)
+    _place_icon()
+
+## Pixel art on a nearest-filtered child, at a whole multiple of its own size:
+## the glyph itself filters linearly for its vector art, which blurred the sprite.
+func _place_icon() -> void:
+    var view := get_node_or_null("Icon") as TextureRect
+    if icon == null:
+        if view != null: view.hide()
+        return
+    if view == null:
+        view = TextureRect.new()
+        view.name = "Icon"
+        view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        view.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+        view.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+        view.stretch_mode = TextureRect.STRETCH_SCALE
+        add_child(view)
+    var native := icon.get_size()
+    var room := minf(size.x, size.y) * 0.66
+    var factor := maxf(1.0, floorf(room / maxf(native.x, native.y)))
+    if maxf(native.x, native.y) > room: factor = room / maxf(native.x, native.y)
+    view.texture = icon
+    view.size = native * factor
+    view.position = ((size - view.size) * 0.5).round()
+    view.show()
     if held and kind in ["LeftStick","RightStick"]:
         var knob_size := size*0.36
         var center := size*0.5+stick_vector*size*0.23
