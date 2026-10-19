@@ -682,10 +682,27 @@ func end_session(reason:String)->void:
     session.stop();Cache.online_namespace=""
     get_tree().call_deferred("reload_current_scene")
 
+## A guest's clock follows the host's without ever stepping back. It used to be
+## set to each world_clock packet as it arrived; packets come with uneven delay
+## over Wi-Fi or the internet, so the time jumped back and forth by tens of ms
+## several times a second, and water, tide and daylight twitched with it: felt
+## as stutter while walking. Now it runs on its own and is steered towards the
+## host's time, at most 20% faster or slower, and only a gap over a second is
+## closed at once.
+var _smooth_clock:=-1.0
+var _smooth_at:=0
+
 func world_time(delta:float)->float:
     if hosting:return clock_seconds
     if _clock_received==0:return main.world.world_elapsed_seconds+delta
-    return clock_seconds+minf(2.0,float(Time.get_ticks_msec()-_clock_received)/1000.0)*clock_speed
+    var now:=Time.get_ticks_msec()
+    var target:=clock_seconds+minf(2.0,float(now-_clock_received)/1000.0)*clock_speed
+    if delta<=0.0:return _smooth_clock if _smooth_clock>=0.0 else target
+    var step:=float(now-_smooth_at)/1000.0*clock_speed
+    _smooth_at=now
+    if _smooth_clock<0.0 or absf(target-_smooth_clock)>1.0:_smooth_clock=target
+    else:_smooth_clock+=step*clampf(1.0+(target-_smooth_clock)*2.0,0.8,1.2)
+    return _smooth_clock
 
 var _area_cleanup:Thread
 
