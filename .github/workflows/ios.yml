@@ -46,8 +46,8 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.scons_cache
-          key: scons-ios-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py') }}-${{ github.sha }}
-          restore-keys: scons-ios-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py') }}-
+          # The engine source is a fixed tag: one cache per build profile is enough.
+          key: scons-ios-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py') }}
 
       - name: Build stripped engine (iOS arm64)
         working-directory: godot-src
@@ -130,8 +130,8 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.scons_cache
-          key: scons-linux-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py') }}-${{ github.sha }}
-          restore-keys: scons-linux-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py') }}-
+          # The engine source is a fixed tag: one cache per build profile is enough.
+          key: scons-linux-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py') }}
 
       - name: Build stripped engine (Linux, headless only)
         working-directory: godot-src
