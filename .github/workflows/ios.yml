@@ -11,8 +11,15 @@ env:
   # Stripped engine profile shared by the iOS template and the Linux smoke test.
   ENGINE_PROFILE: ${{ github.workspace }}/.github/engine/custom.py
 
+# Releases hold the IPA: their files do not count against the Actions
+# storage quota that artifacts fill up.
+permissions:
+  contents: write
+
 jobs:
   build:
+    # Only a pack that passed the smoke test becomes a release.
+    needs: smoke
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
@@ -86,10 +93,19 @@ jobs:
           du -sh Payload/Pokewilds.app/* | sed 's/^/::notice::/'
           zip -qry -9 Pokewilds-unsigned.ipa Payload
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Pokewilds-unsigned-ipa
-          path: build/ios/Pokewilds-unsigned.ipa
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="ios-build-${{ github.run_number }}"
+          git log -1 --pretty=%B > notes.md
+          echo "" >> notes.md
+          echo "Unsigned IPA built from ${GITHUB_SHA::8}. Sign it with Feather (or similar) before installing." >> notes.md
+          gh release create "$tag" build/ios/Pokewilds-unsigned.ipa \
+            --target "$GITHUB_SHA" --title "PokeWilds iOS build ${{ github.run_number }}" --notes-file notes.md
+          # Keep the ten newest builds.
+          gh release list --limit 100 --json tagName --jq '.[].tagName' | grep '^ios-build-' | tail -n +11 \
+            | while read -r old; do gh release delete "$old" --cleanup-tag --yes; done
 
   # Same engine profile on Linux (headless), run against the iOS pack: catches a
   # class or module the game needs but the profile dropped before it hits a phone.
