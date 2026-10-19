@@ -2,9 +2,9 @@
 # plus target=template_release on the command line (a profile cannot set target).
 # PokeWilds is 2D-only on the GL Compatibility renderer; everything else goes.
 # The game is ~64k lines of GDScript: its CPU time is the interpreter, which
-# -Oz (size_extra) slows down. -O2 costs a few MB of binary and saves CPU,
-# that is battery.
-optimize = "speed_trade"
+# -Oz (size_extra) slows down. "speed" (what the official templates use)
+# costs some MB of binary and saves CPU, that is battery.
+optimize = "speed"
 debug_symbols = "no"
 
 disable_3d = "yes"
