@@ -343,14 +343,15 @@ func refresh() -> void:
             continue
         if key in ["controls","back","swipe_menu"]:continue
         if key=="touch_size":
-            label(row,"%d%%" % roundi(main.touch_controls.control_scale*100.0),Vector2(132,0),Vector2(142,14),8)
+            stepper(row,"%d%%" % roundi(main.touch_controls.control_scale*100.0))
             continue
         if key in ["music","sound","world_sound","cries","footsteps"]:
             var bar:=ColorRect.new();bar.position=Vector2(138,6);bar.size=Vector2(98,1);bar.color=Color.BLACK;row.add_child(bar)
             var knob:=ColorRect.new();knob.position=Vector2(138+float(Settings.values[key])*0.98,3);knob.size=Vector2(2,7);knob.color=Color8(192,40,40);row.add_child(knob)
             label(row,str(Settings.values[key]),Vector2(246,0),Vector2(36,14),8)
         elif key=="frame":
-            label(row,"TYPE %d" % (int(Settings.values.frame)+1),Vector2(132,0),Vector2(142,14),7)
+            if TouchUI.touch_runtime(): stepper(row,"TYPE %d" % (int(Settings.values.frame)+1))
+            else: label(row,"TYPE %d" % (int(Settings.values.frame)+1),Vector2(132,0),Vector2(142,14),7)
         elif key=="game_speed":
             for c in range(Settings.GAME_SPEEDS.size()):
                 var choice:=label(row,["1x","1.5x","2x","3x","4x"][c],Vector2(132+c*30,0),Vector2(30,14),7)
@@ -415,7 +416,8 @@ func joy_button_name(button: int) -> String:
 
 ## Touch: an ON/OFF switch instead of two words.
 func toggle(row: Control, on: bool) -> void:
-    label(row,"ON" if on else "OFF",Vector2(204,0),Vector2(28,14),7).horizontal_alignment=HORIZONTAL_ALIGNMENT_RIGHT
+    # Lowered to sit on the switch's centre line (the bitmap font rides high).
+    label(row,"ON" if on else "OFF",Vector2(204,3),Vector2(28,14),7).horizontal_alignment=HORIZONTAL_ALIGNMENT_RIGHT
     var pill:=Panel.new();pill.position=Vector2(236,1);pill.size=Vector2(30,12);pill.mouse_filter=Control.MOUSE_FILTER_IGNORE
     var style:=StyleBoxFlat.new();style.bg_color=Color8(88,192,72) if on else Color8(160,160,168)
     style.border_color=Color.BLACK;style.set_border_width_all(1);style.set_corner_radius_all(6);style.anti_aliasing=false
@@ -442,8 +444,8 @@ func touch_tap(row_index: int, point: Vector2) -> void:
         touch_set(key,clampi(int((x-132.0)/52.0),0,2));return
     if key=="button_layout" and x>=132.0:
         touch_set(key,clampi(int((x-132.0)/78.0),0,1));return
-    if key in ["frame","touch_size"] and x>=132.0:
-        main.touch_ui.press("move_left" if x<200.0 else "move_right");return
+    if key in ["frame","touch_size"] and x>=128.0:
+        main.touch_ui.press("move_left" if x<STEPPER_SPLIT else "move_right");return
     main.touch_ui.press("confirm")
 
 func touch_set(key: String, value: Variant) -> void:
@@ -451,3 +453,19 @@ func touch_set(key: String, value: Variant) -> void:
     main._apply_game_options()
     refresh()
     if saved!=OK:description.text="Could not save options. Check device storage."
+
+## Touch: value between two arrow buttons (left half steps down, right half up).
+const STEPPER_SPLIT := 176.0
+func stepper(row: Control, value_text: String) -> void:
+    arrow_button(row,Vector2(132,0),true)
+    var value:=label(row,value_text,Vector2(152,0),Vector2(48,14),8)
+    value.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER
+    value.position.y=2
+    arrow_button(row,Vector2(204,0),false)
+
+func arrow_button(row: Control, at: Vector2, pointing_left: bool) -> void:
+    var button:=Panel.new();button.position=at;button.size=Vector2(18,14);button.mouse_filter=Control.MOUSE_FILTER_IGNORE
+    button.add_theme_stylebox_override("panel",TouchUI.button_style(false));row.add_child(button)
+    var arrow:TextureRect=main._source_texture_rect(button,"Arrow",Vector2(6.5,3.5),Vector2(5,7),main.source_command_cursor.texture)
+    arrow.stretch_mode=TextureRect.STRETCH_SCALE
+    arrow.flip_h=pointing_left

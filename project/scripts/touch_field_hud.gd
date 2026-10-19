@@ -60,6 +60,8 @@ func buttons() -> Array:
     if move.is_empty(): return []
     var bounds: Rect2 = main.touch_controls.usable_rect
     var top := bounds.position.y + 4
+    # Keep clear of the BUILD boxes when the game shows them.
+    if main.build_panel.visible: top = main.build_panel.get_global_rect().end.y + 3
     var centre := bounds.get_center().x
     var result := [["STOP " + move, func(): ui.press("cancel"), Rect2(Vector2(centre - 40, top), Vector2(80, 20))]]
     var value := ""

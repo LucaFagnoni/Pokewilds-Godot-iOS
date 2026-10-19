@@ -41,9 +41,10 @@ static func grown(control: Control, by: Vector2 = Vector2(8, 6)) -> Rect2:
 
 func build() -> Dictionary:
     var m := main
+    # Loading (also before the first world starts): nothing to press, so the pad steps aside.
+    if m.generating: return {"tap_at": func(_p): pass}
     if not m.started:
         return setup_screen.surface() if is_instance_valid(setup_screen) else {}
-    if m.generating: return {}
     if not m.game_menu_open: map_from_minimap = false
     if m.touch_controls.edit_mode:
         var bounds: Rect2 = m.touch_controls.usable_rect
@@ -340,6 +341,8 @@ func refresh_visuals(delta: float = 0.0) -> void:
     _refresh_backdrop()
     _refresh_move_cards()
     _refresh_bag_tabs()
+    # Controller hints that touch replaces.
+    (m.build_panel.get_node("Hint") as Control).visible = false
     var top_level: bool = m.started and m.game_menu_open and m.game_menu.visible \
         and m.game_menu_box.visible and not m.game_menu_detail_open and not m.save_confirm_open \
         and not m.guide_menu_open and not m.pokemon_menu_open and not m.item_pocket_menu.visible \
@@ -791,17 +794,16 @@ func _crafting() -> Dictionary:
 ## BUILD keeps the pad: the player walks to place the preview, A builds.
 func _build_menu() -> Dictionary:
     var m := main
-    var recipes: Array = CraftingData.build_recipes()
-    var name := String((recipes[m.build_menu_index] as Dictionary).get("display_name", "")).to_upper() if not recipes.is_empty() else ""
-    var bounds: Rect2 = m.touch_controls.usable_rect
-    var top := bounds.position.y + 4
-    var centre := bounds.get_center().x
+    # The game's own boxes (recipe name left, materials right) stay on top;
+    # the touch row sits just under them.
+    var name_box: Rect2 = m.build_panel.get_global_rect()
+    var need_box: Rect2 = (m.build_panel.get_node("NeedPanel") as Control).get_global_rect()
+    var y := name_box.end.y + 3
     return {
         "modal": false,
         "buttons": [
-            ["<", func(): press("shoulder_left"), Rect2(Vector2(centre - 98, top), Vector2(22, 20))],
-            [name, func(): press("shoulder_right"), Rect2(Vector2(centre - 72, top), Vector2(92, 20))],
-            [">", func(): press("shoulder_right"), Rect2(Vector2(centre + 24, top), Vector2(22, 20))],
-            ["DONE", func(): press("cancel"), Rect2(Vector2(centre + 52, top), Vector2(46, 20))],
+            ["<", func(): press("shoulder_left"), Rect2(Vector2(name_box.position.x + 4, y), Vector2(26, 20))],
+            [">", func(): press("shoulder_right"), Rect2(Vector2(name_box.position.x + 34, y), Vector2(26, 20))],
+            ["DONE", func(): press("cancel"), Rect2(Vector2(need_box.end.x - 54, y), Vector2(52, 20))],
         ],
     }

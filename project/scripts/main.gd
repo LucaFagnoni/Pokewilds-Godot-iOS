@@ -3094,7 +3094,9 @@ func _process(delta: float) -> void:
         _warm_map_cache()
 
     _poll_android_back_bridge()
-    touch_controls.set_shoulders_visible(not started or field_move_wheel_open or _field_ui_blocks_gameplay())
+    # On touch, menus have their own controls: the bumpers only page the wheels.
+    var touch_menus: bool = is_instance_valid(touch_ui) and touch_ui.enabled
+    touch_controls.set_shoulders_visible(field_move_wheel_open or (not touch_menus and (not started or _field_ui_blocks_gameplay())))
     if is_instance_valid(edge_sky):
         var flying_overworld: bool = world.active_field_move in ["FLY", "SURF"] and world.active_area_id == "OVERWORLD"
         if edge_sky.visible and not flying_overworld:

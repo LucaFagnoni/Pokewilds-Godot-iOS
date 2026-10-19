@@ -42,5 +42,7 @@ func refresh() -> void:
                 if background.size.x < 319.0 or background.size.y < 179.0: continue
                 background.set_meta("wide_background", true)
                 background.set_anchors_preset(Control.PRESET_TOP_LEFT, true)
-            background.position = -control.position
-            background.size = extent
+            # Bleed past the edges: centring 320 px on a wider screen lands on
+            # fractional pixels, which left a sliver of the world showing.
+            background.position = -control.position - Vector2(2, 2)
+            background.size = extent + Vector2(4, 4)
