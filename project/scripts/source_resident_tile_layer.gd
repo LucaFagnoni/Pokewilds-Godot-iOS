@@ -58,8 +58,8 @@ func queue_tide_refresh(cells: Array):
     for cell in cells:
         var key = cell*tile_size if source_keys_are_pixels else cell
         if source_tiles.has(key):
-            var tile = source_tiles[key]
-            resident_fingerprints.fp_put(key, (hash([tile.get_instance_id(), tile.resident_revision]) if tile is SourceTile else hash(tile)))
+            var tile = source_tiles.tile(key)
+            resident_fingerprints.fp_put(key, _fingerprint(key))
             if _is_beach_high_tide(tile): frame_tidal_cells[cell] = true
             else: frame_tidal_cells.erase(cell)
         for y in range(-1 if draw_upper else 0,2 if draw_upper else 1):
@@ -181,11 +181,14 @@ func build_resident_async():
     resident_build_count += 1
     var batch := {}
     var deadline := Time.get_ticks_usec() + 13000
-    for key in source_tiles:
-        var tile = source_tiles[key]
+    var store: WorldTileStore = source_tiles
+    var tidal := {}
+    for index in store.with_name_containing("_tidalwater"): tidal[index] = true
+    for index in store.indices():
+        var key := store.key_of(index)
         var cell = Vector2i(key / tile_size) if source_keys_are_pixels else key
-        resident_fingerprints.fp_put(key, (hash([tile.get_instance_id(), tile.resident_revision]) if tile is SourceTile else hash(tile)))
-        if _is_beach_high_tide(tile): frame_tidal_cells[cell] = true
+        resident_fingerprints.fp_put(key, store.revision_at(index))
+        if tidal.has(index) and _is_beach_high_tide(store.cursor(index)): frame_tidal_cells[cell] = true
         batch[cell] = true
         if batch.size() >= 64 or Time.get_ticks_usec() >= deadline:
             _redraw_cells(batch, false)
@@ -216,8 +219,8 @@ func _prepare_tide_sources():
                     _install(-1,Vector2i.ZERO,{"texture":quad.texture,"region":quad.source,"offset":quad.offset},tint,["shore",shore,quadrant])
     else:
         var prepared = {}
-        for tile in source_tiles.values():
-            var name = str(_field(tile,"name",""))
+        for index in (source_tiles as WorldTileStore).with_name_containing("_tidal"):
+            var name = (source_tiles as WorldTileStore).name_at(index)
             if not "_tidal" in name: continue
             for next_name in [name.replace("_tidalwater","_tidaloff"),name.replace("_tidaloff","_tidalwater")]:
                 if prepared.has(next_name): continue
@@ -362,8 +365,7 @@ func refresh_now(changed_hint: Array = []):
             current.fp_erase(key)
             changed[Vector2i(key / tile_size) if source_keys_are_pixels else key] = true
             continue
-        var tile = source_tiles[key]
-        var fingerprint = (hash([tile.get_instance_id(), tile.resident_revision]) if tile is SourceTile else hash(tile))
+        var fingerprint := _fingerprint(key)
         if resident_fingerprints.fp_get(key) != CellFingerprints.normalized(fingerprint):
             changed[Vector2i(key / tile_size) if source_keys_are_pixels else key] = true
         current.fp_put(key, fingerprint)
@@ -383,7 +385,7 @@ func refresh_now(changed_hint: Array = []):
                 for x in range(-1,2): affected[cell+Vector2i(x,y)] = true
     for cell in changed:
         var key = cell * tile_size if source_keys_are_pixels else cell
-        if source_tiles.has(key) and _is_beach_high_tide(source_tiles[key]): frame_tidal_cells[cell] = true
+        if source_tiles.has(key) and _is_beach_high_tide(source_tiles.tile(key)): frame_tidal_cells[cell] = true
         else: frame_tidal_cells.erase(cell)
     _redraw_cells(affected)
 
@@ -392,23 +394,34 @@ func _redraw_cells(affected: Dictionary, erase_absent: bool = true):
     if erase_absent:
         for index in range(12): desired.append({})
     drawing_tidal_shores = true
+    var store: WorldTileStore = source_tiles
+    # Read straight from the store's arrays for the common cases (these
+    # copies share memory; nothing is written to the store in this loop).
+    var cell_flags := store.flags
+    var cell_names := store.name_ids
+    var cell_uppers := store.upper_ids
+    var cell_oceans := store.shore_ocean_ids
     for cell in affected:
         var key = cell * tile_size if source_keys_are_pixels else cell
-        if not source_tiles.has(key):
+        var index: int = store.index_of(key)
+        if index < 0:
             if gpu_cells != null: _set_gpu_cell(cell, 0)
             continue
-        var tile = source_tiles[key]
-        # Two thirds of the map is open sea: settle those cells first.
-        if tile is SourceTile and tile.name_upper.is_empty():
+        # Two thirds of the map is open sea: settle those cells by ids alone.
+        if cell_uppers[index] == 0:
+            var color_slot := 1 if cell_flags[index] & WorldTileStore.COLOR else 0
             if draw_upper:
-                if tile.is_water and tile.shore_ocean.is_empty() and _upper_spec_is_empty(tile): continue
+                if cell_flags[index] & WorldTileStore.WATER and cell_oceans[index] == 0                         and _upper_spec_is_empty(cell_names[index], color_slot): continue
             elif gpu_cells != null:
-                var fast: int = gpu_fast[1 if tile.color else 0].get(tile.name, 0)
+                var fast: int = gpu_fast[color_slot].get(cell_names[index], 0)
                 if fast > 0:
                     _set_gpu_cell(cell, fast)
                     continue
+        # The fields drawing reads, as a small Dictionary (every helper here
+        # takes one): loading a SourceTile proxy per cell cost ~17 us.
+        var tile := _tile_view(store, index)
         if draw_upper:
-            var shores = [tile.shore_ocean if tile is SourceTile else str(_field(tile, "shore_ocean", "")), _active_beach_tidal_shore(cell, tile)]
+            var shores = [String(tile.shore_ocean), _active_beach_tidal_shore(cell, tile)]
             for kind in range(2):
                 if shores[kind].is_empty(): continue
                 var quads = _world_data().shoreline_quads(shores[kind], shore_animation_frame)
@@ -418,7 +431,7 @@ func _redraw_cells(affected: Dictionary, erase_absent: bool = true):
                     _install(layer_index, cell, {"texture":quad["texture"], "region":quad["source"], "offset":quad["offset"]}, Color.WHITE if kind == 0 else Color(1,1,1,0.5), ["shore",shores[kind],quadrant])
                     if erase_absent: desired[layer_index][cell] = true
         var spec = _cached_render_spec(tile)
-        var identity = ((tile.name_upper if draw_upper else tile.name) if tile is SourceTile else str(_field(tile, "name_upper" if draw_upper else "name", ""))).to_lower()
+        var identity = String(tile.name_upper if draw_upper else tile.name).to_lower()
         if gpu_cells != null:
             var gpu_id := _gpu_id(tile, spec, identity)
             _set_gpu_cell(cell, gpu_id)
@@ -429,7 +442,7 @@ func _redraw_cells(affected: Dictionary, erase_absent: bool = true):
         if not spec.is_empty():
             var animation = []
             if identity.begins_with("water") or identity.begins_with("lava") or identity.begins_with("flower") or identity in ["campfire1", "torch1"]:
-                animation = ["tile", tile, 0]
+                animation = ["tile", {"base": tile.name, "upper": tile.name_upper, "color": tile.color}, 0]  # a name key: views are not kept
             _install(8, cell, spec, Color.WHITE, animation)
             if erase_absent: desired[8][cell] = true
             if not draw_upper and _is_beach_high_tide(tile):
@@ -482,19 +495,28 @@ func _prepare_dig_sources() -> void:
             _install(-1,Vector2i.ZERO,spec)
             _install(-1,Vector2i.ZERO,_reward_composite(spec))
 
+func _lookup_tile(key):
+    var index: int = source_tiles.index_of(key)
+    return null if index < 0 else _tile_view(source_tiles, index)
+
+func _tile_view(store: WorldTileStore, index: int) -> Dictionary:
+    var bits: int = store.flags[index]
+    var name := store.name_at(index)
+    var upper := store.upper_at(index)
+    # Both key pairs: SourceWorldData.render_spec reads base/upper.
+    return {"name": name, "name_upper": upper, "base": name, "upper": upper, "color": bits & WorldTileStore.COLOR != 0,
+        "shore_ocean": store.shore_ocean_at(index), "is_water": bits & WorldTileStore.WATER != 0,
+        "biome": store.biome_at(index), "route_belongs_to": store.route_at(index), "has_item": store.has_item_at(index)}
+
 ## The map's cells, as a rectangle (the overworld fills its rectangle).
 func _source_bounds() -> Rect2i:
-    var first := true
-    var bounds := Rect2i()
-    for key in source_tiles:
-        var cell: Vector2i = Vector2i(key / tile_size) if source_keys_are_pixels else key
-        if first:
-            bounds = Rect2i(cell, Vector2i.ONE)
-            first = false
-        else:
-            bounds = bounds.expand(cell)
-    if not first: bounds.size += Vector2i.ONE
-    return bounds
+    var store := source_tiles as WorldTileStore
+    return Rect2i(store.origin, Vector2i(store.width, store.height))
+
+## A cell's revision in the store: it changes whenever the cell does.
+func _fingerprint(key: Vector2i) -> int:
+    var index: int = source_tiles.index_of(key)
+    return -1 if index < 0 else source_tiles.revision_at(index)
 
 func _prepare_gpu() -> void:
     if source_tiles.is_empty(): return
@@ -549,7 +571,7 @@ func _gpu_id(tile, spec: Dictionary, identity: String) -> int:
         gpu_rows.append(row)
         gpu_ids[key] = id
         _write_gpu_row(id)
-    if upper.is_empty(): gpu_fast[1 if color else 0][name] = id
+    if upper.is_empty(): gpu_fast[1 if color else 0][(source_tiles as WorldTileStore).sid(name)] = id
     return id
 
 ## Puts every frame of an animated ground kind on the sheet up front, so the
@@ -630,7 +652,9 @@ func _reset_gpu() -> void:
 
 ## Whether a tile with no upper name draws nothing on the upper layer. Such
 ## specs never animate, so the answer per name and color is fixed.
-func _upper_spec_is_empty(tile: SourceTile) -> bool:
-    var key := "%s|%s" % [tile.name, tile.color]
-    if not upper_spec_empty.has(key): upper_spec_empty[key] = _cached_render_spec(tile).is_empty()
+func _upper_spec_is_empty(name_id: int, color_slot: int) -> bool:
+    var key := name_id * 2 + color_slot
+    if not upper_spec_empty.has(key):
+        var name: String = (source_tiles as WorldTileStore).strings[name_id]
+        upper_spec_empty[key] = _cached_render_spec({"base": name, "upper": "", "color": color_slot == 1}).is_empty()
     return upper_spec_empty[key]

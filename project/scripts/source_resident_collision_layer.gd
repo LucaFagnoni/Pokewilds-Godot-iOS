@@ -15,12 +15,14 @@ var foot_open: Dictionary = {}
 const AROUND: Array[Vector2i] = [Vector2i(-1,-1), Vector2i(0,-1), Vector2i(1,-1), Vector2i(-1,0),
     Vector2i(1,0), Vector2i(-1,1), Vector2i(0,1), Vector2i(1,1)]
 
-func configure(tiles: Dictionary, player_node: Node2D, source_tile_size: int = 16, pixel_keys: bool = false, deferred_build: bool = false) -> void:
+func configure(tiles, player_node: Node2D, source_tile_size: int = 16, pixel_keys: bool = false, deferred_build: bool = false) -> void:
     source_tiles = tiles
     tracked_player = player_node
     tile_size = source_tile_size
     source_keys_are_pixels = pixel_keys
     foot_open = {}
+    _upper_solid_ids = {}
+    _base_solid_ids = {}
     var tileset := TileSet.new()
     tileset.tile_size = Vector2i(tile_size,tile_size)
     tileset.add_physics_layer()
@@ -115,13 +117,20 @@ func _update_cell(cell: Vector2i, bulk: bool = false) -> bool:
             normal_solid = savanna == 1
             surf_solid = normal_solid
         else:
-            var raw_tile: Variant = source_tiles.get(cell * tile_size if source_keys_are_pixels else cell)
-            var original_mode := allow_water
-            allow_water = false
-            normal_solid = _tile_is_solid(raw_tile)
-            allow_water = true
-            surf_solid = _tile_is_solid(raw_tile)
-            allow_water = original_mode
+            # _tile_is_solid for both modes, read from the store's arrays.
+            var store: WorldTileStore = source_tiles
+            var raw_index: int = store.index_of(cell * tile_size if source_keys_are_pixels else cell)
+            if raw_index < 0:
+                normal_solid = true
+                surf_solid = true
+            else:
+                var bits: int = store.flags[raw_index]
+                var upper_id: int = store.upper_ids[raw_index]
+                var ledge := bits & WorldTileStore.LEDGE != 0
+                var open_grass := bits & WorldTileStore.GRASS != 0 and not ledge and not _upper_solid(store, upper_id)
+                var open_plain := upper_id == 0 and not ledge and not _base_solid(store, store.name_ids[raw_index])
+                normal_solid = not open_grass and not open_plain and bits & WorldTileStore.SOLID != 0
+                surf_solid = normal_solid and bits & WorldTileStore.WATER == 0
     var was_open := foot_open.has(cell)
     if normal_solid: foot_open.erase(cell)
     else: foot_open[cell] = true
@@ -136,6 +145,30 @@ func _update_cell(cell: Vector2i, bulk: bool = false) -> bool:
             var next := cell + offset
             if _is_water_cell(next): _place(1, next, _touches_open(next))
     return water
+
+var _cursor: SourceTile
+var _upper_solid_ids := {}
+var _base_solid_ids := {}
+
+func _upper_solid(store: WorldTileStore, id: int) -> bool:
+    var known = _upper_solid_ids.get(id)
+    if known == null:
+        known = SourceWorldData.is_upper_solid(store.strings[id])
+        _upper_solid_ids[id] = known
+    return known
+
+func _base_solid(store: WorldTileStore, id: int) -> bool:
+    var known = _base_solid_ids.get(id)
+    if known == null:
+        known = SourceWorldData.is_base_solid(store.strings[id])
+        _base_solid_ids[id] = known
+    return known
+
+## This layer's own re-pointable proxy (see WorldTileStore.new_cursor).
+func _cursor_at(index: int) -> SourceTile:
+    if _cursor == null or _cursor._store != source_tiles: _cursor = source_tiles.new_cursor()
+    _cursor.repoint(index)
+    return _cursor
 
 func _touches_open(cell: Vector2i) -> bool:
     for offset in AROUND:
@@ -155,9 +188,10 @@ func _place(index: int, cell: Vector2i, wanted: bool) -> void:
     var original_mode := allow_water
     allow_water = index == 0
     var key := cell * tile_size if source_keys_are_pixels else cell
-    var crown := SourceWorldData.persim_crown_collision(source_tiles,cell,source_keys_are_pixels) and not _tile_is_solid(source_tiles.get(key))
+    var tile_index: int = source_tiles.index_of(key)
+    var tile = null if tile_index < 0 else _cursor_at(tile_index)
+    var crown := SourceWorldData.persim_crown_collision(source_tiles,cell,source_keys_are_pixels) and not _tile_is_solid(tile)
     var coord := Vector2i(1 if crown else 0,0)
-    var tile = source_tiles.get(key)
     if tile is SourceTile and tile.has_item.is_empty() and not SourceWorldData.is_base_solid(tile.name) and hole_collision_coords.has(tile.name_upper):
         coord = hole_collision_coords[tile.name_upper]
     allow_water = original_mode
@@ -185,7 +219,8 @@ func refresh_now() -> void:
     foot_open.clear()
     var boundary := {}
     var water: Array[Vector2i] = []
-    for key in source_tiles:
+    for index in (source_tiles as WorldTileStore).indices():
+        var key: Vector2i = source_tiles.key_of(index)
         var cell: Vector2i = Vector2i(key / tile_size) if source_keys_are_pixels else key
         if _update_cell(cell, true): water.append(cell)
         for direction in [Vector2i.UP,Vector2i.DOWN,Vector2i.LEFT,Vector2i.RIGHT]:
@@ -203,7 +238,8 @@ func build_initial_async() -> void:
     var boundary := {}
     var water: Array[Vector2i] = []
     var deadline := Time.get_ticks_usec() + 13000
-    for key in source_tiles:
+    for index in (source_tiles as WorldTileStore).indices():
+        var key: Vector2i = source_tiles.key_of(index)
         var cell: Vector2i = Vector2i(key / tile_size) if source_keys_are_pixels else key
         if _update_cell(cell, true): water.append(cell)
         for direction in [Vector2i.UP,Vector2i.DOWN,Vector2i.LEFT,Vector2i.RIGHT]:

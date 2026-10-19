@@ -184,7 +184,7 @@ static func import_save(path: String) -> String:
         if not (entry.get("size") is int or entry.get("size") is float): return "Invalid save length."
         var name: String = entry.name
         if names.has(name) or ".." in name or "\\" in name or ":" in name: return "Invalid or duplicate save path."
-        if name != "save.json" and (not name.begins_with("world_cache/exact_v2_") or not name.ends_with(".bin") or name.count("/") != 1): return "Unexpected file in save."
+        if name != "save.json" and (not (name.begins_with("world_cache/exact_v2_") or name.begins_with("world_cache/exact_v3_")) or not name.ends_with(".bin") or name.count("/") != 1): return "Unexpected file in save."
         if int(entry.size) <= 0 or int(entry.size) > MAX_FILE or float(entry.size) != int(entry.size): return "Invalid save length."
         total += int(entry.size); names[name] = true
     if total > MAX_TOTAL or total != input.get_length() - input.get_position() or not names.has("save.json"): return "Incomplete save file."
@@ -230,7 +230,7 @@ static func _install_staged(staging: String, names: Dictionary) -> String:
         var cached := staging.path_join(cache)
         var file := FileAccess.open_compressed(cached, FileAccess.READ, FileAccess.COMPRESSION_ZSTD)
         if file == null: return "Invalid world cache."
-        var valid: bool = file.get_32() == Cache.CACHE_MAGIC.length() and file.get_buffer(Cache.CACHE_MAGIC.length()).get_string_from_utf8() == Cache.CACHE_MAGIC and file.get_32() == Cache.CACHE_VERSION and file.get_64() == absi(required[cache][0]) and file.get_32() == required[cache][1]
+        var valid: bool = file.get_32() == Cache.CACHE_MAGIC.length() and file.get_buffer(Cache.CACHE_MAGIC.length()).get_string_from_utf8() == Cache.CACHE_MAGIC and file.get_32() in [Cache.CACHE_VERSION, Cache.PACKED_VERSION] and file.get_64() == absi(required[cache][0]) and file.get_32() == required[cache][1]
         file.close()
         if not valid: return "World cache does not match its saved world."
         if FileAccess.file_exists("user://" + cache) and FileAccess.get_sha256(cached) != FileAccess.get_sha256("user://" + cache):

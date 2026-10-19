@@ -67,7 +67,10 @@ static func choose_cell(world: Node, group: String) -> Variant:
         if is_instance_valid(sprite):
             var current := Vector2i(floori(sprite.position.x / 16.0), floori(sprite.position.y / 16.0))
             occupied[current] = true
-    for tile: SourceTile in world.exact_world.tiles.values():
+    var store: WorldTileStore = world.exact_world.tiles
+    var tile := store.new_cursor()
+    for index in store.indices():
+        tile.repoint(index)
         if not habitat(tile, group): continue
         var cell := SourceWorldData.pixel_to_cell(tile.position)
         if not available(world, cell, group, occupied): continue
@@ -96,11 +99,14 @@ static func choose_cell_async(world: Node, group: String, reserved: Dictionary =
             occupied[current] = true
     occupied.merge(reserved)
     var deadline := Time.get_ticks_usec() + 13000
-    for key in world.exact_world.tiles:
+    var store: WorldTileStore = world.exact_world.tiles
+    var tile := store.new_cursor()
+    for index in store.indices():
         if Time.get_ticks_usec() >= deadline:
             await world.get_tree().process_frame
             deadline = Time.get_ticks_usec() + 13000
-        var tile: SourceTile = world.exact_world.tiles[key]
+        if world.exact_world == null or world.exact_world.tiles != store: return null
+        tile.repoint(index)
         if not habitat(tile, group): continue
         var cell := SourceWorldData.pixel_to_cell(tile.position)
         if not available(world, cell, group, occupied): continue

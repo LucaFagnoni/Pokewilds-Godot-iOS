@@ -8,13 +8,13 @@ static func signs(world: Node) -> Dictionary:
     if world.exact_world == null: return result
     if not world.exact_world.has_meta("unown_generated_signs"):
         var generated: Array = []
-        for tile in world.exact_world.tiles.values():
-            if tile != null and String(tile.has_item).begins_with("trainer_tips"):
-                generated.append(Vector2i(tile.position / 16))
+        var store: WorldTileStore = world.exact_world.tiles
+        for index in store.with_item_where(func(item: String) -> bool: return item.begins_with("trainer_tips")):
+            generated.append(store.key_of(index) / 16)
         world.exact_world.set_meta("unown_generated_signs", generated)
     for raw_cell in world.exact_world.get_meta("unown_generated_signs"):
         var cell := Vector2i(raw_cell)
-        var tile = world.exact_world.tiles.get(cell * 16)
+        var tile = world.exact_world.tile_at(cell)
         if tile == null or not String(tile.has_item).begins_with("trainer_tips"): continue
         if world.removed_resources.has(world._cell_key(cell)) or world.built_structures.has(cell): continue
         if tile.name_upper != "sign1": continue

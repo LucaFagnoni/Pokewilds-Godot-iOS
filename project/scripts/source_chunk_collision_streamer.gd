@@ -5,7 +5,8 @@ const DEFAULT_TILE_SIZE := 16
 const COLLISION_RADIUS := Vector2i(14, 10)
 const STREAM_SHIFT_CELLS := 4
 
-var source_tiles: Dictionary = {}
+## The overworld's WorldTileStore (or a Dictionary of tiles).
+var source_tiles = {}
 var tracked_player: Node2D
 var tile_size := DEFAULT_TILE_SIZE
 var source_keys_are_pixels := false
@@ -18,7 +19,7 @@ var shared_rectangle := RectangleShape2D.new()
 var persim_crown_rectangle := RectangleShape2D.new()
 
 func configure(
-        tiles: Dictionary,
+        tiles,
         player_node: Node2D,
         source_tile_size: int = DEFAULT_TILE_SIZE,
         pixel_keys: bool = false
@@ -107,7 +108,7 @@ func _refresh_collisions(force: bool) -> void:
 func _position_collision_shape(shape: CollisionShape2D, cell: Vector2i) -> void:
     # Do not shrink another solid object underneath/alongside the crown.
     var key := cell * tile_size if source_keys_are_pixels else cell
-    var crown_only := SourceWorldData.persim_crown_collision(source_tiles, cell, source_keys_are_pixels) and not _tile_is_solid(source_tiles.get(key))
+    var crown_only := SourceWorldData.persim_crown_collision(source_tiles, cell, source_keys_are_pixels) and not _tile_is_solid(SourceWorldData.tile_in(source_tiles, key))
     var desired_shape := persim_crown_rectangle if crown_only else shared_rectangle
     var desired_position := Vector2(cell * tile_size) + Vector2(tile_size / 2.0, tile_size * (0.75 if crown_only else 0.5))
     if shape.shape != desired_shape: shape.shape = desired_shape
@@ -122,7 +123,7 @@ func _cell_needs_collision(cell: Vector2i) -> bool:
     if savanna >= 0:
         return savanna == 1
     var lookup_key := cell * tile_size if source_keys_are_pixels else cell
-    var raw_tile: Variant = source_tiles.get(lookup_key)
+    var raw_tile: Variant = SourceWorldData.tile_in(source_tiles, lookup_key)
     return _tile_is_solid(raw_tile)
 
 func _clear_active_shapes() -> void:

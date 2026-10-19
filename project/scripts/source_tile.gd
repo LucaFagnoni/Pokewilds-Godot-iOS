@@ -1,28 +1,91 @@
 class_name SourceTile
 extends RefCounted
 
+## A tile is either a plain object (generation, interiors) or a proxy for a
+## cell of the overworld's WorldTileStore. A proxy loads its fields from the
+## store when made and writes every change back (setters); the store hands
+## out one proxy per cell while it is in use, so they never disagree. Reads
+## are plain member reads either way.
 static var resident_changed_cells: Dictionary = {}
+## Passed as the name to make a bare proxy (no shared flag: world generation
+## builds tiles on another thread at the same time).
+const _BIND := "bind"
+var _store: WorldTileStore = null
+## Set while repoint() loads the store's values: no write-back, no marking.
+var _loading := false
+var _index := -1
+
 var resident_revision := 0
 
 func _mark_resident_change() -> void:
+    if _loading: return
     resident_revision += 1
+    if _store != null: _store.bump(_index)
     if OS.get_thread_caller_id() == OS.get_main_thread_id():
         resident_changed_cells[position] = true
+
+static func bound_to(store: WorldTileStore, index: int) -> SourceTile:
+    var tile := SourceTile.new(_BIND, Vector2i.ZERO)
+    tile._store = store
+    tile.repoint(index)
+    return tile
+
+## Loads cell `index` of the store into this proxy (cursors move this way).
+func repoint(index: int) -> void:
+    _index = index
+    var store := _store
+    _loading = true
+    name = store.name_at(index)
+    name_upper = store.upper_at(index)
+    position = store.key_of(index)
+    var bits: int = store.flags[index]
+    color = bits & WorldTileStore.COLOR != 0
+    is_solid = bits & WorldTileStore.SOLID != 0
+    is_ledge = bits & WorldTileStore.LEDGE != 0
+    is_water = bits & WorldTileStore.WATER != 0
+    is_grass = bits & WorldTileStore.GRASS != 0
+    is_cuttable = bits & WorldTileStore.CUTTABLE != 0
+    is_headbuttable = bits & WorldTileStore.HEADBUTTABLE != 0
+    is_tidal = bits & WorldTileStore.TIDAL != 0
+    is_lava = bits & WorldTileStore.LAVA != 0
+    is_bottom_mtn_layer = bits & WorldTileStore.BOTTOM_MTN != 0
+    route_belongs_to = store.route_at(index)
+    biome = store.biome_at(index)
+    ledge_dir = store.ledge_dir_at(index)
+    shore_ocean = store.shore_ocean_at(index)
+    shore_tidal = store.shore_tidal_at(index)
+    has_item = store.has_item_at(index)
+    has_item_amount = store.amount_at(index)
+    _items = store.items_at(index, false)
+    _door_tiles = store.doors_at(index, false)
+    resident_revision = store.revision_at(index)
+    _loading = false
+
+## Makes this a plain object keeping its current values (its cell left the
+## store).
+func _detach() -> void:
+    _store = null
+    _index = -1
 
 var name: String:
     set(value):
         if name != value:
             name = value
+            if _store != null and not _loading: _store.set_name(_index, value)
             _mark_resident_change()
 var name_upper: String:
     set(value):
         if name_upper != value:
             name_upper = value
+            if _store != null and not _loading: _store.set_upper(_index, value)
             _mark_resident_change()
+## A stored tile stays at its key.
 var position: Vector2i:
     set(value):
+        if _store != null and not _loading:
+            return
         if position != value:
-            if OS.get_thread_caller_id() == OS.get_main_thread_id():
+            if OS.get_thread_caller_id() == OS.get_main_thread_id() and not _loading:
                 resident_changed_cells[position] = true
             position = value
             _mark_resident_change()
@@ -30,71 +93,112 @@ var color: bool:
     set(value):
         if color != value:
             color = value
+            if _store != null and not _loading: _store.set_flag(_index, WorldTileStore.COLOR, value)
             _mark_resident_change()
-var route_belongs_to: SourceRoute
+var route_belongs_to: SourceRoute:
+    set(value):
+        route_belongs_to = value
+        if _store != null and not _loading: _store.set_route(_index, value)
 var biome := "":
     set(value):
         if biome != value:
             biome = value
+            if _store != null and not _loading: _store.set_biome(_index, value)
             _mark_resident_change()
 var is_solid := false:
     set(value):
         if is_solid != value:
             is_solid = value
+            if _store != null and not _loading: _store.set_flag(_index, WorldTileStore.SOLID, value)
             _mark_resident_change()
 var is_ledge := false:
     set(value):
         if is_ledge != value:
             is_ledge = value
+            if _store != null and not _loading: _store.set_flag(_index, WorldTileStore.LEDGE, value)
             _mark_resident_change()
 var is_water := false:
     set(value):
         if is_water != value:
             is_water = value
+            if _store != null and not _loading: _store.set_flag(_index, WorldTileStore.WATER, value)
             _mark_resident_change()
 var is_grass := false:
     set(value):
         if is_grass != value:
             is_grass = value
+            if _store != null and not _loading: _store.set_flag(_index, WorldTileStore.GRASS, value)
             _mark_resident_change()
-var is_cuttable := false
-var is_headbuttable := false
-var is_tidal := false
-var is_lava := false
-var ledge_dir := ""
-var is_bottom_mtn_layer := false
+var is_cuttable := false:
+    set(value):
+        is_cuttable = value
+        if _store != null and not _loading: _store.set_flag(_index, WorldTileStore.CUTTABLE, value)
+var is_headbuttable := false:
+    set(value):
+        is_headbuttable = value
+        if _store != null and not _loading: _store.set_flag(_index, WorldTileStore.HEADBUTTABLE, value)
+var is_tidal := false:
+    set(value):
+        is_tidal = value
+        if _store != null and not _loading: _store.set_flag(_index, WorldTileStore.TIDAL, value)
+var is_lava := false:
+    set(value):
+        is_lava = value
+        if _store != null and not _loading: _store.set_flag(_index, WorldTileStore.LAVA, value)
+var ledge_dir := "":
+    set(value):
+        ledge_dir = value
+        if _store != null and not _loading: _store.set_ledge_dir(_index, value)
+var is_bottom_mtn_layer := false:
+    set(value):
+        is_bottom_mtn_layer = value
+        if _store != null and not _loading: _store.set_flag(_index, WorldTileStore.BOTTOM_MTN, value)
 var shore_ocean := "":
     set(value):
         if shore_ocean != value:
             shore_ocean = value
+            if _store != null and not _loading: _store.set_shore_ocean(_index, value)
             _mark_resident_change()
 var shore_tidal := "":
     set(value):
         if shore_tidal != value:
             shore_tidal = value
+            if _store != null and not _loading: _store.set_shore_tidal(_index, value)
             _mark_resident_change()
 var has_item := "":
     set(value):
         if has_item != value:
             has_item = value
+            if _store != null and not _loading: _store.set_has_item(_index, value)
             _mark_resident_change()
-var has_item_amount := 0
+var has_item_amount := 0:
+    set(value):
+        has_item_amount = value
+        if _store != null and not _loading: _store.set_amount(_index, value)
 # Most terrain tiles never own rewards or switch targets. Allocate these
-# mutable containers only when a caller actually needs them.
+# mutable containers only when a caller actually needs them. A proxy shares
+# the store's own container, so edits made through it are stored too.
 var _items: Variant = null
 var _door_tiles: Variant = null
 var items: Variant:
     get:
-        if _items == null: _items = {}
+        if _items == null:
+            _items = {}
+            if _store != null: _store.set_items(_index, _items)
         return _items
-    set(value): _items = value
+    set(value):
+        _items = value
+        if _store != null: _store.set_items(_index, value)
 var door_tiles: Variant:
     get:
         if _door_tiles == null:
             var empty: Array[Vector2i] = []
             _door_tiles = empty
+            if _store != null: _store.set_doors(_index, _door_tiles)
         return _door_tiles
-    set(value): _door_tiles = value
+    set(value):
+        _door_tiles = value
+        if _store != null: _store.set_doors(_index, value)
 
 const EMPTY_ITEMS: Dictionary = {}
 const EMPTY_DOORS: Array[Vector2i] = []
@@ -111,6 +215,7 @@ func _init(
         route: SourceRoute = null,
         refresh_flags: bool = true
     ) -> void:
+    if tile_name == _BIND: return
     name = tile_name
     name_upper = upper_name
     position = pixel_position

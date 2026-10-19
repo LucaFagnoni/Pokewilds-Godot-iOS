@@ -173,8 +173,12 @@ func index_existing_plants() -> void:
     var adapter = world.exact_world
     var identity: int = adapter.get_instance_id()
     var started := Time.get_ticks_usec()
-    for position in adapter.tiles:
-        var tile: SourceTile = adapter.tiles[position]
+    var planted := func(upper: String) -> bool:
+        return "tree_planted" in upper or upper == "bush2_color_fertilized" or upper == "berry_planted" or upper == "grass_planted" or (upper.begins_with("berrytree_") and ("_mid" in upper or "_empty" in upper))
+    var store: WorldTileStore = adapter.tiles
+    for index in store.with_upper_where(planted):
+        var position := store.key_of(index)
+        var tile: SourceTile = store.proxy(index)
         var upper := tile.name_upper
         if "tree_planted" in upper or upper == "bush2_color_fertilized" or upper == "berry_planted" or upper == "grass_planted" or (upper.begins_with("berrytree_") and ("_mid" in upper or "_empty" in upper)):
             var cell := SourceWorldData.pixel_to_cell(position)

@@ -243,12 +243,15 @@ func seed_cacti() -> void:
     var camera: Camera2D=world.player.camera
     var half_view: Vector2=world.get_viewport_rect().size/camera.zoom*0.5
     var view:=Rect2(camera.get_screen_center_position()-half_view,half_view*2)
-    for tile: SourceTile in world.exact_world.tile_list():
+    var store: WorldTileStore = world.exact_world.tiles
+    var tile := store.new_cursor()
+    for index in store.with_name(["desert4"]):
         if Time.get_ticks_usec()-slice_started>=1000:
             if not SourceTile.resident_changed_cells.is_empty(): world._refresh_exact_tile_streams()
             await world.get_tree().process_frame
-            if generation!=seed_generation or not is_instance_valid(world): return
+            if generation!=seed_generation or not is_instance_valid(world) or world.exact_world==null or world.exact_world.tiles!=store: return
             slice_started=Time.get_ticks_usec()
+        tile.repoint(index)
         if tile.name!="desert4" or tile.name_upper!="" or world.rng.randi_range(0,511)>=2: continue
         var at:=Vector2(tile.position)
         if view.has_point(at+Vector2(0,-32)) or view.has_point(at+Vector2(16,80)) or view.has_point(at+Vector2(16,-32)) or view.has_point(at+Vector2(0,80)): continue
@@ -256,7 +259,7 @@ func seed_cacti() -> void:
         for y in range(-4,4):
             for x in range(-4,5):
                 if placed>=5: break
-                var other: SourceTile=world.exact_world.tiles.get(tile.position+Vector2i(x,y)*16)
+                var other: SourceTile=store.tile(tile.position+Vector2i(x,y)*16)
                 if other==null or other.name!="desert4" or other.name_upper!="" or other.is_solid or other.is_ledge or world.rng.randi_range(0,255)>=32: continue
                 other.set_names(other.name,"cactus2_cacturne")
                 placed+=1
@@ -266,7 +269,7 @@ func clear_dormant_cacti() -> void:
     seed_generation+=1
     var generation:=seed_generation
     var slice_started:=Time.get_ticks_usec()
-    for tile: SourceTile in world.exact_world.tile_list():
+    for tile: SourceTile in world.exact_world.tiles.with_upper(["cactus2_cacturne"]):
         if Time.get_ticks_usec()-slice_started>=1000:
             if not SourceTile.resident_changed_cells.is_empty(): world._refresh_exact_tile_streams()
             await world.get_tree().process_frame

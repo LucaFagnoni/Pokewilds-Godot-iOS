@@ -3,7 +3,9 @@ extends RefCounted
 
 const TILE_SIZE := 16
 
-var tiles: Dictionary = {}
+## A Dictionary of SourceTile objects while freshly generated tiles are
+## repaired, then (and from a v3 cache) a WorldTileStore.
+var tiles = {}
 var pokemon: Dictionary = {}
 var burrowed_pokemon: Array = []
 var edges: Array = []
@@ -21,6 +23,9 @@ var _tile_list: Array = []
 var _tile_list_size := -1  # -1 forces a rebuild (set whenever an entry is replaced)
 
 func tile_list() -> Array:
+    # Whole-map loops use tiles.indices() and tiles.cursor() instead: a list
+    # of every tile would be ~400k proxies.
+    if tiles is WorldTileStore: return tiles.values()
     if _tile_list_size != tiles.size():
         _tile_list = tiles.values()
         _tile_list_size = tiles.size()
@@ -31,6 +36,15 @@ static func from_generator_result(
         spawn_random: SourceJavaRandom
     ) -> SourceExactWorldAdapter:
     var adapter := SourceExactWorldAdapter.new()
+    if result.get("store") is WorldTileStore:
+        # A v3 cache holds the adapted world: nothing to repair or mirror.
+        adapter.tiles = result.store
+        adapter.pokemon = result.get("pokemon", {})
+        adapter.burrowed_pokemon = result.get("burrowed_pokemon", [])
+        adapter.edges = result.get("edges", [])
+        adapter.regi_relocated_cells = result.get("regi_relocated_cells", {})
+        adapter._finish(result, spawn_random)
+        return adapter
     adapter.tiles = result.get("tiles", {})
     adapter.pokemon = result.get("pokemon", {})
     adapter.repair_regi_mansion_overlap()
@@ -44,6 +58,21 @@ static func from_generator_result(
     adapter._normalize_oasis_facades_for_godot()
     adapter.repair_mansion_roof_grass()
     adapter._normalize_mansion_exterior_for_godot()
+    adapter.tiles = WorldTileStore.from_dictionary(adapter.tiles)
+    # Edges were tile objects: keep positions, so no object outlives packing.
+    # Built locally and assigned once: writing adapter.edges[i] one element at
+    # a time copied the whole array each time (minutes on a size M map).
+    var edge_positions: Array = []
+    edge_positions.resize(adapter.edges.size())
+    for index in range(adapter.edges.size()):
+        var edge: Variant = adapter.edges[index]
+        edge_positions[index] = (edge as SourceTile).position if edge is SourceTile else edge
+    adapter.edges = edge_positions
+    adapter._finish(result, spawn_random)
+    return adapter
+
+func _finish(result: Dictionary, spawn_random: SourceJavaRandom) -> void:
+    var adapter := self
     adapter.bottom_left_cell = SourceWorldData.pixel_to_cell(
         Vector2i(result.get("bottom_left", Vector2i.ZERO))
     )
@@ -55,7 +84,6 @@ static func from_generator_result(
         result.get("interiors", []), result.get("interior_pokemon", [])
     )
     adapter.spawn_cell = adapter._choose_edge_spawn(spawn_random)
-    return adapter
 
 
 func repair_regi_mansion_overlap() -> Array[Vector2i]:
@@ -140,12 +168,12 @@ func repair_mansion_roof_grass() -> Array[Vector2i]:
     # Corner positions also handle the adapter's Y-mirrored cached/save view.
     var groups: Dictionary = {}
     var repaired: Array[Vector2i] = []
-    for raw_tile in tiles.values():
+    var corner_names := ["pkmnmansion_roof_NW", "pkmnmansion_roof_NE", "pkmnmansion_roof_SW", "pkmnmansion_roof_SE"]
+    for raw_tile in (tiles.with_upper(corner_names) if tiles is WorldTileStore else tiles.values()):
         var tile := raw_tile as SourceTile
         if tile == null or tile.route_belongs_to == null:
             continue
-        if tile.name_upper not in ["pkmnmansion_roof_NW", "pkmnmansion_roof_NE",
-                "pkmnmansion_roof_SW", "pkmnmansion_roof_SE"]:
+        if tile.name_upper not in corner_names:
             continue
         var key := tile.route_belongs_to.get_instance_id()
         if not groups.has(key): groups[key] = {}
@@ -163,7 +191,7 @@ func repair_mansion_roof_grass() -> Array[Vector2i]:
         for y in range(mini(nw.position.y, sw.position.y), maxi(nw.position.y, sw.position.y) + TILE_SIZE, TILE_SIZE):
             for x in range(nw.position.x, ne.position.x + TILE_SIZE, TILE_SIZE):
                 var position := Vector2i(x, y)
-                var tile := tiles.get(position) as SourceTile
+                var tile := (tiles.tile(position) if tiles is WorldTileStore else tiles.get(position)) as SourceTile
                 if tile == null: continue
                 var grass_base := tile.name.begins_with("grass") or tile.name.begins_with("green")
                 var grass_upper := tile.name_upper.begins_with("grass")
@@ -173,7 +201,9 @@ func repair_mansion_roof_grass() -> Array[Vector2i]:
                 var suffix := "N" if y == nw.position.y else "S" if y == sw.position.y else ""
                 suffix += "W" if x == nw.position.x else "E" if x == ne.position.x else ""
                 var upper := "pkmnmansion_roof" + ("_" + suffix if not suffix.is_empty() else "")
-                tiles[position] = SourceTile.new("sand1", position, upper, true, nw.route_belongs_to)
+                var roof := SourceTile.new("sand1", position, upper, true, nw.route_belongs_to)
+                if tiles is WorldTileStore: tiles.put(position, roof)
+                else: tiles[position] = roof
                 _tile_list_size = -1 # entry replaced: tile_list() must rebuild
                 repaired.append(SourceWorldData.pixel_to_cell(position))
     return repaired
@@ -274,6 +304,7 @@ func _normalize_mansion_exterior_for_godot() -> void:
             edges[index] = position_map[edge]
 
 func tile_at(cell: Vector2i) -> SourceTile:
+    if tiles is WorldTileStore: return tiles.tile(cell * TILE_SIZE)
     return tiles.get(cell * TILE_SIZE) as SourceTile
 
 func contains_cell(cell: Vector2i) -> bool:

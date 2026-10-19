@@ -984,25 +984,45 @@ static func interior_render_spec(tile: SourceTile, upper: bool) -> Dictionary:
 # The 48x48 savanna sprite extends down from its stored anchor. Its trunk is
 # the middle cell of the bottom row, not the canopy cell at the anchor.
 # Return -1 for cells whose existing collision rules should be used unchanged.
-static func savanna_trunk_collision(tiles: Dictionary, cell: Vector2i, pixel_keys: bool = true) -> int:
+## The tile at a key in either the overworld's WorldTileStore or a Dictionary.
+static func tile_in(tiles, key: Vector2i) -> SourceTile:
+    if tiles is WorldTileStore: return (tiles as WorldTileStore).tile(key)
+    return (tiles as Dictionary).get(key) as SourceTile
+
+static func savanna_trunk_collision(tiles, cell: Vector2i, pixel_keys: bool = true) -> int:
     var scale := 16 if pixel_keys else 1
-    var trunk_anchor := tiles.get((cell + Vector2i(0, -2)) * scale) as SourceTile
+    if tiles is WorldTileStore:
+        # Hot (every cell of the collision build): read the arrays, no proxy.
+        var store := tiles as WorldTileStore
+        var savanna_id: int = store.string_ids.get("tree_savanna1", -1)
+        if savanna_id < 0: return -1
+        var anchor_index := store.index_of((cell + Vector2i(0, -2)) * scale)
+        if anchor_index >= 0 and store.upper_ids[anchor_index] == savanna_id: return 1
+        var own_index := store.index_of(cell * scale)
+        if own_index >= 0 and store.upper_ids[own_index] == savanna_id:
+            return 1 if is_base_solid(store.name_at(own_index)) else 0
+        return -1
+    var trunk_anchor := tile_in(tiles, (cell + Vector2i(0, -2)) * scale)
     if trunk_anchor != null and trunk_anchor.name_upper == "tree_savanna1":
         return 1
-    var tile := tiles.get(cell * scale) as SourceTile
+    var tile := tile_in(tiles, cell * scale)
     if tile != null and tile.name_upper == "tree_savanna1":
         return 1 if is_base_solid(tile.name) else 0
     return -1
 
 # Like the big savanna tree, every berry tree has one solid trunk tile.
 # Its canopy draws in front of grounded actors behind the trunk.
-static func berry_tree_collision(tiles: Dictionary, cell: Vector2i, pixel_keys: bool = true) -> bool:
+static func berry_tree_collision(tiles, cell: Vector2i, pixel_keys: bool = true) -> bool:
     if persim_crown_collision(tiles, cell, pixel_keys):
         return true
     var scale := 16 if pixel_keys else 1
-    var tile := tiles.get(cell * scale) as SourceTile
+    if tiles is WorldTileStore:
+        var store := tiles as WorldTileStore
+        var index := store.index_of(cell * scale)
+        return index >= 0 and store.upper_ids[index] != 0 and store.upper_at(index).to_lower().begins_with("berrytree_")
+    var tile := tile_in(tiles, cell * scale)
     return tile != null and not tile.name_upper.is_empty() and tile.name_upper.to_lower().begins_with("berrytree_")
 
 # Retain the shared collision interface without a special Persim footprint.
-static func persim_crown_collision(tiles: Dictionary, cell: Vector2i, pixel_keys: bool = true) -> bool:
+static func persim_crown_collision(tiles, cell: Vector2i, pixel_keys: bool = true) -> bool:
     return false

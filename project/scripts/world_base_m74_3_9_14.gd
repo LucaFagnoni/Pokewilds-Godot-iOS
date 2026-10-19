@@ -840,20 +840,8 @@ func _prepare_exact_world(seed_value: int, size_index: int, prefer_saved_cache: 
             await get_tree().create_timer(0.10).timeout
         exact_result = generation_thread.wait_to_finish()
         if exact_result.has("generation_error"): return exact_result
-        if not exact_result.is_empty():
-            generation_progress.emit(0.89, "Preparing fast saved-game loading...")
-            await get_tree().process_frame
-            # Serialization/compression is data-only. Keep the window and
-            # Android event loop responsive throughout the first cache write.
-            var cache_writer := Thread.new()
-            var cache_error := cache_writer.start(
-                SourceWorldCache.save_result.bind(seed_value, size_index, exact_result))
-            if cache_error == OK:
-                while cache_writer.is_alive():
-                    await get_tree().process_frame
-                cache_writer.wait_to_finish()
-            else:
-                push_warning("Saved-world cache worker unavailable; cache was not written.")
+        # Cached once adapted and packed (_generate_exact_live_world).
+        if not exact_result.is_empty(): exact_result["_write_packed_cache"] = true
     if exact_result.is_empty():
         return {"generation_error":"World generation returned no data. Please try again."}
     return exact_result
@@ -875,12 +863,20 @@ func _generate_exact_live_world(
         exact_world = adapter_job.wait_to_finish()
     else:
         exact_world = adapter_work.call()
+    if bool(exact_result.get("_write_packed_cache", false)):
+        generation_progress.emit(0.89, "Preparing fast saved-game loading...")
+        # Serialization/compression is data-only: keep the window responsive.
+        var cache_writer := Thread.new()
+        if cache_writer.start(SourceWorldCache.save_world.bind(seed_value, size_index, exact_world, exact_result)) == OK:
+            while cache_writer.is_alive(): await get_tree().process_frame
+            cache_writer.wait_to_finish()
+        else:
+            push_warning("Saved-world cache worker unavailable; cache was not written.")
     _repair_orphaned_large_trees()
     exact_world_bounds = exact_world.bounds()
     map_w = exact_world_bounds.size.x
     map_h = exact_world_bounds.size.y
     spawn_cell = exact_world.spawn_cell
-    source_tiles = exact_world.tiles
     generated_source_interior_plans = exact_world.interior_plans
 
     # Put the tracked player at the source-selected spawn before configuring
@@ -894,13 +890,13 @@ func _generate_exact_live_world(
     base_stream.name = "ExactBaseTileStream"
     base_stream.z_index = -20
     ground_layer.add_child(base_stream)
-    base_stream.configure(source_tiles, player, false, TILE, true, true)
+    base_stream.configure(exact_world.tiles, player, false, TILE, true, true)
     await base_stream.build_resident_async()
     var upper_stream = SOURCE_CHUNK_TILE_LAYER_SCRIPT.new()
     upper_stream.name = "ExactUpperTileStream"
     upper_stream.z_index = 2
     decor_layer.add_child(upper_stream)
-    upper_stream.configure(source_tiles, player, true, TILE, true, true)
+    upper_stream.configure(exact_world.tiles, player, true, TILE, true, true)
     await upper_stream.build_resident_async()
     _setup_normal_grass_front_overlay()
     _setup_savanna_tree_front_overlay()
@@ -921,7 +917,7 @@ func _generate_exact_live_world(
     var collision_stream := SourceChunkCollisionStreamer.new()
     collision_stream.name = "ExactCollisionStream"
     add_child(collision_stream)
-    collision_stream.configure(source_tiles, player, TILE, true, true)
+    collision_stream.configure(exact_world.tiles, player, TILE, true, true)
     await collision_stream.build_initial_async()
     SourceTile.resident_changed_cells.clear()
     await _build_source_interiors(collision_body)
@@ -973,10 +969,15 @@ func _register_exact_exterior_interactables() -> void:
                 interior_interactables[source_cell] = "GOTO_SOURCE_LAYER:%d:%d:%d" % [
                     layer_index, source_cell.x, source_cell.y
                 ]
-    for raw_tile in source_tiles.values():
-        var tile := raw_tile as SourceTile
-        if tile == null:
+    var store: WorldTileStore = exact_world.tiles
+    var item_ids := store.has_item_ids
+    var upper_ids := store.upper_ids
+    var door_ids := {store.string_ids.get("cave1_door1", -1): true, store.string_ids.get("pkmnmansion_ext_door", -1): true}
+    for index in store.flags.size():
+        if not (item_ids[index] != 0 or upper_ids[index] != 0 or door_ids.has(store.name_ids[index])) \
+                or not store.flag(index, WorldTileStore.PRESENT):
             continue
+        var tile := store.cursor(index)
         var cell := SourceWorldData.pixel_to_cell(tile.position)
         if tile.has_item.begins_with("trainer_tips"):
             unown_generated_signs.append(cell)
@@ -4406,13 +4407,11 @@ func _exact_tile_is_large_tree(cell: Vector2i) -> bool:
 func _repair_orphaned_large_trees() -> void:
     if exact_world == null:
         return
-    for raw_tile in exact_world.tile_list():
-        var tile := raw_tile as SourceTile
-        if tile == null or tile.name != "tree_large1_noSprite":
-            continue
+    for index in exact_world.tiles.with_name(["tree_large1_noSprite"]):
+        var tile: SourceTile = exact_world.tiles.proxy(index)
         var rooted := false
         for offset in [Vector2i(-16, 0), Vector2i(0, -16), Vector2i(-16, -16)]:
-            var anchor := exact_world.tiles.get(tile.position + offset) as SourceTile
+            var anchor: SourceTile = exact_world.tiles.tile(tile.position + offset)
             if anchor != null and anchor.name == "tree_large1":
                 rooted = true
                 break
@@ -9704,15 +9703,21 @@ func _refresh_biome_dig_sites(spread: bool = false) -> void:
     var candidates: Dictionary = {}
     for crack_name in FieldMoveData.CRACKED_LOOT:
         candidates[crack_name] = []
-    for raw_tile in exact_world.tile_list():
+    var store: WorldTileStore = exact_world.tiles
+    var cell_flags := store.flags
+    var cell_uppers := store.upper_ids
+    var ruled_out := WorldTileStore.WATER | WorldTileStore.LAVA | WorldTileStore.SOLID | WorldTileStore.LEDGE | WorldTileStore.GRASS
+    for index in cell_flags.size():
         if spread and Time.get_ticks_usec()-slice_started>=_daily_slice_usec():
             await get_tree().process_frame
             if exact_world!=identity or _world_day_index()!=day: return
             slice_started=Time.get_ticks_usec()
-        var tile := raw_tile as SourceTile
-        if tile == null or tile.is_water or tile.is_lava or tile.is_solid or \
-                tile.is_ledge or tile.is_grass or not tile.name_upper.is_empty():
+            # A dig or a pickup may have changed tiles meanwhile.
+            cell_flags = store.flags
+            cell_uppers = store.upper_ids
+        if not cell_flags[index] & WorldTileStore.PRESENT or cell_flags[index] & ruled_out or cell_uppers[index] != 0:
             continue
+        var tile := store.cursor(index)
         var crack := FieldMoveData.dig_site_name(tile)
         if not candidates.has(crack):
             continue
@@ -9771,13 +9776,13 @@ func _refresh_sand_traps(spread: bool = false) -> void:
     event_progress["sand_trap_refresh_day"] = day
     # CycleDayNight scans x=-4..4 and y=-4..3 around authored desert2 markers.
     # Keep source's maximum three traps and 32/256 chance per eligible cell.
-    for raw_tile in exact_world.tile_list():
+    for index in exact_world.tiles.with_name(["desert2_trapinch_spawn"]):
         if spread and Time.get_ticks_usec()-slice_started>=_daily_slice_usec():
             await get_tree().process_frame
             if exact_world!=identity or _world_day_index()!=day: return
             slice_started=Time.get_ticks_usec()
-        var marker := raw_tile as SourceTile
-        if marker == null or marker.name != "desert2_trapinch_spawn":
+        var marker: SourceTile = exact_world.tiles.proxy(index)
+        if marker.name != "desert2_trapinch_spawn":
             continue
         var center := SourceWorldData.pixel_to_cell(marker.position)
         var found := 0
@@ -10507,7 +10512,7 @@ func _redraw_exact_tide_streams(changed_cells: Array = []) -> void:
         # Redrawing them all (and their neighbours) in one frame was a 60 ms
         # hitch: send them through the tide queue, nearest first.
         for key in SourceTile.resident_changed_cells:
-            if source_tiles.has(key): changed_cells.append(Vector2i(key / TILE))
+            if exact_world.tiles.has(key): changed_cells.append(Vector2i(key / TILE))
         if changed_cells.is_empty(): return
     for node_path in [
             "GroundLayer/ExactBaseTileStream",
@@ -10538,10 +10543,8 @@ func _build_tide_transition_bands(lowering: bool) -> Array:
     var changing_cells: Dictionary = {}
     var restored_non_beach_tide := false
     var restored_ground_cells: Array[Vector2i] = []
-    for raw_tile in exact_world.tile_list():
-        var tile: SourceTile = raw_tile as SourceTile
-        if tile == null:
-            continue
+    for index in exact_world.tiles.with_name_containing("_tidal"):
+        var tile: SourceTile = exact_world.tiles.proxy(index)
         # *_tidaloff is runtime-only; the 0.8.11 generator emits water-state
         # tidal identities. Older port builds could incorrectly include untagged
         # cells in the ocean tide. sand4_tidal* is specifically the generated
@@ -10799,7 +10802,7 @@ func _refresh_exact_tile_streams() -> void:
     map_art_revision += 1
     var changed_cells: Array = []
     for key in SourceTile.resident_changed_cells:
-        if source_tiles.has(key): changed_cells.append(Vector2i(key / TILE))
+        if exact_world.tiles.has(key): changed_cells.append(Vector2i(key / TILE))
     var base_stream := get_node_or_null(
         "GroundLayer/ExactBaseTileStream")
     var upper_stream := get_node_or_null(

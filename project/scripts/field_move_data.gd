@@ -287,7 +287,7 @@ static func apply_dig_terrain(tile: SourceTile, choice: String) -> void:
         tile.biome = String(names[choice][0])
         tile.route_belongs_to = SourceRoute.new(String(names[choice][1]), 22)
 
-static func adjust_dig_cliff(tile: SourceTile, tiles: Dictionary) -> void:
+static func adjust_dig_cliff(tile: SourceTile, tiles) -> void:
     # PkmnMap.ledgify(Tile), applied only to the placed CLIFF tile.
     var at := tile.position
     var offsets := {"left":Vector2i(-16,0), "right":Vector2i(16,0),
@@ -296,7 +296,7 @@ static func adjust_dig_cliff(tile: SourceTile, tiles: Dictionary) -> void:
         "tl":Vector2i(-16,16), "tr":Vector2i(16,16)}
     var n := {}
     for key in offsets:
-        var other: SourceTile = tiles.get(at + offsets[key])
+        var other: SourceTile = SourceWorldData.tile_in(tiles, at + offsets[key])
         n[key] = other != null and "ledges3" in other.name_upper
     var suffix := ""
     if n.left and not n.down and n.right: suffix = "_N"

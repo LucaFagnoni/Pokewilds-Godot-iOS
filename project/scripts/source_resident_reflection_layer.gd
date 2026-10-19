@@ -9,8 +9,10 @@ func configure(world_node: Node, source_world: SourceExactWorldAdapter, player_n
 func _prepare_palms() -> void:
     palm_cache_key = [exact_world.get_instance_id()]
     palms_by_cell.clear()
-    for key in exact_world.tiles:
-        _refresh_palm(Vector2i(key/16))
+    # Only palm cells (tree6 above, tree5 ground) can hold a palm.
+    var store: WorldTileStore = exact_world.tiles
+    for tile in store.with_upper(["tree6"]): _refresh_palm(Vector2i(tile.position / 16))
+    for index in store.with_name(["tree5"]): _refresh_palm(store.key_of(index) / 16)
     _sort_palms()
 
 func _refresh_palm(cell: Vector2i) -> bool:

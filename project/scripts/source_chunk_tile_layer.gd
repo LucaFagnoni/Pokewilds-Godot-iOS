@@ -169,6 +169,10 @@ func _animation_signature(tick):
     )
 
 
+## The tile at a key (resident layers return a field view instead).
+func _lookup_tile(key):
+    return SourceWorldData.tile_in(source_tiles, key)
+
 func _cached_render_spec(raw_tile):
     var base_name = str(raw_tile.get("name", raw_tile.get("base", ""))) if raw_tile is Dictionary else raw_tile.name
     var upper_name = str(raw_tile.get("name_upper", raw_tile.get("upper", ""))) if raw_tile is Dictionary else raw_tile.name_upper
@@ -232,7 +236,7 @@ func _rebuild_visible_recipes():
             var cell = Vector2i(x, y)
             var cached = cell_recipe_cache.get(cell)
             if cached == null:
-                var tile = source_tiles.get(cell * tile_size if source_keys_are_pixels else cell)
+                var tile = _lookup_tile(cell * tile_size if source_keys_are_pixels else cell)
                 if tile == null: continue
                 var shores = []
                 if draw_upper:
@@ -333,7 +337,7 @@ func _mountain_tree_needs_front_redraw(cell, tile, spec):
         var lookup_key = lookup_cell
         if source_keys_are_pixels:
             lookup_key = lookup_cell * tile_size
-        var nearby = source_tiles.get(lookup_key)
+        var nearby = _lookup_tile(lookup_key)
         if nearby == null:
             continue
         var nearby_key = (
@@ -412,7 +416,7 @@ func _active_beach_tidal_shore(cell: Vector2i, tile) -> String:
             if not frame_tidal_cells.has(neighbor_cell):
                 continue
         else:
-            var neighbor = source_tiles.get(lookup)
+            var neighbor = _lookup_tile(lookup)
             if neighbor == null or not _is_beach_high_tide(neighbor):
                 continue
         var direction := String(names[index])
