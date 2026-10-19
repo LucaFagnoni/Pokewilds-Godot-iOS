@@ -28,6 +28,17 @@ var access_password := ""
 ## proof comes back hashed with it, so one overheard on the way cannot be
 ## replayed. The bare proof of older builds is still accepted.
 var _nonces: Dictionary = {}
+## The commit an official build was made from: CI writes build_id.txt before
+## exporting. Builds from different commits can share the protocol and still
+## disagree on the world (a world from one, tiles drawn by the other), so a
+## host refuses another build. Editor and local builds have none and skip it.
+static var _build := ""
+
+static func build_id() -> String:
+    if not OS.get_environment("POKEWILDS_BUILD_ID").is_empty(): return OS.get_environment("POKEWILDS_BUILD_ID") # tests
+    if _build.is_empty() and FileAccess.file_exists("res://build_id.txt"):
+        _build = FileAccess.get_file_as_string("res://build_id.txt").strip_edges().left(40)
+    return _build
 ## Host only: true for a player this world's host has banned. A player is the
 ## identity their copy of the game made on first run, not a name or appearance.
 var blocked := Callable()
@@ -99,7 +110,7 @@ func _hello(peer: int, world: String, nonce: String = "") -> void:
     # A typed address may cross the internet: its proof only ever travels hashed.
     if world.is_empty() and not access_password.is_empty():access = ""
     var hello := {"kind":"hello","protocol":PROTOCOL,"mods":mod_digest,
-        "identity":identity,"profile":profile,"access":access}
+        "identity":identity,"profile":profile,"access":access,"build":build_id()}
     if not world.is_empty(): hello["device"] = device_print(world)
     transport.send(peer, hello)
 
@@ -135,6 +146,9 @@ func _received(peer: int, payload: Dictionary) -> void:
             if kind!="hello":_reject(peer,"Join handshake required.");return
             if payload.get("protocol")!=PROTOCOL:_reject(peer,"Game versions do not match.");return
             if payload.get("mods")!=mod_digest:_reject(peer,"Enabled mods and their order must match the host.");return
+            var build:=String(payload.get("build",""))
+            if not build.is_empty() and not build_id().is_empty() and build!=build_id():
+                _reject(peer,"Different game build: host %s, yours %s." % [build_id().left(8),build.left(8)]);return
             var token:=String(payload.get("identity",""))
             if token.length()!=64 or not token.is_valid_hex_number():_reject(peer,"Invalid player identity.");return
             var id:=token.sha256_text()

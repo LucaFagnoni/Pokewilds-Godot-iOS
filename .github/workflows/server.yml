@@ -39,6 +39,11 @@ jobs:
       - name: Minify JSON data
         run: python3 .github/engine/minify_json.py project
 
+      # The commit this build comes from: the server refuses players of another
+      # build, so pair it with the iOS build of the same commit.
+      - name: Stamp build id
+        run: echo "$GITHUB_SHA" > project/build_id.txt
+
       - name: Import + export Windows server
         working-directory: project
         run: |
@@ -67,6 +72,7 @@ jobs:
           tag="server-build-${{ github.run_number }}"
           git log -1 --pretty=%B > notes.md
           echo "" >> notes.md
+          echo "Build ${GITHUB_SHA::8}: usa i telefoni con la build iOS dello stesso commit." >> notes.md
           echo "Server dedicato Windows: estrai lo zip e fai doppio clic su start_server.bat (opzioni: --port N --world NOME --size S). Istruzioni in README_SERVER.md." >> notes.md
           gh release create "$tag" PokeWilds-Server-win64.zip \
             --target "$GITHUB_SHA" --title "PokeWilds dedicated server build ${{ github.run_number }}" --notes-file notes.md

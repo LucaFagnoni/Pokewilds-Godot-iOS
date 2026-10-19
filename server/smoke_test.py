@@ -15,10 +15,11 @@ port = "54777"
 logs = {}
 
 
-def start(name, args):
+def start(name, args, build="smoke-a"):
     logs[name] = os.path.join(work, name + ".log")
     out = open(logs[name], "wb")
-    return subprocess.Popen(command + ["--headless"] + args, stdin=subprocess.PIPE, stdout=out, stderr=subprocess.STDOUT)
+    env = dict(os.environ, POKEWILDS_BUILD_ID=build)
+    return subprocess.Popen(command + ["--headless"] + args, stdin=subprocess.PIPE, stdout=out, stderr=subprocess.STDOUT, env=env)
 
 
 def text(name):
@@ -59,6 +60,13 @@ try:
     started = time.time()
     wait_for("server", server, "listening on TCP port " + port, 900)
     print(f"server ready in {time.time() - started:.0f}s")
+
+    # A game from another build is refused before anything else.
+    stranger = start("stranger", ["--join", "127.0.0.1:" + port, "--password", "smoke", "--data", os.path.join(work, "stranger")], build="smoke-b")
+    try: stranger.wait(300)
+    except subprocess.TimeoutExpired: stranger.kill(); fail("another build neither joined nor failed")
+    if "DIFFERENT GAME BUILD" not in text("stranger"): fail("another build was not refused")
+    print("another build refused")
 
     # A wrong password is refused; the right one, carried by the server's challenge, gets in.
     intruder = start("intruder", ["--join", "127.0.0.1:" + port, "--password", "wrong", "--data", os.path.join(work, "intruder")])

@@ -70,6 +70,10 @@ jobs:
       - name: Minify JSON data
         run: python3 .github/engine/minify_json.py project
 
+      # The commit this build comes from: hosts refuse players of another build.
+      - name: Stamp build id
+        run: echo "$GITHUB_SHA" > project/build_id.txt
+
       - name: Export Xcode project
         working-directory: project
         run: |

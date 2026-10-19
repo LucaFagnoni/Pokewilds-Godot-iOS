@@ -18,6 +18,7 @@
 **/coop_identity.cfg
 **/lobby_server.txt
 **/lobby_server.txt*
+**/build_id.txt
 **/wrangler.private.toml
 **/.wrangler/
 ._*
