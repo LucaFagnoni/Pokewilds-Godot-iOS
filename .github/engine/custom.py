@@ -4,7 +4,7 @@
 # The game is ~64k lines of GDScript: its CPU time is the interpreter, which
 # -Oz (size_extra) slows down. -O2 costs a few MB of binary and saves CPU,
 # that is battery.
-optimize = "speed_trade"
+optimize = "speed_trace"
 debug_symbols = "no"
 
 disable_3d = "yes"
