@@ -28,6 +28,13 @@ const ACTIONS := {
 # Bumpers only page menus/wheels; in free roam zoom is a pinch, so they hide.
 const SHOULDERS := ["L1", "R1"]
 const PINCH_STEP := 1.2
+## Two fingers landing this close together, neither on a button, are a pinch:
+## the floating stick covers most of the left half, so a zoom that started
+## there used to walk instead.
+const PINCH_WINDOW_MSEC := 250
+## A stick finger that moved less than this (canvas pixels) since it landed
+## can still turn out to be half of a pinch.
+const PINCH_STICK_SLOP := 6.0
 # Baseline dimensions are fractions of the usable 320x180 game canvas.
 # Everything hugs the edges so the field around the player stays clear.
 const FACE_CENTER := Vector2(285,134)
@@ -78,7 +85,10 @@ var wheel_drag_index := -1
 var throw_icon_poll := 0.0
 var cancel_down_msec := -100000
 var pinch_points: Dictionary = {}
+var pinch_since: Dictionary = {}
 var pinch_base := 0.0
+var stick_grab_msec := -100000
+var stick_grab_point := Vector2.ZERO
 const JOY_BUTTONS := {
     # Node names retain their original Nintendo-position slots.
     "A": JOY_BUTTON_B, "B": JOY_BUTTON_A, "Start": JOY_BUTTON_START,
@@ -381,8 +391,10 @@ func _input(event: InputEvent) -> void:
         _route_contact(event.index, event.position, event.pressed, event.canceled)
         if not event.pressed or event.canceled:
             pinch_points.erase(event.index)
+            pinch_since.erase(event.index)
         elif not touch_owners.has(event.index) and not edit_mode:
             pinch_points[event.index] = event.position
+            pinch_since[event.index] = Time.get_ticks_msec()
         pinch_base = 0.0
     elif event is InputEventScreenDrag:
         if touch_owners.has(event.index):
@@ -521,6 +533,8 @@ func _route_contact(index: int, point: Vector2, pressed: bool, canceled: bool) -
             "factor": float(control_factors.get(target, 1.0))}
         get_viewport().set_input_as_handled()
         return
+    if not edit_mode and (chosen.is_empty() or chosen == "LeftStick") and _starts_pinch(point):
+        return  # left free: _input makes it a pinch finger
     if chosen.is_empty() and not edit_mode and _in_floating_stick_zone(point):
         # The stick jumps under the thumb anywhere in the lower-left area.
         var stick := get_node("LeftStick") as Control
@@ -534,6 +548,9 @@ func _route_contact(index: int, point: Vector2, pressed: bool, canceled: bool) -
     var already_held := touch_owners.values().has(chosen)
     touch_owners[index] = chosen
     pointer_positions[index] = point
+    if chosen == "LeftStick":
+        stick_grab_msec = Time.get_ticks_msec()
+        stick_grab_point = point
     get_viewport().set_input_as_handled()
     if chosen in WHEEL_BUTTONS and not edit_mode: wheel_drag_index = index
     if not edit_mode:
@@ -541,6 +558,25 @@ func _route_contact(index: int, point: Vector2, pressed: bool, canceled: bool) -
             _update_direction(index,chosen,point)
         elif not already_held:
             _set_virtual_button(chosen,true)
+
+## A finger landing off the buttons (or on the stick) is the second half of
+## a pinch when another free finger landed just before it, or when the stick
+## took a finger just before and it has not really moved yet: that finger is
+## handed back as the pinch's first finger.
+func _starts_pinch(point: Vector2) -> bool:
+    var now := Time.get_ticks_msec()
+    for other in pinch_points:
+        if now - int(pinch_since.get(other, 0)) <= PINCH_WINDOW_MSEC: return true
+    if now - stick_grab_msec > PINCH_WINDOW_MSEC: return false
+    for other in touch_owners.keys():
+        if touch_owners[other] != "LeftStick": continue
+        var at: Vector2 = pointer_positions.get(other, stick_grab_point)
+        if at.distance_to(stick_grab_point) > PINCH_STICK_SLOP: return false
+        _route_contact(other, at, false, false)
+        pinch_points[other] = at
+        pinch_since[other] = stick_grab_msec
+        return true
+    return false
 
 func _set_virtual_button(control_name: String, pressed: bool) -> void:
     var control = get_node(control_name)
@@ -611,6 +647,7 @@ func _release_all() -> void:
     touch_owners.clear()
     pointer_positions.clear()
     pinch_points.clear()
+    pinch_since.clear()
     if not movement_contacts.is_empty():
         movement_contacts.clear()
         _send_movement()
