@@ -94,6 +94,9 @@ try:
     print("server saved the world with the client's player in it")
 
     send(server, "stop")
+    # Closing the input as the launcher does lets the console-reading thread end
+    # (on Linux the process otherwise waits for it at exit).
+    server.stdin.close()
     try: server.wait(120)
     except subprocess.TimeoutExpired: fail("server did not stop")
     if text("server").count("SERVER world saved") < saves_before + 2: fail("server did not save on stop")
