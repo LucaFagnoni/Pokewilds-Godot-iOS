@@ -97,7 +97,8 @@ func _reject(peer: int, reason: String) -> void:
     _reject_pending[peer]=Time.get_ticks_msec()+1000
 
 func _process(_delta:float)->void:
-    messages.pump()
+    # One pump per 60th of a second, so a 30 FPS cap keeps the same throughput.
+    for _step in range(maxi(1, roundi(_delta * 60.0))): messages.pump()
     for peer in _reject_pending.keys():
         if Time.get_ticks_msec()>=int(_reject_pending[peer]):
             transport._drop(peer)

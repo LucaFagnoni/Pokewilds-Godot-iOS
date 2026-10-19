@@ -1856,7 +1856,8 @@ func _update_m3924_dig_hud_and_minimap(delta: float) -> void:
             or m3924_minimap_map.texture == null
             or m3924_minimap_refresh_accumulator >= M3924_MINIMAP_REFRESH_SECONDS
         ):
-        m3924_minimap_refresh_accumulator = 0.0
+        # Keep the remainder: zeroing it made 20 Hz into 15 Hz at 30 FPS.
+        m3924_minimap_refresh_accumulator = fmod(m3924_minimap_refresh_accumulator, 0.05)
         m3924_minimap_last_bounds = bounds
         m3924_minimap_last_respawn = respawn_cell
         m3924_minimap_last_player_position = player_position
@@ -3070,6 +3071,29 @@ var fps_label: Label
 var fps_refresh := 0.0
 
 ## OPTIONS > FPS COUNTER: frames drawn per second, top right.
+var last_input_msec := 0
+
+## Battery saver: OFF keeps 60 FPS; ON draws 30; AUTO draws 30 only while
+## nothing moves (no input for a second, player still, no battle turn
+## playing), which is most of the time spent in menus and dialogue.
+func _apply_battery_saver() -> void:
+    var mode := int(GameOptions.values.get("battery_saver", 1))
+    var fps := 60
+    if mode == 2:
+        fps = 30
+    elif mode == 1:
+        var moving: bool = Time.get_ticks_msec() - last_input_msec < 1000
+        if not moving and battle_active: moving = battle_turn_busy or battle_text_busy
+        if not moving and started and is_instance_valid(world) and is_instance_valid(world.player):
+            moving = world.player.velocity.length_squared() > 0.01 or world.active_field_move == "FLY"
+        if not moving: fps = 30
+    # At 3-4x game speed a 30 FPS step can cross a whole tile and skip its
+    # encounters and triggers: never drop frames while moving that fast.
+    if fps == 30 and float(GameOptions.values.get("game_speed", 1.0)) >= 3.0 and started and is_instance_valid(world) \
+            and is_instance_valid(world.player) and world.player.velocity.length_squared() > 0.01:
+        fps = 60
+    if Engine.max_fps != fps: Engine.max_fps = fps
+
 func _update_fps_counter(delta: float) -> void:
     if not GameOptions.enabled("fps_counter") or not started:
         if is_instance_valid(fps_label): fps_label.hide()
@@ -3102,6 +3126,7 @@ func _update_fps_counter(delta: float) -> void:
 
 func _process(delta: float) -> void:
     _update_fps_counter(delta)
+    _apply_battery_saver()
     _hide_world_under_battle()
     map_cache_check_time -= delta
     if started and world.generated and not generating and not map_cache_warming and not map_building and map_cache_check_time <= 0.0:
@@ -4341,6 +4366,7 @@ func _handle_android_controls_gesture() -> void:
         _open_touch_config()
 
 func _input(event: InputEvent) -> void:
+    last_input_msec = Time.get_ticks_msec()
     if is_instance_valid(touch_ui) and touch_ui.handle(event):
         get_viewport().set_input_as_handled()
         return

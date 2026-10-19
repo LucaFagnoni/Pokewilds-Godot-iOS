@@ -12,8 +12,13 @@ func picture(texture: Texture2D, at: Vector2, dimensions: Vector2) -> TextureRec
     node.mouse_filter=Control.MOUSE_FILTER_IGNORE
     add_child(node)
     return node
+var wait_debt := 0.0
+## count/60 s, carrying overshoot so the shakes keep their length at 30 FPS.
 func wait_frames(count: int) -> void:
-    await get_tree().create_timer(count/60.0).timeout
+    wait_debt += count/60.0
+    while wait_debt > 0.0:
+        await get_tree().process_frame
+        wait_debt -= get_process_delta_time()
 func play(owner_main: Node, pokemon: Dictionary, ball_name: String, outcome: int) -> void:
     main=owner_main
     z_index=340;size=Vector2(320,180)

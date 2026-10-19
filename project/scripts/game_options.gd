@@ -5,7 +5,7 @@ static var PATH := "user://game.ini"
 const LEGACY_PATH := "user://game_options.cfg"
 const Files = preload("res://scripts/game_files.gd")
 static var settings_error := ""
-const DEFAULTS := {"music":100,"sound":100,"world_sound":100,"cries":100,"footsteps":100,"radial":true,"zoom":true,"minimap":true,"diagonal":true,"auto_run":false,"battle_animations":true,"held_emotes":true,"shiny_sparkles":true,"map_waypoint":true,"weather_events":true,"dark_mode":false,"circle_lights":false,"lofi_music":false,"hd_emotes":false,"gen3_overhaul":false,"ball_mechanics":true,"haptics":true,"fps_counter":false,"text_speed":0,"frame":0,"button_layout":0,"game_speed":1.0}
+const DEFAULTS := {"music":100,"sound":100,"world_sound":100,"cries":100,"footsteps":100,"radial":true,"zoom":true,"minimap":true,"diagonal":true,"auto_run":false,"battle_animations":true,"held_emotes":true,"shiny_sparkles":true,"map_waypoint":true,"weather_events":true,"dark_mode":false,"circle_lights":false,"lofi_music":false,"hd_emotes":false,"gen3_overhaul":false,"ball_mechanics":true,"haptics":true,"fps_counter":false,"text_speed":0,"battery_saver":1,"frame":0,"button_layout":0,"game_speed":1.0}
 const GAME_SPEEDS := [1.0, 1.5, 2.0, 3.0, 4.0]
 
 static func _valid_type(key: String, value: Variant) -> bool:
@@ -30,6 +30,7 @@ static func _validated(cfg: ConfigFile) -> Dictionary:
     next.cries = clampi(int(next.cries),0,100)
     next.footsteps = clampi(int(next.footsteps),0,100)
     next.text_speed = clampi(int(next.text_speed),0,2)
+    next.battery_saver = clampi(int(next.battery_saver),0,2)
     next.game_speed = float(next.game_speed) if float(next.game_speed) in GAME_SPEEDS else 1.0
     next.frame = clampi(int(next.frame),0,123)
     next.button_layout = clampi(int(next.button_layout),0,1)
@@ -42,7 +43,7 @@ static func _read(path: String, cfg: ConfigFile) -> Error:
     return cfg.parse(file.get_as_text())
 
 static func _write(path: String, cfg: ConfigFile) -> Error:
-    var bytes := ("; PokeWilds settings. Switches: true/false. Volumes: 0-100.\n; text_speed: 0=Default 1=Fast 2=Faster. frame: 0-123 selects Type 1-124.\n; game_speed: 1, 1.5, 2, 3, or 4, speeds gameplay and all audio together.\n; button_layout: 0=Type 1 Nintendo, 1=Type 2 Xbox.\n" + cfg.encode_to_text()).to_utf8_buffer()
+    var bytes := ("; PokeWilds settings. Switches: true/false. Volumes: 0-100.\n; text_speed: 0=Default 1=Fast 2=Faster. battery_saver: 0=Off (60 FPS) 1=Auto 2=On (30 FPS). frame: 0-123 selects Type 1-124.\n; game_speed: 1, 1.5, 2, 3, or 4, speeds gameplay and all audio together.\n; button_layout: 0=Type 1 Nintendo, 1=Type 2 Xbox.\n" + cfg.encode_to_text()).to_utf8_buffer()
     if FileAccess.file_exists(path):
         var backup := Files.copy_file(path, path + ".bak")
         if backup != OK: return backup

@@ -808,7 +808,8 @@ func _align_ice_slide(cell: Vector2i) -> void:
     var offset := Vector2(0.0, centre.y - player.position.y) if m3922_ice_slide_direction.x != 0.0 else Vector2(centre.x - player.position.x, 0.0)
     if offset.length_squared() < 0.0001:
         return
-    var step := offset.limit_length(1.0)
+    # 1 px per 60th of a second, whatever the frame rate.
+    var step := offset.limit_length(60.0 * m257_frame_delta)
     if not player.test_move(player.transform, step):
         player.position += step
 
@@ -1353,9 +1354,13 @@ func request_fishing_encounter(rod_name: String) -> void:
         if next_species.is_empty(): break
         species = next_species
     var fishing_position := fishing_sprite.position
+    # Paced by elapsed time: a 1/60 s timer lasts a whole frame, which made
+    # the wiggle twice as long at 30 FPS.
+    var wiggle_start := Time.get_ticks_usec()
     for tick in range(64):
         fishing_sprite.position.y = fishing_position.y + (1 if tick % 4 < 2 else 0)
-        await get_tree().create_timer(1.0 / 60.0).timeout
+        while Time.get_ticks_usec() - wiggle_start < int((tick + 1) * 1000000.0 / 60.0 / Engine.time_scale):
+            await get_tree().process_frame
     fishing_sprite.position = fishing_position
     _show_ecology_emote(fishing_sprite, "!")
     owner_game._show_trainer_tip_message("A bite!")

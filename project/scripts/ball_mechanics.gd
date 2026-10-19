@@ -476,10 +476,9 @@ func drop_ball(ball: String, candidates: Array) -> bool:
         # Online the host puts the ball on the ground for everyone, and takes it
         # out of the bag as it does. Hand back the one the throw already took.
         main.inventory[ball] = int(main.inventory.get(ball,0))+1
-        var waited = 0
-        while main.coop_game.active and main.coop_game._request_busy and waited<120:
+        var give_up := Time.get_ticks_msec() + 2000
+        while main.coop_game.active and main.coop_game._request_busy and Time.get_ticks_msec() < give_up:
             await get_tree().process_frame
-            waited += 1
     for cell in candidates:
         var tile = tile_at(cell)
         if tile==null or tile.is_water or tile.is_lava or tile.is_ledge or not tile.name_upper.is_empty(): continue
@@ -551,8 +550,15 @@ func restore_target() -> void:
 ## own tile, the ball rocks once for each shake, then it clicks shut or bursts
 ## open. Timings match the battle version. Returns false if the throw was
 ## abandoned part way.
+var pause_debt := 0.0
+
+## count/60 s, carrying overshoot: a run of one-frame timers took twice as
+## long at 30 FPS.
 func capture_pause(count: int, serial: int) -> bool:
-    await get_tree().create_timer(count/60.0).timeout
+    pause_debt += count/60.0
+    while pause_debt > 0.0:
+        await get_tree().process_frame
+        pause_debt -= get_process_delta_time()
     return serial==throw_serial and is_instance_valid(projectile)
 
 func present_capture(sprite: Sprite2D, center: Vector2, ball: String, outcome: int, serial: int) -> bool:

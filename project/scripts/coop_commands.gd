@@ -44,7 +44,7 @@ func _message(peer:int,actor:String,payload:Dictionary)->void:
 
 func _process(_delta:float)->void:
     if session==null:return
-    var count=mini(8,_pending.size())
+    var count=mini(maxi(8,ceili(8.0*_delta*60.0)),_pending.size())
     for _index in range(count):
         var queued:Dictionary=_pending.pop_front()
         var error=session.send_to(queued.peer,queued.packet)
