@@ -1,0 +1,91 @@
+"""Dedicated server smoke test: start a headless server, join it with a headless
+client, and check that the client received the world and that the server saved it.
+
+    python server/smoke_test.py GODOT            (GODOT = editor binary, runs project/)
+    python server/smoke_test.py PokeWilds.console.exe --exe
+
+Run from the repository root. Exits 0 on success."""
+import hashlib, json, os, re, subprocess, sys, tempfile, time
+
+godot = sys.argv[1]
+command = [godot] if "--exe" in sys.argv else [godot, "--path", "project"]
+work = tempfile.mkdtemp(prefix="pw-server-smoke-")
+port = "54777"
+logs = {}
+
+
+def start(name, args):
+    logs[name] = os.path.join(work, name + ".log")
+    out = open(logs[name], "wb")
+    return subprocess.Popen(command + ["--headless"] + args, stdin=subprocess.PIPE, stdout=out, stderr=subprocess.STDOUT)
+
+
+def text(name):
+    return open(logs[name], "rb").read().decode("utf-8", "replace")
+
+
+def fail(reason):
+    for name in logs:
+        print(f"----- {name} log (last lines) -----")
+        print("\n".join(text(name).splitlines()[-40:]))
+    print("SMOKE FAIL:", reason)
+    sys.exit(1)
+
+
+def wait_for(name, process, needle, seconds):
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if needle in text(name): return
+        if process.poll() is not None: fail(f"{name} exited ({process.returncode}) before {needle!r}")
+        time.sleep(1)
+    fail(f"{name}: no {needle!r} after {seconds}s")
+
+
+def send(process, line):
+    process.stdin.write((line + "\n").encode()); process.stdin.flush()
+
+
+server_data, client_data = os.path.join(work, "server"), os.path.join(work, "client")
+server = start("server", ["--server", "--port", port, "--world", "Smoke", "--size", "S", "--data", server_data, "--password", "smoke"])
+try:
+    started = time.time()
+    wait_for("server", server, "listening on TCP port " + port, 900)
+    print(f"server ready in {time.time() - started:.0f}s")
+
+    # A wrong password is refused; the right one, carried by the server's challenge, gets in.
+    intruder = start("intruder", ["--join", "127.0.0.1:" + port, "--password", "wrong", "--data", os.path.join(work, "intruder")])
+    try: intruder.wait(300)
+    except subprocess.TimeoutExpired: intruder.kill(); fail("wrong password neither joined nor failed")
+    if "WRONG PASSWORD" not in text("intruder"): fail("wrong password was not refused")
+    print("wrong password refused")
+
+    client = start("client", ["--join", "127.0.0.1:" + port, "--password", "smoke", "--quit-after-join", "--data", client_data])
+    try: client.wait(900)
+    except subprocess.TimeoutExpired: client.kill(); fail("client did not finish joining")
+    joined = re.search(r"CLIENT joined world (\w+)", text("client"))
+    if client.returncode != 0 or not joined: fail(f"client exit {client.returncode}, no join")
+    print(joined.group(0))
+    wait_for("server", server, "SERVER join:", 30)
+
+    saves_before = text("server").count("SERVER world saved")
+    send(server, "save")
+    deadline = time.time() + 120
+    while text("server").count("SERVER world saved") == saves_before:
+        if time.time() > deadline or server.poll() is not None: fail("server did not save")
+        time.sleep(1)
+
+    # The saved world must hold the client's player record.
+    world = os.path.join(server_data, "online_worlds", joined.group(1), "world.json")
+    if not os.path.isfile(world): fail("no world.json for the joined world")
+    payload = json.load(open(world, encoding="utf-8"))["payload"]
+    token = re.search(r'token="(\w+)"', open(os.path.join(client_data, "coop_identity.cfg")).read()).group(1)
+    if "player/" + hashlib.sha256(token.encode()).hexdigest() not in payload: fail("client's player is not in the saved world")
+    print("server saved the world with the client's player in it")
+
+    send(server, "stop")
+    try: server.wait(120)
+    except subprocess.TimeoutExpired: fail("server did not stop")
+    if text("server").count("SERVER world saved") < saves_before + 2: fail("server did not save on stop")
+    print("SMOKE OK: server started, client joined and received the world, server saved and stopped")
+finally:
+    if server.poll() is None: server.kill()

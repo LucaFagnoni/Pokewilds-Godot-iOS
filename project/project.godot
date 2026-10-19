@@ -8,6 +8,8 @@ run/max_fps=60
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://assets/icon.png"
 config/quit_on_go_back=false
+; The dedicated server's log reaches its launcher through a pipe.
+run/flush_stdout_on_print.windows=true
 boot_splash/image="res://assets/startup_splash.png"
 boot_splash/show_image=true
 boot_splash/stretch_mode=5
@@ -23,6 +25,7 @@ general/ios/mix_with_others=true
 [autoload]
 OriginalModsSingleton="*res://scripts/original_mods.gd"
 InputRouterSingleton="*res://scripts/input_router.gd"
+DedicatedServerSingleton="*res://scripts/dedicated_server.gd"
 
 [display]
 window/size/viewport_width=320

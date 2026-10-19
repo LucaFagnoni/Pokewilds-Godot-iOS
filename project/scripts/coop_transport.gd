@@ -19,6 +19,8 @@ var peers: Dictionary = {}
 var hosting := false
 var joining := false
 var port := JoinCode.PORT
+## Guests at once. A hosting player is the fourth; a dedicated server has none.
+var max_peers := 3
 var _next_peer := 2
 var last_disconnect_reason := ""
 
@@ -78,7 +80,7 @@ func send_encoded(peer:int, bytes:PackedByteArray)->Error:
 func _process(_delta:float)->void:
     if hosting and server.is_connection_available():
         var socket := server.take_connection()
-        if peers.size() >= 3:
+        if peers.size() >= max_peers:
             socket.disconnect_from_host()
         else:
             var id := _next_peer

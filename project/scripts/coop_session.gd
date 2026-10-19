@@ -20,6 +20,10 @@ var trusted := false
 var loading := false
 ## Host: proof guests must present for a PRIVATE lobby. Guest: proof to send.
 var access_proof := ""
+## Host: the salt of that proof. Guest: a password typed for a direct join,
+## turned into the proof once the host's challenge brings the salt.
+var access_salt := ""
+var access_password := ""
 ## Host only: true for a player this world's host has banned. A player is the
 ## identity their copy of the game made on first run, not a name or appearance.
 var blocked := Callable()
@@ -124,15 +128,17 @@ func _received(peer: int, payload: Dictionary) -> void:
             if kind!="hello":_reject(peer,"Join handshake required.");return
             if payload.get("protocol")!=PROTOCOL:_reject(peer,"Game versions do not match.");return
             if payload.get("mods")!=mod_digest:_reject(peer,"Enabled mods and their order must match the host.");return
-            if not access_proof.is_empty() and String(payload.get("access",""))!=access_proof:_reject(peer,"Wrong password.");return
             var token:=String(payload.get("identity",""))
             if token.length()!=64 or not token.is_valid_hex_number():_reject(peer,"Invalid player identity.");return
             var id:=token.sha256_text()
             for player in players.values():
                 if player.actor==id:_reject(peer,"This player is already connected.");return
             var device:=String(payload.get("device",""))
+            # The salt rides on the challenge so a player who typed the address
+            # (and so never saw the lobby entry) can still prove the password.
             if device.length()!=64 or not device.is_valid_hex_number():
-                transport.send(peer,{"kind":"challenge","world":world_id});return
+                transport.send(peer,{"kind":"challenge","world":world_id,"salt":access_salt});return
+            if not access_proof.is_empty() and String(payload.get("access",""))!=access_proof:_reject(peer,"Wrong password.");return
             if blocked.is_valid() and blocked.call(id,device):_reject(peer,BANNED);return
             var details=payload.get("profile",{})
             if not details is Dictionary:_reject(peer,"Invalid player profile.");return
@@ -151,6 +157,8 @@ func _received(peer: int, payload: Dictionary) -> void:
             transport.stop();trusted=false
             return
         if kind=="challenge" and not trusted:
+            if not access_password.is_empty() and payload.get("salt") is String:
+                access_proof=preload("res://scripts/coop_lobby.gd").proof(String(payload.salt),access_password)
             if payload.get("world") is String and String(payload.world).length()<=64:_hello(peer,String(payload.world))
             return
         if kind=="welcome" and not trusted:
@@ -197,4 +205,4 @@ func _disconnected(peer: int) -> void:
         departed.emit(peer,id)
 
 func stop() -> void:
-    transport.stop();messages.clear();players.clear();_reject_pending.clear();trusted=false;hosting=false;loading=false;access_proof=""
+    transport.stop();messages.clear();players.clear();_reject_pending.clear();trusted=false;hosting=false;loading=false;access_proof="";access_salt="";access_password=""

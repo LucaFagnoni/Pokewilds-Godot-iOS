@@ -37,6 +37,9 @@ var lobby_private:=false
 var lobby_password:=""
 var lobby_salt:=""
 var lobby_name:=""
+## Where hosting listens and how many may play; a dedicated server sets both.
+var host_port:=preload("res://scripts/coop_join_code.gd").PORT
+var max_players:=4
 var join_lobby:Dictionary={}
 var join_password:=""
 var notice:=""
@@ -763,8 +766,10 @@ func _mode_label(text:String)->void:
 
 func _lobby_record()->Dictionary:
     if not active or not hosting:return {}
+    # A dedicated server's own player is not one of the players.
+    var players:int=session.players.size()-(1 if preload("res://scripts/dedicated_server.gd").active else 0)
     return {"name":lobby_name,"host":String(session.profile.get("name","PLAYER")),"private":lobby_private,
-        "players":session.players.size(),"max":4,"salt":lobby_salt,"protocol":Session.PROTOCOL,"mods":session.mod_digest}
+        "players":players,"max":max_players,"salt":lobby_salt,"protocol":Session.PROTOCOL,"mods":session.mod_digest,"port":host_port}
 
 func choose(action:String,value:String)->void:
     # Starting or joining a world takes time; a second press must not start
@@ -822,9 +827,11 @@ func _choose(action:String,value:String)->void:
         main.coop_menu.show_connecting("CONNECTING...")
         preload("res://scripts/crafting_data.gd").online_enabled=true
         active=true;hosting=false;_loading=true
-        Network.start()
+        # A typed address is reached directly, never through the lobby network.
+        var direct:=bool(join_lobby.get("direct",false))
+        if not direct:Network.start()
         var deadline=Time.get_ticks_msec()+120000
-        while active and Network.status().state!="ready":
+        while active and not direct and Network.status().state!="ready":
             var current:Dictionary=Network.status()
             if current.state=="error" or Time.get_ticks_msec()>deadline:
                 _failure("MULTIPLAYER NETWORK UNAVAILABLE" if String(current.message).is_empty() else String(current.message));return
@@ -832,9 +839,11 @@ func _choose(action:String,value:String)->void:
             await get_tree().process_frame
         if not active:return
         main.coop_menu.connecting_text("CONNECTING TO\n%s..."%String(join_lobby.get("name","HOST")).to_upper())
-        var endpoint:Dictionary=Network.join_endpoint(value)
+        var port:=int(join_lobby.get("port",Network.GAME_PORT))
+        var endpoint:Dictionary={"address":value,"port":port} if direct or (port!=Network.GAME_PORT and not Network.embedded()) else Network.join_endpoint(value)
         if endpoint.is_empty():_failure("COULD NOT OPEN A CONNECTION");return
         session.access_proof=Lobby.proof(String(join_lobby.get("salt","")),join_password) if bool(join_lobby.get("private",false)) else ""
+        session.access_password=join_password if direct else ""
         _host_answered=false
         var error:Error=session.join_address(String(endpoint.address),int(endpoint.port))
         if error!=OK:_failure(error_string(error))
@@ -907,12 +916,13 @@ func game_started()->bool:
     if not await publish_current():return false
     var checkpoint:Dictionary=main._capture_game_save()
     if not save_checkpoint(checkpoint):_failure("ONLINE SAVE FAILED");return false
-    var error:Error=session.host(world_id)
+    var error:Error=session.host(world_id,host_port)
     if error!=OK:_failure("HOST COULD NOT START: "+error_string(error));return false
     # The world name is the lobby name other players see in JOIN GAME.
     lobby_name=String(checkpoint.get("world_name","WORLD")).strip_edges().left(24)
     lobby_salt=_id()
     session.access_proof=Lobby.proof(lobby_salt,lobby_password) if lobby_private else ""
+    session.access_salt=lobby_salt
     Network.start();Network.host_open();lobby.advertise(_lobby_record)
     endpoints=preload("res://scripts/coop_join_code.gd").local_endpoints()
     var entry=service.areas.enter(session.actor,_area());area_authority=String(entry.get("authority",""));area_epoch=int(entry.get("epoch",0));visuals.set_area(_area())
