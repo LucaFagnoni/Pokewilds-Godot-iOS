@@ -32,9 +32,24 @@ func configure(world_node: Node, source_world: SourceExactWorldAdapter,
     visible = true
     queue_redraw()
 
+var redraw_signature: Array = []
+
 func _process(delta: float) -> void:
     ripple_time = fmod(ripple_time + delta, 48.0 / 60.0)
-    queue_redraw()
+    if world == null or exact_world == null:
+        return
+    # Redraw only when what it draws can change: the ripple shape, the palm
+    # canvas check (twice a second, as before), or a reflected sprite moving
+    # or animating. Standing still that is a few redraws a second, not 60.
+    var tick := int(ripple_time * 60.0)
+    var signature: Array = [1 if tick >= 9 and tick < 24 else 2 if tick >= 33 else 0,
+        Time.get_ticks_msec() / 500, world.map_art_revision]
+    for sprite in _reflected_sprites():
+        signature.append_array([sprite.get_instance_id(), sprite.global_position, sprite.texture,
+            sprite.frame, sprite.region_rect, sprite.global_scale])
+    if signature != redraw_signature:
+        redraw_signature = signature
+        queue_redraw()
 
 func _draw() -> void:
     if world == null or exact_world == null:
@@ -45,6 +60,10 @@ func _draw() -> void:
     frame_masks.clear()
     _update_palm_canvas()
     canvas = self
+    for sprite in _reflected_sprites():
+        _draw_sprite_reflection(sprite)
+
+func _reflected_sprites() -> Array[Sprite2D]:
     var sprites: Array[Sprite2D] = []
     _append_sprite(sprites, tracked_player)
     _append_sprite(sprites, world.get("follower_sprite"))
@@ -59,8 +78,7 @@ func _draw() -> void:
     for record in (world.get("deployed_pokemon") as Dictionary).values():
         if record is Dictionary:
             _append_sprite(sprites, (record as Dictionary).get("sprite"))
-    for sprite in sprites:
-        _draw_sprite_reflection(sprite)
+    return sprites
 
 func _update_palm_canvas() -> void:
     if not is_instance_valid(tracked_player):

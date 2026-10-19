@@ -223,7 +223,7 @@ func protected_at(position_value: Vector2, radius: int, player_check: bool) -> b
             var tile: SourceTile = world.exact_world.tile_at(at)
             if tile==null: continue
             if "campfire" in tile.name_upper: return true
-            if tile.items.has("torch") and (player_check or position_value.distance_squared_to(world._cell_center(at))<1024): return true
+            if tile.item_snapshot().has("torch") and (player_check or position_value.distance_squared_to(world._cell_center(at))<1024): return true
             if not player_check and world.deployed_pokemon.has(at) and world._pokemon_has_field_move(world.deployed_pokemon[at],"FLASH"): return true
     return false
 

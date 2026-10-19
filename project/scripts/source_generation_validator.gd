@@ -131,7 +131,7 @@ static func _check_rooms(kind: String, layers: Dictionary, at: Vector2i, errors:
         for tile in layers.get(90,{}).values():
             if tile.name == "cave1_regipedistal1":
                 pedestals += 1
-                if tile.items != {"REGISTEEL":1,"REGICE":1,"REGIROCK":1,"REGIELEKI":1,"REGIDRAGO":1}: _error(errors,"Regi pedestal recipes incomplete")
+                if tile.item_snapshot() != {"REGISTEEL":1,"REGICE":1,"REGIROCK":1,"REGIELEKI":1,"REGIDRAGO":1}: _error(errors,"Regi pedestal recipes incomplete")
         if pedestals != 1: _error(errors,"Regi pedestal missing")
     else:
         if bosses.size() != 1: _error(errors,kind+" boss missing or duplicated")

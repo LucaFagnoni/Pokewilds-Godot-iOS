@@ -39,7 +39,7 @@ static func available(world: Node, cell: Vector2i, group: String, occupied: Dict
     if not habitat(tile, group) or tile.is_lava or tile.is_ledge: return false
     if tile.is_solid and not (group in ["gyarados", "sharpedo", "blastoise"] and tile.is_water): return false
     if group not in ["blastoise", "gyarados", "sharpedo"] and (tile.is_water or tile.is_tidal): return false
-    if not tile.name_upper.is_empty() or not tile.has_item.is_empty() or not tile.items.is_empty(): return false
+    if not tile.name_upper.is_empty() or not tile.has_item.is_empty() or not tile.item_snapshot().is_empty(): return false
     if world.blocked.has(cell) or world.interior_interactables.has(cell) or world.built_structures.has(cell) \
         or world.resource_objects.has(cell) or world.landmarks.has(cell) or world.wild_eggs.has(cell) \
         or world.deployed_pokemon.has(cell) or world.source_plant_farms.has(world._cell_key(cell)): return false

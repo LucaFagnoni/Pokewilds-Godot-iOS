@@ -40,7 +40,7 @@ func configure(main:Node)->void:
     _shadow.polygon=PackedVector2Array([Vector2(-6,0),Vector2(-5,-2),Vector2(-3,-3),Vector2(3,-3),Vector2(5,-2),Vector2(6,0),Vector2(5,2),Vector2(3,3),Vector2(-3,3),Vector2(-5,2)])
     _shadow.color=Color(0.02,0.02,0.02,0.92)
     _shadow.z_as_relative=false;_shadow.hide();add_child(_shadow)
-    _light=PointLight2D.new();_light.z_as_relative=false;_light.z_index=4094;_light.energy=0;add_child(_light)
+    _light=PointLight2D.new();_light.z_as_relative=false;_light.z_index=4094;_light.energy=0;_light.enabled=false;add_child(_light)
     _status=Node2D.new();_status.z_as_relative=false;_status.z_index=4095;add_child(_status)
     _status.draw.connect(func():
         if not _in_battle:return
@@ -155,6 +155,8 @@ func render_at(time_ms:int)->void:
         var fire=follower_sprite.visible and "FIRE" in Pokemon.info(String(data.get("follower_species",""))).get("types",[])
         var darkness:Color=environment.canvas_modulate.color
         _light.energy=(1.15 if flash else 0.82) if (flash or fire) and maxf(darkness.r,maxf(darkness.g,darkness.b))<0.94 else 0.0
+        # A light at zero energy still re-draws everything it covers.
+        _light.enabled=_light.energy>0
         if _light.energy>0:
             _light.texture=environment.light_textures(not flash)[posmod(environment.animation_tick/10,2)]
             _light.texture_scale=1.2 if flash else 1.0

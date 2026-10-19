@@ -43,7 +43,7 @@ static func select_cell(world: Node) -> Variant:
             if forest_tile(tile) \
                     and cell.distance_squared_to(world.spawn_cell) >= 64 \
                     and tile.name_upper.is_empty() and tile.has_item.is_empty() \
-                    and tile.items.is_empty() and not occupied.has(cell) \
+                    and tile.item_snapshot().is_empty() and not occupied.has(cell) \
                     and not world.source_plant_farms.has(world._cell_key(cell)):
                 # A clear ring keeps all four approaches open and prevents a
                 # solid boss from cutting off a one-cell path.

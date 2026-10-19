@@ -18,7 +18,7 @@ var regi_relocated_cells: Dictionary = {}
 ## a fresh copy of the whole map each time; the dawn and dusk passes each did
 ## that in a single frame, which is the stall felt when night turns to day.
 var _tile_list: Array = []
-var _tile_list_size := -1
+var _tile_list_size := -1  # -1 forces a rebuild (set whenever an entry is replaced)
 
 func tile_list() -> Array:
     if _tile_list_size != tiles.size():
@@ -106,7 +106,7 @@ func repair_regi_mansion_overlap() -> Array[Vector2i]:
                 for original in cave:
                     var target := candidate + original.position - door.position
                     var tile := tiles.get(target) as SourceTile
-                    if roof.grow(16).has_point(target) or pokemon.has(target) or tile==null or tile.is_water or tile.is_lava or tile.is_ledge or tile.is_bottom_mtn_layer or not tile.has_item.is_empty() or not tile.items.is_empty():
+                    if roof.grow(16).has_point(target) or pokemon.has(target) or tile==null or tile.is_water or tile.is_lava or tile.is_ledge or tile.is_bottom_mtn_layer or not tile.has_item.is_empty() or not tile.item_snapshot().is_empty():
                         safe=false;break
                     if "mtn" in tile.name or "mountain" in tile.name or "cave" in tile.name or "ruins" in tile.name or "building" in tile.name or "pkmnmansion" in tile.name or "pkmnmansion" in tile.name_upper or "fence" in tile.name or "fence" in tile.name_upper or "grave" in tile.name or "grave" in tile.name_upper or "key" in tile.name_upper:
                         safe=false;break
@@ -125,8 +125,10 @@ func repair_regi_mansion_overlap() -> Array[Vector2i]:
                 var suffix := "N" if position.y==nw.position.y else "S" if position.y==sw.position.y else ""
                 suffix += "W" if position.x==nw.position.x else "E" if position.x==ne.position.x else ""
                 tiles[position]=SourceTile.new("sand1",position,"pkmnmansion_roof"+("_"+suffix if not suffix.is_empty() else ""),true,nw.route_belongs_to)
+                _tile_list_size = -1 # entry replaced: tile_list() must rebuild
                 var moved := original.copy_at(destination+position-old_door)
                 tiles[moved.position]=moved
+                _tile_list_size = -1 # entry replaced: tile_list() must rebuild
                 regi_relocated_cells[SourceWorldData.pixel_to_cell(position)] = SourceWorldData.pixel_to_cell(moved.position)
                 repaired.append(position)
     return repaired
@@ -172,6 +174,7 @@ func repair_mansion_roof_grass() -> Array[Vector2i]:
                 suffix += "W" if x == nw.position.x else "E" if x == ne.position.x else ""
                 var upper := "pkmnmansion_roof" + ("_" + suffix if not suffix.is_empty() else "")
                 tiles[position] = SourceTile.new("sand1", position, upper, true, nw.route_belongs_to)
+                _tile_list_size = -1 # entry replaced: tile_list() must rebuild
                 repaired.append(SourceWorldData.pixel_to_cell(position))
     return repaired
 
@@ -243,6 +246,7 @@ func _normalize_mansion_exterior_for_godot() -> void:
         tiles.erase(old_position)
     for new_position in replacements:
         tiles[new_position] = replacements[new_position]
+        _tile_list_size = -1 # entry replaced: tile_list() must rebuild
 
     var remapped_pokemon: Dictionary = {}
     for raw_position in pokemon.keys():
@@ -347,6 +351,7 @@ func _normalize_oasis_facades_for_godot() -> void:
             replacements[at] = tile.copy_at(at)
             tiles.erase(tile.position)
         tiles.merge(replacements, true)
+        _tile_list_size = -1 # entry replaced: tile_list() must rebuild
 
 func repair_graveyard_side_fences() -> int:
     # Older world caches retain missing side rails even after the generator

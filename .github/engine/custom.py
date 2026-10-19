@@ -1,7 +1,10 @@
 # SCons profile for a stripped Godot 4.7.2 export template: pass profile=<this file>
 # plus target=template_release on the command line (a profile cannot set target).
 # PokeWilds is 2D-only on the GL Compatibility renderer; everything else goes.
-optimize = "size_extra"
+# The game is ~64k lines of GDScript: its CPU time is the interpreter, which
+# -Oz (size_extra) slows down. -O2 costs a few MB of binary and saves CPU,
+# that is battery.
+optimize = "speed_trade"
 debug_symbols = "no"
 
 disable_3d = "yes"

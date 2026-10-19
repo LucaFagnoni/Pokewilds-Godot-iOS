@@ -877,9 +877,9 @@ var source_mewtwo_intro_seen := false
 var battle_animation_manifest: Dictionary = {}
 var battle_animation_cache: Dictionary = {}
 
-## Each move sheet decodes to ~21 MB: keep only the few the current battle uses.
+## Each move sheet decodes to ~21 MB: keep only the current move's (at most two).
 func _cache_battle_sheet(path: String, sheet: Texture2D) -> void:
-    if battle_animation_cache.size() >= 4: battle_animation_cache.clear()
+    if battle_animation_cache.size() >= 2: battle_animation_cache.clear()
     battle_animation_cache[path] = sheet
 var battle_sprite_alpha_cache: Dictionary = {}
 var battle_sprite_animation_elapsed := 0.0
@@ -6378,10 +6378,14 @@ func _set_battle_message_width(full_width: bool) -> void:
 
 var world_hidden_by_battle := false
 
-## An opaque battle screen covers the whole field: stop drawing the world under it.
+## An opaque battle or menu screen covers the whole field: stop drawing the world under it.
 func _hide_world_under_battle() -> void:
     var backdrop: ColorRect = battle_panel.get_node("Background")
     var covered: bool = battle_active and battle_panel.visible and backdrop.visible         and backdrop.color.a >= 1.0 and battle_panel.modulate.a >= 1.0
+    # Full-screen touch menus (the map, the bag, the party...) are opaque too.
+    if not covered and is_instance_valid(touch_ui):
+        var menu_backdrop: ColorRect = touch_ui.surfaces.backdrop
+        covered = is_instance_valid(menu_backdrop) and menu_backdrop.visible and menu_backdrop.color.a >= 1.0
     if covered == world_hidden_by_battle: return
     world_hidden_by_battle = covered
     # Only the drawing is switched off: toggling `visible` notified all ~18k
