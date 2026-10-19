@@ -32,6 +32,7 @@ var load_empty: Label
 var saves: Array[Dictionary] = []
 var load_scroll := 0
 var showing_load := false
+var saves_signature := []
 
 func configure(owner_main: Node, owner_ui: Node) -> void:
     main = owner_main
@@ -157,16 +158,21 @@ func refresh() -> void:
     swatch.texture = m.player_color_swatch.texture
     var sprite: Sprite2D = m.player_preview
     if sprite.texture != null:
-        var frame := AtlasTexture.new()
         var frame_width: float = sprite.texture.get_width() / float(maxi(1, sprite.hframes))
-        frame.atlas = sprite.texture
-        frame.region = Rect2(frame_width * sprite.frame, 0, frame_width, sprite.texture.get_height())
-        if not (preview.texture is AtlasTexture) or preview.texture.atlas != frame.atlas or preview.texture.region != frame.region:
+        var region := Rect2(frame_width * sprite.frame, 0, frame_width, sprite.texture.get_height())
+        if not (preview.texture is AtlasTexture) or preview.texture.atlas != sprite.texture or preview.texture.region != region:
+            var frame := AtlasTexture.new()
+            frame.atlas = sprite.texture
+            frame.region = region
             preview.texture = frame
     _set_field(start_button, "JOIN!" if joining else ("CHOOSE SAVE" if showing_load and m.coop_game.new_setup_pending else "START!"))
     start_button.visible = not showing_load or m.coop_game.new_setup_pending
     status.text = String(m.menu_status.text) if String(m.menu_status.text) not in ["SINGLE PLAYER", ""] else ""
-    if load_list.visible: _refresh_saves()
+    # The list (and its file dates) only changes with the saves or the scroll.
+    var list_signature := [load_list.visible, saves.size(), load_scroll]
+    if load_list.visible and list_signature != saves_signature:
+        saves_signature = list_signature
+        _refresh_saves()
 
 func _refresh_saves() -> void:
     load_empty.visible = saves.is_empty()

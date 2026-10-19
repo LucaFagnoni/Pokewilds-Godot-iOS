@@ -1097,11 +1097,11 @@ func _find_entry_layer_for_source_cell(
     return fallback
 
 func _spawn_exact_source_pokemon(records: Array[Dictionary], spread: bool = false) -> void:
-    var spawn_deadline := Time.get_ticks_usec() + 3000
+    var spawn_deadline := Time.get_ticks_usec() + 13000
     for record in records:
         if spread and Time.get_ticks_usec() >= spawn_deadline:
             await get_tree().process_frame
-            spawn_deadline = Time.get_ticks_usec() + 3000
+            spawn_deadline = Time.get_ticks_usec() + 13000
         var species := String(record.get("name", "")).to_lower()
         var cell: Vector2i = record.get("cell", Vector2i.ZERO)
         if species.is_empty() or not exact_world.contains_cell(cell):
@@ -1113,7 +1113,7 @@ func _spawn_exact_source_pokemon(records: Array[Dictionary], spread: bool = fals
         )
 
 func _spawn_extra_biome_pokemon(_records: Array[Dictionary], spread: bool = false) -> void:
-    var spawn_deadline := Time.get_ticks_usec() + 3000
+    var spawn_deadline := Time.get_ticks_usec() + 13000
     # New-world companions replace the old partial 50% density pass.
     # Preserve authored encounters and only create valid breeding partners.
     var occupied: Dictionary = {}
@@ -1130,7 +1130,7 @@ func _spawn_extra_biome_pokemon(_records: Array[Dictionary], spread: bool = fals
     for id in initial_ids:
         if spread and Time.get_ticks_usec() >= spawn_deadline:
             await get_tree().process_frame
-            spawn_deadline = Time.get_ticks_usec() + 3000
+            spawn_deadline = Time.get_ticks_usec() + 13000
         if paired.has(id): continue
         var original: Dictionary = wild_pokemon[id]
         var species := String(original.species)
@@ -7718,7 +7718,7 @@ func restore_crafting_save_state(state: Dictionary) -> void:
         return
     var prior_gameplay := gameplay_enabled
     gameplay_enabled = false
-    var restore_deadline := Time.get_ticks_usec() + 4000
+    var restore_deadline := Time.get_ticks_usec() + 13000
     restoring_saved_tiles = true
     restored_tiles_need_refresh = false
     dropped_items().clear_actors()
@@ -7752,14 +7752,14 @@ func restore_crafting_save_state(state: Dictionary) -> void:
         for raw_floor_key in saved_house_floors:
             if Time.get_ticks_usec() >= restore_deadline:
                 await get_tree().process_frame
-                restore_deadline = Time.get_ticks_usec() + 4000
+                restore_deadline = Time.get_ticks_usec() + 13000
             built_house_floor_tiles[String(raw_floor_key)] = true
     var saved_house_paintings = state.get("built_house_paintings", {})
     if typeof(saved_house_paintings) == TYPE_DICTIONARY:
         for raw_key in (saved_house_paintings as Dictionary).keys():
             if Time.get_ticks_usec() >= restore_deadline:
                 await get_tree().process_frame
-                restore_deadline = Time.get_ticks_usec() + 4000
+                restore_deadline = Time.get_ticks_usec() + 13000
             var picture_index := clampi(int((saved_house_paintings as Dictionary)[raw_key]), 1, 20)
             built_house_paintings[String(raw_key)] = picture_index
     set_build_selection_index(int(state.get("build_selection_index", 0)))
@@ -7800,7 +7800,7 @@ func restore_crafting_save_state(state: Dictionary) -> void:
             for raw_key in saved_discovery:
                 if Time.get_ticks_usec() >= restore_deadline:
                     await get_tree().process_frame
-                    restore_deadline = Time.get_ticks_usec() + 4000
+                    restore_deadline = Time.get_ticks_usec() + 13000
                 var key := String(raw_key)
                 var cell := _cell_from_key(key)
                 if _in_bounds(cell):
@@ -7811,7 +7811,7 @@ func restore_crafting_save_state(state: Dictionary) -> void:
         for key in saved_terrain.keys():
             if Time.get_ticks_usec() >= restore_deadline:
                 await get_tree().process_frame
-                restore_deadline = Time.get_ticks_usec() + 4000
+                restore_deadline = Time.get_ticks_usec() + 13000
             var cell := _cell_from_key(String(key))
             if _in_bounds(cell):
                 var kind := int(saved_terrain[key])
@@ -7831,7 +7831,7 @@ func restore_crafting_save_state(state: Dictionary) -> void:
         for raw_key in removed:
             if Time.get_ticks_usec() >= restore_deadline:
                 await get_tree().process_frame
-                restore_deadline = Time.get_ticks_usec() + 4000
+                restore_deadline = Time.get_ticks_usec() + 13000
             var key := String(raw_key)
             var cell := _cell_from_key(key)
             if exact_world_mode and exact_world != null:
@@ -7848,7 +7848,7 @@ func restore_crafting_save_state(state: Dictionary) -> void:
         for raw in saved_structures:
             if Time.get_ticks_usec() >= restore_deadline:
                 await get_tree().process_frame
-                restore_deadline = Time.get_ticks_usec() + 4000
+                restore_deadline = Time.get_ticks_usec() + 13000
             if typeof(raw) != TYPE_DICTIONARY:
                 continue
             var entry: Dictionary = raw
@@ -7865,7 +7865,7 @@ func restore_crafting_save_state(state: Dictionary) -> void:
         for raw_cell in built_structures.keys():
             if Time.get_ticks_usec() >= restore_deadline:
                 await get_tree().process_frame
-                restore_deadline = Time.get_ticks_usec() + 4000
+                restore_deadline = Time.get_ticks_usec() + 13000
             _refresh_connected_structures_around(raw_cell)
             _refresh_shell_attachment(raw_cell)
 
@@ -7905,7 +7905,7 @@ func restore_crafting_save_state(state: Dictionary) -> void:
         for raw in saved_farms:
             if Time.get_ticks_usec() >= restore_deadline:
                 await get_tree().process_frame
-                restore_deadline = Time.get_ticks_usec() + 4000
+                restore_deadline = Time.get_ticks_usec() + 13000
             if typeof(raw) != TYPE_DICTIONARY:
                 continue
             var entry: Dictionary = raw
@@ -7922,7 +7922,7 @@ func restore_crafting_save_state(state: Dictionary) -> void:
             for raw in saved_wild:
                 if Time.get_ticks_usec() >= restore_deadline:
                     await get_tree().process_frame
-                    restore_deadline = Time.get_ticks_usec() + 4000
+                    restore_deadline = Time.get_ticks_usec() + 13000
                 if typeof(raw) != TYPE_DICTIONARY:
                     continue
                 var entry: Dictionary = raw
@@ -7948,7 +7948,7 @@ func restore_crafting_save_state(state: Dictionary) -> void:
             for raw in saved_eggs:
                 if Time.get_ticks_usec() >= restore_deadline:
                     await get_tree().process_frame
-                    restore_deadline = Time.get_ticks_usec() + 4000
+                    restore_deadline = Time.get_ticks_usec() + 13000
                 if typeof(raw) != TYPE_DICTIONARY:
                     continue
                 var entry: Dictionary = raw
@@ -7968,7 +7968,7 @@ func restore_crafting_save_state(state: Dictionary) -> void:
         for raw_key in saved_interior_mutations:
             if Time.get_ticks_usec() >= restore_deadline:
                 await get_tree().process_frame
-                restore_deadline = Time.get_ticks_usec() + 4000
+                restore_deadline = Time.get_ticks_usec() + 13000
             var key := String(raw_key)
             var mutation = saved_interior_mutations[raw_key]
             if typeof(mutation) != TYPE_DICTIONARY:
@@ -7988,7 +7988,7 @@ func restore_crafting_save_state(state: Dictionary) -> void:
         for cell in repaired_roof_cells:
             if Time.get_ticks_usec() >= restore_deadline:
                 await get_tree().process_frame
-                restore_deadline = Time.get_ticks_usec() + 4000
+                restore_deadline = Time.get_ticks_usec() + 13000
             source_interior_mutations.erase(_cell_key(cell))
             source_plant_farms.erase(_cell_key(cell))
         if not repaired_roof_cells.is_empty():

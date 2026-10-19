@@ -53,6 +53,26 @@ def parse_metadata(path: Path) -> dict[str, dict[str, object]]:
     return result
 
 
+def share_directives(manifest: dict) -> None:
+    """Store each distinct frame directive once; frames hold its table index.
+
+    44k per-frame dictionaries cost the game ~70 MB once parsed; the table
+    has about 1.2k entries.
+    """
+    table: list[dict] = []
+    index: dict[str, int] = {}
+    for animation in manifest["animations"].values():
+        directives = animation.get("directives", {})
+        for frame, directive in directives.items():
+            key = json.dumps(directive, sort_keys=True)
+            if key not in index:
+                index[key] = len(table)
+                table.append(directive)
+            directives[frame] = index[key]
+    manifest["directive_table"] = table
+    manifest["version"] = 3
+
+
 def build(source_root: Path, project_root: Path) -> dict[str, object]:
     animation_root = project_root / "assets" / "battle_animations"
     audio_root = project_root / "assets" / "battle_audio"
@@ -64,7 +84,7 @@ def build(source_root: Path, project_root: Path) -> dict[str, object]:
         generated.unlink()
 
     manifest: dict[str, object] = {
-        "version": 2,
+        "version": 3,
         "source": "PokeWilds 0.8.11 GSC attack exports",
         "frame_time": FRAME_TIME,
         "animations": {},
@@ -129,6 +149,7 @@ def build(source_root: Path, project_root: Path) -> dict[str, object]:
             base_key = key.removesuffix("_player_gsc").removesuffix("_enemy_gsc")
             audio.setdefault(base_key, f"res://assets/battle_audio/{output_sound.name}")
 
+    share_directives(manifest)
     manifest_path = animation_root / "manifest.json"
     manifest_path.write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"

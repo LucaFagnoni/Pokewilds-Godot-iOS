@@ -12,6 +12,9 @@ static var overlay_originals: Dictionary = {}
 static var font_cache: Dictionary = {}
 var ui: Node
 var active := false
+# Until dark mode is first switched on nothing has been recoloured, so the
+# per-redraw hook has nothing to restore.
+var ever_active := false
 var updating := false
 
 static func frame(texture: Texture2D) -> Texture2D:
@@ -63,6 +66,7 @@ func configure(root: Node) -> void:
 
 func set_enabled(value: bool) -> void:
     active = value
+    ever_active = ever_active or value
     _walk(ui)
 
 func _added(node: Node) -> void:
@@ -108,7 +112,7 @@ func _overlay(texture: Texture2D) -> Texture2D:
     return texture
 
 func _apply(node: Node) -> void:
-    if updating or not is_instance_valid(node): return
+    if not ever_active or updating or not is_instance_valid(node): return
     updating = true
     if node is LineEdit or node is Button:
         if not node.has_meta("dark_original_font"):

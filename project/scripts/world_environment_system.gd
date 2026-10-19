@@ -24,7 +24,8 @@ const SMOKE_TEXTURES := [
     preload("res://assets/environment/shade3_dithered.png"),
     preload("res://assets/environment/shade4_dithered.png")
 ]
-const DEEP_FOREST_TEXTURES := [preload("res://assets/environment/source_forest_shade.png")]
+# 2240x2240 (~19 MB decoded): loaded only when a deep forest is entered.
+const DEEP_FOREST_TEXTURE_PATH := "res://assets/environment/source_forest_shade.png"
 const FIRE_LIGHT_TEXTURES := [
     preload("res://assets/environment/fire_mask3.png"),
     preload("res://assets/environment/fire_mask4.png")
@@ -228,8 +229,12 @@ func _update_visuals(delta: float) -> void:
 
     if not indoors:
         var night_sky: bool = current_phase_name in ["sunset", "night"]
-        sky_rect.modulate = Color(1.0, 1.0, 1.0, 0.001 if night_sky else 1.0)
-        sky_star_rect.modulate = Color(1.0, 1.0, 1.0, 1.0 if night_sky else 0.001)
+        # Hide the unused sky instead of drawing it at alpha 0.001: both are
+        # full-screen tiled rects. The textures stay referenced (resident).
+        sky_rect.modulate = Color.WHITE
+        sky_star_rect.modulate = Color.WHITE
+        sky_rect.visible = not night_sky
+        sky_star_rect.visible = night_sky
         sky_star_rect.position = Vector2.ZERO
         cloud_motion += Vector2(-2.0, -9.0) * delta
         # Keep the cloud phase fixed in world space when zoom changes the
@@ -259,7 +264,10 @@ func _update_visuals(delta: float) -> void:
         and String(world.get("active_field_move")) in ["FLASH", "POWER"]
         and _color_brightness(canvas_modulate.color) < 0.92
     )
-    flash_light.texture = light_textures(false)[posmod(animation_tick / 10, 2)]
+    # A disabled light costs nothing; one at energy 0 is still rendered.
+    flash_light.enabled = flash_active
+    if flash_active:
+        flash_light.texture = light_textures(false)[posmod(animation_tick / 10, 2)]
     flash_light.energy = 1.15 if flash_active else 0.0
 
 func _refresh_context(force: bool) -> void:
@@ -328,7 +336,7 @@ func _configure_weather_visuals(weather_name: String) -> void:
             textures = SMOKE_TEXTURES
             modulates = [Color(0.58, 0.50, 0.48, 0.34), Color(0.68, 0.58, 0.52, 0.24)]
         "deep_forest":
-            textures = DEEP_FOREST_TEXTURES
+            textures = [load(DEEP_FOREST_TEXTURE_PATH)]
             modulates = [Color(1, 1, 1, 0.4)]
         _:
             pass

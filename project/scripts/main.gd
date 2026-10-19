@@ -876,6 +876,11 @@ var source_mewtwo: Control
 var source_mewtwo_intro_seen := false
 var battle_animation_manifest: Dictionary = {}
 var battle_animation_cache: Dictionary = {}
+
+## Each move sheet decodes to ~21 MB: keep only the few the current battle uses.
+func _cache_battle_sheet(path: String, sheet: Texture2D) -> void:
+    if battle_animation_cache.size() >= 4: battle_animation_cache.clear()
+    battle_animation_cache[path] = sheet
 var battle_sprite_alpha_cache: Dictionary = {}
 var battle_sprite_animation_elapsed := 0.0
 var battle_sprite_animation_frame := 0
@@ -1055,7 +1060,9 @@ const M3924_MINIMAP_MAP_SIZE := Vector2i(64, 64)
 const M3924_MINIMAP_MAP_OFFSET := Vector2.ZERO
 const M3924_MINIMAP_MAP_RADIUS := 26.4
 const M3924_MINIMAP_WINDOW_CELLS := Vector2(24.0, 24.0)
-const M3924_MINIMAP_REFRESH_SECONDS := 0.0
+# Idle refresh period. (At 0.0 the 20 Hz moving throttle below never applied
+# and the minimap was re-rasterised every frame.)
+const M3924_MINIMAP_REFRESH_SECONDS := 0.25
 const MAP_VIEWPORT_CENTER := Vector2(160.0, 78.0)
 const MAP_VIEWPORT_SIZE := Vector2(320.0, 156.0)
 var map_zoom := DEFAULT_MAP_ZOOM
@@ -1854,7 +1861,8 @@ func _update_m3924_dig_hud_and_minimap(delta: float) -> void:
         m3924_minimap_last_respawn = respawn_cell
         m3924_minimap_last_player_position = player_position
         _refresh_m3924_minimap(bounds, player_position)
-    _apply_minimap_rotation(delta)
+        # Frame, north marker and waypoints only move with a refresh.
+        _apply_minimap_rotation(delta)
     m3924_minimap_last_player_cell = player_cell
 
 func _refresh_minimap_frame() -> void:
@@ -1891,7 +1899,8 @@ func _refresh_m3924_minimap(bounds: Rect2i, player_position: Vector2) -> void:
     if bounds.size.x <= 0 or bounds.size.y <= 0:
         return
     var appearance_texture: Texture2D = _player_appearance_texture(false)
-    if appearance_texture != null:
+    var current_marker := m3924_minimap_player.texture as AtlasTexture
+    if appearance_texture != null and (current_marker == null or current_marker.atlas != appearance_texture):
         var marker_frame: AtlasTexture = AtlasTexture.new()
         marker_frame.atlas = appearance_texture
         marker_frame.region = Rect2(0.0, 0.0, 16.0, 11.0)
@@ -3093,6 +3102,7 @@ func _update_fps_counter(delta: float) -> void:
 
 func _process(delta: float) -> void:
     _update_fps_counter(delta)
+    _hide_world_under_battle()
     map_cache_check_time -= delta
     if started and world.generated and not generating and not map_cache_warming and not map_building and map_cache_check_time <= 0.0:
         map_cache_check_time = 0.5
@@ -3589,7 +3599,7 @@ func _source_animation_frame_texture(source_key: String,
     if sheet == null and ResourceLoader.exists(sheet_path):
         sheet = load(sheet_path) as Texture2D
         if sheet != null:
-            battle_animation_cache[sheet_path] = sheet
+            _cache_battle_sheet(sheet_path, sheet)
     if sheet == null:
         return null
     var columns := maxi(1, int(animation.get("columns", 15)))
@@ -3605,8 +3615,13 @@ func _source_animation_directive(source_key: String,
         frame_index: int) -> Dictionary:
     var animations: Dictionary = battle_animation_manifest.get("animations", {})
     var animation: Dictionary = animations.get(source_key, {})
-    var directives: Dictionary = animation.get("directives", {})
-    return (directives.get(str(frame_index + 1), {}) as Dictionary)
+    return _battle_directive(animation, frame_index + 1)
+
+## Frames store an index into the manifest's shared directive table.
+func _battle_directive(animation: Dictionary, frame_number: int) -> Dictionary:
+    var index = (animation.get("directives", {}) as Dictionary).get(str(frame_number))
+    if index == null: return {}
+    return battle_animation_manifest.get("directive_table", [])[int(index)]
 
 func _show_level_up_stats(pokemon: Dictionary) -> void:
     _reset_progression_overlay()
@@ -6335,6 +6350,17 @@ func _set_battle_message_width(full_width: bool) -> void:
     battle_status.offset_right = 300.0 if full_width else 125.0
     battle_status.offset_bottom = 175.0
 
+var world_hidden_by_battle := false
+
+## An opaque battle screen covers the whole field: stop drawing the world under it.
+func _hide_world_under_battle() -> void:
+    var backdrop: ColorRect = battle_panel.get_node("Background")
+    var covered: bool = battle_active and battle_panel.visible and backdrop.visible         and backdrop.color.a >= 1.0 and battle_panel.modulate.a >= 1.0
+    if covered == world_hidden_by_battle: return
+    world_hidden_by_battle = covered
+    # Back on the title screen the world stays hidden.
+    if covered or started: world.visible = not covered
+
 func _restore_battle_background() -> void:
     if not is_instance_valid(battle_panel): return
     var backdrop: ColorRect = battle_panel.get_node("Background")
@@ -8626,7 +8652,6 @@ func _play_source_battle_feedback(move_name: String, player_attacks: bool,
     var frame_width := int(animation.get("frame_width", 160))
     var frame_height := int(animation.get("frame_height", 144))
     var frame_time := float(animation.get("frame_time", 1.0 / 60.0))
-    var directives: Dictionary = animation.get("directives", {})
     var player_origin := player_battle_sprite.position
     var enemy_origin := enemy_sprite.position
     var animation_origin := battle_move_animation.position
@@ -8665,7 +8690,7 @@ func _play_source_battle_feedback(move_name: String, player_attacks: bool,
             if active_sheet == null and ResourceLoader.exists(sheet_path):
                 active_sheet = load(sheet_path) as Texture2D
                 if active_sheet != null:
-                    battle_animation_cache[sheet_path] = active_sheet
+                    _cache_battle_sheet(sheet_path, active_sheet)
         if active_sheet == null:
             continue
         var local_frame := frame_index - int(sheet_entry.get("start_frame", 0))
@@ -8677,9 +8702,9 @@ func _play_source_battle_feedback(move_name: String, player_attacks: bool,
             float(frame_width), float(frame_height))
         battle_move_animation.texture = atlas
         _apply_source_battle_frame(
-            directives.get(str(frame_index + 1), {}) as Dictionary,
+            _battle_directive(animation, frame_index + 1),
             source_key, player_origin, enemy_origin, animation_origin)
-        await effects.apply(directives.get(str(frame_index + 1), {}) as Dictionary, frame_index + 1)
+        await effects.apply(_battle_directive(animation, frame_index + 1), frame_index + 1)
         animation_deadline += roundi(frame_time * 1000000.0)
         while preload("res://scripts/game_clock.gd").ticks_usec() < animation_deadline:
             await get_tree().process_frame

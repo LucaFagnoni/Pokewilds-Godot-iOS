@@ -1100,20 +1100,20 @@ func _update_wild_pokemon(delta: float) -> void:
     # with a few comparisons before the per-Pokemon work below, which for
     # hundreds of them every frame was a third of the host's frame time.
     # The zones are the same ones _wild_ecology_is_active tests.
-    var zones: Array = []
-    if online:
-        for watcher in coordinator.wild.players.values():
-            zones.append([int(watcher.x), int(watcher.y), ECOLOGY_ACTIVE_RADIUS])
-    else:
-        zones.append([player_cell.x, player_cell.y, ECOLOGY_ACTIVE_RADIUS])
-    for habitat_cell in deployed_pokemon.keys():
-        zones.append([habitat_cell.x, habitat_cell.y, PokemonEcology.HABITAT_RADIUS])
     # Which Pokemon are inside a zone is worked out twice a second, not every
     # frame: with hundreds in the world, just asking each one cost 3-4 ms a
     # frame. One that wanders in or spawns is picked up within half a second.
     var now_msec := Time.get_ticks_msec()
     if now_msec - _watched_wild_at >= 500:
         _watched_wild_at = now_msec
+        var zones: Array = []
+        if online:
+            for watcher in coordinator.wild.players.values():
+                zones.append([int(watcher.x), int(watcher.y), ECOLOGY_ACTIVE_RADIUS])
+        else:
+            zones.append([player_cell.x, player_cell.y, ECOLOGY_ACTIVE_RADIUS])
+        for habitat_cell in deployed_pokemon.keys():
+            zones.append([habitat_cell.x, habitat_cell.y, PokemonEcology.HABITAT_RADIUS])
         _watched_wild_ids.clear()
         for raw_id in wild_pokemon:
             var at = wild_pokemon[raw_id].get("cell", Vector2i.ZERO)

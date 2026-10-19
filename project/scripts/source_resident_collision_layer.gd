@@ -132,7 +132,7 @@ func refresh_now() -> void:
     for key in source_tiles:
         var cell: Vector2i = Vector2i(key / tile_size) if source_keys_are_pixels else key
         var tile = source_tiles[key]
-        var revision = [tile.get_instance_id(),tile.resident_revision] if tile is SourceTile else hash(tile)
+        var revision = hash([tile.get_instance_id(), tile.resident_revision]) if tile is SourceTile else hash(tile)
         current[key] = revision
         if resident_collision_revisions.get(key) == revision: continue
         changed.append(cell)
@@ -156,18 +156,18 @@ func refresh_now() -> void:
 func build_initial_async() -> void:
     resident_collision_builds += 1
     var boundary := {}
-    var deadline := Time.get_ticks_usec() + 6000
+    var deadline := Time.get_ticks_usec() + 13000
     for key in source_tiles:
         var cell: Vector2i = Vector2i(key / tile_size) if source_keys_are_pixels else key
         var tile = source_tiles[key]
-        resident_collision_revisions[key] = [tile.get_instance_id(),tile.resident_revision] if tile is SourceTile else hash(tile)
+        resident_collision_revisions[key] = hash([tile.get_instance_id(), tile.resident_revision]) if tile is SourceTile else hash(tile)
         _update_cell(cell)
         for direction in [Vector2i.UP,Vector2i.DOWN,Vector2i.LEFT,Vector2i.RIGHT]:
             var next: Vector2i = cell + direction
             if not source_tiles.has(next * tile_size if source_keys_are_pixels else next): boundary[next] = true
         if Time.get_ticks_usec() >= deadline:
             await get_tree().process_frame
-            deadline = Time.get_ticks_usec() + 6000
+            deadline = Time.get_ticks_usec() + 13000
     for cell in boundary: _update_cell(cell)
     _apply_collision_mode()
     await get_tree().process_frame

@@ -63,7 +63,11 @@ const BUTTON_PADDING := 4.0
 
 ## Thin pixel button: the 8 px dialogue frame leaves no room for text in a
 ## finger-sized button. Hit-testing is done by this node, not the GUI.
+static var _button_styles := {}
+
+## Two shared styles (selected / not): creating one per call allocated every frame.
 static func button_style(selected: bool) -> StyleBoxFlat:
+    if _button_styles.has(selected): return _button_styles[selected]
     var style := StyleBoxFlat.new()
     style.bg_color = Color.BLACK if selected else Color.WHITE
     style.border_color = Color.BLACK
@@ -73,6 +77,7 @@ static func button_style(selected: bool) -> StyleBoxFlat:
     style.shadow_size = 1
     style.shadow_offset = Vector2(1, 1)
     style.anti_aliasing = false
+    _button_styles[selected] = style
     return style
 
 func make_button(parent: Node, text: String, size: Vector2, font_size: int = 10) -> Control:
@@ -118,6 +123,9 @@ static func set_text(button: Control, text: String) -> void:
     label.position = Vector2(roundf(x), roundf(y))
 
 static func set_selected(button: Control, selected: bool) -> void:
+    # Font overrides re-shape the label: only touch them on a real change.
+    if button.has_meta("selected") and button.get_meta("selected") == selected: return
+    button.set_meta("selected", selected)
     button.add_theme_stylebox_override("panel", button_style(selected))
     var label := button.get_node("Text") as Label
     label.add_theme_font_override("font", WHITE_FONT if selected else JOHTO_FONT)

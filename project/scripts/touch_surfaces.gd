@@ -21,6 +21,11 @@ var setup_screen: Control
 var backdrop: ColorRect
 var field_hud: RefCounted
 var move_cards: Control
+var move_card_signature := []
+var card_styles := {}
+var shown_pocket := -1
+var map_hint: Label
+var build_hint: Control
 var bag_tabs: Control
 var bag_tab_buttons: Array[Control] = []
 const POCKET_NAMES := ["ITEMS", "BALLS", "MATERIALS", "KEY ITEMS", "MEDICINE"]
@@ -344,17 +349,19 @@ func refresh_visuals(delta: float = 0.0) -> void:
     _refresh_move_cards()
     _refresh_bag_tabs()
     # Controller hints that touch replaces.
-    (m.build_panel.get_node("Hint") as Control).visible = false
+    if build_hint == null: build_hint = m.build_panel.get_node("Hint")
+    build_hint.visible = false
     var top_level: bool = m.started and m.game_menu_open and m.game_menu.visible \
         and m.game_menu_box.visible and not m.game_menu_detail_open and not m.save_confirm_open \
         and not m.guide_menu_open and not m.pokemon_menu_open and not m.item_pocket_menu.visible \
         and not (is_instance_valid(m.pokedex_menu) and m.pokedex_menu.visible) \
         and not (is_instance_valid(m.options_menu) and m.options_menu.visible)
+    if top_level and not start_menu.visible: _refresh_start_details()
     start_menu.visible = top_level
     m.game_menu_box.modulate.a = 0.0
-    if top_level: _refresh_start_details()
     if m.game_menu_map_screen.visible:
-        m.get_node("UI/GameMenu/MapScreen/Hint").text = "DRAG: MOVE   PINCH: ZOOM   TAP: CURSOR" if not m.teleport_map_mode else ""
+        if map_hint == null: map_hint = m.get_node("UI/GameMenu/MapScreen/Hint")
+        map_hint.text = "DRAG: MOVE   PINCH: ZOOM   TAP: CURSOR" if not m.teleport_map_mode else ""
 
 func _build_start_menu() -> void:
     var m := main
@@ -637,9 +644,14 @@ func _refresh_move_cards() -> void:
     move_cards.visible = showing
     m.battle_move_box.modulate.a = 0.0 if showing else 1.0
     m.battle_move_type_box.modulate.a = 0.0 if showing else 1.0
-    if not showing: return
+    if not showing:
+        move_card_signature = []
+        return
     var actor: Dictionary = m._command_pokemon()
     var moves: Array = actor.get("moves", [])
+    var signature := [moves.duplicate(), (actor.get("pp", {}) as Dictionary).duplicate(), m.battle_move_index]
+    if signature == move_card_signature: return
+    move_card_signature = signature
     for i in 4:
         var card := move_card_nodes[i]
         card.visible = i < moves.size()
@@ -650,13 +662,7 @@ func _refresh_move_cards() -> void:
         var colour := Color(String(TYPE_COLORS.get(type, "a8a878")))
         var maximum := int(data.get("pp", 0))
         var current := int((actor.get("pp", {}) as Dictionary).get(move, maximum))
-        var style := StyleBoxFlat.new()
-        style.bg_color = colour.lerp(Color.WHITE, 0.55)
-        style.border_color = colour.darkened(0.45) if i != m.battle_move_index else Color.BLACK
-        style.set_border_width_all(2 if i == m.battle_move_index else 1)
-        style.set_corner_radius_all(3)
-        style.anti_aliasing = false
-        card.add_theme_stylebox_override("panel", style)
+        card.add_theme_stylebox_override("panel", _card_style(type, colour, i == m.battle_move_index))
         (card.get_node("Name") as Label).text = move.replace("_", " ")
         (card.get_node("Info") as Label).text = "%s   PP %d/%d" % [type, current, maximum]
 
@@ -746,9 +752,13 @@ func _refresh_bag_tabs() -> void:
     # The tabs take the place of the pocket picture and name.
     m.item_pocket_label.modulate.a = 0.0
     m.item_pocket_bag.modulate.a = 0.0
-    if not showing: return
+    if not showing:
+        shown_pocket = -1
+        return
+    if shown_pocket == int(m.battle_item_pocket_index): return
+    shown_pocket = int(m.battle_item_pocket_index)
     for i in bag_tab_buttons.size():
-        ui.set_selected(bag_tab_buttons[i], i == int(m.battle_item_pocket_index))
+        ui.set_selected(bag_tab_buttons[i], i == shown_pocket)
 
 func _pokedex_grid(dex: Control) -> Dictionary:
     var rows := []
@@ -821,3 +831,15 @@ func _waypoint_naming() -> Dictionary:
         buttons.append(["DELETE", func(): waypoints.delete_marker(), Rect2(Vector2(bounds.end.x - 82, bounds.position.y + 28), Vector2(54, 20))])
     # Taps on the panel's own buttons and text field still reach them.
     return {"modal": false, "hide_pad": true, "buttons": buttons, "back": func(): waypoints.cancel_name()}
+
+func _card_style(type: String, colour: Color, selected: bool) -> StyleBoxFlat:
+    var key := "%s|%s" % [type, selected]
+    if card_styles.has(key): return card_styles[key]
+    var style := StyleBoxFlat.new()
+    style.bg_color = colour.lerp(Color.WHITE, 0.55)
+    style.border_color = Color.BLACK if selected else colour.darkened(0.45)
+    style.set_border_width_all(2 if selected else 1)
+    style.set_corner_radius_all(3)
+    style.anti_aliasing = false
+    card_styles[key] = style
+    return style

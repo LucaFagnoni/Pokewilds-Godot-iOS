@@ -31,7 +31,7 @@ func queue_tide_refresh(cells: Array):
         var key = cell*tile_size if source_keys_are_pixels else cell
         if source_tiles.has(key):
             var tile = source_tiles[key]
-            resident_fingerprints[key] = [tile.get_instance_id(),tile.resident_revision]
+            resident_fingerprints[key] = hash([tile.get_instance_id(), tile.resident_revision])
             if _is_beach_high_tide(tile): frame_tidal_cells[cell] = true
             else: frame_tidal_cells.erase(cell)
         for y in range(-1 if draw_upper else 0,2 if draw_upper else 1):
@@ -150,11 +150,11 @@ func build_resident_async():
     set_process(false)
     resident_build_count += 1
     var batch := {}
-    var deadline := Time.get_ticks_usec() + 2000
+    var deadline := Time.get_ticks_usec() + 13000
     for key in source_tiles:
         var tile = source_tiles[key]
         var cell = Vector2i(key / tile_size) if source_keys_are_pixels else key
-        resident_fingerprints[key] = [tile.get_instance_id(), tile.resident_revision] if tile is SourceTile else hash(tile)
+        resident_fingerprints[key] = hash([tile.get_instance_id(), tile.resident_revision]) if tile is SourceTile else hash(tile)
         if _is_beach_high_tide(tile): frame_tidal_cells[cell] = true
         batch[cell] = true
         if batch.size() >= 64 or Time.get_ticks_usec() >= deadline:
@@ -162,7 +162,7 @@ func build_resident_async():
             batch.clear()
             if Time.get_ticks_usec() >= deadline:
                 await get_tree().process_frame
-                deadline = Time.get_ticks_usec() + 10000
+                deadline = Time.get_ticks_usec() + 13000
     if not batch.is_empty(): _redraw_cells(batch, false)
     resident_dirty = false
     set_process(true)
@@ -327,7 +327,7 @@ func refresh_now(changed_hint: Array = []):
             changed[Vector2i(key / tile_size) if source_keys_are_pixels else key] = true
             continue
         var tile = source_tiles[key]
-        var fingerprint = [tile.get_instance_id(),tile.resident_revision] if tile is SourceTile else hash(tile)
+        var fingerprint = hash([tile.get_instance_id(), tile.resident_revision]) if tile is SourceTile else hash(tile)
         if resident_fingerprints.get(key) != fingerprint:
             changed[Vector2i(key / tile_size) if source_keys_are_pixels else key] = true
         current[key] = fingerprint

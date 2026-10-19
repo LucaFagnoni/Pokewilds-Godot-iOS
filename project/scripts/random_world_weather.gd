@@ -84,6 +84,8 @@ static func allows(tile: SourceTile, kind: String) -> bool:
         "rain": return true
     return false
 
+var drew_last_frame := true
+
 func _process(delta: float) -> void:
     if world == null or not is_instance_valid(world): return
     var outdoors: bool = bool(preload("res://scripts/game_options.gd").values.get("weather_events",true)) and world.generated and world.exact_world != null and world.active_area_id == "OVERWORLD" and not world.restoring_saved_tiles and world.is_visible_in_tree()
@@ -113,7 +115,11 @@ func _process(delta: float) -> void:
         world.event_progress[SAVE_KEY] = state
     advance(delta)
     _update_ambience()
-    queue_redraw()
+    # Nothing is drawn between events: redraw while one fades in/out, plus one
+    # last time to clear it.
+    var drawing: bool = minf(float(state.age) / 3.0, float(state.remaining) / 4.0) > 0.0
+    if drawing or drew_last_frame: queue_redraw()
+    drew_last_frame = drawing
 
 func _update_ambience() -> void:
     var tile: SourceTile = world.exact_world.tile_at(world._player_cell())
