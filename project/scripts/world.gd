@@ -604,6 +604,15 @@ func clear_active_field_move(show_message: bool = true) -> void:
         return
 
     var previous_move = active_field_move
+    # Forced off FLY or SURF over the sea (a battle, a deploy...): nobody can
+    # stand there on foot, and open sea keeps no collision. Put them ashore.
+    if active_field_move in ["FLY", "SURF"] and active_area_id == "OVERWORLD" and not _is_walkable(_player_cell()):
+        var shore := _nearest_walkable_cell(_player_cell(), 24)
+        if shore.x == -2147483648:
+            # Far out at sea: back where a whiteout would put them.
+            var home := respawn_cell if respawn_cell.x > -2147483648 else spawn_cell
+            if _is_walkable(home): shore = home
+        if shore.x > -2147483648: player.position = _cell_center(shore)
     if active_field_move == "FLY":
         player.collision_mask = field_previous_collision_mask
         _set_fly_shadow_active(false)

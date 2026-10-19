@@ -6358,8 +6358,10 @@ func _hide_world_under_battle() -> void:
     var covered: bool = battle_active and battle_panel.visible and backdrop.visible         and backdrop.color.a >= 1.0 and battle_panel.modulate.a >= 1.0
     if covered == world_hidden_by_battle: return
     world_hidden_by_battle = covered
-    # Back on the title screen the world stays hidden.
-    if covered or started: world.visible = not covered
+    # Only the drawing is switched off: toggling `visible` notified all ~18k
+    # nodes under the world (~9 ms at every battle start and end). The title
+    # screen's own world.visible = false still wins.
+    RenderingServer.canvas_item_set_visible(world.get_canvas_item(), world.visible and not covered)
 
 func _restore_battle_background() -> void:
     if not is_instance_valid(battle_panel): return

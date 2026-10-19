@@ -1000,11 +1000,8 @@ static func berry_tree_collision(tiles: Dictionary, cell: Vector2i, pixel_keys: 
     if persim_crown_collision(tiles, cell, pixel_keys):
         return true
     var scale := 16 if pixel_keys else 1
-    for anchor in [cell]:
-        var tile := tiles.get(anchor * scale) as SourceTile
-        if tile != null and tile.name_upper.to_lower().begins_with("berrytree_"):
-            return true
-    return false
+    var tile := tiles.get(cell * scale) as SourceTile
+    return tile != null and not tile.name_upper.is_empty() and tile.name_upper.to_lower().begins_with("berrytree_")
 
 # Retain the shared collision interface without a special Persim footprint.
 static func persim_crown_collision(tiles: Dictionary, cell: Vector2i, pixel_keys: bool = true) -> bool:

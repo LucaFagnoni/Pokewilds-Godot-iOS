@@ -408,6 +408,8 @@ func _cached_music_stream(track_name: String) -> AudioStream:
         stream.set_meta("music_track", track_name)
         stream.set_meta("music_asset", path)
         stream.set_meta("balanced_db", AudioBalance.level_db(stream))
+        # The last few tracks only: players keep the ones in use alive.
+        if music_stream_cache.size() >= 4: music_stream_cache.erase(music_stream_cache.keys()[0])
         music_stream_cache[path] = stream
     return stream
 

@@ -5445,22 +5445,10 @@ func _refresh_exact_streams() -> void:
     if restoring_saved_tiles:
         restored_tiles_need_refresh = true
         return
-    map_art_revision += 1
-    if is_instance_valid(reflection_layer) and reflection_layer.has_method("refresh_cells"):
-        var cells: Array=[]
-        for key in SourceTile.resident_changed_cells: cells.append(Vector2i(key/TILE))
-        reflection_layer.refresh_cells(cells)
-    var base_stream := get_node_or_null("GroundLayer/ExactBaseTileStream")
-    var upper_stream := get_node_or_null("DecorLayer/ExactUpperTileStream")
-    if base_stream != null:
-        base_stream.invalidate_tiles()
-    if upper_stream != null:
-        upper_stream.invalidate_tiles()
-    var collision_stream := get_node_or_null("ExactCollisionStream") as SourceChunkCollisionStreamer
-    if collision_stream != null:
-        collision_stream.refresh_now()
-    var canopy := get_node_or_null("TreeCanopyOverlay")
-    if canopy != null: canopy.queue_redraw()
+    # Hand the edited cells to every layer, then forget them. Leaving them in
+    # resident_changed_cells made each later edit redo every earlier one, and
+    # the collision layer used to rescan the whole map (~0.5 s) instead.
+    _refresh_exact_tile_streams()
 
 func _set_exact_overworld_streaming(enabled: bool) -> void:
     if not exact_world_mode:
@@ -9717,7 +9705,7 @@ func _refresh_biome_dig_sites(spread: bool = false) -> void:
     for crack_name in FieldMoveData.CRACKED_LOOT:
         candidates[crack_name] = []
     for raw_tile in exact_world.tile_list():
-        if spread and Time.get_ticks_usec()-slice_started>=1000:
+        if spread and Time.get_ticks_usec()-slice_started>=_daily_slice_usec():
             await get_tree().process_frame
             if exact_world!=identity or _world_day_index()!=day: return
             slice_started=Time.get_ticks_usec()
@@ -9764,6 +9752,11 @@ func _refresh_biome_dig_sites(spread: bool = false) -> void:
             }
     _refresh_exact_tile_streams()
 
+## Whole-map daily scans: 1 ms a frame in play, most of the frame behind the
+## loading screen (at 1 ms a frame they added ~6 s to every load).
+func _daily_slice_usec() -> int:
+    return 13000 if restoring_saved_tiles or not gameplay_enabled else 1000
+
 func _world_day_index() -> int:
     return int(floor(world_elapsed_seconds / WORLD_DAY_SECONDS))
 
@@ -9779,7 +9772,7 @@ func _refresh_sand_traps(spread: bool = false) -> void:
     # CycleDayNight scans x=-4..4 and y=-4..3 around authored desert2 markers.
     # Keep source's maximum three traps and 32/256 chance per eligible cell.
     for raw_tile in exact_world.tile_list():
-        if spread and Time.get_ticks_usec()-slice_started>=1000:
+        if spread and Time.get_ticks_usec()-slice_started>=_daily_slice_usec():
             await get_tree().process_frame
             if exact_world!=identity or _world_day_index()!=day: return
             slice_started=Time.get_ticks_usec()
@@ -10508,6 +10501,14 @@ func _redraw_exact_tide_streams(changed_cells: Array = []) -> void:
     # Tide changes alter visual/source identities, not the player's collision
     # window. Queue one redraw for the current frame instead of force-rebuilding
     # both streamed layers and hundreds of collision shapes for every tide band.
+    if changed_cells.is_empty():
+        changed_cells = []
+        # The start of a tide rewrites a few hundred shore cells at once.
+        # Redrawing them all (and their neighbours) in one frame was a 60 ms
+        # hitch: send them through the tide queue, nearest first.
+        for key in SourceTile.resident_changed_cells:
+            if source_tiles.has(key): changed_cells.append(Vector2i(key / TILE))
+        if changed_cells.is_empty(): return
     for node_path in [
             "GroundLayer/ExactBaseTileStream",
             "DecorLayer/ExactUpperTileStream"]:
