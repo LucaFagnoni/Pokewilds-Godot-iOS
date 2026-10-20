@@ -1199,6 +1199,10 @@ func _spawn_extra_biome_pokemon(_records: Array[Dictionary], spread: bool = fals
                 # both the terrain and the encounter species list intact.
                 for radius in range(1, 17):
                     if partner_id >= 0: break
+                    # A search that finds nothing took ~220 ms: a ring per slice.
+                    if spread and Time.get_ticks_usec() >= spawn_deadline:
+                        await get_tree().process_frame
+                        spawn_deadline = Time.get_ticks_usec() + 13000
                     for y in range(-radius, radius + 1):
                         if partner_id >= 0: break
                         for x in range(-radius, radius + 1):
