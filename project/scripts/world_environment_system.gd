@@ -47,6 +47,36 @@ func light_textures(torch: bool) -> Array:
         return CIRCLE_TORCH_LIGHT_TEXTURES if torch else CIRCLE_FIRE_LIGHT_TEXTURES
     return TORCH_LIGHT_TEXTURES if torch else FIRE_LIGHT_TEXTURES
 
+# Night lights. CanvasModulate still darkens the world canvas (ambient A). Every
+# light is drawn additively, once, into a small light map (1 texel per world
+# pixel, the visible area only), which stores L / LIGHT_MAP_RANGE. One
+# full-screen pass at z 1024 (the top of a PointLight2D's default z range) then
+# turns the ambient-lit screen a*A into a*(A + L), exactly what CanvasModulate
+# plus additive PointLight2Ds gave, for a cost that no longer grows with the
+# number of lights or of lit tiles. Nothing of it exists while no light is in
+# view (daylight, indoors, most nights).
+const LIGHT_MAP_RANGE := 4.0
+const FIRE_LIGHT_COLOR := Color(1.0, 0.68, 0.34)
+const FIRE_LIGHT_ENERGY := 0.82
+const FLASH_LIGHT_COLOR := Color(1.0, 0.82, 0.55)
+const FLASH_LIGHT_ENERGY := 1.15
+const LIGHT_COMPOSITE_SHADER := """
+shader_type canvas_item;
+render_mode unshaded, blend_disabled;
+uniform sampler2D screen_texture : hint_screen_texture, filter_nearest, repeat_disable;
+uniform vec3 gain = vec3(1.0);
+uniform vec4 lit_uv = vec4(0.0, 0.0, 1.0, 1.0);
+void fragment() {
+	vec4 screen = textureLod(screen_texture, SCREEN_UV, 0.0);
+	vec3 light = texture(TEXTURE, UV).rgb;
+	// Hard edge, like a light texture's own rectangle.
+	if (any(lessThan(UV, lit_uv.xy)) || any(greaterThanEqual(UV, lit_uv.zw))) {
+		light = vec3(0.0);
+	}
+	COLOR = vec4(screen.rgb * (1.0 + light * gain), screen.a);
+}
+"""
+
 var world: Node2D
 var canvas_modulate: CanvasModulate
 var sky_root: Node2D
@@ -54,7 +84,13 @@ var sky_rect: TextureRect
 var sky_star_rect: TextureRect
 var effect_root: Node2D
 var effect_rects: Array[TextureRect] = []
-var flash_light: PointLight2D
+var light_viewport: SubViewport
+var light_canvas: Node2D
+var light_composite: Sprite2D
+var light_draw_list: Array = []
+var light_origin := Vector2i(2147483647, 2147483647)
+# Other lights (co-op players): holder node -> [position, torch, scale, color].
+var extra_lights: Dictionary = {}
 var music_players: Array[AudioStreamPlayer] = []
 var sfx_player: AudioStreamPlayer
 var active_music_player := 0
@@ -88,7 +124,17 @@ var music_world_id := 0
 var music_transition_generation := 0
 var initialized := false
 var structure_frames: Dictionary = {}
-var environmental_lights: Dictionary = {}
+# Lit structures and lava in reach: [position, torch] pairs.
+var environmental_lights: Array = []
+# Built CAMPFIRE/TORCH/chimney entries: [cell, data] pairs, rescanned only when
+# a structure is built or removed instead of on every light update.
+var animated_structures: Array = []
+var animated_structures_dirty := true
+var animated_structures_count := -1
+var lava_scan_key := []
+var lava_scan_cells: Array = []
+var lava_name_ids: Dictionary = {}
+var lava_name_count := -1
 var last_step_sound_msec := -1000
 
 func configure(world_node: Node2D) -> void:
@@ -97,6 +143,9 @@ func configure(world_node: Node2D) -> void:
     _build_audio_nodes()
     if world.has_signal("player_stepped"):
         world.player_stepped.connect(_on_player_stepped)
+    # Structure sprites (and a house's chimney) entering the tree mark the
+    # animated/lit structure list stale.
+    get_tree().node_added.connect(_on_node_added)
     # Battle.java / LinkedMusic: intro once, then the authored looping track.
     battle_intro = (_cached_music_stream("wild_battle_intro") as AudioStreamOggVorbis).duplicate()
     battle_loop = (_cached_music_stream("wild_battle") as AudioStreamOggVorbis).duplicate()
@@ -155,15 +204,35 @@ func _build_visual_nodes() -> void:
         effect_root.add_child(rect)
         effect_rects.append(rect)
 
-    flash_light = PointLight2D.new()
-    flash_light.name = "FieldMoveFlashLight"
-    flash_light.texture = light_textures(false)[0]
-    flash_light.color = Color(1.0, 0.82, 0.55)
-    flash_light.energy = 0.0
-    flash_light.texture_scale = 1.2
-    flash_light.z_as_relative = false
-    flash_light.z_index = 4094
-    add_child(flash_light)
+    light_viewport = SubViewport.new()
+    light_viewport.name = "EnvironmentLightMap"
+    light_viewport.transparent_bg = true
+    light_viewport.disable_3d = true
+    light_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+    light_viewport.size = Vector2i(2, 2)
+    add_child(light_viewport)
+    light_canvas = Node2D.new()
+    var additive := CanvasItemMaterial.new()
+    additive.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+    light_canvas.material = additive
+    light_canvas.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+    light_canvas.draw.connect(_draw_lights)
+    light_viewport.add_child(light_canvas)
+    light_composite = Sprite2D.new()
+    light_composite.name = "EnvironmentLights"
+    light_composite.centered = false
+    light_composite.region_enabled = true
+    light_composite.texture = light_viewport.get_texture()
+    # A PointLight2D lit z -1024..1024 by default; weather above stays unlit.
+    light_composite.z_as_relative = false
+    light_composite.z_index = 1024
+    light_composite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+    var composite := ShaderMaterial.new()
+    composite.shader = Shader.new()
+    composite.shader.code = LIGHT_COMPOSITE_SHADER
+    light_composite.material = composite
+    light_composite.visible = false
+    add_child(light_composite)
 
 func _make_tiled_rect(texture: Texture2D) -> TextureRect:
     var rect := TextureRect.new()
@@ -257,18 +326,98 @@ func _update_visuals(delta: float) -> void:
             fmod(effect_motion.y * (1.0 + index * 0.20), 64.0)
         )
 
-    if world.has_method("environment_player_position"):
-        flash_light.position = Vector2(world.call("environment_player_position"))
     var flash_active := (
         not indoors
         and String(world.get("active_field_move")) in ["FLASH", "POWER"]
         and _color_brightness(canvas_modulate.color) < 0.92
+        and world.has_method("environment_player_position")
     )
-    # A disabled light costs nothing; one at energy 0 is still rendered.
-    flash_light.enabled = flash_active
-    if flash_active:
-        flash_light.texture = light_textures(false)[posmod(animation_tick / 10, 2)]
-    flash_light.energy = 1.15 if flash_active else 0.0
+    _update_light_map(center, view_size, Vector2(world.call("environment_player_position")) if flash_active else null)
+
+func set_extra_light(holder: Node, light: Array) -> void:
+    ## light: [position, torch, scale, color * energy]; empty removes it.
+    if light.is_empty(): extra_lights.erase(holder)
+    else: extra_lights[holder] = light
+
+func _update_light_map(center: Vector2, view_size: Vector2, flash: Variant) -> void:
+    var view := Rect2(center - view_size * 0.5, view_size).grow(1.0)
+    var frame := posmod(animation_tick / 10, 2)
+    var textures: Array = [light_textures(false)[frame], light_textures(true)[frame]]
+    var draw_list: Array = []
+    if world.is_visible_in_tree() and DisplayServer.get_name() != "headless":
+        var fire := FIRE_LIGHT_COLOR * (FIRE_LIGHT_ENERGY / LIGHT_MAP_RANGE)
+        for light in environmental_lights:
+            _add_light(draw_list, view, light[0], textures[int(light[1])], 1.0, fire)
+        if flash != null:
+            _add_light(draw_list, view, flash, textures[0], 1.2, FLASH_LIGHT_COLOR * (FLASH_LIGHT_ENERGY / LIGHT_MAP_RANGE))
+        for holder in extra_lights.keys():
+            var light: Array = extra_lights[holder]
+            if not is_instance_valid(holder) or not (holder as Node).is_inside_tree():
+                extra_lights.erase(holder)
+                continue
+            if holder is CanvasItem and not (holder as CanvasItem).is_visible_in_tree():
+                continue
+            _add_light(draw_list, view, light[0], textures[int(light[1])], light[2], (light[3] as Color) / LIGHT_MAP_RANGE)
+    var lit := Rect2()
+    for entry in draw_list:
+        lit = lit.merge(entry[1]) if lit.has_area() else entry[1]
+    lit = lit.intersection(view)
+    if not lit.has_area():
+        light_composite.visible = false
+        light_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+        light_draw_list = []
+        return
+    var origin := Vector2i(view.position.floor())
+    var size := Vector2i(view.end.ceil()) - origin
+    var changed := false
+    if light_viewport.size != size:
+        light_viewport.size = size
+        changed = true
+    if origin != light_origin:
+        light_origin = origin
+        light_viewport.canvas_transform = Transform2D(0.0, -Vector2(origin))
+        changed = true
+    if draw_list != light_draw_list:
+        light_draw_list = draw_list
+        light_canvas.queue_redraw()
+        changed = true
+    if changed:
+        light_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+    var ambient := canvas_modulate.color
+    var composite := light_composite.material as ShaderMaterial
+    composite.set_shader_parameter("gain", Vector3(
+        LIGHT_MAP_RANGE / maxf(ambient.r, 0.01), LIGHT_MAP_RANGE / maxf(ambient.g, 0.01), LIGHT_MAP_RANGE / maxf(ambient.b, 0.01)))
+    # Only the screen area the lights cover is shaded. Its corners sit on whole
+    # screen pixels so vertex snapping cannot shift the lights against the
+    # world (a PointLight2D's texture is never snapped).
+    var to_screen := light_composite.get_viewport_transform()
+    var screen := to_screen * lit
+    var quad := to_screen.affine_inverse() * Rect2(screen.position.floor(), screen.end.ceil() - screen.position.floor())
+    light_composite.position = quad.position
+    light_composite.region_rect = Rect2(quad.position - Vector2(origin), quad.size)
+    var map_size := Vector2(size)
+    composite.set_shader_parameter("lit_uv", Vector4((lit.position.x - origin.x) / map_size.x, (lit.position.y - origin.y) / map_size.y,
+        (lit.end.x - origin.x) / map_size.x, (lit.end.y - origin.y) / map_size.y))
+    light_composite.visible = true
+
+func _add_light(draw_list: Array, view: Rect2, position: Vector2, texture: Texture2D, scale: float, color: Color) -> void:
+    # A PointLight2D: the texture centred on the light, scaled, times colour x energy.
+    var size := texture.get_size() * scale
+    var rect := Rect2(position - size * 0.5, size)
+    if rect.intersects(view):
+        color.a = 1.0
+        draw_list.append([texture, rect, color])
+
+func _draw_lights() -> void:
+    for light in light_draw_list:
+        # One clamped texel more on every side: the map's bilinear filter then
+        # keeps a light's edge texels whole up to its hard edge, as the light
+        # texture's own filter did (the composite stops at the outer edge).
+        var texture: Texture2D = light[0]
+        var rect: Rect2 = light[1]
+        var texel := rect.size / texture.get_size()
+        light_canvas.draw_texture_rect_region(texture, rect.grow_individual(texel.x, texel.y, texel.x, texel.y),
+            Rect2(-Vector2.ONE, texture.get_size() + Vector2(2.0, 2.0)), light[2])
 
 func _refresh_context(force: bool) -> void:
     var context := _environment_context()
@@ -595,15 +744,35 @@ func _play_environment_sound(sound_name: String, gain_db: float = 0.0) -> void:
         sfx_player.play()
         return
 
+func _on_node_added(node: Node) -> void:
+    if node is Sprite2D and (node.name == &"CHIMNEY" or node.get_parent().name == &"LandmarkLayer"):
+        animated_structures_dirty = true
+
+func _refresh_animated_structures(structures: Dictionary) -> void:
+    if not animated_structures_dirty and structures.size() == animated_structures_count:
+        return
+    animated_structures_dirty = false
+    animated_structures_count = structures.size()
+    animated_structures.clear()
+    for raw_cell in structures.keys():
+        var data := structures[raw_cell] as Dictionary
+        if String(data.get("name", "")) in ["CAMPFIRE", "TORCH"] or bool(data.get("chimney", false)):
+            animated_structures.append([Vector2i(raw_cell), data])
+
 func _update_environment_lights() -> void:
     if world == null or not bool(world.get("generated")):
         return
-    var desired: Dictionary = {}
+    environmental_lights.clear()
     var dark_enough := _color_brightness(canvas_modulate.color) < 0.94
     var structures := world.get("built_structures") as Dictionary
-    for raw_cell in structures.keys():
-        var cell := Vector2i(raw_cell)
-        var data := structures[raw_cell] as Dictionary
+    _refresh_animated_structures(structures)
+    for entry in animated_structures:
+        var cell: Vector2i = entry[0]
+        var data: Dictionary = entry[1]
+        if not is_same(structures.get(cell), data):
+            # Removed or replaced since the last scan: rescan next update.
+            animated_structures_dirty = true
+            continue
         var name := String(data.get("name", ""))
         var sprite := data.get("sprite") as Sprite2D
         if bool(data.get("chimney", false)) and is_instance_valid(sprite):
@@ -632,42 +801,44 @@ func _update_environment_lights() -> void:
             name == "TORCH" and bool(data.get("lit", true))
         )
         if lit and dark_enough:
-            desired["structure:%d:%d" % [cell.x, cell.y]] = {
-                "position": Vector2(cell * 16) + Vector2(8, 8),
-                "torch": name == "TORCH"
-            }
+            environmental_lights.append([Vector2(cell * 16) + Vector2(8, 8), name == "TORCH"])
 
     if dark_enough and world.has_method("environment_nearby_lava_cells"):
-        var lava_cells := world.call("environment_nearby_lava_cells", 12) as Array
-        for raw_cell in lava_cells.slice(0, mini(24, lava_cells.size())):
+        # The 25x25 lava scan only reruns when the player changes cell or area.
+        # ponytail: lava painted or removed under a standing player shows on the next step.
+        var key := [world.call("_player_cell"), world.get("active_area_id"), world.get("exact_world")]
+        if key != lava_scan_key:
+            lava_scan_key = key
+            lava_scan_cells = _nearby_lava_cells(Vector2i(key[0]), 12)
+        for raw_cell in lava_scan_cells.slice(0, mini(24, lava_scan_cells.size())):
             var cell := Vector2i(raw_cell)
-            desired["lava:%d:%d" % [cell.x, cell.y]] = {
-                "position": Vector2(cell * 16) + Vector2(8, 8),
-                "torch": true
-            }
+            environmental_lights.append([Vector2(cell * 16) + Vector2(8, 8), true])
 
-    for key in desired.keys():
-        var record := desired[key] as Dictionary
-        var light := environmental_lights.get(key) as PointLight2D
-        if not is_instance_valid(light):
-            light = PointLight2D.new()
-            light.color = Color(1.0, 0.68, 0.34)
-            light.energy = 0.82
-            light.texture_scale = 1.0
-            light.z_as_relative = false
-            light.z_index = 4093
-            add_child(light)
-            environmental_lights[key] = light
-        light.position = Vector2(record["position"])
-        var textures := light_textures(bool(record["torch"]))
-        light.texture = textures[posmod(animation_tick / 10, 2)]
-    for key in environmental_lights.keys().duplicate():
-        if desired.has(key):
-            continue
-        var light := environmental_lights[key] as PointLight2D
-        if is_instance_valid(light):
-            light.queue_free()
-        environmental_lights.erase(key)
+# world.environment_nearby_lava_cells() (same cells, same order) read straight
+# from the packed overworld store: tile_at() builds a full tile proxy per cell,
+# ~6 ms for the 625 cells around the player.
+func _nearby_lava_cells(center: Vector2i, radius: int) -> Array:
+    var store := world.exact_world.tiles as WorldTileStore if world.get("exact_world") != null else null
+    if store == null or not store.extra.is_empty() or world.get("active_area_id") != "OVERWORLD" or not bool(world.get("exact_world_mode")):
+        return world.call("environment_nearby_lava_cells", radius) as Array
+    if lava_name_count != store.strings.size():
+        lava_name_count = store.strings.size()
+        lava_name_ids.clear()
+        for id in store.strings.size():
+            if "lava" in store.strings[id]: lava_name_ids[id] = true
+    var result: Array = []
+    for y in range(center.y - radius, center.y + radius + 1):
+        var row := y - store.origin.y
+        if row < 0 or row >= store.height: continue
+        for x in range(center.x - radius, center.x + radius + 1):
+            var column := x - store.origin.x
+            if column < 0 or column >= store.width: continue
+            var index := row * store.width + column
+            var bits := store.flags[index]
+            if bits & WorldTileStore.PRESENT and (bits & WorldTileStore.LAVA
+                    or lava_name_ids.has(store.name_ids[index]) or lava_name_ids.has(store.upper_ids[index])):
+                result.append(Vector2i(x, y))
+    return result
 
 func _environment_context() -> Dictionary:
     if world != null and world.has_method("environment_context"):
