@@ -31,6 +31,9 @@ var built_blocks := {}
 var view_armed := false
 ## The block rectangle last found all drawn.
 var drawn_view := Rect2i()
+## Drawn blocks whose tide changed while they were far from the view:
+## block -> {cell: true}. Redrawn as the view nears them, like undrawn blocks.
+var stale_tide := {}
 ## Sprites reach at most two cells past their own: one more for the camera.
 const VIEW_MARGIN_CELLS := 3
 const AHEAD_BLOCKS := 3
@@ -89,6 +92,10 @@ var gpu_ids := {}
 ## Per id: {"pos", "page"} and, for animated kinds, {"spec_key", "region"}.
 var gpu_rows: Array = [{}]
 var gpu_animated: Array[int] = []
+## The animation clock and row count _update_gpu_animations last ran with:
+## the rows follow only the source and flower clocks, not the shore one.
+var gpu_animation_clock: Array = []
+var gpu_animation_rows := -1
 ## Ground with no upper name: [color][name] -> id, so most cells skip the spec work.
 var gpu_fast: Array = [{}, {}]
 var upper_spec_empty := {}
@@ -154,6 +161,21 @@ func _flush_tide_budget():
     # the whole fifteen seconds of a tide change - a drop to 20 fps on every
     # device with nothing to see. They now wait until the tide has finished
     # queueing, and are then done one map block at a time, nearest first.
+    # With blocks drawn as the view nears them, a far block is only marked
+    # stale and redrawn when it comes near (a block not drawn yet is drawn as
+    # it is then anyway): nothing is spent on coasts nobody looks at.
+    if lazy_blocks:
+        # Once the tide has finished queueing, as before: marking them as
+        # they came made every frame of the change look for stale blocks.
+        if pending_tide_far.is_empty() or Time.get_ticks_msec()-far_tide_queued_at<1500: return
+        for cell in pending_tide_far:
+            var block := Vector2i(cell.x >> 4, cell.y >> 4)
+            if not built_blocks.has(block): continue
+            if not stale_tide.has(block): stale_tide[block] = {}
+            stale_tide[block][cell] = true
+        if not pending_tide_far.is_empty(): drawn_view = Rect2i()
+        pending_tide_far.clear()
+        return
     if far_tide_groups.is_empty():
         if pending_tide_far.is_empty() or Time.get_ticks_msec()-far_tide_queued_at<1500: return
         if not is_instance_valid(tracked_player): return
@@ -316,7 +338,7 @@ func _draw_blocks_in(blocks: Rect2i, budget_usec: int) -> bool:
     var todo: Array[Vector2i] = []
     for y in range(blocks.position.y, blocks.end.y):
         for x in range(blocks.position.x, blocks.end.x):
-            if not built_blocks.has(Vector2i(x, y)): todo.append(Vector2i(x, y))
+            if not built_blocks.has(Vector2i(x, y)) or stale_tide.has(Vector2i(x, y)): todo.append(Vector2i(x, y))
     if todo.is_empty(): return true
     var middle := Vector2(blocks.position) + Vector2(blocks.size - Vector2i.ONE) / 2.0
     todo.sort_custom(func(a, b): return (Vector2(a) - middle).length_squared() < (Vector2(b) - middle).length_squared())
@@ -329,6 +351,11 @@ func _draw_blocks_in(blocks: Rect2i, budget_usec: int) -> bool:
 ## Draws every cell of one map block (none was drawn before: _redraw_cells
 ## skips the cells of blocks not drawn yet).
 func _draw_block(block: Vector2i) -> void:
+    if built_blocks.has(block):
+        # Drawn before: only its cells the tide changed since.
+        _redraw_cells(stale_tide[block])
+        stale_tide.erase(block)
+        return
     built_blocks[block] = true
     var store: WorldTileStore = source_tiles
     var flags := store.flags
@@ -980,11 +1007,26 @@ func _set_gpu_cell(cell: Vector2i, id: int, tide := false) -> void:
     gpu_bytes[at + 1] = bits >> 8
     gpu_cells_dirty = true
 
-## Animated kinds move their table row to the current frame's place.
+## Animated kinds move their table row to the current frame's place. Each row
+## keeps the spec of every frame it has shown, keyed as _cached_render_spec
+## keys it, so a frame seen before costs no cache-key string.
 func _update_gpu_animations() -> void:
+    var clock := [source_animation_signature, flower_animation_frame]
+    if clock == gpu_animation_clock and gpu_animated.size() == gpu_animation_rows: return
+    gpu_animation_clock = clock
+    gpu_animation_rows = gpu_animated.size()
     for id in gpu_animated:
         var row: Dictionary = gpu_rows[id]
-        var spec: Dictionary = _cached_render_spec(row.spec_key)
+        if not row.has("frames"):
+            var identity := str(row.spec_key.upper if draw_upper else row.spec_key.base).to_lower()
+            row["frames"] = {}
+            row["clocked"] = identity.begins_with("water") or identity.begins_with("lava") or identity == "campfire1" or identity == "torch1"
+            row["flower"] = not row.clocked and identity.begins_with("flower")
+        var frame_key: int = source_animation_signature + 1 if row.clocked else (1000 + flower_animation_frame if row.flower else 0)
+        var spec = row.frames.get(frame_key)
+        if spec == null:
+            spec = _cached_render_spec(row.spec_key)
+            row.frames[frame_key] = spec
         var region: Rect2 = spec.get("region", row.region)
         if region == row.region: continue
         row.region = region

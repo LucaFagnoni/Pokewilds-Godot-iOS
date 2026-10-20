@@ -96,16 +96,18 @@ static func build(main: Node, bounds: Rect2i, serial: int) -> Texture2D:
     if not is_instance_valid(main) or not is_instance_valid(world) or (serial >= 0 and serial != main.map_build_serial) or context_key(main, bounds) != context:return null
     var texture:=ImageTexture.create_from_image(image)
     main.map_art_cache_context=context
+    main.map_art_cache_art_key=cache_key(main, bounds, false)
     main.map_art_cache_key=key
     main.map_art_cache=texture
     return texture
 
-static func cache_key(main: Node, bounds: Rect2i) -> String:
+## with_fog false: everything but the discovered ground.
+static func cache_key(main: Node, bounds: Rect2i, with_fog := true) -> String:
     var world = main.world
     var exact = world.exact_world
     return str([exact.get_instance_id() if exact != null else 0,
         bounds, world.active_area_id, world.active_built_house_door,
-        world.map_art_revision, world.discovered_cells.size(), world.built_structures.size()])
+        world.map_art_revision, world.discovered_cells.size() if with_fog else -1, world.built_structures.size()])
 
 static func context_key(main: Node, bounds: Rect2i) -> String:
     var exact = main.world.exact_world
