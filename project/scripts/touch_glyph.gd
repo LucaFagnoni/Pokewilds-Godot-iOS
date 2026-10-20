@@ -15,14 +15,17 @@ func _ready() -> void:
     mouse_filter = Control.MOUSE_FILTER_IGNORE
     texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
     # High-resolution vector textures avoid changing the game's pixel snapping.
+    # Only one of "dark" and "light" is ever shown: each loads when first drawn.
     for state in ["dark","light","pressed"]:
-        textures[state] = load("res://assets/touch_ui/%s_%s.svg" % [kind,state])
+        textures[state] = "res://assets/touch_ui/%s_%s.svg" % [kind,state]
+    textures.pressed = load(textures.pressed)
 
 func set_face_letter(letter: String) -> void:
     if kind not in ["A", "B", "X", "Y"]: return
     caption = letter
     for state in ["dark", "light", "pressed"]:
-        textures[state] = load("res://assets/touch_ui/%s_%s.svg" % [letter,state])
+        textures[state] = "res://assets/touch_ui/%s_%s.svg" % [letter,state]
+    textures.pressed = load(textures.pressed)
     queue_redraw()
 
 func _draw() -> void:
@@ -35,6 +38,7 @@ func _draw() -> void:
         draw_circle(centre, radius, Color("404040", 0.9) if held else Color("191919", 0.8 if state == "dark" else 0.45))
         draw_arc(centre, radius - size.x * 0.04, 0.0, TAU, 48, Color("f0c040"), size.x * 0.08, true)
     else:
+        if textures[state] is String: textures[state] = load(textures[state])
         draw_texture_rect(textures[state],Rect2(Vector2.ZERO,size),false)
     _place_icon()
 
