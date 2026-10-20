@@ -8800,14 +8800,13 @@ func _cardinal_direction(delta: Vector2i, away: bool) -> Vector2i:
     return -direction if away else direction
 
 func _wild_id_at_cell(cell: Vector2i, ignored_id: int = -1) -> int:
-    # Every wild Pokemon in the world (hundreds), on each step and each wander:
-    # walk the dictionary itself rather than a copy of its keys, and convert
-    # only a cell that is not already a Vector2i. Same order, same answer.
-    for raw_id in wild_pokemon:
+    for raw_id in wild_pokemon.keys():
+        var wild_id := int(raw_id)
+        if wild_id == ignored_id:
+            continue
         var data: Dictionary = wild_pokemon[raw_id]
-        var at = data.get("cell", Vector2i(-1, -1))
-        if (at == cell if at is Vector2i else Vector2i(at) == cell) and int(raw_id) != ignored_id:
-            return int(raw_id)
+        if Vector2i(data.get("cell", Vector2i(-1, -1))) == cell:
+            return wild_id
     return -1
 
 func _egg_at_cell(cell: Vector2i) -> Vector2i:
