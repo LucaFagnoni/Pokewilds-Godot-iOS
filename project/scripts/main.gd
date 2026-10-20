@@ -10457,6 +10457,8 @@ func _refresh_teleport_map_selection() -> void:
         return
     var destination: Dictionary = teleport_destinations[teleport_destination_index]
     var cell: Vector2i = destination.get("cell", Vector2i.ZERO)
+    # The tile streams draw the view there while the map is up, so the jump finds it drawn.
+    if world.has_method("prepare_view_at"): world.call("prepare_view_at", cell)
     var bounds: Rect2i = world.call("get_map_bounds") if world.has_method("get_map_bounds") else Rect2i(Vector2i.ZERO, Vector2i(int(world.get("map_w")), int(world.get("map_h"))))
     var local_center := Vector2(
         float(cell.x - bounds.position.x) / maxf(1.0, float(bounds.size.x)) * map_view_node.size.x,
