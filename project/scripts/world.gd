@@ -274,7 +274,10 @@ func _process(delta: float) -> void:
         var stream = get_node_or_null("GroundLayer/ExactBaseTileStream")
         if stream != null:
             tick = int(stream.get("source_animation_tick"))
-        splash.material.set_shader_parameter("water_frame", posmod(int(tick / 19), 2))
+        # A shader parameter write is sent to the renderer even when equal.
+        var water_frame := posmod(int(tick / 19), 2)
+        if splash.material.get_shader_parameter("water_frame") != water_frame:
+            splash.material.set_shader_parameter("water_frame", water_frame)
     if generated and gameplay_enabled:
         _update_overworld_idle_sprites(delta)
 
@@ -355,14 +358,20 @@ func _setup_normal_grass_front_overlay() -> void:
 func _update_normal_grass_front_overlay(_cell: Vector2i) -> void:
     if not is_instance_valid(normal_grass_front_sprite):
         return
-    normal_grass_front_sprite.hide()
-    for front in m257_grass_fronts:
-        if is_instance_valid(front):
-            front.hide()
+    # Hide only the fronts left unused: hiding all of them and showing them
+    # again sent two visibility changes to the renderer every frame in grass.
+    var used := _place_normal_grass_fronts()
+    if used == 0:
+        normal_grass_front_sprite.hide()
+    for k in range(m257_grass_fronts.size()):
+        if k + 1 >= used and is_instance_valid(m257_grass_fronts[k]):
+            m257_grass_fronts[k].hide()
+
+func _place_normal_grass_fronts() -> int:
     if active_area_id != "OVERWORLD" or not exact_world_mode or exact_world == null:
-        return
+        return 0
     if active_field_move in ["FLY", "RIDE", "SURF"]:
-        return
+        return 0
     # DrawPlayerLower/Upper splits the 16px actor at row 8. Grass is between
     # those two parts: preserve the head, cover the lower half with source art.
     var center := to_local(player.sprite.global_position.round())
@@ -373,13 +382,15 @@ func _update_normal_grass_front_overlay(_cell: Vector2i) -> void:
     for y in range(first.y, last.y + 1):
         for x in range(first.x, last.x + 1):
             var cell := Vector2i(x, y)
-            var tile := exact_world.tile_at(cell)
-            if tile == null:
+            # Names first: the tile object is only needed under grass.
+            var names := _exact_names_at(cell)
+            if names.is_empty():
                 continue
-            var base := _source_tile_key(tile.name)
-            var upper := _source_tile_key(tile.name_upper)
+            var base := _source_tile_key(names[0])
+            var upper := _source_tile_key(names[1])
             if base not in ["grass1", "grass2", "grass3", "grass4", "grass_sand1", "grass_sand2", "grass_sand3", "grass_graveyard1", "grass_savanna1", "grass_savanna2"] and upper not in ["grass1", "grass2_over", "grass3_over", "grass4_over", "grass5_over", "grass6_over", "grass_savanna1", "grass_savanna2"]:
                 continue
+            var tile := exact_world.tile_at(cell)
             var tick := int(world_elapsed_seconds * 60.0)
             var stream = get_node_or_null("DecorLayer/ExactUpperTileStream")
             if stream != null:
@@ -407,10 +418,12 @@ func _update_normal_grass_front_overlay(_cell: Vector2i) -> void:
                 front = m257_grass_fronts[index - 1]
             front.texture = spec.get("texture")
             front.region_rect = Rect2(region.position + clipped.position - origin, clipped.size)
-            front.position = clipped.position
-            front.z_index = player.z_index + 1
+            # Neither setter skips an unchanged value.
+            if front.position != clipped.position: front.position = clipped.position
+            if front.z_index != player.z_index + 1: front.z_index = player.z_index + 1
             front.show()
             index += 1
+    return index
 
 func set_active_field_move(pokemon_data: Dictionary, move: String, ball_landing: bool = false) -> bool:
     if is_instance_valid(sleeping_bag_sprite):
@@ -1152,7 +1165,10 @@ func _update_wild_pokemon(delta: float) -> void:
         var active_sprite = data.get("sprite") as Sprite2D
         if is_instance_valid(active_sprite):
             active_sprite.visible = true
-            active_sprite.z_index = _depth_z(old_cell)
+            # z_index has no same-value check: writing it every frame for
+            # every nearby Pokemon re-sent it to the renderer each time.
+            var depth := _depth_z(old_cell)
+            if active_sprite.z_index != depth: active_sprite.z_index = depth
         _update_pokemon_water_visual(data)
         if local_target:_update_friendly_passby(data, old_cell, false)
         var was_charmed = bool(data.get("charmed", false))

@@ -2010,6 +2010,18 @@ func _setup_normal_grass_front_overlay() -> void:
     add_child(sprite)
     normal_grass_front_sprite = sprite
 
+## Base and upper tile names at a cell, read straight from the tile store:
+## building a SourceTile proxy for a name costs about 10 us, and the per-frame
+## overlays and wild Pokemon ask for many. Empty when there is no tile.
+func _exact_names_at(cell: Vector2i) -> PackedStringArray:
+    var store = exact_world.tiles
+    if store is WorldTileStore:
+        var index: int = store.index_of(cell * TILE)
+        if index >= 0:
+            return PackedStringArray([store.name_at(index), store.upper_at(index)])
+    var tile := exact_world.tile_at(cell)
+    return PackedStringArray() if tile == null else PackedStringArray([tile.name, tile.name_upper])
+
 func _source_tile_key(value: String) -> String:
     var key := value.to_lower().strip_edges()
     if key.ends_with(".png"):
@@ -2060,11 +2072,11 @@ func _savanna_tree_anchor_covering(cell: Vector2i) -> Vector2i:
     for anchor_y in range(cell.y - 2, cell.y + 1):
         for anchor_x in range(cell.x - 1, cell.x + 2):
             var anchor_cell := Vector2i(anchor_x, anchor_y)
-            var tile: SourceTile = exact_world.tile_at(anchor_cell)
-            if tile == null:
+            var names := _exact_names_at(anchor_cell)
+            if names.is_empty():
                 continue
-            var upper_key := _source_tile_key(tile.name_upper)
-            var base_key := _source_tile_key(tile.name)
+            var upper_key := _source_tile_key(names[1])
+            var base_key := _source_tile_key(names[0])
             if upper_key != "tree_savanna1" and base_key != "tree_savanna1":
                 continue
             if cell.x < anchor_x - 1 or cell.x > anchor_x + 1:
@@ -6881,10 +6893,10 @@ func _ecology_names_at(cell: Vector2i) -> String:
         return ""
     var names: Array[String] = []
     if exact_world_mode and exact_world != null:
-        var tile := exact_world.tile_at(cell)
-        if tile != null:
-            names.append(tile.name.to_lower())
-            names.append(tile.name_upper.to_lower())
+        var tile_names := _exact_names_at(cell)
+        if not tile_names.is_empty():
+            names.append(tile_names[0].to_lower())
+            names.append(tile_names[1].to_lower())
     elif source_tiles.has(cell):
         var source_data: Dictionary = source_tiles.get(cell, {})
         names.append(String(source_data.get("base", source_data.get("name", ""))).to_lower())
@@ -7482,8 +7494,8 @@ var water_pokemon_materials: Dictionary = {}
 
 func _source_pokemon_in_water(cell: Vector2i) -> bool:
     if exact_world_mode and exact_world != null:
-        var tile := exact_world.tile_at(cell)
-        return tile != null and "water" in tile.name and not "_tidal" in tile.name
+        var names := _exact_names_at(cell)
+        return not names.is_empty() and "water" in names[0] and not "_tidal" in names[0]
     return terrain_kind_at(cell) == 0
 
 func _update_pokemon_water_visual(data: Dictionary) -> void:
@@ -8337,6 +8349,14 @@ func _is_tall_grass_cell(cell: Vector2i) -> bool:
     if tall_grass.has(cell):
         return biome_at(cell) != "SNOW"
     if exact_world_mode and exact_world != null:
+        # Same tests as below from the store's names and flags, without
+        # building a tile object (only a tidal tile needs its biome).
+        var store = exact_world.tiles
+        var index: int = store.index_of(cell * TILE) if store is WorldTileStore else -1
+        if index >= 0 and store.flags[index] & WorldTileStore.TIDAL == 0:
+            if _source_tile_key(store.name_at(index)) == "grass1" or _source_tile_key(store.upper_at(index)) == "grass1":
+                return true
+            return store.flags[index] & WorldTileStore.GRASS != 0
         var tile := exact_world.tile_at(cell)
         if tile != null and tile.is_tidal and _source_biome_for_tile(tile) != "BEACH":
             return false
@@ -8957,15 +8977,20 @@ func _trigger_burrowed_pokemon(wild_id: int) -> void:
 func _update_sand_traps(delta: float) -> void:
     if active_area_id != "OVERWORLD":
         return
+    # Neither changes inside the loop; asked once, not once per trap (150 in a
+    # big world, every frame).
+    var player_cell := _player_cell()
+    var flying := active_field_move == "FLY"
+    var ticks := delta * 60.0
     for wild_id in sand_trap_ids.keys():
         var data: Dictionary = wild_pokemon[wild_id]
         if not bool(data.get("burrowed", false)):
             continue
         var cell: Vector2i = data["cell"]
-        var on_trap := _player_cell() == cell and active_field_move != "FLY"
+        var on_trap := player_cell == cell and not flying
         if on_trap and not encounter_grace_active() and not _repel_blocks(int(data.get("level", 22))):
             _trigger_burrowed_pokemon(wild_id)
-        var remainder := float(data.get("burrow_time", 0.0)) + delta * 60.0
+        var remainder := float(data.get("burrow_time", 0.0)) + ticks
         var steps := int(remainder)
         data["burrow_time"] = remainder - steps
         if not bool(data.get("burrow_active", false)):
