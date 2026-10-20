@@ -184,6 +184,7 @@ func refresh() -> void:
     var selected: Dictionary=roster[selection]
     var data:=PokemonData.info(String(selected.species))
     if String(selected.get("form","")) == "mega":
+        data = data.duplicate() # PokemonData.info() hands out a shared dictionary
         var boss: Dictionary = SourceEventData.event_spec("mega_gengar").party[0]
         data["stats"] = boss.base_stats
         data["catch_rate"] = boss.catch_rate

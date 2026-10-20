@@ -85,8 +85,8 @@ static func _ensure_loaded() -> void:
             if implemented.has(String(learned.get("move", ""))):
                 supported.append(learned)
         entry["learnset"] = supported
-    # Species are only read through info(), which hands out a fresh copy. Kept
-    # packed, the ~1000 species take about 3.5 MB instead of about 28 MB.
+    # Species are only read through info(), which decodes them one at a time.
+    # Kept packed, the ~1000 species take about 3.5 MB instead of about 28 MB.
     var species: Dictionary = _database.get("species", {})
     for key in species.keys(): species[key] = var_to_bytes(species[key])
 
@@ -117,7 +117,27 @@ static func source_species(species: String) -> String:
         if SOURCE_FORM_IDS[original] == key: return String(original)
     return key
 
+## The decoded entries of the last INFO_CACHE_SIZE species asked for. Decoding
+## one costs about 20 us and a wild Pokemon asks on every step. info() hands out
+## the cached dictionary itself, not a copy: do not modify it or anything inside
+## it (duplicate() it first). Only the main thread uses the cache: the world
+## generator calls info() from a worker thread, and a Dictionary is not safe to
+## change from two threads.
+const INFO_CACHE_SIZE := 64
+static var _info_cache: Dictionary = {}
+
 static func info(species: String) -> Dictionary:
+    var on_main := OS.get_thread_caller_id() == OS.get_main_thread_id()
+    if on_main:
+        var hit: Variant = _info_cache.get(species)
+        if hit != null: return hit
+    var entry := _decode_info(species)
+    if on_main and not entry.is_empty():
+        if _info_cache.size() >= INFO_CACHE_SIZE: _info_cache.clear()
+        _info_cache[species] = entry
+    return entry
+
+static func _decode_info(species: String) -> Dictionary:
     _ensure_loaded()
     var all: Dictionary = _database.get("species", {})
     var key := species.to_lower().replace(" ", "_")

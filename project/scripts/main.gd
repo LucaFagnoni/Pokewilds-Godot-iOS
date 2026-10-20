@@ -1074,6 +1074,10 @@ const M3924_MINIMAP_WINDOW_CELLS := Vector2(24.0, 24.0)
 # Idle refresh period. (At 0.0 the 20 Hz moving throttle below never applied
 # and the minimap was re-rasterised every frame.)
 const M3924_MINIMAP_REFRESH_SECONDS := 0.25
+## Size, in tiles, of the picture the minimap samples from. The view plus the 3
+## tiles tall art reaches in from every side is 30 or 31 tiles; the rest is slack
+## the view can move in before the picture has to follow it.
+const M3924_MINIMAP_REGION_CELLS := Vector2i(35, 35)
 const MAP_VIEWPORT_CENTER := Vector2(160.0, 78.0)
 const MAP_VIEWPORT_SIZE := Vector2(320.0, 156.0)
 var map_zoom := DEFAULT_MAP_ZOOM
@@ -2069,65 +2073,141 @@ func _m3924_minimap_source_region(bounds: Rect2i, view_origin: Vector2) -> Dicti
         m3924_minimap_texture_images.clear()
         m3924_minimap_tile_previews.clear()
         m257_minimap_recipes.clear()
-    # The picture is built for a wider area than the minimap shows and kept
-    # while the view stays inside it, so walking does not rebuild it. Newly
-    # discovered ground is painted in at once, but only the patch that
-    # changed, not the whole picture. Other changes (tide, digs, builds)
-    # rebuild it, at most every 2 s, as the 2 s refresh it replaces did.
+    # The picture covers a little more than the view and is kept while the view
+    # stays inside it. When the view runs out of it the picture slides along
+    # (the part it still has is moved and only the new cells are drawn), and
+    # newly discovered ground is painted in at once, but only the patch that
+    # changed. Other changes (tide, digs, builds) rebuild it, at most every
+    # 2 s, as the 2 s refresh it replaces did.
     var revision := _m3924_minimap_world_revision()
-    var cache_ok: bool = not m3924_minimap_source_cache.is_empty() and \
+    var cache := m3924_minimap_source_cache
+    var cache_ok: bool = not cache.is_empty() and \
             world_id == m3924_minimap_cache_world_id and \
             (revision == m3924_minimap_cache_revision or now < m3924_minimap_cache_until) and \
-            m3924_minimap_source_cache["bounds"] == bounds and \
-            (m3924_minimap_source_cache["region"] as Rect2i).encloses(needed)
-    if cache_ok and discovered_count == m3924_minimap_cache_discovered:
-        return m3924_minimap_source_cache
+            cache["bounds"] == bounds
+    if cache_ok and not (cache["region"] as Rect2i).encloses(needed):
+        cache_ok = _m3924_minimap_slide(needed, bounds, exact_world)
     if cache_ok:
-        var kept: Rect2i = m3924_minimap_source_cache["region"]
-        var first := Vector2i(2147483647, 2147483647)
-        var last := Vector2i(-2147483648, -2147483648)
-        var seen: Dictionary = m3924_minimap_cache_seen
-        for y in range(kept.size.y):
-            for x in range(kept.size.x):
-                var local := Vector2i(x, y)
-                if seen.has(local): continue
-                var cell := kept.position + local
-                if bounds.has_point(cell) and world.is_cell_discovered(cell):
-                    seen[local] = true
-                    first = Vector2i(mini(first.x, x), mini(first.y, y))
-                    last = Vector2i(maxi(last.x, x), maxi(last.y, y))
-        m3924_minimap_cache_discovered = discovered_count
-        if first.x > last.x:
-            return m3924_minimap_source_cache
-        # Art can reach three tiles past its own (tall trees), so the patch is
-        # drawn with that much surround and only its middle is copied in.
-        var patch := Rect2i(first, last - first + Vector2i.ONE).grow(3).intersection(Rect2i(Vector2i.ZERO, kept.size))
-        if patch.get_area() * 2 < kept.get_area():
-            var drawn := patch.grow(3).intersection(Rect2i(Vector2i.ZERO, kept.size))
-            var fresh := _m3924_minimap_render(Rect2i(kept.position + drawn.position, drawn.size), bounds, exact_world)
-            (m3924_minimap_source_cache["image"] as Image).blit_rect(fresh,
-                Rect2i((patch.position - drawn.position) * SOURCE_MAP_TILE_PIXELS, patch.size * SOURCE_MAP_TILE_PIXELS),
-                patch.position * SOURCE_MAP_TILE_PIXELS)
-            m3924_minimap_source_serial += 1
-            return m3924_minimap_source_cache
-    var region := needed.grow(6)
-    origin = region.position
+        cache_ok = _m3924_minimap_paint_discovered(discovered_count, bounds, exact_world)
+    if cache_ok:
+        return cache
+    var region := Rect2i(needed.position - (M3924_MINIMAP_REGION_CELLS - needed.size) / 2, M3924_MINIMAP_REGION_CELLS)
     var image := _m3924_minimap_render(region, bounds, exact_world)
-    m3924_minimap_cache_seen = {}
-    for y in range(region.size.y):
-        for x in range(region.size.x):
-            var cell := region.position + Vector2i(x, y)
-            if bounds.has_point(cell) and world.is_cell_discovered(cell):
-                m3924_minimap_cache_seen[Vector2i(x, y)] = true
-    m3924_minimap_cache_world_id = world_id
     m3924_minimap_cache_discovered = discovered_count
+    m3924_minimap_cache_added = world.discovered_added
+    world.discovered_dirty = Rect2i()
+    m3924_minimap_cache_world_id = world_id
     m3924_minimap_cache_until = now + 2000
     m3924_minimap_cache_revision = revision
     m3924_minimap_source_serial += 1
     m3924_minimap_source_cache = {
-        "image": image, "origin": origin, "region": region, "bounds": bounds
+        "image": image, "origin": region.position, "region": region, "bounds": bounds, "spare": null
     }
     return m3924_minimap_source_cache
+
+## Moves the picture's region along so that it holds `needed` again, keeping
+## what is drawn of the part both regions cover. The cells that came into it
+## are drawn fresh (with the 3 tiles inside the old edge that tall art from
+## those cells reaches). False if the move is too far to be worth it.
+func _m3924_minimap_slide(needed: Rect2i, bounds: Rect2i, exact_world) -> bool:
+    var cache := m3924_minimap_source_cache
+    var old_region: Rect2i = cache["region"]
+    var target := old_region.position
+    # Leave the slack ahead of the view, and one tile behind it.
+    if needed.position.x < old_region.position.x: target.x = needed.end.x + 1 - old_region.size.x
+    elif needed.end.x > old_region.end.x: target.x = needed.position.x - 1
+    if needed.position.y < old_region.position.y: target.y = needed.end.y + 1 - old_region.size.y
+    elif needed.end.y > old_region.end.y: target.y = needed.position.y - 1
+    var region := Rect2i(target, old_region.size)
+    var kept := old_region.intersection(region)
+    if not region.encloses(needed) or kept.size.x * 2 < region.size.x or kept.size.y * 2 < region.size.y:
+        return false
+    var image: Image = cache["image"]
+    var moved: Image = cache.get("spare")
+    if moved == null or moved.get_size() != image.get_size():
+        moved = Image.create(image.get_width(), image.get_height(), false, Image.FORMAT_RGBA8)
+    moved.blit_rect(image, Rect2i((kept.position - old_region.position) * SOURCE_MAP_TILE_PIXELS,
+        kept.size * SOURCE_MAP_TILE_PIXELS), (kept.position - region.position) * SOURCE_MAP_TILE_PIXELS)
+    cache["spare"] = image
+    cache["image"] = moved
+    cache["region"] = region
+    cache["origin"] = region.position
+    if region.position.x < old_region.position.x:
+        _m3924_minimap_paint(Rect2i(region.position, Vector2i(old_region.position.x - region.position.x, region.size.y)), bounds, exact_world)
+    elif region.end.x > old_region.end.x:
+        _m3924_minimap_paint(Rect2i(Vector2i(old_region.end.x, region.position.y), Vector2i(region.end.x - old_region.end.x, region.size.y)), bounds, exact_world)
+    if region.position.y < old_region.position.y:
+        _m3924_minimap_paint(Rect2i(region.position, Vector2i(region.size.x, old_region.position.y - region.position.y)), bounds, exact_world)
+    elif region.end.y > old_region.end.y:
+        _m3924_minimap_paint(Rect2i(Vector2i(region.position.x, old_region.end.y), Vector2i(region.size.x, region.end.y - old_region.end.y)), bounds, exact_world)
+    return true
+
+## Paints in the ground discovered since the picture was last up to date. The
+## world records a box around the cells it added; if its count of them does not
+## explain the change in discovered_cells, or the box is most of the picture,
+## this returns false and the picture is redrawn whole.
+func _m3924_minimap_paint_discovered(discovered_count: int, bounds: Rect2i, exact_world) -> bool:
+    var added: int = world.discovered_added
+    if discovered_count == m3924_minimap_cache_discovered and added == m3924_minimap_cache_added:
+        return true
+    var known := discovered_count - m3924_minimap_cache_discovered == added - m3924_minimap_cache_added
+    var dirty: Rect2i = world.discovered_dirty
+    m3924_minimap_cache_discovered = discovered_count
+    m3924_minimap_cache_added = added
+    world.discovered_dirty = Rect2i()
+    if not known:
+        return false
+    var kept: Rect2i = m3924_minimap_source_cache["region"]
+    var changed := dirty.intersection(kept)
+    if changed.size.x <= 0 or changed.size.y <= 0:
+        return true
+    if changed.grow(3).intersection(kept).get_area() * 2 >= kept.get_area():
+        return false
+    _m3924_minimap_paint(changed, bounds, exact_world)
+    return true
+
+## Redraws the part of the picture that the tiles in `changed` can touch: art
+## reaches up to 3 tiles past its own tile, so `changed` and 3 tiles around it
+## are replaced, from a drawing that has 3 more tiles around that for the art
+## reaching in from outside.
+func _m3924_minimap_paint(changed: Rect2i, bounds: Rect2i, exact_world) -> void:
+    var cache := m3924_minimap_source_cache
+    var kept: Rect2i = cache["region"]
+    var patch := changed.grow(3).intersection(kept)
+    if patch.size.x <= 0 or patch.size.y <= 0:
+        return
+    var drawn := patch.grow(3).intersection(kept)
+    var fresh := _m3924_minimap_render(drawn, bounds, exact_world)
+    (cache["image"] as Image).blit_rect(fresh,
+        Rect2i((patch.position - drawn.position) * SOURCE_MAP_TILE_PIXELS, patch.size * SOURCE_MAP_TILE_PIXELS),
+        (patch.position - kept.position) * SOURCE_MAP_TILE_PIXELS)
+    m3924_minimap_source_serial += 1
+
+## What to draw for a tile, found by its name, upper name and colour: the
+## lower and the upper drawing, each [image, rect, offset x, offset y] or null
+## if the tile draws nothing there. `sig` is the key it is kept under.
+func _m3924_minimap_recipe_pair(sig: Variant, base_name: String, upper_name: String, color: bool) -> Array:
+    var known: Variant = m257_minimap_recipes.get(sig)
+    if known != null:
+        return known
+    if m257_minimap_recipes.size() >= 4096:
+        m257_minimap_recipes.clear()
+    var tile := {"base": base_name, "upper": upper_name, "color": color}
+    var pair: Array = []
+    for upper_pass in [false, true]:
+        var spec: Dictionary = SourceWorldData.render_spec(tile, upper_pass)
+        var recipe: Variant = null
+        var texture := spec.get("texture") as Texture2D
+        if texture != null:
+            var source: Image = TexturePixels.of(texture)
+            var rect: Rect2 = spec.get("region", Rect2(0,0,16,16))
+            var preview := source.get_region(Rect2i(rect))
+            preview.resize(maxi(1,roundi(rect.size.x / 4.0)), maxi(1,roundi(rect.size.y / 4.0)), Image.INTERPOLATE_NEAREST)
+            var offset := Vector2i((Vector2(spec.get("offset",Vector2.ZERO)) / 4.0).round())
+            recipe = [preview, Rect2i(Vector2i.ZERO, preview.get_size()), offset.x, offset.y]
+        pair.append(recipe)
+    m257_minimap_recipes[sig] = pair
+    return pair
 
 ## Draws the minimap's source picture for `region` (in tiles): every
 ## discovered tile, the buildings on them, and the checker over the rest.
@@ -2135,63 +2215,110 @@ func _m3924_minimap_render(region: Rect2i, bounds: Rect2i, exact_world) -> Image
     var image := Image.create(region.size.x * SOURCE_MAP_TILE_PIXELS,
         region.size.y * SOURCE_MAP_TILE_PIXELS, false, Image.FORMAT_RGBA8)
     image.fill(Color(0.025, 0.035, 0.03, 1.0))
-    var cells: Array[Vector2i] = []
-    var tiles: Array[SourceTile] = []
-    var hidden_cells: Array[Vector2i] = []
-    for y in range(region.size.y):
+    # Tiles are read straight from the store's arrays, not one SourceTile
+    # object per cell, and discovery is looked up by the same "x,y" keys
+    # is_cell_discovered uses (built from per-column and per-row parts).
+    var store = exact_world.tiles
+    var packed: bool = store is WorldTileStore
+    var flags := PackedInt32Array()
+    var name_ids := PackedInt32Array()
+    var upper_ids := PackedInt32Array()
+    var strings := PackedStringArray()
+    var store_origin := Vector2i.ZERO
+    var store_width := 0
+    var store_height := 0
+    var store_extra := false
+    if packed:
+        flags = store.flags
+        name_ids = store.name_ids
+        upper_ids = store.upper_ids
+        strings = store.strings
+        store_origin = store.origin
+        store_width = store.width
+        store_height = store.height
+        store_extra = not (store.extra as Dictionary).is_empty()
+    var discovered: Dictionary = world.discovered_cells
+    var by_key: bool = String(world.active_area_id) == "OVERWORLD"
+    var columns := PackedStringArray()
+    if by_key:
         for x in range(region.size.x):
-            var local := Vector2i(x, y)
-            var cell := region.position + local
-            if not bounds.has_point(cell) or not world.is_cell_discovered(cell):
-                hidden_cells.append(local)
+            columns.append("%d" % (region.position.x + x))
+    var draw_x := PackedInt32Array()
+    var draw_y := PackedInt32Array()
+    var lower: Array = []
+    var upper: Array = []
+    var hidden_x := PackedInt32Array()
+    var hidden_y := PackedInt32Array()
+    var bounds_left := bounds.position.x
+    var bounds_right := bounds.end.x
+    for y in range(region.size.y):
+        var cy := region.position.y + y
+        var row_inside := cy >= bounds.position.y and cy < bounds.end.y
+        var suffix := ",%d" % cy
+        for x in range(region.size.x):
+            var cx := region.position.x + x
+            if not row_inside or cx < bounds_left or cx >= bounds_right \
+                    or not (discovered.has(columns[x] + suffix) if by_key else world.is_cell_discovered(Vector2i(cx, cy))):
+                hidden_x.append(x)
+                hidden_y.append(y)
                 continue
-            var tile: SourceTile = exact_world.tile_at(cell)
-            if tile != null:
-                cells.append(local)
-                tiles.append(tile)
-    for upper_pass in [false, true]:
-        for index in range(cells.size()):
-            var tile := tiles[index]
-            var key := "%s|%s|%s|%s" % [tile.name, tile.name_upper, tile.color, upper_pass]
-            if not m257_minimap_recipes.has(key):
-                if m257_minimap_recipes.size() >= 4096:
-                    m257_minimap_recipes.clear()
-                var spec: Dictionary = SourceWorldData.render_spec(tile, upper_pass)
-                var recipe: Dictionary = {}
-                var texture := spec.get("texture") as Texture2D
-                if texture != null:
-                    var source: Image = TexturePixels.of(texture)
-                    var rect: Rect2 = spec.get("region", Rect2(0,0,16,16))
-                    var preview := source.get_region(Rect2i(rect))
-                    preview.resize(maxi(1,roundi(rect.size.x / 4.0)), maxi(1,roundi(rect.size.y / 4.0)), Image.INTERPOLATE_NEAREST)
-                    recipe = {"image":preview,"rect":Rect2i(Vector2i.ZERO,preview.get_size()),
-                        "offset":Vector2i((Vector2(spec.get("offset",Vector2.ZERO)) / 4.0).round())}
-                m257_minimap_recipes[key] = recipe
-            var recipe: Dictionary = m257_minimap_recipes[key]
-            if not recipe.is_empty():
-                image.blend_rect(recipe.image, recipe.rect, cells[index] * SOURCE_MAP_TILE_PIXELS + recipe.offset)
+            var pair: Variant = null
+            var in_store := false
+            if packed:
+                var at_x := cx - store_origin.x
+                var at_y := cy - store_origin.y
+                if at_x >= 0 and at_y >= 0 and at_x < store_width and at_y < store_height:
+                    var index := at_y * store_width + at_x
+                    var bits := flags[index]
+                    if bits & WorldTileStore.PRESENT != 0:
+                        in_store = true
+                        var name_id := name_ids[index]
+                        var upper_id := upper_ids[index]
+                        var sig := name_id | (upper_id << 24) | ((bits & WorldTileStore.COLOR) << 47)
+                        pair = m257_minimap_recipes.get(sig)
+                        if pair == null:
+                            pair = _m3924_minimap_recipe_pair(sig, strings[name_id], strings[upper_id],
+                                bits & WorldTileStore.COLOR != 0)
+            if not in_store and (store_extra or not packed):
+                var tile: SourceTile = exact_world.tile_at(Vector2i(cx, cy))
+                if tile != null:
+                    pair = _m3924_minimap_recipe_pair("%s|%s|%s" % [tile.name, tile.name_upper, tile.color],
+                        tile.name, tile.name_upper, tile.color)
+            if pair != null:
+                draw_x.append(x)
+                draw_y.append(y)
+                lower.append(pair[0])
+                upper.append(pair[1])
+    for recipes in [lower, upper]:
+        for index in range(draw_x.size()):
+            var recipe: Variant = recipes[index]
+            if recipe != null:
+                image.blend_rect(recipe[0], recipe[1], Vector2i(
+                    draw_x[index] * SOURCE_MAP_TILE_PIXELS + recipe[2],
+                    draw_y[index] * SOURCE_MAP_TILE_PIXELS + recipe[3]))
     _paint_built_structures_on_map(image, region.position)
     # Mask after both passes, preserving tall-art overlap and checker positions.
-    for local in hidden_cells:
-        var cell := region.position + local - bounds.position
-        var shade := Color(0.025, 0.035, 0.03, 1.0)
-        if (cell.x + cell.y) % 2 != 0:
-            shade = Color(0.045, 0.055, 0.05, 1.0)
-        image.fill_rect(Rect2i(local * SOURCE_MAP_TILE_PIXELS,
-            Vector2i.ONE * SOURCE_MAP_TILE_PIXELS), shade)
+    var dark := Color(0.025, 0.035, 0.03, 1.0)
+    var light := Color(0.045, 0.055, 0.05, 1.0)
+    for index in range(hidden_x.size()):
+        var cell := region.position + Vector2i(hidden_x[index], hidden_y[index]) - bounds.position
+        image.fill_rect(Rect2i(hidden_x[index] * SOURCE_MAP_TILE_PIXELS, hidden_y[index] * SOURCE_MAP_TILE_PIXELS,
+            SOURCE_MAP_TILE_PIXELS, SOURCE_MAP_TILE_PIXELS), light if (cell.x + cell.y) % 2 != 0 else dark)
     return image
 
 var built_map_art_cache: Dictionary = {}
 var m3924_minimap_cache_built := 0
-var m3924_minimap_cache_seen: Dictionary = {}
+## world.discovered_added when the source picture was last up to date.
+var m3924_minimap_cache_added := 0
 
 func _paint_built_structures_on_map(image: Image, origin: Vector2i) -> void:
     var structures: Dictionary = world.get("built_structures")
     var visible_rect := Rect2i(origin, image.get_size() / SOURCE_MAP_TILE_PIXELS)
     var ordered: Array = structures.keys()
     ordered.sort_custom(func(a, b): return a.y < b.y if a.y != b.y else a.x < b.x)
+    var near := visible_rect.grow(4)
     for cell in ordered:
-        if not visible_rect.grow(4).has_point(cell): continue
+        if not near.has_point(cell): continue
         var actor := structures[cell].get("sprite") as Sprite2D
         if not is_instance_valid(actor) or actor.texture == null: continue
         var cache_key := str([actor.texture.get_instance_id(), actor.region_enabled, actor.region_rect, actor.hframes, actor.vframes, actor.frame])

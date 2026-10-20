@@ -283,6 +283,12 @@ var active_regi_pedestal_cell := Vector2i(-2147483648, -2147483648)
 var active_area_id := "OVERWORLD"
 var area_return_cells: Dictionary = {}
 var discovered_cells: Dictionary = {}
+## What _discover_around added to discovered_cells since the minimap last took
+## it: the cells' bounding box (empty if none), and how many were added in all.
+## The minimap redraws just that box; if discovered_cells changed by any other
+## way, the counts disagree and it redraws everything.
+var discovered_dirty := Rect2i()
+var discovered_added := 0
 var map_art_revision := 0
 var dropped_item_manager: Node2D
 
@@ -11565,13 +11571,25 @@ func reveal_player_area() -> void:
     _discover_around(last_player_cell, DISCOVERY_RADIUS)
 
 func _discover_around(cell: Vector2i, radius: int) -> void:
+    var added := 0
+    var low := Vector2i(2147483647, 2147483647)
+    var high := Vector2i(-2147483648, -2147483648)
     for y in range(cell.y - radius, cell.y + radius + 1):
         for x in range(cell.x - radius, cell.x + radius + 1):
             var test := Vector2i(x, y)
             if not _in_bounds(test):
                 continue
             if Vector2(test - cell).length_squared() <= float(radius * radius + 2):
+                var known := discovered_cells.size()
                 discovered_cells[_cell_key(test)] = true
+                if discovered_cells.size() != known:
+                    added += 1
+                    low = Vector2i(mini(low.x, x), mini(low.y, y))
+                    high = Vector2i(maxi(high.x, x), maxi(high.y, y))
+    if added > 0:
+        discovered_added += added
+        var fresh := Rect2i(low, high - low + Vector2i.ONE)
+        discovered_dirty = fresh if discovered_dirty.size == Vector2i.ZERO else discovered_dirty.merge(fresh)
 
 func map_color_for_cell(cell: Vector2i) -> Color:
     if not _in_bounds(cell):
