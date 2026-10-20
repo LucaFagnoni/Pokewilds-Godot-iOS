@@ -261,26 +261,30 @@ func with_upper(names: Array) -> Array:
         if ids.has(upper_ids[index]) and flags[index] & PRESENT: result.append(proxy(index))
     return result
 
-## Indices of the cells whose name is one of `names`.
+## Indices of the cells whose name is one of `names`, in order.
 func with_name(names: Array) -> PackedInt32Array:
     var ids := {}
     for text in names:
         if string_ids.has(text): ids[string_ids[text]] = true
-    var result := PackedInt32Array()
-    if ids.is_empty(): return result
-    for index in name_ids.size():
-        if ids.has(name_ids[index]) and flags[index] & PRESENT: result.append(index)
-    return result
+    return _with_name_ids(ids.keys())
 
-## Indices of the cells whose name contains `text` (any case).
+## Indices of the cells whose name contains `text` (any case), in order.
 func with_name_containing(text: String) -> PackedInt32Array:
-    var ids := {}
+    var ids := []
     for id in strings.size():
-        if strings[id].containsn(text): ids[id] = true
+        if strings[id].containsn(text): ids.append(id)
+    return _with_name_ids(ids)
+
+## Native searches per name: a script loop over every cell took ~10 ms on a
+## size M map.
+func _with_name_ids(ids: Array) -> PackedInt32Array:
     var result := PackedInt32Array()
-    if ids.is_empty(): return result
-    for index in name_ids.size():
-        if ids.has(name_ids[index]) and flags[index] & PRESENT: result.append(index)
+    for id in ids:
+        var index := name_ids.find(id)
+        while index >= 0:
+            if flags[index] & PRESENT: result.append(index)
+            index = name_ids.find(id, index + 1)
+    result.sort()
     return result
 
 ## Indices of every present cell.
