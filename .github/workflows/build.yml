@@ -108,6 +108,13 @@ jobs:
       - name: Minify JSON data
         run: python3 .github/engine/minify_json.py project
 
+      # Godot's import cache (.godot): only assets that changed since are imported again.
+      - uses: actions/cache@v4
+        with:
+          path: project/.godot
+          key: godot-import-smoke-${{ env.GODOT_VERSION }}-${{ hashFiles('project/assets/**/*.import') }}
+          restore-keys: godot-import-smoke-${{ env.GODOT_VERSION }}-
+
       - name: Export the iOS pack
         working-directory: project
         run: |
@@ -124,8 +131,9 @@ jobs:
           ! grep -E "SMOKE FAIL|SCRIPT ERROR|Parse Error|Cannot get class|Failed to load|not declared in the current scope" smoke.log
 
   ios:
-    # Only a pack that passed the smoke test goes into the release.
-    needs: [draft, smoke]
+    # Runs alongside the smoke test (and waits for a Mac meanwhile); publish
+    # needs both, so only a pack that passed the smoke test is released.
+    needs: draft
     if: ${{ !inputs.fallback }}
     runs-on: macos-26
     env:
@@ -197,12 +205,28 @@ jobs:
           EOF
           grep -n '^application/short_version=\|^application/version=' project/export_presets.cfg
 
+      # Godot's import cache (.godot): only assets that changed since are imported again.
+      - uses: actions/cache@v4
+        with:
+          path: project/.godot
+          key: godot-import-ios-${{ env.GODOT_VERSION }}-${{ hashFiles('project/assets/**/*.import') }}
+          restore-keys: godot-import-ios-${{ env.GODOT_VERSION }}-
+
       - name: Export Xcode project
         working-directory: project
         run: |
           mkdir -p ../build/ios
           "$GODOT" --headless --import
           "$GODOT" --headless --export-release "iOS" ../build/ios/Pokewilds.ipa
+
+      # The engine is LTO bitcode, compiled again at every link (minutes): the
+      # linker's cache keeps that work while the engine and Xcode stay the same.
+      - id: xcode
+        run: echo "version=$(xcodebuild -version | tr -s ' \n' '-')" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/lto-cache
+          key: ios-lto-${{ steps.xcode.outputs.version }}-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py') }}
 
       - name: Build unsigned .app and pack IPA
         working-directory: build/ios
@@ -211,7 +235,8 @@ jobs:
           # Surface compiler errors as annotations (readable without log access).
           xcodebuild -project Pokewilds.xcodeproj -scheme Pokewilds -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath dd \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build 2>&1 | tee xb.log \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            OTHER_LDFLAGS='$(inherited) -Wl,-cache_path_lto,'"$HOME/lto-cache" build 2>&1 | tee xb.log \
             || { grep -E -A3 'error[:]|FAILED|ld: |Undefined sym|referenced from|warning: .*(built for|newer)' xb.log | head -80 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}' | sed 's/^/::error::/'; echo; exit 1; }
           mkdir Payload
           cp -R dd/Build/Products/Release-iphoneos/Pokewilds.app Payload/
@@ -238,14 +263,6 @@ jobs:
     env:
       TAG: ${{ needs.draft.outputs.tag }}
     steps:
-      # Unpacking Xcode takes about 20 GB: drop preinstalled SDKs this job does
-      # not use, and unpack on /mnt.
-      - name: Room for Xcode
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          sudo mkdir -p /mnt/xcode /mnt/tmp && sudo chown "$USER" /mnt/xcode /mnt/tmp
-          df -h / /mnt
-
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -254,11 +271,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.XCODE_SDK_TOKEN }}
         run: |
-          gh release download xcode-27.1 -R LucaFagnoni/xcode-sdk -D /mnt/xcode
-          cd /mnt/xcode
+          gh release download xcode-27.1 -R LucaFagnoni/xcode-sdk -D "$RUNNER_TEMP/xcode"
+          cd "$RUNNER_TEMP/xcode"
           # A release holds the .xip whole, or in pieces when over GitHub's 2 GiB limit.
           if ls *.part* >/dev/null 2>&1; then cat $(ls *.part* | sort) > Xcode.xip && rm -f *.part*; else mv Xcode_*.xip Xcode.xip; fi
-          ls -la /mnt/xcode
+          ls -la
 
       - uses: actions/cache@v4
         with:
@@ -266,12 +283,24 @@ jobs:
           # The stripped iOS engine, rebuilt only when the profile changes.
           key: xtool-engine-4.7.2-${{ hashFiles('.github/engine/custom.py') }}
 
+      # lld's LTO codegen of that engine (see Package.swift): the link takes
+      # seconds instead of ~8 minutes. setup.sh pins xtool, which brings lld.
+      - uses: actions/cache@v4
+        with:
+          path: ~/pokewilds-ios/cache/lto
+          key: xtool-lto-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py', 'tools/ios_xtool/setup.sh') }}
+
+      # Godot's import cache (.godot): only assets that changed since are imported again.
+      - uses: actions/cache@v4
+        with:
+          path: ~/pokewilds-ios/project/.godot
+          key: godot-import-xtool-${{ env.GODOT_VERSION }}-${{ hashFiles('project/assets/**/*.import') }}
+          restore-keys: godot-import-xtool-${{ env.GODOT_VERSION }}-
+
       - name: Swift, xtool and the iOS SDK
-        env:
-          TMPDIR: /mnt/tmp
         run: |
-          bash tools/ios_xtool/setup.sh /mnt/xcode/Xcode.xip
-          rm -rf /mnt/xcode/* /mnt/tmp/*
+          bash tools/ios_xtool/setup.sh "$RUNNER_TEMP/xcode/Xcode.xip"
+          rm -rf "$RUNNER_TEMP/xcode"
 
       # The smoke job already checked this pack with the stripped engine.
       - name: Build the IPA with xtool
@@ -319,6 +348,13 @@ jobs:
       - name: Stamp build id
         run: echo "$GITHUB_SHA" > project/build_id.txt
 
+      # Godot's import cache (.godot): only assets that changed since are imported again.
+      - uses: actions/cache@v4
+        with:
+          path: project/.godot
+          key: godot-import-server-${{ env.GODOT_VERSION }}-${{ hashFiles('project/assets/**/*.import') }}
+          restore-keys: godot-import-server-${{ env.GODOT_VERSION }}-
+
       - name: Import + export Windows server
         working-directory: project
         run: |
@@ -329,7 +365,7 @@ jobs:
 
       # Only a server that a client could join and that saved goes into the release.
       - name: Server smoke test
-        run: timeout 1800 python3 server/smoke_test.py "$GODOT"
+        run: timeout 1800 python3 -u server/smoke_test.py "$GODOT"
 
       - name: Package zip
         run: |
@@ -346,9 +382,9 @@ jobs:
         run: gh release upload "$TAG" PokeWilds-Server-win64.zip
 
   publish:
-    needs: [draft, ios, ios_xtool, server]
+    needs: [draft, smoke, ios, ios_xtool, server]
     # The IPA from macOS or, failing that, from the xtool fallback.
-    if: ${{ always() && needs.draft.result == 'success' && needs.server.result == 'success' && (needs.ios.result == 'success' || needs.ios_xtool.result == 'success') }}
+    if: ${{ always() && needs.draft.result == 'success' && needs.smoke.result == 'success' && needs.server.result == 'success' && (needs.ios.result == 'success' || needs.ios_xtool.result == 'success') }}
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}

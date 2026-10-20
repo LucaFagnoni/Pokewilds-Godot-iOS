@@ -10,7 +10,8 @@ inside WSL or in CI (the `ios_xtool` job). Sign it with Feather as usual.
 `ios_xtool` runs on Ubuntu when the `ios` job did not build the IPA (no
 runner, a failure), never on pull requests, and puts its IPA in the same
 release. It runs `setup.sh` and `SMOKE=0 build_ipa.sh` (the `smoke` job already
-tested the pack); only the iOS engine library is cached, never the SDK.
+tested the pack). It caches the iOS engine library, lld's LTO cache and
+Godot's import cache, never the SDK: with them the job takes a few minutes.
 `Xcode.xip` comes from the release `xcode-27.1` of the private repository
 `LucaFagnoni/xcode-sdk`, read with the secret `XCODE_SDK_TOKEN` (a fine-grained
 token with read-only access to that repository's contents). For a newer Xcode,
