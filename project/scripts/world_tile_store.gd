@@ -70,22 +70,26 @@ func _prune_proxies() -> void:
 
 static func with_bounds(bounds: Rect2i) -> WorldTileStore:
     var store := WorldTileStore.new()
-    store.origin = bounds.position
-    store.width = bounds.size.x
-    store.height = bounds.size.y
-    var cells := bounds.size.x * bounds.size.y
-    store.flags.resize(cells)
-    store.name_ids.resize(cells)
-    store.upper_ids.resize(cells)
-    store.biome_ids.resize(cells)
-    store.shore_ocean_ids.resize(cells)
-    store.shore_tidal_ids.resize(cells)
-    store.ledge_dir_ids.resize(cells)
-    store.has_item_ids.resize(cells)
-    store.amounts.resize(cells)
-    store.route_ids.resize(cells)
-    store.revisions.resize(cells)
+    store._cover(bounds)
     return store
+
+## Sizes the arrays for `bounds`, every cell empty.
+func _cover(bounds: Rect2i) -> void:
+    origin = bounds.position
+    width = bounds.size.x
+    height = bounds.size.y
+    var cells := bounds.size.x * bounds.size.y
+    flags.resize(cells)
+    name_ids.resize(cells)
+    upper_ids.resize(cells)
+    biome_ids.resize(cells)
+    shore_ocean_ids.resize(cells)
+    shore_tidal_ids.resize(cells)
+    ledge_dir_ids.resize(cells)
+    has_item_ids.resize(cells)
+    amounts.resize(cells)
+    route_ids.resize(cells)
+    revisions.resize(cells)
 
 ## Packs a Dictionary of SourceTile objects keyed by pixel position. An int
 ## value stands for `templates[value]` at its key (a fresh world's ocean: see

@@ -9,7 +9,7 @@ static func press_switch(world, cell: Vector2i) -> int:
     var level := -1
     for plan in world.generated_source_interior_plans:
         var origin: Vector2i = world.source_area_origins.get(plan.id, Vector2i.ZERO)
-        if plan.tiles.get(cell - origin) == statue:
+        if plan.tiles.tile(cell - origin) == statue:
             level = int(plan.layer_index) - 1
             break
     var count := 0
@@ -22,7 +22,7 @@ static func press_switch(world, cell: Vector2i) -> int:
             if not plan.source_to_local.has(source_cell):
                 continue
             var local_cell: Vector2i = plan.source_to_local[source_cell]
-            var tile: SourceTile = plan.tiles[local_cell]
+            var tile: SourceTile = plan.tiles.tile(local_cell)
             var name: String = tile.name
             if "__on" in name: name = name.replace("__on", "__off")
             elif "__off" in name: name = name.replace("__off", "__on")
