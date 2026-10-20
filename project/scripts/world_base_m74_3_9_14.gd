@@ -9141,8 +9141,8 @@ func _update_sand_traps(delta: float) -> void:
         clock[0] = remainder - steps
         clock[1] += steps
     for wild_id in ran:
-        var data: Dictionary = wild_pokemon[wild_id]
-        if bool(data.get("burrowed", false)) and not bool(data.get("burrow_active", false)): _sand_trap_join(wild_id, data)
+        var data: Dictionary = wild_pokemon.get(wild_id, {})
+        if not data.is_empty() and bool(data.get("burrowed", false)) and not bool(data.get("burrow_active", false)): _sand_trap_join(wild_id, data)
 
 ## One trap's frame, as every trap had it before the shared clocks. False
 ## when it began an encounter (the frame's trap updates stop there).
