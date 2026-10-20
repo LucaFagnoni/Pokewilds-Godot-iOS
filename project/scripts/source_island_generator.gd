@@ -84,6 +84,51 @@ func peek_tile(position: Vector2i) -> SourceTile:
 
 func _name_of(raw: Variant) -> String:
     return ocean_tiles[raw].name if raw is int else (raw as SourceTile).name
+
+## While the island blotches grow (generate_surface), the positions where the
+## mountain overlay that follows them puts its own tile whatever is there:
+## every mountain tile's, except the bottom layer's (the overlay keeps a
+## bottom-layer cell's tile unless it is water2).
+var _under_mountain: Dictionary = {}
+## Read-only stand-ins for tiles_to_add's tiles at those positions, one per
+## distinct (name, upper, solid, ledge). Until the overlay replaces them, later
+## blotches only read an older cell's name, is_solid and is_ledge (frontiers
+## only ask whether a cell is taken; merges, grass, mazes and ledge repairs
+## replace an older cell's tile, never change it). Their position is no map
+## cell, so a maze pass never takes one for a cell its own blotch made.
+var _stand_ins: Dictionary = {}
+const STAND_IN_POSITION := Vector2i(2147483647, 2147483647)
+
+## The map apply_blotch_mountain's biome blotches grow into, and the cells
+## where it reads their tiles afterwards (the mountain's). Anywhere else only
+## whether a cell is taken matters, so it holds `true`, not a tile: the snow
+## blotches near the peak spread far past the mountain (~380k cells on a
+## size L map, ten times the mountain).
+var _biome_tiles: Dictionary = {}
+var _biome_read_cells: Dictionary = {}
+
+## Swaps tiles_to_add's tiles under the mountain for shared stand-ins, so the
+## island blotches do not keep tens of thousands of tile objects alive that
+## the overlay throws away. Called once a blotch on tiles_to_add is done
+## changing its own tiles in place. Maze ledges keep their tile: a later
+## maze pass repairs around them from their position.
+func _stand_in_under_mountain() -> void:
+    for position: Vector2i in _under_mountain:
+        var tile: SourceTile = tiles_to_add.get(position)
+        if (tile == null or tile.position == STAND_IN_POSITION
+                or tile.name == "ledge_grass_down" or tile.name == "ledge_ramp_down"):
+            continue
+        var key := "%s\n%s\n%d" % [tile.name, tile.name_upper, int(tile.is_solid) + 2 * int(tile.is_ledge)]
+        var stand_in: SourceTile = _stand_ins.get(key)
+        if stand_in == null:
+            stand_in = SourceTile.new(tile.name, STAND_IN_POSITION, tile.name_upper, false, null, false)
+            stand_in.name = tile.name
+            stand_in.name_upper = tile.name_upper
+            stand_in.is_solid = tile.is_solid
+            stand_in.is_ledge = tile.is_ledge
+            _stand_ins[key] = stand_in
+        tiles_to_add[position] = stand_in
+
 var bottom_left := Vector2i.ZERO
 var top_right := Vector2i.ZERO
 var done_pkmn_mansion := false
@@ -133,12 +178,19 @@ func generate_surface() -> Dictionary:
     var origin_tile := SourceTile.new("sand1", origin)
     tiles_to_add[origin_tile.position] = origin_tile
     var endpoints := apply_blotch_mountain(origin_tile, maximum_distance, mountain_tiles)
+    for raw_tile in mountain_tiles.values():
+        var position := (raw_tile as SourceTile).position
+        if not bottom_mountain_layer.has(position):
+            _under_mountain[position] = true
     for tile in endpoints:
         if done_desert == 1:
             apply_blotch("desert", tile, maximum_distance / 18 + maximum_distance / 4, tiles_to_add, 1, true, SourceRoute.new("desert1", 40))
         else:
             done_desert += 1
             apply_blotch("island", tile, maximum_distance / 15, tiles_to_add, 1, true, SourceRoute.new("forest1", 40))
+    # The overlay below replaces every stand-in.
+    _under_mountain = {}
+    _stand_ins = {}
     for raw_tile in SourceJavaHashOrder.values(mountain_tiles):
         var tile := raw_tile as SourceTile
         var existing := tiles_to_add.get(tile.position) as SourceTile
@@ -342,6 +394,10 @@ func generate_complete(used_dungeons: Array[String] = []) -> Dictionary:
             "POKEWILDS_QA_TRACE_AFTER_SURFACE_LIMIT").is_empty() else 400)
     var desert_tiles := surface["desert_tiles"] as Array
     var deep_forest_tiles := surface["deep_forest_tiles"] as Array
+    # Nothing else in it is read below; these lists keep tiles alive that were
+    # replaced since (forest_tiles), and desert_tiles is done with after the
+    # landmarks.
+    surface.clear()
     _restore_source_landmark_flags()
     # The source suppresses Regi placement on a first island containing the
     # mansion/mines. Preserve that RNG sequence, then add the user's requested
@@ -349,6 +405,7 @@ func generate_complete(used_dungeons: Array[String] = []) -> Dictionary:
     # placement RNG before mines/oasis changed every subsequent interior.
     done_regi_dungeon = true
     var landmark_plan := _place_source_landmarks(desert_tiles, deep_forest_tiles)
+    desert_tiles = []
     _cleanup_and_place_deep_forest_landmarks(
         deep_forest_tiles,
         landmark_plan["hitboxes"] as Array,
@@ -792,9 +849,15 @@ func _postprocess_source_shores() -> void:
         Vector2i(16, 16), Vector2i(16, -16), Vector2i(-16, 16),
         Vector2i(0, -16), Vector2i(0, 16)
     ]
-    for raw_tile in SourceJavaHashOrder.values(tiles_to_add):
+    # Walks the map itself, not a values() snapshot: the snapshot (a copy of
+    # the whole map, holding on to every tile replaced below) made this the
+    # peak of generation. This loop only replaces cells, so a cell replaced
+    # before its turn is seen as the snapshot had it: `replaced` keeps that.
+    var replaced: Dictionary = {}
+    for position: Vector2i in tiles_to_add:
+        var raw_tile: Variant = replaced[position] if replaced.has(position) else tiles_to_add[position]
         # Untouched ocean: not lake water, and water2 is skipped below.
-        if raw_tile is int:
+        if raw_tile is int or raw_tile == null:
             continue
         var tile := raw_tile as SourceTile
         if tile.route_belongs_to != null and tile.route_belongs_to.name == "wooded_lake_water1":
@@ -831,6 +894,14 @@ func _postprocess_source_shores() -> void:
                 shore_name = "sand3_black"
             var new_tile := SourceTile.new(
                 shore_name, next_position, "", true, tile.route_belongs_to)
+            if not replaced.has(new_tile.position):
+                # What its turn sees. Only lake water does something there:
+                # ocean (an int) and other water2 are skipped. null: a new key,
+                # which the snapshot did not have.
+                var old: Variant = tiles_to_add.get(new_tile.position)
+                var lake: bool = (old is SourceTile and (old as SourceTile).route_belongs_to != null
+                    and (old as SourceTile).route_belongs_to.name == "wooded_lake_water1")
+                replaced[new_tile.position] = old if lake or old == null else 0
             tiles_to_add[new_tile.position] = new_tile
             var excluded := (
                 "beach" in tile.biome or "mountain" in tile.biome
@@ -877,7 +948,9 @@ func _postprocess_source_shores() -> void:
                 else:
                     waterfall_tile.set_names("sand3", previous_name)
 
-    for raw_tile in SourceJavaHashOrder.values(tiles_to_add):
+    # coastify changes tiles, never the map: no snapshot needed.
+    for position: Vector2i in tiles_to_add:
+        var raw_tile: Variant = tiles_to_add[position]
         # Untouched ocean is water: coastify leaves it as it is.
         if not raw_tile is int:
             _coastify(raw_tile as SourceTile)
@@ -942,7 +1015,8 @@ func _postprocess_source_puddles() -> void:
         Vector2i(-16, 0), Vector2i(16, 0), Vector2i(0, -16), Vector2i(0, 16)
     ]
     var puddles: Array[SourceTile] = []
-    for raw_tile in SourceJavaHashOrder.values(tiles_to_add):
+    for position: Vector2i in tiles_to_add:
+        var raw_tile: Variant = tiles_to_add[position]
         if raw_tile is int:
             continue
         var tile := raw_tile as SourceTile
@@ -969,16 +1043,15 @@ func _spawn_source_overworld_pokemon() -> void:
             ])
         order_file.close()
     # Ocean cells take part (ocean1 spawns): read through their template, at
-    # their key. Nothing here changes a tile.
-    var spawn_positions := SourceJavaHashOrder.keys(tiles_to_add)
-    var spawn_tiles := SourceJavaHashOrder.values(tiles_to_add)
-    for spawn_index in spawn_tiles.size():
-        var raw_tile: Variant = spawn_tiles[spawn_index]
+    # their key. Nothing here changes a tile or the map, so the map is walked
+    # as it is (copies of its keys and values made this the generation peak).
+    for key: Vector2i in tiles_to_add:
+        var raw_tile: Variant = tiles_to_add[key]
         var tile: SourceTile
         var tile_position: Vector2i
         if raw_tile is int:
             tile = ocean_tiles[raw_tile]
-            tile_position = spawn_positions[spawn_index]
+            tile_position = key
         else:
             tile = raw_tile as SourceTile
             tile_position = tile.position
@@ -2546,6 +2619,9 @@ func apply_blotch_mountain(origin_tile: SourceTile, maximum_distance: int, tiles
     _smooth_mountain_levels(all_mountain_tiles, tile_levels)
     _assign_mountain_ledges(all_mountain_tiles, tile_levels)
     var biome_tiles: Dictionary = {}
+    _biome_tiles = biome_tiles
+    for raw_tile in all_mountain_tiles.values():
+        _biome_read_cells[(raw_tile as SourceTile).position] = true
     var placement_bound := int(ceil(float(maximum_distance) / 500.0))
     for raw_tile in SourceJavaHashOrder.values(all_mountain_tiles):
         var tile := raw_tile as SourceTile
@@ -2563,6 +2639,8 @@ func apply_blotch_mountain(origin_tile: SourceTile, maximum_distance: int, tiles
             apply_blotch("mtn_snow1", tile, snow_size, biome_tiles, 0, false, SourceRoute.new("snow1", level))
         else:
             apply_blotch("mtn_green1", tile, maximum_distance / 240, biome_tiles, 0, false, SourceRoute.new("mountain1", level))
+    _biome_tiles = {}
+    _biome_read_cells = {}
     for raw_tile in SourceJavaHashOrder.values(all_mountain_tiles):
         var tile := raw_tile as SourceTile
         if not no_ice_here.has(tile.position):
@@ -2922,7 +3000,11 @@ func _ledgify_replace(tiles: Dictionary, next_island_tiles: Dictionary, position
 func _ledgify_later_sweeps(tiles: Dictionary, next_island_tiles: Dictionary, changed: Array[Vector2i],
         tile_type: String, replace_with: String, biome_name: String, null_name: String) -> void:
     var keys := next_island_tiles.keys()
-    var index_of: Dictionary = {}
+    # Where each key sits in `keys`: a packed grid over the keys' 16-pixel
+    # cells (a Dictionary of every key held ~35 MB at once on a size M map),
+    # any key off that grid in `off_grid`.
+    var low := Vector2i(2147483647, 2147483647)
+    var high := -low
     for index in keys.size():
         var key: Variant = keys[index]
         var entry: Variant = next_island_tiles[key]
@@ -2939,13 +3021,26 @@ func _ledgify_later_sweeps(tiles: Dictionary, next_island_tiles: Dictionary, cha
                         _ledgify_replace(tiles, next_island_tiles, tile.position, replace_with, biome_name)
                         done = false
             return
-        index_of[key] = index
+        var cell := Vector2i((key as Vector2i).x >> 4, (key as Vector2i).y >> 4)
+        low = low.min(cell)
+        high = high.max(cell)
+    var bounds := Rect2i(low, high - low + Vector2i.ONE) if low.x <= high.x else Rect2i()
+    var grid := PackedInt32Array()
+    grid.resize(bounds.size.x * bounds.size.y)
+    grid.fill(-1)
+    var off_grid: Dictionary = {}
+    for index in keys.size():
+        var key: Vector2i = keys[index]
+        if (key.x & 15) != 0 or (key.y & 15) != 0:
+            off_grid[key] = index
+        else:
+            grid[((key.y >> 4) - bounds.position.y) * bounds.size.x + (key.x >> 4) - bounds.position.x] = index
     var queued := PackedByteArray()
     queued.resize(keys.size())
     var heap: Array[int] = []
     for position in changed:
         for offset in BLOCK_OFFSETS_9:
-            var index: int = index_of.get(position + offset, -1)
+            var index := _key_index(grid, bounds, off_grid, position + offset)
             if index >= 0 and queued[index] == 0:
                 queued[index] = 1
                 _heap_push(heap, index)
@@ -2959,7 +3054,7 @@ func _ledgify_later_sweeps(tiles: Dictionary, next_island_tiles: Dictionary, cha
                 continue
             _ledgify_replace(tiles, next_island_tiles, position, replace_with, biome_name)
             for offset in BLOCK_OFFSETS_9:
-                var other: int = index_of.get(position + offset, -1)
+                var other := _key_index(grid, bounds, off_grid, position + offset)
                 if other < 0:
                     continue
                 if other > index:
@@ -2972,6 +3067,15 @@ func _ledgify_later_sweeps(tiles: Dictionary, next_island_tiles: Dictionary, cha
             if queued[index] == 0:
                 queued[index] = 1
                 _heap_push(heap, index)
+
+## The index of `position` among _ledgify_later_sweeps' keys, -1 if none.
+static func _key_index(grid: PackedInt32Array, bounds: Rect2i, off_grid: Dictionary, position: Vector2i) -> int:
+    if (position.x & 15) != 0 or (position.y & 15) != 0:
+        return off_grid.get(position, -1)
+    var cell := Vector2i(position.x >> 4, position.y >> 4)
+    if not bounds.has_point(cell):
+        return -1
+    return grid[(cell.y - bounds.position.y) * bounds.size.x + cell.x - bounds.position.x]
 
 const BLOCK_OFFSETS_9: Array[Vector2i] = [
     Vector2i(0, 0), Vector2i(16, 0), Vector2i(-16, 0), Vector2i(0, 16), Vector2i(0, -16),
@@ -3164,6 +3268,10 @@ func apply_blotch(
     ) -> void:
     var edge_tiles: Dictionary = {origin_tile.position: origin_tile}
     var edge_capacity_high_water := edge_tiles.size()
+    # An island blotch straight on tiles_to_add, before the mountain overlay.
+    var stand_in := not _under_mountain.is_empty() and is_same(tiles_to_add, self.tiles_to_add)
+    var size_before := tiles_to_add.size()
+    var mountain_biome := is_same(tiles_to_add, _biome_tiles)
     var previous_tiles: Array[SourceTile] = []
     var previous_tile := origin_tile
     var grass_tiles: Dictionary = {}
@@ -3253,7 +3361,10 @@ func apply_blotch(
                         origin_tile, current_route, tiles_to_add, state)
                 if new_tile == null:
                     continue
-                tiles_to_add[new_tile.position] = new_tile
+                if mountain_biome and not _biome_read_cells.has(new_tile.position):
+                    tiles_to_add[new_tile.position] = true
+                else:
+                    tiles_to_add[new_tile.position] = new_tile
                 edge_tiles[new_tile.position] = new_tile
                 edge_capacity_high_water = maxi(
                     edge_capacity_high_water, edge_tiles.size()
@@ -3273,13 +3384,21 @@ func apply_blotch(
         var existing := tiles_to_add.get(grass.position) as SourceTile
         if existing != null and not existing.is_solid:
             tiles_to_add[grass.position] = grass
+    # The recursion below (_continue_blotch) can be deep: the grass tiles not
+    # placed would live through it.
+    grass_tiles.clear()
     if is_maze != 0 and not forest_maze_tiles.is_empty():
         _apply_forest_maze(tiles_to_add, forest_maze_tiles, deep_forest_maze_tiles, state)
     if blotch_type == "graveyard1":
         _place_graveyard_fences(tiles_to_add, fence_spawns, current_route)
+    stand_in = stand_in and tiles_to_add.size() != size_before
+    if stand_in:
+        _stand_in_under_mountain()
     _continue_blotch(
         blotch_type, maximum_distance, new_size, previous_tiles,
         tiles_to_add, is_maze, do_next, current_route, forest_maze_tiles)
+    if stand_in:
+        _stand_in_under_mountain()
 
 func _make_blotch_tile(
         blotch_type: String,
@@ -3609,7 +3728,8 @@ func _make_island_tile(
     elif int(distance) + random.next_int(int(maximum_distance / 14) + 1) < 8 * maximum_distance / 16:
         if new_tile == null:
             new_tile = SourceTile.new("sand1", edge, "", true, beach_route)
-        (state["forest_maze_tiles"] as Dictionary)[new_tile.position] = new_tile
+        # Positions only: a tile here would outlive its replacement.
+        (state["forest_maze_tiles"] as Dictionary)[new_tile.position] = true
     if new_tile == null:
         new_tile = SourceTile.new("sand1", edge, "", true, beach_route)
     var grass_here := random.next_int(int(maximum_distance / 4)) + int(distance)
@@ -4091,17 +4211,16 @@ func _apply_forest_maze(
     var bottom_left: Vector2i
     var top_right: Vector2i
     var first := true
-    for raw_tile in SourceJavaHashOrder.values(forest_maze_tiles):
-        var tile := raw_tile as SourceTile
+    for position: Vector2i in forest_maze_tiles:
         if first:
-            bottom_left = tile.position
-            top_right = tile.position
+            bottom_left = position
+            top_right = position
             first = false
         else:
-            bottom_left.x = mini(bottom_left.x, tile.position.x)
-            bottom_left.y = mini(bottom_left.y, tile.position.y)
-            top_right.x = maxi(top_right.x, tile.position.x)
-            top_right.y = maxi(top_right.y, tile.position.y)
+            bottom_left.x = mini(bottom_left.x, position.x)
+            bottom_left.y = mini(bottom_left.y, position.y)
+            top_right.x = maxi(top_right.x, position.x)
+            top_right.y = maxi(top_right.y, position.y)
     top_right.x -= posmod(top_right.x, 96)
     bottom_left.x -= posmod(bottom_left.x, 96)
     top_right.y += 96 - posmod(top_right.y, 96)
