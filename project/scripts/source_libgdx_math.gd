@@ -11,10 +11,9 @@ const DEG_TO_INDEX := float(SIN_COUNT) / 360.0
 static var _sin_table := PackedFloat32Array()
 
 static func float32(value: float) -> float:
-    var bytes := PackedByteArray()
-    bytes.resize(4)
-    bytes.encode_float(0, value)
-    return bytes.decode_float(0)
+    # Vector2 stores 32-bit floats: the same round-to-nearest as Java's
+    # (float) cast, without allocating a byte buffer per call.
+    return Vector2(value, 0.0).x
 
 static func rotate_deg(vector: Vector2, degrees: float) -> Vector2:
     _ensure_sine_table()
