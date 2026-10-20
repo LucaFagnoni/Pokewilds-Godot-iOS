@@ -2557,97 +2557,148 @@ func apply_blotch_mountain(origin_tile: SourceTile, maximum_distance: int, tiles
     tiles_to_add.merge(all_mountain_tiles, true)
     return endpoints
 
-func _level_of(tile_levels: Dictionary, tile: SourceTile) -> int:
-    return int(tile_levels[tile]) if tile != null and tile_levels.has(tile) else 2147483647
-
 func _smooth_mountain_levels(all_tiles: Dictionary, tile_levels: Dictionary) -> void:
+    # Same Gauss-Seidel sweeps as the source, on packed data: every tile's
+    # level lives in one slot per tile object (a tile object can sit under
+    # several keys) and its 8 neighbours are resolved once, not per sweep.
+    var graph := _mountain_level_graph(all_tiles, tile_levels)
+    var order: PackedInt32Array = graph[0]
+    var neighbours: PackedInt32Array = graph[1]
+    var levels: PackedInt64Array = graph[2]
+    var tiles: Array = graph[3]
+    var changed := PackedByteArray()
+    changed.resize(levels.size())
+    var count := order.size()
     var done := false
     while not done:
         done = true
-        for raw_tile in SourceJavaHashOrder.values(all_tiles):
-            var tile := raw_tile as SourceTile
-            var level := int(tile_levels[tile])
-            var left := all_tiles.get(tile.position + Vector2i(-16, 0)) as SourceTile
-            var right := all_tiles.get(tile.position + Vector2i(16, 0)) as SourceTile
-            var bottom := all_tiles.get(tile.position + Vector2i(0, -16)) as SourceTile
-            var top := all_tiles.get(tile.position + Vector2i(0, 16)) as SourceTile
-            var top_left := all_tiles.get(tile.position + Vector2i(-16, 16)) as SourceTile
-            var top_right := all_tiles.get(tile.position + Vector2i(16, 16)) as SourceTile
-            var bottom_left := all_tiles.get(tile.position + Vector2i(-16, -16)) as SourceTile
-            var bottom_right := all_tiles.get(tile.position + Vector2i(16, -16)) as SourceTile
-            var lower := false
-            for neighbour in [left, right, bottom, top, top_right, top_left, bottom_left, bottom_right]:
-                if neighbour != null and _level_of(tile_levels, neighbour) < level - 1:
-                    lower = true
-                    break
+        for index in count:
+            var slot := order[index]
+            var level := levels[slot]
+            var base := index * 8
+            var s_left := neighbours[base]
+            var s_right := neighbours[base + 1]
+            var s_bottom := neighbours[base + 2]
+            var s_top := neighbours[base + 3]
+            var s_top_left := neighbours[base + 4]
+            var s_top_right := neighbours[base + 5]
+            var s_bottom_left := neighbours[base + 6]
+            var s_bottom_right := neighbours[base + 7]
+            var left: int = INFINITE_LEVEL if s_left < 0 else levels[s_left]
+            var right: int = INFINITE_LEVEL if s_right < 0 else levels[s_right]
+            var bottom: int = INFINITE_LEVEL if s_bottom < 0 else levels[s_bottom]
+            var top: int = INFINITE_LEVEL if s_top < 0 else levels[s_top]
+            var top_left: int = INFINITE_LEVEL if s_top_left < 0 else levels[s_top_left]
+            var top_right: int = INFINITE_LEVEL if s_top_right < 0 else levels[s_top_right]
+            var bottom_left: int = INFINITE_LEVEL if s_bottom_left < 0 else levels[s_bottom_left]
+            var bottom_right: int = INFINITE_LEVEL if s_bottom_right < 0 else levels[s_bottom_right]
+            var below := level - 1
+            var lower := (left < below or right < below or bottom < below or top < below
+                or top_right < below or top_left < below or bottom_left < below or bottom_right < below)
             if not lower:
-                lower = (_level_of(tile_levels, left) <= level - 1 and _level_of(tile_levels, right) <= level - 1)
-            if not lower:
-                lower = (_level_of(tile_levels, top) <= level - 1 and _level_of(tile_levels, bottom) <= level - 1)
-            if not lower:
-                lower = (_level_of(tile_levels, top) <= level - 1 and _level_of(tile_levels, left) <= level - 1 and _level_of(tile_levels, bottom_right) <= level - 1)
-            if not lower:
-                lower = (_level_of(tile_levels, top) <= level - 1 and _level_of(tile_levels, right) <= level - 1 and _level_of(tile_levels, bottom_left) <= level - 1)
-            if not lower:
-                lower = (_level_of(tile_levels, bottom) <= level - 1 and _level_of(tile_levels, right) <= level - 1 and _level_of(tile_levels, top_left) <= level - 1)
-            if not lower:
-                lower = (_level_of(tile_levels, bottom) <= level - 1 and _level_of(tile_levels, left) <= level - 1 and _level_of(tile_levels, top_right) <= level - 1)
-            if not lower:
-                lower = (_level_of(tile_levels, bottom) == level and _level_of(tile_levels, left) <= level - 1 and _level_of(tile_levels, bottom_right) <= level - 1)
-            if not lower:
-                lower = (_level_of(tile_levels, bottom) == level and _level_of(tile_levels, right) <= level - 1 and _level_of(tile_levels, bottom_left) <= level - 1)
-            if not lower:
-                lower = (_level_of(tile_levels, top) == level and _level_of(tile_levels, left) <= level - 1 and _level_of(tile_levels, top_right) <= level - 1)
-            if not lower:
-                lower = (_level_of(tile_levels, top) == level and _level_of(tile_levels, right) <= level - 1 and _level_of(tile_levels, top_left) <= level - 1)
-            if not lower:
-                lower = (_level_of(tile_levels, right) == level and _level_of(tile_levels, top) <= level - 1 and _level_of(tile_levels, bottom_right) <= level - 1)
-            if not lower:
-                lower = (_level_of(tile_levels, right) == level and _level_of(tile_levels, bottom) <= level - 1 and _level_of(tile_levels, top_right) <= level - 1)
-            if not lower:
-                lower = (_level_of(tile_levels, left) == level and _level_of(tile_levels, bottom) <= level - 1 and _level_of(tile_levels, top_left) <= level - 1)
-            if not lower:
-                lower = (_level_of(tile_levels, left) == level and _level_of(tile_levels, top) <= level - 1 and _level_of(tile_levels, bottom_left) <= level - 1)
+                lower = (
+                    (left <= below and right <= below)
+                    or (top <= below and bottom <= below)
+                    or (top <= below and left <= below and bottom_right <= below)
+                    or (top <= below and right <= below and bottom_left <= below)
+                    or (bottom <= below and right <= below and top_left <= below)
+                    or (bottom <= below and left <= below and top_right <= below)
+                    or (bottom == level and left <= below and bottom_right <= below)
+                    or (bottom == level and right <= below and bottom_left <= below)
+                    or (top == level and left <= below and top_right <= below)
+                    or (top == level and right <= below and top_left <= below)
+                    or (right == level and top <= below and bottom_right <= below)
+                    or (right == level and bottom <= below and top_right <= below)
+                    or (left == level and bottom <= below and top_left <= below)
+                    or (left == level and top <= below and bottom_left <= below)
+                )
             if lower:
-                tile_levels[tile] = level - 1
+                levels[slot] = below
+                changed[slot] = 1
                 done = false
+    for slot in levels.size():
+        if changed[slot] != 0:
+            tile_levels[tiles[slot]] = levels[slot]
+
+const INFINITE_LEVEL := 2147483647
+
+## [order, neighbours, levels, tiles]: order[i] is the level slot of the i-th
+## value of all_tiles; neighbours[i * 8 + k] the slot of its k-th neighbour
+## (left, right, bottom, top, top-left, top-right, bottom-left, bottom-right;
+## -1 when absent); levels[slot] its level (INFINITE_LEVEL when unset);
+## tiles[slot] the tile object.
+func _mountain_level_graph(all_tiles: Dictionary, tile_levels: Dictionary) -> Array:
+    var values := all_tiles.values()
+    var count := values.size()
+    var slot_by_id: Dictionary = {}
+    var tiles: Array = []
+    var levels := PackedInt64Array()
+    var order := PackedInt32Array()
+    order.resize(count)
+    for index in count:
+        var tile := values[index] as SourceTile
+        var id := tile.get_instance_id()
+        var slot: int = slot_by_id.get(id, -1)
+        if slot < 0:
+            slot = tiles.size()
+            slot_by_id[id] = slot
+            tiles.append(tile)
+            levels.append(int(tile_levels[tile]) if tile_levels.has(tile) else INFINITE_LEVEL)
+        order[index] = slot
+    var offsets: Array[Vector2i] = [
+        Vector2i(-16, 0), Vector2i(16, 0), Vector2i(0, -16), Vector2i(0, 16),
+        Vector2i(-16, 16), Vector2i(16, 16), Vector2i(-16, -16), Vector2i(16, -16)]
+    var neighbours := PackedInt32Array()
+    neighbours.resize(count * 8)
+    for index in count:
+        var position := (values[index] as SourceTile).position
+        for k in 8:
+            var neighbour := all_tiles.get(position + offsets[k]) as SourceTile
+            neighbours[index * 8 + k] = -1 if neighbour == null else int(slot_by_id[neighbour.get_instance_id()])
+    return [order, neighbours, levels, tiles]
 
 func _assign_mountain_ledges(all_tiles: Dictionary, tile_levels: Dictionary) -> void:
-    for raw_tile in SourceJavaHashOrder.values(all_tiles):
-        var tile := raw_tile as SourceTile
+    var graph := _mountain_level_graph(all_tiles, tile_levels)
+    var order: PackedInt32Array = graph[0]
+    var neighbours: PackedInt32Array = graph[1]
+    var levels: PackedInt64Array = graph[2]
+    var tiles: Array = graph[3]
+    for index in order.size():
+        var tile := tiles[order[index]] as SourceTile
         var level := int(tile_levels[tile])
-        var left := all_tiles.get(tile.position + Vector2i(-16, 0)) as SourceTile
-        var right := all_tiles.get(tile.position + Vector2i(16, 0)) as SourceTile
-        var bottom := all_tiles.get(tile.position + Vector2i(0, -16)) as SourceTile
-        var top := all_tiles.get(tile.position + Vector2i(0, 16)) as SourceTile
-        var top_left := all_tiles.get(tile.position + Vector2i(-16, 16)) as SourceTile
-        var top_right := all_tiles.get(tile.position + Vector2i(16, 16)) as SourceTile
-        var bottom_left := all_tiles.get(tile.position + Vector2i(-16, -16)) as SourceTile
-        var bottom_right := all_tiles.get(tile.position + Vector2i(16, -16)) as SourceTile
+        var base := index * 8
+        var left: int = INFINITE_LEVEL if neighbours[base] < 0 else levels[neighbours[base]]
+        var right: int = INFINITE_LEVEL if neighbours[base + 1] < 0 else levels[neighbours[base + 1]]
+        var bottom: int = INFINITE_LEVEL if neighbours[base + 2] < 0 else levels[neighbours[base + 2]]
+        var top: int = INFINITE_LEVEL if neighbours[base + 3] < 0 else levels[neighbours[base + 3]]
+        var top_left: int = INFINITE_LEVEL if neighbours[base + 4] < 0 else levels[neighbours[base + 4]]
+        var top_right: int = INFINITE_LEVEL if neighbours[base + 5] < 0 else levels[neighbours[base + 5]]
+        var bottom_left: int = INFINITE_LEVEL if neighbours[base + 6] < 0 else levels[neighbours[base + 6]]
+        var bottom_right: int = INFINITE_LEVEL if neighbours[base + 7] < 0 else levels[neighbours[base + 7]]
         var suffix := ""
-        if _level_of(tile_levels, left) == level and _level_of(tile_levels, bottom) == level - 1 and _level_of(tile_levels, right) == level:
+        if left == level and bottom == level - 1 and right == level:
             suffix = "N"
-        elif _level_of(tile_levels, top) == level and _level_of(tile_levels, right) == level and _level_of(tile_levels, bottom) == level - 1 and _level_of(tile_levels, left) == level - 1:
+        elif top == level and right == level and bottom == level - 1 and left == level - 1:
             suffix = "NE"
-        elif _level_of(tile_levels, top) == level and _level_of(tile_levels, left) == level - 1 and _level_of(tile_levels, bottom) == level:
+        elif top == level and left == level - 1 and bottom == level:
             suffix = "E"
-        elif _level_of(tile_levels, top) == level - 1 and _level_of(tile_levels, left) == level - 1 and _level_of(tile_levels, right) == level and _level_of(tile_levels, bottom) == level:
+        elif top == level - 1 and left == level - 1 and right == level and bottom == level:
             suffix = "SE"
-        elif _level_of(tile_levels, top) == level - 1 and _level_of(tile_levels, left) == level and _level_of(tile_levels, right) == level:
+        elif top == level - 1 and left == level and right == level:
             suffix = "S"
-        elif _level_of(tile_levels, top) == level - 1 and _level_of(tile_levels, bottom) == level and _level_of(tile_levels, left) == level and _level_of(tile_levels, right) == level - 1:
+        elif top == level - 1 and bottom == level and left == level and right == level - 1:
             suffix = "SW"
-        elif _level_of(tile_levels, top) == level and _level_of(tile_levels, bottom) == level and _level_of(tile_levels, right) == level - 1:
+        elif top == level and bottom == level and right == level - 1:
             suffix = "W"
-        elif _level_of(tile_levels, top) == level and _level_of(tile_levels, left) == level and _level_of(tile_levels, bottom) == level - 1 and _level_of(tile_levels, right) == level - 1:
+        elif top == level and left == level and bottom == level - 1 and right == level - 1:
             suffix = "NW"
-        elif _level_of(tile_levels, bottom_right) == level - 1 and _level_of(tile_levels, bottom) == level and _level_of(tile_levels, right) == level:
+        elif bottom_right == level - 1 and bottom == level and right == level:
             suffix = "NW_inner"
-        elif _level_of(tile_levels, bottom_left) == level - 1 and _level_of(tile_levels, bottom) == level and _level_of(tile_levels, left) == level:
+        elif bottom_left == level - 1 and bottom == level and left == level:
             suffix = "NE_inner"
-        elif _level_of(tile_levels, top_right) == level - 1 and _level_of(tile_levels, top) == level and _level_of(tile_levels, right) == level:
+        elif top_right == level - 1 and top == level and right == level:
             suffix = "SW_inner"
-        elif _level_of(tile_levels, top_left) == level - 1 and _level_of(tile_levels, top) == level and _level_of(tile_levels, left) == level:
+        elif top_left == level - 1 and top == level and left == level:
             suffix = "SE_inner"
         if suffix != "":
             tile.set_names(tile.name, "ledges3_" + suffix)
