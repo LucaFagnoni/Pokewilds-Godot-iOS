@@ -405,7 +405,7 @@ func apply_record(wild_id:int,record:Variant)->void:
     var before:Vector2i=data.cell
     var target=Vector2i(int(record.x),int(record.y))
     var audio_tick=data.get("aggro_audio_tick",-1.0)
-    data.merge(record,true);data["cell"]=target;world._wild_cell_moved(wild_id,target)
+    data.merge(record,true);data["cell"]=target;world._wild_cell_moved(wild_id,target);world._sand_trap_merged(wild_id)
     data["aggro_audio_tick"]=audio_tick
     var sprite=data.get("sprite") as Sprite2D
     if is_instance_valid(sprite) and before!=target:

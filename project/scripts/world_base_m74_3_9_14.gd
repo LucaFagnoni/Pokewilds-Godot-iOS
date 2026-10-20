@@ -549,6 +549,8 @@ func generate_world(
     map_art_revision += 1
     wild_pokemon.clear()
     sand_trap_ids.clear()
+    sand_trap_clocks.clear()
+    sand_trap_clock_of.clear()
     wild_eggs.clear()
     next_wild_id = 1
     next_deployed_id = 1
@@ -7706,6 +7708,10 @@ func get_crafting_save_state() -> Dictionary:
 
 func _serializable_ecology_record(data: Dictionary, cell: Vector2i) -> Dictionary:
     var saved := data.duplicate(true)
+    # A hidden sand trap's clock values live on its shared clock.
+    var trap_id := int(data.get("id", -1))
+    if sand_trap_clock_of.has(trap_id) and is_same(wild_pokemon.get(trap_id), data):
+        _sand_trap_write(sand_trap_clock_of[trap_id], saved)
     for runtime_key in [
             "sprite", "burrow_whirl_sprite", "burrow_sand_sprite",
             "behavior", "cell",
@@ -8029,6 +8035,8 @@ func _clear_wild_pokemon() -> void:
             sand_sprite.queue_free()
     wild_pokemon.clear()
     sand_trap_ids.clear()
+    sand_trap_clocks.clear()
+    sand_trap_clock_of.clear()
     next_wild_id = 1
 
 func _clear_wild_eggs() -> void:
@@ -8295,6 +8303,8 @@ func _add_wild_pokemon(
     stored["flee_steps"] = int(stored.get("flee_steps", 0))
     wild_pokemon[wild_id] = stored
     _wild_cell_moved(wild_id, cell)
+    _sand_trap_leave(wild_id, stored, false)
+    if is_burrowed: _sand_trap_join(wild_id, stored)
     _update_pokemon_water_visual(stored)
 
 func _wild_move_delay(species: String, data: Dictionary = {}) -> float:
@@ -8791,6 +8801,7 @@ func _remove_wild_pokemon(wild_id: int) -> void:
     if not wild_pokemon.has(wild_id):
         return
     sand_trap_ids.erase(wild_id)
+    _sand_trap_leave(wild_id, wild_pokemon[wild_id])
     var data: Dictionary = wild_pokemon[wild_id]
     if bool(data.get("burrowed", false)) and exact_world != null:
         var tile := exact_world.tile_at(Vector2i(data.get("cell", Vector2i.ZERO)))
@@ -9036,7 +9047,58 @@ func _trigger_burrowed_pokemon(wild_id: int) -> void:
         return
     var data: Dictionary = wild_pokemon[wild_id]
     if bool(data.get("burrowed", false)):
+        _sand_trap_leave(wild_id, data)
         data["burrow_active"] = true
+
+## Hidden idle sand traps (150 in a big world) share clocks instead of each
+## advancing its own burrow_time / burrow_whirl_tick every frame. A clock is
+## [time, steps, traps on it] and advances exactly as a trap's own values
+## did, so traps whose time is equal share one (at load, all of them). A
+## trap on a clock: sand_trap_clock_of[id] = [clock id, the clock's steps
+## and the trap's whirl tick when it joined]. Its dictionary keeps the values
+## it joined with; _sand_trap_write gives the current ones (saves, co-op).
+var sand_trap_clocks := {}
+var sand_trap_clock_of := {}
+var sand_trap_next_clock := 0
+
+func _sand_trap_write(at: Array, into: Dictionary) -> void:
+    var clock: Array = sand_trap_clocks[at[0]]
+    into["burrow_time"] = clock[0]
+    into["burrow_whirl_tick"] = (int(at[2]) + int(clock[1]) - int(at[1])) % 80
+
+func _sand_trap_join(wild_id: int, data: Dictionary) -> void:
+    var time := float(data.get("burrow_time", 0.0))
+    var clock_id := -1
+    for id in sand_trap_clocks:
+        if sand_trap_clocks[id][0] == time:
+            clock_id = id
+            break
+    if clock_id < 0:
+        clock_id = sand_trap_next_clock
+        sand_trap_next_clock += 1
+        sand_trap_clocks[clock_id] = [time, 0, 0]
+    var clock: Array = sand_trap_clocks[clock_id]
+    clock[2] += 1
+    sand_trap_clock_of[wild_id] = [clock_id, clock[1], int(data.get("burrow_whirl_tick", 0))]
+
+## Takes a trap off its clock; with write, its dictionary gets the clock's
+## current values (without: its own values are already the current ones).
+func _sand_trap_leave(wild_id: int, data: Dictionary, write := true) -> void:
+    if not sand_trap_clock_of.has(wild_id): return
+    var at: Array = sand_trap_clock_of[wild_id]
+    if write: _sand_trap_write(at, data)
+    sand_trap_clock_of.erase(wild_id)
+    var clock: Array = sand_trap_clocks[at[0]]
+    clock[2] -= 1
+    if clock[2] <= 0: sand_trap_clocks.erase(at[0])
+
+## A co-op record was merged into a trap: its values are the current ones.
+func _sand_trap_merged(wild_id: int) -> void:
+    if not sand_trap_ids.has(wild_id) or not wild_pokemon.has(wild_id): return
+    var data: Dictionary = wild_pokemon[wild_id]
+    _sand_trap_leave(wild_id, data, false)
+    if bool(data.get("burrowed", false)) and not bool(data.get("burrow_active", false)):
+        _sand_trap_join(wild_id, data)
 
 func _update_sand_traps(delta: float) -> void:
     if active_area_id != "OVERWORLD":
@@ -9046,10 +9108,48 @@ func _update_sand_traps(delta: float) -> void:
     var player_cell := _player_cell()
     var flying := active_field_move == "FLY"
     var ticks := delta * 60.0
-    for wild_id in sand_trap_ids.keys():
+    # Traps on a clock are passed over unless the player stands on them; the
+    # rest (active ones) run the per-trap code, in the same order as before.
+    if not _wild_index_valid(): _wild_index_all()
+    var under = wild_by_cell.get(player_cell)
+    var ran: Array = []
+    if sand_trap_clock_of.size() < sand_trap_ids.size() or under != null:
+        var keys := sand_trap_ids.keys()
+        for index in keys.size():
+            var wild_id = keys[index]
+            var clocked := sand_trap_clock_of.has(wild_id)
+            if clocked and wild_id != under and not (under is Array and under.has(wild_id)): continue
+            var data: Dictionary = wild_pokemon[wild_id]
+            if clocked: _sand_trap_leave(wild_id, data)
+            ran.append(wild_id)
+            if not _update_sand_trap(wild_id, data, player_cell, flying, ticks):
+                # An encounter began. As before, the traps before this one
+                # moved on this frame and the ones after it did not.
+                for earlier in keys.slice(0, index):
+                    if sand_trap_clock_of.has(earlier):
+                        var other: Dictionary = wild_pokemon[earlier]
+                        _sand_trap_leave(earlier, other)
+                        _update_sand_trap(earlier, other, player_cell, flying, ticks)
+                        _sand_trap_join(earlier, other)
+                for raw_id in ran:
+                    var trap: Dictionary = wild_pokemon.get(raw_id, {})
+                    if not trap.is_empty() and raw_id != wild_id and bool(trap.get("burrowed", false)) and not bool(trap.get("burrow_active", false)): _sand_trap_join(raw_id, trap)
+                return
+    for clock in sand_trap_clocks.values():
+        var remainder: float = clock[0] + ticks
+        var steps := int(remainder)
+        clock[0] = remainder - steps
+        clock[1] += steps
+    for wild_id in ran:
         var data: Dictionary = wild_pokemon[wild_id]
+        if bool(data.get("burrowed", false)) and not bool(data.get("burrow_active", false)): _sand_trap_join(wild_id, data)
+
+## One trap's frame, as every trap had it before the shared clocks. False
+## when it began an encounter (the frame's trap updates stop there).
+func _update_sand_trap(wild_id: int, data: Dictionary, player_cell: Vector2i, flying: bool, ticks: float) -> bool:
+    if true:
         if not bool(data.get("burrowed", false)):
-            continue
+            return true
         var cell: Vector2i = data["cell"]
         var on_trap := player_cell == cell and not flying
         if on_trap and not encounter_grace_active() and not _repel_blocks(int(data.get("level", 22))):
@@ -9061,7 +9161,7 @@ func _update_sand_traps(delta: float) -> void:
             # Hidden idle traps only need their source phase clock advanced.
             # Avoid rewriting three invisible sprites for every trap each frame.
             data["burrow_whirl_tick"] = (int(data.get("burrow_whirl_tick", 0)) + steps) % 80
-            continue
+            return true
         for step in range(steps):
             data["burrow_whirl_tick"] = (int(data.get("burrow_whirl_tick", 0)) + 1) % 80
             if not bool(data.get("burrow_active", false)):
@@ -9079,7 +9179,7 @@ func _update_sand_traps(delta: float) -> void:
                 data["burrow_tick"] = 0
             if tick >= 63 and on_trap and not encounter_grace_active():
                 _begin_wild_encounter(wild_id)
-                return
+                return false
         var tick := int(data.get("burrow_tick", 0))
         var height := clampi((tick - 50) * 4, 0, 12)
         if tick >= 141:
@@ -9103,6 +9203,7 @@ func _update_sand_traps(delta: float) -> void:
             sand.visible = tick >= 50 and tick < 66
             sand.frame = 0 if tick < 58 else 1
             sand.position = _cell_center(cell) + Vector2(0, -6)
+    return true
 
 func _level_for_cell(cell: Vector2i) -> int:
     if exact_world_mode and exact_world != null:
