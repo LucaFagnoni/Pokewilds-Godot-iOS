@@ -1,47 +1,61 @@
-extends "res://scripts/source_chunk_collision_streamer.gd"
+extends Node
 
-# Retain the existing public interface and collision rules. Both travel modes
-# are prepared once; movement never creates or destroys collision objects.
-# Land and water use separate collision bits. SURF changes the player's mask,
-# keeping the whole world's physics bodies resident during landing.
+## The overworld ground's collision, read from the tile store. A cell is
+## worked out the first time the player's box comes near it and then kept;
+## play changes go through refresh_cells / set_cell_passable with the cells
+## they touched. Nothing is built at load and no physics object exists.
+##
+## The rules are the ones the two collision TileMapLayers had: land solids
+## (layer bit 1, solid while surfing too) and water (bit 2), which blocks
+## only next to a cell someone on foot can stand on, so open sea is never
+## touched on foot. Empty dug holes are solid as their visible outline.
+## Like the layers, the shapes come in blocks of 16x16 cells, one per layer:
+## the block's cells merged into one outline and cut into convex pieces
+## (collision_outline.gd), so a flat wall has no seam to catch on. A dug hole's
+## outline stays a shape of its own.
 const WATER_COLLISION_BIT := 2
-var resident_collision_layers: Array[TileMapLayer] = []
-var resident_collision_builds := 0
-var hole_collision_coords: Dictionary = {}
-## Cells someone on foot can stand on. Water only needs a collision shape next
-## to one of these: open sea far from any shore can never be touched on foot
-## (SURF and FLY ignore the water layer), and it was ~90% of all shapes.
-var foot_open: Dictionary = {}
 const AROUND: Array[Vector2i] = [Vector2i(-1,-1), Vector2i(0,-1), Vector2i(1,-1), Vector2i(-1,0),
     Vector2i(1,0), Vector2i(-1,1), Vector2i(0,1), Vector2i(1,1)]
+## Cell kinds, one byte each. 0 = not worked out yet.
+const KNOWN := 128
+const OPEN := 1        # someone on foot can stand here
+const SURF_SOLID := 2  # solid while surfing as well
+const HOLE := 4        # solid as its hole outline instead of the whole cell
+const NONE := 8        # off the map, away from its edge: nothing at all
 
-func configure(tiles, player_node: Node2D, source_tile_size: int = 16, pixel_keys: bool = false, deferred_build: bool = false) -> void:
+## The overworld's WorldTileStore.
+var source_tiles
+var tracked_player: Node2D
+var tile_size := 16
+var source_keys_are_pixels := false
+var allow_water := false
+var passable_cells: Dictionary = {}
+var streaming_enabled := true
+var _kinds := PackedByteArray()
+var _outside := {}
+## Cells off the map that a play change touched: worked out as any other.
+var _touched := {}
+var _upper_solid_ids := {}
+var _base_solid_ids := {}
+var _berry_ids := {}
+var _hole_names := {}
+var _hole_pieces := {}
+const QUADRANT := 16
+## The solids of the blocks near the player: Vector3i(block x, block y,
+## layer) -> Array of PlayerMotion.Solid.
+var _blocks := {}
+const Outline := preload("res://scripts/collision_outline.gd")
+
+func configure(tiles, player_node: Node2D, source_tile_size: int = 16, pixel_keys: bool = false) -> void:
     source_tiles = tiles
     tracked_player = player_node
     tile_size = source_tile_size
     source_keys_are_pixels = pixel_keys
-    foot_open = {}
     _upper_solid_ids = {}
     _base_solid_ids = {}
-    var tileset := TileSet.new()
-    tileset.tile_size = Vector2i(tile_size,tile_size)
-    tileset.add_physics_layer()
-    tileset.set_physics_layer_collision_layer(0,1)
-    tileset.set_physics_layer_collision_mask(0,1)
-    var atlas := TileSetAtlasSource.new()
-    var blank := Image.create(tile_size * 64,tile_size,false,Image.FORMAT_RGBA8)
-    blank.fill(Color.TRANSPARENT)
-    atlas.texture = ImageTexture.create_from_image(blank)
-    atlas.texture_region_size = Vector2i(tile_size,tile_size)
-    tileset.add_source(atlas,0)
-    var half := float(tile_size)/2.0
-    for index in range(2):
-        atlas.create_tile(Vector2i(index,0))
-        var data := atlas.get_tile_data(Vector2i(index,0),0)
-        data.set_collision_polygons_count(0,1)
-        var top := -half if index == 0 else 0.0
-        data.set_collision_polygon_points(0,0,PackedVector2Array([Vector2(-half,top),Vector2(half,top),Vector2(half,half),Vector2(-half,half)]))
-    # Reserve every hole outline before play, so digging never changes the TileSet.
+    _berry_ids = {}
+    # The hole outlines that are solid as drawn (every other upper name
+    # blocks the whole cell).
     for mask in range(16):
         var suffix := ""
         for bit in range(4):
@@ -53,41 +67,13 @@ func configure(tiles, player_node: Node2D, source_tile_size: int = 16, pixel_key
             var name := "hole1" + ("_"+suffix if not suffix.is_empty() else "")
             for bit in range(corners.size()):
                 if fill & (1 << bit): name += "["+corners[bit]+"]"
-            var coord := Vector2i(2+hole_collision_coords.size(),0)
-            hole_collision_coords[name] = coord
-            atlas.create_tile(coord)
-            var spec := SourceWorldData.render_spec({"base":"green1","upper":name},true)
-            var pixels: Image = spec.texture.get_image().get_region(Rect2i(spec.region))
-            var bitmap := BitMap.new()
-            bitmap.create_from_image_alpha(pixels)
-            var polygons := bitmap.opaque_to_polygons(Rect2i(Vector2i.ZERO,pixels.get_size()),0.0)
-            var data := atlas.get_tile_data(coord,0)
-            data.set_collision_polygons_count(0,polygons.size())
-            for polygon_index in range(polygons.size()):
-                var points: PackedVector2Array = polygons[polygon_index]
-                for point in range(points.size()): points[point] -= Vector2(half,half)
-                data.set_collision_polygon_points(0,polygon_index,points)
-    for index in range(2):
-        var layer := TileMapLayer.new()
-        layer.tile_set = tileset.duplicate(true)
-        layer.tile_set.set_physics_layer_collision_layer(0, 1 if index == 0 else WATER_COLLISION_BIT)
-        layer.tile_set.set_physics_layer_collision_mask(0, 0)
-        layer.navigation_enabled = false
-        layer.visible = false
-        add_child(layer)
-        resident_collision_layers.append(layer)
-    if not deferred_build: refresh_now()
-
-func _physics_process(_delta: float) -> void:
-    pass
+            _hole_names[name] = true
+    refresh_now()
 
 func _apply_collision_mode() -> void:
-    for index in range(resident_collision_layers.size()):
-        if resident_collision_layers[index].collision_enabled != streaming_enabled:
-            resident_collision_layers[index].collision_enabled = streaming_enabled
     # FLY deliberately has no collision mask; preserve it through transitions.
-    if is_instance_valid(tracked_player) and tracked_player is CollisionObject2D and tracked_player.collision_mask != 0:
-        tracked_player.set_collision_mask_value(2, streaming_enabled and not allow_water)
+    if is_instance_valid(tracked_player) and int(tracked_player.get("collision_mask")) != 0:
+        tracked_player.call("set_collision_mask_value", 2, streaming_enabled and not allow_water)
 
 func set_allow_water(value: bool) -> void:
     allow_water = value
@@ -97,18 +83,140 @@ func set_streaming_enabled(value: bool) -> void:
     streaming_enabled = value
     _apply_collision_mode()
 
-## Returns whether the cell is water that blocks someone on foot. In a bulk
-## build the caller places that water afterwards, once every
-## cell's foot_open state is known.
-func _update_cell(cell: Vector2i, bulk: bool = false) -> bool:
-    # _cell_needs_collision for both modes, with the neighbour rules (which
-    # do not depend on the mode) worked out once.
+func set_cell_passable(cell: Vector2i, value: bool) -> void:
+    if value: passable_cells[cell] = true
+    else: passable_cells.erase(cell)
+    _forget(cell)
+
+func refresh_cells(cells: Array) -> void:
+    for cell in cells:
+        for y in range(-2,3):
+            for x in range(-1,2): _forget(cell + Vector2i(x, y))
+
+## Forgets every cell: each is worked out again when next needed.
+func refresh_now() -> void:
+    var store: WorldTileStore = source_tiles
+    _kinds = PackedByteArray()
+    _kinds.resize(store.width * store.height)
+    _outside.clear()
+    _touched.clear()
+    _blocks.clear()
+    _apply_collision_mode()
+
+func _forget(cell: Vector2i) -> void:
+    # The water next to the cell can change with it: its blocks too.
+    for y in range(-1, 2):
+        for x in range(-1, 2):
+            var block := _block_of(cell + Vector2i(x, y))
+            _blocks.erase(Vector3i(block.x, block.y, 0))
+            _blocks.erase(Vector3i(block.x, block.y, 1))
+    var store: WorldTileStore = source_tiles
+    if not store.has(cell * tile_size if source_keys_are_pixels else cell): _touched[cell] = true
+    var at := cell - store.origin
+    if at.x >= 0 and at.y >= 0 and at.x < store.width and at.y < store.height:
+        _kinds[at.y * store.width + at.x] = 0
+    else:
+        _outside.erase(cell)
+
+## Appends the solids (PlayerMotion.Solid) of the ground under `area` for a
+## body colliding with `mask`.
+func collect(area: Rect2, mask: int, out: Array) -> void:
+    if not streaming_enabled or mask & (1 | WATER_COLLISION_BIT) == 0: return
+    var span := float(tile_size * QUADRANT)
+    for layer in 2:
+        if mask & (1 << layer) == 0: continue
+        for by in range(floori(area.position.y / span), floori(area.end.y / span) + 1):
+            for bx in range(floori(area.position.x / span), floori(area.end.x / span) + 1):
+                for s: PlayerMotion.Solid in _block(Vector3i(bx, by, layer)):
+                    if s.aabb.intersects(area, true): out.append(s)
+
+## One block round the player made ready per frame, so walking into new
+## ground never builds several in the same frame (a block is ~1 ms, up to 8).
+func _process(_delta: float) -> void:
+    if not streaming_enabled or not is_instance_valid(tracked_player): return
+    var mask := int(tracked_player.get("collision_mask"))
+    if mask == 0: return
+    var at := _block_of(Vector2i((tracked_player.position / float(tile_size)).floor()))
+    for layer in 2:
+        if mask & (1 << layer) == 0: continue
+        for y in range(-1, 2):
+            for x in range(-1, 2):
+                var key := Vector3i(at.x + x, at.y + y, layer)
+                if not _blocks.has(key):
+                    _block(key)
+                    return
+
+func _block_of(cell: Vector2i) -> Vector2i:
+    return Vector2i(floori(cell.x / float(QUADRANT)), floori(cell.y / float(QUADRANT)))
+
+## The solids of one block of cells on one layer (0 land, 1 water).
+func _block(key: Vector3i) -> Array:
+    var known = _blocks.get(key)
+    if known != null: return known
+    if _blocks.size() >= 64:
+        # Keep the blocks round the player.
+        var near := Vector2i.ZERO
+        if is_instance_valid(tracked_player):
+            near = _block_of(Vector2i((tracked_player.position / float(tile_size)).floor()))
+        for old: Vector3i in _blocks.keys():
+            if absi(old.x - near.x) > 2 or absi(old.y - near.y) > 2: _blocks.erase(old)
+    var cells := {}
+    var shapes := []
+    for y in QUADRANT:
+        for x in QUADRANT:
+            var cell := Vector2i(key.x * QUADRANT + x, key.y * QUADRANT + y)
+            var kind := _kind(cell)
+            if kind & (OPEN | NONE): continue
+            if key.z == 0:
+                if kind & SURF_SOLID == 0: continue
+            elif kind & SURF_SOLID or not _touches_open(cell):
+                continue
+            if kind & HOLE == 0:
+                cells[cell] = true
+                continue
+            var centre := Vector2(cell * tile_size) + Vector2(tile_size, tile_size) * 0.5
+            for piece in _hole_shape(cell):
+                shapes.append(PlayerMotion.Solid.polygon(piece, centre))
+    for piece in Outline.pieces(cells, tile_size):
+        shapes.append(PlayerMotion.Solid.polygon(piece, Vector2.ZERO))
+    _blocks[key] = shapes
+    return shapes
+
+func _touches_open(cell: Vector2i) -> bool:
+    for offset in AROUND:
+        if _kind(cell + offset) & OPEN: return true
+    return false
+
+func _kind(cell: Vector2i) -> int:
+    var store: WorldTileStore = source_tiles
+    var at := cell - store.origin
+    var slot := -1
+    if at.x >= 0 and at.y >= 0 and at.x < store.width and at.y < store.height:
+        slot = at.y * store.width + at.x
+        var known := _kinds[slot]
+        if known: return known
+    else:
+        var kept = _outside.get(cell)
+        if kept != null: return kept
+    var kind := _work_out(cell)
+    if slot >= 0: _kinds[slot] = kind
+    else: _outside[cell] = kind
+    return kind
+
+## The two collision modes of a cell (on foot, surfing) and its shape.
+func _work_out(cell: Vector2i) -> int:
+    var store: WorldTileStore = source_tiles
+    var key := cell * tile_size if source_keys_are_pixels else cell
+    var raw_index: int = store.index_of(key)
+    if raw_index < 0 and not store.has(key) and not _touched.has(cell) and not _on_edge(cell):
+        # The layers had cells for the map and the ring round it only.
+        return KNOWN | NONE
     var normal_solid: bool
     var surf_solid: bool
     if passable_cells.has(cell):
         normal_solid = false
         surf_solid = false
-    elif SourceWorldData.berry_tree_collision(source_tiles, cell, source_keys_are_pixels):
+    elif _berry_tree(store, raw_index):
         normal_solid = true
         surf_solid = true
     else:
@@ -116,39 +224,42 @@ func _update_cell(cell: Vector2i, bulk: bool = false) -> bool:
         if savanna >= 0:
             normal_solid = savanna == 1
             surf_solid = normal_solid
+        elif raw_index < 0:
+            normal_solid = true
+            surf_solid = true
         else:
-            # _tile_is_solid for both modes, read from the store's arrays.
-            var store: WorldTileStore = source_tiles
-            var raw_index: int = store.index_of(cell * tile_size if source_keys_are_pixels else cell)
-            if raw_index < 0:
-                normal_solid = true
-                surf_solid = true
-            else:
-                var bits: int = store.flags[raw_index]
-                var upper_id: int = store.upper_ids[raw_index]
-                var ledge := bits & WorldTileStore.LEDGE != 0
-                var open_grass := bits & WorldTileStore.GRASS != 0 and not ledge and not _upper_solid(store, upper_id)
-                var open_plain := upper_id == 0 and not ledge and not _base_solid(store, store.name_ids[raw_index])
-                normal_solid = not open_grass and not open_plain and bits & WorldTileStore.SOLID != 0
-                surf_solid = normal_solid and bits & WorldTileStore.WATER == 0
-    var was_open := foot_open.has(cell)
-    if normal_solid: foot_open.erase(cell)
-    else: foot_open[cell] = true
-    # A bulk build starts from empty layers: nothing to erase.
-    if surf_solid or not bulk: _place(0, cell, surf_solid)
-    var water := normal_solid and not surf_solid
-    if bulk: return water
-    _place(1, cell, water and _touches_open(cell))
-    if was_open == normal_solid:
-        # Became walkable or stopped being so: the water round it follows.
-        for offset in AROUND:
-            var next := cell + offset
-            if _is_water_cell(next): _place(1, next, _touches_open(next))
-    return water
+            var bits: int = store.flags[raw_index]
+            var upper_id: int = store.upper_ids[raw_index]
+            var ledge := bits & WorldTileStore.LEDGE != 0
+            var open_grass := bits & WorldTileStore.GRASS != 0 and not ledge and not _upper_solid(store, upper_id)
+            var open_plain := upper_id == 0 and not ledge and not _base_solid(store, store.name_ids[raw_index])
+            normal_solid = not open_grass and not open_plain and bits & WorldTileStore.SOLID != 0
+            surf_solid = normal_solid and bits & WorldTileStore.WATER == 0
+    var kind := KNOWN
+    if not normal_solid: return kind | OPEN
+    if surf_solid: kind |= SURF_SOLID
+    if raw_index >= 0 and store.has_item_ids[raw_index] == 0 and _hole_names.has(store.strings[store.upper_ids[raw_index]]) \
+            and not _base_solid(store, store.name_ids[raw_index]):
+        kind |= HOLE
+    return kind
 
-var _cursor: SourceTile
-var _upper_solid_ids := {}
-var _base_solid_ids := {}
+## Next to a map cell (a cell of the ring round the map)?
+func _on_edge(cell: Vector2i) -> bool:
+    for d in [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
+        var next: Vector2i = cell + d
+        if source_tiles.has(next * tile_size if source_keys_are_pixels else next): return true
+    return false
+
+## SourceWorldData.berry_tree_collision, by upper name id.
+func _berry_tree(store: WorldTileStore, index: int) -> bool:
+    if index < 0: return false
+    var id: int = store.upper_ids[index]
+    if id == 0: return false
+    var known = _berry_ids.get(id)
+    if known == null:
+        known = store.strings[id].to_lower().begins_with("berrytree_")
+        _berry_ids[id] = known
+    return known
 
 func _upper_solid(store: WorldTileStore, id: int) -> bool:
     var known = _upper_solid_ids.get(id)
@@ -164,95 +275,30 @@ func _base_solid(store: WorldTileStore, id: int) -> bool:
         _base_solid_ids[id] = known
     return known
 
-## This layer's own re-pointable proxy (see WorldTileStore.new_cursor).
-func _cursor_at(index: int) -> SourceTile:
-    if _cursor == null or _cursor._store != source_tiles: _cursor = source_tiles.new_cursor()
-    _cursor.repoint(index)
-    return _cursor
+## The empty hole's outline traced from its art, as the TileSet's polygons,
+## in convex pieces round the cell's centre.
+func _hole_shape(cell: Vector2i) -> Array[PackedVector2Array]:
+    var store: WorldTileStore = source_tiles
+    var name: String = store.upper_at(store.index_of(cell * tile_size if source_keys_are_pixels else cell))
+    var known = _hole_pieces.get(name)
+    if known != null: return known
+    var spec := SourceWorldData.render_spec({"base":"green1","upper":name},true)
+    var pixels: Image = spec.texture.get_image().get_region(Rect2i(spec.region))
+    var bitmap := BitMap.new()
+    bitmap.create_from_image_alpha(pixels)
+    var pieces: Array[PackedVector2Array] = []
+    var half := tile_size / 2.0
+    for polygon: PackedVector2Array in bitmap.opaque_to_polygons(Rect2i(Vector2i.ZERO,pixels.get_size()),0.0):
+        for point in range(polygon.size()): polygon[point] -= Vector2(half,half)
+        pieces.append_array(_convex(polygon))
+    _hole_pieces[name] = pieces
+    return pieces
 
-func _touches_open(cell: Vector2i) -> bool:
-    for offset in AROUND:
-        if foot_open.has(cell + offset): return true
-    return false
-
-## Neither walkable nor solid while surfing: water (as of the last update).
-func _is_water_cell(cell: Vector2i) -> bool:
-    if foot_open.has(cell) or resident_collision_layers[0].get_cell_source_id(cell) >= 0: return false
-    return source_tiles.has(cell * tile_size if source_keys_are_pixels else cell)
-
-func _place(index: int, cell: Vector2i, wanted: bool) -> void:
-    var layer := resident_collision_layers[index]
-    if not wanted:
-        if layer.get_cell_source_id(cell) >= 0: layer.erase_cell(cell)
-        return
-    var original_mode := allow_water
-    allow_water = index == 0
-    var key := cell * tile_size if source_keys_are_pixels else cell
-    var tile_index: int = source_tiles.index_of(key)
-    var tile = null if tile_index < 0 else _cursor_at(tile_index)
-    var crown := SourceWorldData.persim_crown_collision(source_tiles,cell,source_keys_are_pixels) and not _tile_is_solid(tile)
-    var coord := Vector2i(1 if crown else 0,0)
-    if tile is SourceTile and tile.has_item.is_empty() and not SourceWorldData.is_base_solid(tile.name) and hole_collision_coords.has(tile.name_upper):
-        coord = hole_collision_coords[tile.name_upper]
-    allow_water = original_mode
-    if layer.get_cell_source_id(cell) != 0 or layer.get_cell_atlas_coords(cell) != coord:
-        layer.set_cell(cell,0,coord)
-
-func set_cell_passable(cell: Vector2i, value: bool) -> void:
-    if value: passable_cells[cell] = true
-    else: passable_cells.erase(cell)
-    _update_cell(cell)
-
-func refresh_cells(cells: Array) -> void:
-    var affected := {}
-    for cell in cells:
-        for y in range(-2,3):
-            for x in range(-1,2): affected[cell+Vector2i(x,y)] = true
-    for cell in affected: _update_cell(cell)
-
-## Rebuilds every cell. Play changes go through refresh_cells with the cells
-## they touched; scanning all ~400k tiles for changes froze a dig for 0.5 s.
-func refresh_now() -> void:
-    if resident_collision_layers.is_empty(): return
-    resident_collision_builds += 1
-    for layer in resident_collision_layers: layer.clear()
-    foot_open.clear()
-    var boundary := {}
-    var water: Array[Vector2i] = []
-    for index in (source_tiles as WorldTileStore).indices():
-        var key: Vector2i = source_tiles.key_of(index)
-        var cell: Vector2i = Vector2i(key / tile_size) if source_keys_are_pixels else key
-        if _update_cell(cell, true): water.append(cell)
-        for direction in [Vector2i.UP,Vector2i.DOWN,Vector2i.LEFT,Vector2i.RIGHT]:
-            var next: Vector2i = cell + direction
-            if not source_tiles.has(next * tile_size if source_keys_are_pixels else next): boundary[next] = true
-    for cell in boundary: _update_cell(cell, true)
-    for cell in water:
-        if _touches_open(cell): _place(1, cell, true)
-    for layer in resident_collision_layers:
-        layer.update_internals()
-    _apply_collision_mode()
-
-func build_initial_async() -> void:
-    resident_collision_builds += 1
-    var boundary := {}
-    var water: Array[Vector2i] = []
-    var deadline := Time.get_ticks_usec() + 13000
-    for index in (source_tiles as WorldTileStore).indices():
-        var key: Vector2i = source_tiles.key_of(index)
-        var cell: Vector2i = Vector2i(key / tile_size) if source_keys_are_pixels else key
-        if _update_cell(cell, true): water.append(cell)
-        for direction in [Vector2i.UP,Vector2i.DOWN,Vector2i.LEFT,Vector2i.RIGHT]:
-            var next: Vector2i = cell + direction
-            if not source_tiles.has(next * tile_size if source_keys_are_pixels else next): boundary[next] = true
-        if Time.get_ticks_usec() >= deadline:
-            await get_tree().process_frame
-            deadline = Time.get_ticks_usec() + 13000
-    for cell in boundary: _update_cell(cell, true)
-    for cell in water:
-        if _touches_open(cell): _place(1, cell, true)
-        if Time.get_ticks_usec() >= deadline:
-            await get_tree().process_frame
-            deadline = Time.get_ticks_usec() + 13000
-    _apply_collision_mode()
-    await get_tree().process_frame
+## TileData's shapes for a collision polygon: its convex pieces, each turned
+## counter-clockwise as ConvexPolygonShape2D does.
+static func _convex(polygon: PackedVector2Array) -> Array[PackedVector2Array]:
+    var pieces: Array[PackedVector2Array] = []
+    for piece: PackedVector2Array in Geometry2D.decompose_polygon_in_convex(polygon):
+        if Geometry2D.is_polygon_clockwise(piece): piece.reverse()
+        pieces.append(piece)
+    return pieces

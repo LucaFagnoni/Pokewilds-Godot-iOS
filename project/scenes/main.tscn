@@ -1,4 +1,4 @@
-[gd_scene load_steps=38 format=3]
+[gd_scene load_steps=37 format=3]
 
 [ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
 [ext_resource type="Script" path="res://scripts/world.gd" id="2_world"]
@@ -37,9 +37,6 @@
 
 [ext_resource type="Texture2D" path="res://assets/startup_splash.png" id="40_startup"]
 
-[sub_resource type="RectangleShape2D" id="PlayerShape"]
-size = Vector2(10, 10)
-
 [sub_resource type="AtlasTexture" id="DialogueBorderCropped"]
 atlas = ExtResource("12_dialogue_border")
 region = Rect2(2, 2, 44, 44)
@@ -74,7 +71,7 @@ visible = false
 script = ExtResource("2_world")
 visible = false
 
-[node name="Player" type="CharacterBody2D" parent="World"]
+[node name="Player" type="Node2D" parent="World"]
 z_index = 10
 position = Vector2(160, 90)
 script = ExtResource("3_player")
@@ -84,10 +81,6 @@ texture = ExtResource("5_playertex")
 texture_filter = 1
 hframes = 8
 frame = 0
-
-[node name="CollisionShape2D" type="CollisionShape2D" parent="World/Player"]
-position = Vector2(0, 3)
-shape = SubResource("PlayerShape")
 
 [node name="Camera2D" type="Camera2D" parent="World/Player"]
 enabled = true
