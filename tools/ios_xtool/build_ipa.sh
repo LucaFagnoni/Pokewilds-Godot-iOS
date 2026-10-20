@@ -23,7 +23,9 @@ cache=$work/cache
 mkdir -p "$cache"
 export PATH="$HOME/.local/bin:$PATH"
 . "${SWIFTLY_HOME_DIR:-$HOME/.local/share/swiftly}/env.sh" 2>/dev/null || true
-xtool sdk status 2>/dev/null | grep "is installed" >/dev/null || { echo "No xtool or iOS SDK: run tools/ios_xtool/setup.sh first" >&2; exit 1; }
+# The SDK is in ~/.swiftpm or ~/.config/swiftpm, wherever SwiftPM keeps its config.
+sdk=$(xtool sdk status 2>/dev/null | grep -A1 "is installed" | sed -n 's/^ *Path: //p')
+[ -d "$sdk" ] || { echo "No xtool or iOS SDK: run tools/ios_xtool/setup.sh first" >&2; exit 1; }
 
 # Godot editor and the official iOS export template (downloaded once).
 base=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
@@ -48,7 +50,6 @@ key=$GODOT_VERSION-$(sha256sum "$profile" | cut -c1-12)
 ios_lib=$cache/engine/libgodot.ios.$key.a
 linux_engine=$cache/engine/godot.linuxbsd.$key
 src=$cache/godot-src
-sdk=$HOME/.swiftpm/swift-sdks/darwin.artifactbundle
 godot_scons() {
   (cd "$src" && "$cache/scons/bin/scons" target=template_release profile="$profile" -j"$(nproc)" "$@")
 }
@@ -167,7 +168,7 @@ bin=$work/Payload/Pokewilds.app/Pokewilds
 # the deployment target as the SDK version (15.0) and iOS would apply old-SDK
 # compatibility behaviour. Write the real SDK version, as Xcode's link does, and
 # drop the rpath into this machine's Swift toolchain.
-python3 - "$bin" "$HOME/.swiftpm/swift-sdks/darwin.artifactbundle/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk/SDKSettings.json" <<'EOF'
+python3 - "$bin" "$sdk/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk/SDKSettings.json" <<'EOF'
 import json, struct, sys
 path, settings = sys.argv[1:]
 data = bytearray(open(path, "rb").read())

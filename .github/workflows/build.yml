@@ -271,7 +271,7 @@ jobs:
           TMPDIR: /mnt/tmp
         run: |
           bash tools/ios_xtool/setup.sh /mnt/xcode/Xcode.xip
-          rm -rf /mnt/xcode /mnt/tmp/*
+          rm -rf /mnt/xcode/* /mnt/tmp/*
 
       # The smoke job already checked this pack with the stripped engine.
       - name: Build the IPA with xtool
