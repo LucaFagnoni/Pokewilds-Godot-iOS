@@ -1,0 +1,2 @@
+# Run inside WSL: keep LF even in a Windows checkout with core.autocrlf.
+* text eol=lf

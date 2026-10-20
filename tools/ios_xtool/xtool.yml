@@ -1,0 +1,14 @@
+version: 1
+# Info.plist (made by build_ipa.sh from Godot's) sets the real id and versions.
+bundleID: com.pokewilds.godot
+product: Pokewilds
+infoPath: Info.plist
+# Copied to the root of Pokewilds.app.
+resources:
+  - Pokewilds.pck
+  - PrivacyInfo.xcprivacy
+  - AppIcon60x60@2x.png
+  - AppIcon60x60@3x.png
+  - AppIcon76x76@2x~ipad.png
+  - AppIcon83.5x83.5@2x~ipad.png
+skipLSP: true
