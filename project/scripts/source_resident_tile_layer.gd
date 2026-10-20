@@ -31,6 +31,9 @@ var built_blocks := {}
 var view_armed := false
 ## The block rectangle last found all drawn.
 var drawn_view := Rect2i()
+## Drawn blocks whose tide changed while they were far from the view:
+## block -> {cell: true}. Redrawn as the view nears them, like undrawn blocks.
+var stale_tide := {}
 ## Sprites reach at most two cells past their own: one more for the camera.
 const VIEW_MARGIN_CELLS := 3
 const AHEAD_BLOCKS := 3
@@ -158,6 +161,18 @@ func _flush_tide_budget():
     # the whole fifteen seconds of a tide change - a drop to 20 fps on every
     # device with nothing to see. They now wait until the tide has finished
     # queueing, and are then done one map block at a time, nearest first.
+    # With blocks drawn as the view nears them, a far block is only marked
+    # stale and redrawn when it comes near (a block not drawn yet is drawn as
+    # it is then anyway): nothing is spent on coasts nobody looks at.
+    if lazy_blocks:
+        for cell in pending_tide_far:
+            var block := Vector2i(cell.x >> 4, cell.y >> 4)
+            if not built_blocks.has(block): continue
+            if not stale_tide.has(block): stale_tide[block] = {}
+            stale_tide[block][cell] = true
+        if not pending_tide_far.is_empty(): drawn_view = Rect2i()
+        pending_tide_far.clear()
+        return
     if far_tide_groups.is_empty():
         if pending_tide_far.is_empty() or Time.get_ticks_msec()-far_tide_queued_at<1500: return
         if not is_instance_valid(tracked_player): return
@@ -320,7 +335,7 @@ func _draw_blocks_in(blocks: Rect2i, budget_usec: int) -> bool:
     var todo: Array[Vector2i] = []
     for y in range(blocks.position.y, blocks.end.y):
         for x in range(blocks.position.x, blocks.end.x):
-            if not built_blocks.has(Vector2i(x, y)): todo.append(Vector2i(x, y))
+            if not built_blocks.has(Vector2i(x, y)) or stale_tide.has(Vector2i(x, y)): todo.append(Vector2i(x, y))
     if todo.is_empty(): return true
     var middle := Vector2(blocks.position) + Vector2(blocks.size - Vector2i.ONE) / 2.0
     todo.sort_custom(func(a, b): return (Vector2(a) - middle).length_squared() < (Vector2(b) - middle).length_squared())
@@ -333,6 +348,11 @@ func _draw_blocks_in(blocks: Rect2i, budget_usec: int) -> bool:
 ## Draws every cell of one map block (none was drawn before: _redraw_cells
 ## skips the cells of blocks not drawn yet).
 func _draw_block(block: Vector2i) -> void:
+    if built_blocks.has(block):
+        # Drawn before: only its cells the tide changed since.
+        _redraw_cells(stale_tide[block])
+        stale_tide.erase(block)
+        return
     built_blocks[block] = true
     var store: WorldTileStore = source_tiles
     var flags := store.flags
