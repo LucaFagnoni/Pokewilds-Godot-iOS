@@ -36,8 +36,29 @@ var drawn_view := Rect2i()
 var stale_tide := {}
 ## Sprites reach at most two cells past their own: one more for the camera.
 const VIEW_MARGIN_CELLS := 3
-const AHEAD_BLOCKS := 3
-const AHEAD_BUDGET_USEC := 2000
+## Blocks drawn ahead of the view: this many on every side, and more in the
+## direction the view is moving (up to AHEAD_LEAD_BLOCKS beyond the view,
+## about AHEAD_LEAD_SECONDS of travel).
+const AHEAD_BLOCKS := 2
+const AHEAD_LEAD_BLOCKS := 4
+const AHEAD_LEAD_SECONDS := 8.0
+## Drawing ahead of the view: the time a frame may spend on it, by how close the
+## nearest undrawn block is (1 block out, 2 blocks out, further).
+const AHEAD_BUDGETS_USEC := [2000, 1500, 1000]
+## Rows of a block drawn between two looks at the clock.
+const SLICE_ROWS := 2
+## The time a frame may spend preparing the view of a teleport (prepare_view),
+## and on all drawing ahead of the view together (both streams).
+const PREPARE_BUDGET_USEC := 3000
+const FRAME_BUDGET_USEC := 3000
+## Blocks drawn in part: block -> the next row to draw.
+var partial_blocks := {}
+## Where the view is going: its middle, and its speed in pixels a second.
+var view_center := Vector2.ZERO
+var view_speed := Vector2.ZERO
+var view_center_known := false
+## Blocks to draw before the view moves there (prepare_view).
+var prepared_blocks := Rect2i()
 var last_source_parts: Array = []
 var last_source_id := -1
 ## Ground on the GPU. Every plain 16x16 ground tile (still or animated, most
@@ -99,6 +120,21 @@ var gpu_animation_rows := -1
 ## Ground with no upper name: [color][name] -> id, so most cells skip the spec work.
 var gpu_fast: Array = [{}, {}]
 var upper_spec_empty := {}
+## What cells of one tile kind (base name, upper name, color) draw on this
+## stream, settled once per kind by _resolve_kind: a GPU id (> 0), KIND_EMPTY
+## (nothing), KIND_SPRITE (a TileMapLayer sprite: kind_sprites) or KIND_SLOW (the
+## cell is settled by _redraw_cells).
+const KIND_SLOW := -1
+const KIND_EMPTY := 0
+const KIND_SPRITE := -2
+const KIND_UNKNOWN := -3
+var kinds := {}
+## Kind -> [spec, atlas source id, whether the sprite stays inside its cell,
+## whether a tree may need drawing again in front of a mountain].
+var kind_sprites := {}
+## String id -> whether the string names a mountain or a ledge (cached).
+var mountain_strings := {}
+const TREE_OFFSETS := [Vector2i.ZERO, Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]
 ## Map blocks holding UpperView cells: it covers only those.
 var gpu_blocks := {}
 var tide_view: Node2D
@@ -247,14 +283,38 @@ func configure(tiles, player_node, upper_layer, source_tile_size = 16, pixel_key
         layer.rendering_quadrant_size = TILE_BLOCK
         add_child(layer)
         resident_layers.append(layer)
+    # A deferred build prepares the sources in build_resident_async, a slice of
+    # a frame at a time (it took ~50-100 ms in one frame here, per stream).
+    if deferred_build: return
+    _prepare_sources()
+    refresh_now()
+
+## The time at which _pause waits for the next frame (0: never), and whether
+## _prepare_sources is done.
+var setup_deadline := 0
+var sources_ready := false
+const SETUP_SLICE_USEC := 12000
+
+## Waits for the next frame once the slice that setup_deadline ends is used up
+## (never when it is 0: the setup then runs in one go).
+func _pause() -> void:
+    if setup_deadline > 0 and Time.get_ticks_usec() >= setup_deadline:
+        await get_tree().process_frame
+        setup_deadline = Time.get_ticks_usec() + SETUP_SLICE_USEC
+
+## The GPU images and every atlas source kept for later, in the order that
+## hands out the same atlas source ids whether or not the setup is sliced.
+func _prepare_sources() -> void:
     if tile_size == 16: _prepare_gpu()
-    _prepare_tide_sources()
+    await _pause()
+    await _prepare_tide_sources()
     if draw_upper:
         var names: Array = preload("res://scripts/field_move_data.gd").CRACKED_LOOT.keys()
         names.append("cactus2_cacturne")
         for name in names:
             _install(-1,Vector2i.ZERO,_world_data().render_spec({"base":"desert4","upper":name},true))
-    _prepare_dig_sources()
+            await _pause()
+    await _prepare_dig_sources()
     if draw_upper:
         # Harvesting must reuse atlas sources: adding one during play makes
         # Godot rebuild every populated quadrant in the shared TileSet.
@@ -262,7 +322,8 @@ func configure(tiles, player_node, upper_layer, source_tile_size = 16, pixel_key
             for state in ["full", "empty"]:
                 for colored in [false, true]:
                     _install(-1, Vector2i.ZERO, _cached_render_spec({"base":"green1", "upper":"berrytree_%s_%s" % [berry, state], "color":colored}))
-    if not deferred_build: refresh_now()
+            await _pause()
+    sources_ready = true
 
 func build_resident_async():
     # The whole map's data now; its cells are drawn one map block at a time
@@ -270,36 +331,49 @@ func build_resident_async():
     # play took ~10 s of a load, mostly for blocks nobody would see soon.
     set_process(false)
     resident_build_count += 1
+    # What configure left for here (the GPU images, the atlas sources), the scan
+    # of the map and the tile kinds it holds: SETUP_SLICE_USEC of each frame.
+    setup_deadline = Time.get_ticks_usec() + SETUP_SLICE_USEC
+    await _prepare_sources()
     var store: WorldTileStore = source_tiles
     # The fingerprints have the store's bounds (_source_bounds): one value
     # per store index, filled here in a local and handed over once.
     var flags := store.flags
     var revisions := store.revisions
     var names := store.name_ids
+    var uppers := store.upper_ids
     var biomes := store.biome_ids
     var routes := store.route_ids
     var values := PackedInt32Array()
     values.resize(flags.size())
     var count := 0
+    # Which base and upper names the map uses (string ids), for _warm_kinds: bit 0
+    # when plain, bit 1 when colored.
+    var seen_names := PackedByteArray()
+    seen_names.resize(store.strings.size())
+    var seen_uppers := PackedByteArray()
+    seen_uppers.resize(store.strings.size())
     # Beach tide reads a cell's name, biome and route: settled once per triple.
     var tidal_names := {}
     for id in store.strings.size():
         if store.strings[id].containsn("_tidalwater"): tidal_names[id] = true
     var beach := {}
-    var deadline := Time.get_ticks_usec() + 13000
     for index in flags.size():
         if flags[index] & WorldTileStore.PRESENT:
             values[index] = revisions[index] + 1
             count += 1
+            var colored := 2 if flags[index] & WorldTileStore.COLOR else 1
+            seen_names[names[index]] |= colored
+            seen_uppers[uppers[index]] |= colored
             if tidal_names.has(names[index]):
                 var kind := Vector3i(names[index], biomes[index], routes[index])
                 if not beach.has(kind): beach[kind] = _is_beach_high_tide(store.cursor(index))
                 if beach[kind]: frame_tidal_cells[Vector2i(index % store.width, index / store.width) + store.origin] = true
-        if (index & 4095) == 0 and Time.get_ticks_usec() >= deadline:
-            await get_tree().process_frame
-            deadline = Time.get_ticks_usec() + 13000
+        if (index & 4095) == 0: await _pause()
     resident_fingerprints.values = values
     resident_fingerprints.count = count
+    await _warm_kinds(seen_names, seen_uppers)
+    setup_deadline = 0
     lazy_blocks = true
     resident_dirty = false
     # After the camera has moved this frame, so the view drawn is the one shown.
@@ -317,65 +391,359 @@ func draw_view_async() -> void:
 
 ## The map blocks under the view and VIEW_MARGIN_CELLS around it. The view
 ## is the camera's and the player's (a teleport moves the player before the camera).
+## After a jump the camera is a view away or more: then only the player's view
+## counts (the camera is there next frame), not every block between the two.
 func _view_blocks() -> Rect2i:
     var shown := get_global_transform_with_canvas().affine_inverse() * get_viewport().get_visible_rect()
     if is_instance_valid(tracked_player):
-        shown = shown.merge(Rect2(to_local(tracked_player.global_position) - shown.size / 2.0, shown.size))
+        var players := Rect2(to_local(tracked_player.global_position) - shown.size / 2.0, shown.size)
+        var gap := (players.get_center() - shown.get_center()).abs()
+        shown = shown.merge(players) if gap.x < shown.size.x and gap.y < shown.size.y else players
+    return _blocks_under(shown)
+
+func _blocks_under(shown: Rect2) -> Rect2i:
     shown = shown.grow(VIEW_MARGIN_CELLS * tile_size)
     var span := float(tile_size * TILE_BLOCK)
     var first := Vector2i((shown.position / span).floor())
     var last := Vector2i((shown.end / span).floor())
     return Rect2i(first, last - first + Vector2i.ONE)
 
-## Draws the undrawn blocks of a rectangle of blocks, nearest the middle
-## first, until budget_usec runs out (< 0: all). True when all are drawn.
-func _draw_blocks_in(blocks: Rect2i, budget_usec: int) -> bool:
+## Draws, from now on, the blocks of the view at a place it is about to jump
+## to (a teleport, leaving a building): a few ms of each frame, so that the
+## jump finds them drawn instead of drawing them all in its own frame.
+func prepare_view(world_position: Vector2) -> void:
+    if not lazy_blocks or DisplayServer.get_name() == "headless": return
+    var shown := get_global_transform_with_canvas().affine_inverse() * get_viewport().get_visible_rect()
+    prepared_blocks = _blocks_under(Rect2(to_local(world_position) - shown.size / 2.0, shown.size))
+
+## Frames until the next look at where the way out of the building is.
+var off_map_wait := 0
+
+## Prepares the view of the cell the world says the way out of the area the
+## player is in leads to (area_return_cells), so leaving finds it drawn.
+func _prepare_way_out() -> void:
+    var world: Node = tracked_player.get_parent() if is_instance_valid(tracked_player) else null
+    if world == null: return
+    var area: Variant = world.get("active_area_id")
+    var returns: Variant = world.get("area_return_cells")
+    if not area is String or not returns is Dictionary or area == "OVERWORLD": return
+    var home: Variant = (returns as Dictionary).get("%s_RETURN" % area)
+    if home is Vector2i:
+        var cell: Vector2i = home
+        prepare_view(Vector2(cell * tile_size) + Vector2(tile_size, tile_size) / 2.0)
+
+## Follows the view: its speed, smoothed, or none after a jump.
+func _track_view(delta: float) -> void:
+    if not is_instance_valid(tracked_player): return
+    var center := to_local(tracked_player.global_position)
+    if view_center_known and delta > 0.0:
+        var step := center - view_center
+        view_speed = Vector2.ZERO if step.length() > 64.0 else view_speed.lerp(step / delta, 0.1)
+    view_center = center
+    view_center_known = true
+
+## The blocks to have drawn round the view: AHEAD_BLOCKS on every side and,
+## the way the view is moving, up to AHEAD_LEAD_SECONDS of travel.
+func _ahead_blocks(near: Rect2i) -> Rect2i:
+    var span := float(tile_size * TILE_BLOCK)
+    var lead := view_speed * AHEAD_LEAD_SECONDS / span
+    var more := AHEAD_LEAD_BLOCKS - AHEAD_BLOCKS
+    var east := clampi(ceili(lead.x - 0.3), 0, more)
+    var west := clampi(ceili(-lead.x - 0.3), 0, more)
+    var south := clampi(ceili(lead.y - 0.3), 0, more)
+    var north := clampi(ceili(-lead.y - 0.3), 0, more)
+    var ahead := near.grow(AHEAD_BLOCKS)
+    return Rect2i(ahead.position - Vector2i(west, north), ahead.size + Vector2i(west + east, north + south))
+
+## The time a frame may spend drawing ahead: while the view moves, the nearer
+## the first undrawn block to it, the more; standing still, the least.
+func _ahead_budget(near: Rect2i) -> int:
+    var ring := AHEAD_BUDGETS_USEC.size()
+    if view_speed.length_squared() > 64.0:
+        ring = 1
+        while ring < AHEAD_BUDGETS_USEC.size() and _undrawn_in(near.grow(ring), true).is_empty():
+            ring += 1
+    return AHEAD_BUDGETS_USEC[ring - 1]
+
+## The blocks that hold the map's cells.
+func _map_blocks() -> Rect2i:
+    if map_blocks.has_area(): return map_blocks
     var store: WorldTileStore = source_tiles
     var first := Vector2i(floori(store.origin.x / float(TILE_BLOCK)), floori(store.origin.y / float(TILE_BLOCK)))
     var last := Vector2i(floori((store.origin.x + store.width - 1) / float(TILE_BLOCK)), floori((store.origin.y + store.height - 1) / float(TILE_BLOCK)))
-    blocks = blocks.intersection(Rect2i(first, last - first + Vector2i.ONE))
+    map_blocks = Rect2i(first, last - first + Vector2i.ONE)
+    return map_blocks
+
+var map_blocks := Rect2i()
+
+## The blocks of a rectangle that are not drawn (or not drawn whole, or have
+## tide changes to draw), inside the map. first_only: just look for one.
+func _undrawn_in(blocks: Rect2i, first_only := false) -> Array[Vector2i]:
+    blocks = blocks.intersection(_map_blocks())
     var todo: Array[Vector2i] = []
     for y in range(blocks.position.y, blocks.end.y):
         for x in range(blocks.position.x, blocks.end.x):
-            if not built_blocks.has(Vector2i(x, y)) or stale_tide.has(Vector2i(x, y)): todo.append(Vector2i(x, y))
+            var block := Vector2i(x, y)
+            if not built_blocks.has(block) or partial_blocks.has(block) or stale_tide.has(block):
+                todo.append(block)
+                if first_only: return todo
+    return todo
+
+## Draws the undrawn blocks of a rectangle of blocks, nearest the middle
+## first, until budget_usec runs out (< 0: all). True when all are drawn.
+## A block is drawn a few rows at a time, so the clock is looked at often.
+func _draw_blocks_in(blocks: Rect2i, budget_usec: int) -> bool:
+    var todo := _undrawn_in(blocks)
     if todo.is_empty(): return true
     var middle := Vector2(blocks.position) + Vector2(blocks.size - Vector2i.ONE) / 2.0
-    todo.sort_custom(func(a, b): return (Vector2(a) - middle).length_squared() < (Vector2(b) - middle).length_squared())
-    var deadline := Time.get_ticks_usec() + budget_usec
+    var order := PackedInt64Array()
     for block in todo:
+        order.append((int((Vector2(block) - middle).length_squared() * 16.0) << 26) | ((block.x + 4096) << 13) | (block.y + 4096))
+    order.sort()
+    var deadline := 0 if budget_usec < 0 else Time.get_ticks_usec() + budget_usec
+    for packed in order:
         if budget_usec >= 0 and Time.get_ticks_usec() >= deadline: return false
-        _draw_block(block)
+        if not _draw_block(Vector2i(((packed >> 13) & 8191) - 4096, (packed & 8191) - 4096), deadline): return false
     return true
 
-## Draws every cell of one map block (none was drawn before: _redraw_cells
-## skips the cells of blocks not drawn yet).
-func _draw_block(block: Vector2i) -> void:
-    if built_blocks.has(block):
+## Draws a block, or what is left of it, until the clock (usec) passes
+## deadline (0: all of it). True when the block is drawn.
+func _draw_block(block: Vector2i, deadline: int = 0) -> bool:
+    if built_blocks.has(block) and not partial_blocks.has(block):
         # Drawn before: only its cells the tide changed since.
         _redraw_cells(stale_tide[block])
         stale_tide.erase(block)
-        return
+        return true
+    # Cells changed from now on are drawn at once (_redraw_cells skips the
+    # cells of blocks not drawn yet): the rows still to come draw them as they are then.
     built_blocks[block] = true
+    var row: int = partial_blocks.get(block, 0)
+    var rows := SLICE_ROWS if deadline > 0 else TILE_BLOCK
+    while row < TILE_BLOCK:
+        _draw_rows(block, row, mini(row + rows, TILE_BLOCK))
+        row += rows
+        if deadline > 0 and row < TILE_BLOCK and Time.get_ticks_usec() >= deadline:
+            partial_blocks[block] = row
+            return false
+    partial_blocks.erase(block)
+    if stale_tide.has(block):
+        _redraw_cells(stale_tide[block])
+        stale_tide.erase(block)
+    return true
+
+## Draws rows row0..row1-1 of a block for the first time (_redraw_cells with
+## erase_absent false). A cell of a kind settled before (see _resolve_kind) is
+## drawn here straight from the store's arrays; the others go to _redraw_cells.
+func _draw_rows(block: Vector2i, row0: int, row1: int) -> void:
+    var store: WorldTileStore = source_tiles
+    var first := block * TILE_BLOCK
+    var x0 := maxi(first.x, store.origin.x)
+    var x1 := mini(first.x + TILE_BLOCK, store.origin.x + store.width)
+    var y0 := maxi(first.y + row0, store.origin.y)
+    var y1 := mini(first.y + row1, store.origin.y + store.height)
+    if x0 >= x1 or y0 >= y1: return
+    var flags := store.flags
+    # gpu_bytes is indexed like the store's arrays (both cover its rectangle).
+    if gpu_cells == null or gpu_width != store.width or resident_fingerprints.origin != store.origin:
+        var batch := {}
+        for y in range(y0, y1):
+            for x in range(x0, x1):
+                if flags[(y - store.origin.y) * store.width + x - store.origin.x] & WorldTileStore.PRESENT: batch[Vector2i(x, y)] = true
+        if not batch.is_empty(): _redraw_cells(batch, false)
+        return
+    var names := store.name_ids
+    var uppers := store.upper_ids
+    var oceans := store.shore_ocean_ids
+    # Cells next to a beach tide cell take their shoreline from _redraw_cells.
+    var near := _tide_near(first, y0, y1) if draw_upper else PackedByteArray()
+    var layer: TileMapLayer = resident_layers[8]
+    var slow := {}
+    var pin_flips := {}
+    var marked := false
+    for y in range(y0, y1):
+        var row_at := (y - store.origin.y) * store.width - store.origin.x
+        for x in range(x0, x1):
+            var index := row_at + x
+            var bits := flags[index]
+            if not bits & WorldTileStore.PRESENT: continue
+            var cell := Vector2i(x, y)
+            if not pinned_by.is_empty() and pinned_by.has(cell):
+                slow[cell] = true
+                continue
+            var key: int = names[index] | (uppers[index] << 24) | ((bits & WorldTileStore.COLOR) << 47)
+            var kind: int = kinds.get(key, KIND_UNKNOWN)
+            if kind == KIND_UNKNOWN: kind = _resolve_kind(key, names[index], uppers[index], (bits & WorldTileStore.COLOR) != 0)
+            if kind == KIND_SLOW or (draw_upper and (oceans[index] != 0 or (not near.is_empty() and near[(y - first.y) * TILE_BLOCK + x - first.x] != 0))):
+                slow[cell] = true
+                continue
+            var at := index * 2
+            if kind > 0:
+                if not pins.is_empty() and pins.has(cell) and not gpu_rows[kind].get("clear", false):
+                    slow[cell] = true
+                    continue
+                if draw_upper and not marked:
+                    marked = true
+                    _mark_block(gpu_view, gpu_blocks, cell)
+                if gpu_bytes[at] != (kind & 255) or gpu_bytes[at + 1] != (kind >> 8):
+                    gpu_bytes[at] = kind & 255
+                    gpu_bytes[at + 1] = kind >> 8
+                    gpu_cells_dirty = true
+                continue
+            if gpu_bytes[at] != 0 or gpu_bytes[at + 1] != 0:
+                gpu_bytes[at] = 0
+                gpu_bytes[at + 1] = 0
+                gpu_cells_dirty = true
+            if kind == KIND_EMPTY: continue
+            var sprite: Array = kind_sprites[key]
+            if layer.get_cell_source_id(cell) != sprite[1]: layer.set_cell(cell, sprite[1], Vector2i.ZERO)
+            if not sprite[2]: _pin(cell, sprite[0], pin_flips)
+            if sprite[3] and _tree_before_mountain(cell):
+                var front: TileMapLayer = resident_layers[11]
+                if front.get_cell_source_id(cell) != sprite[1]: front.set_cell(cell, sprite[1], Vector2i.ZERO)
+    if not slow.is_empty(): _redraw_cells(slow, false)
+    # A cell that became pinned leaves the GPU, one no longer pinned may join it.
+    var redo := {}
+    for cell in pin_flips:
+        if pins.has(cell) != pin_flips[cell]: redo[cell] = true
+    if not redo.is_empty(): _redraw_cells(redo)
+
+## In rows y0..y1-1 of the block at first: which cells (index (y - first.y) *
+## TILE_BLOCK + x - first.x) have a beach tide cell among their neighbours,
+## which gives them a shoreline. Empty when none has.
+func _tide_near(first: Vector2i, y0: int, y1: int) -> PackedByteArray:
+    var near := PackedByteArray()
+    if frame_tidal_cells.is_empty(): return near
+    for y in range(y0 - 1, y1 + 1):
+        for x in range(first.x - 1, first.x + TILE_BLOCK + 1):
+            if not frame_tidal_cells.has(Vector2i(x, y)): continue
+            if near.is_empty(): near.resize(TILE_BLOCK * TILE_BLOCK)
+            for ny in range(maxi(y - 1, y0), mini(y + 2, y1)):
+                for nx in range(maxi(x - 1, first.x), mini(x + 2, first.x + TILE_BLOCK)):
+                    near[(ny - first.y) * TILE_BLOCK + nx - first.x] = 1
+    return near
+
+## _mountain_tree_needs_front_redraw for a tree that is tall enough, read from
+## the store's arrays: a mountain or ledge on the cell or the four beside it.
+func _tree_before_mountain(cell: Vector2i) -> bool:
     var store: WorldTileStore = source_tiles
     var flags := store.flags
-    var first := block * TILE_BLOCK
-    var batch := {}
-    for y in range(maxi(first.y, store.origin.y), mini(first.y + TILE_BLOCK, store.origin.y + store.height)):
-        for x in range(maxi(first.x, store.origin.x), mini(first.x + TILE_BLOCK, store.origin.x + store.width)):
-            if flags[(y - store.origin.y) * store.width + x - store.origin.x] & WorldTileStore.PRESENT: batch[Vector2i(x, y)] = true
-    if not batch.is_empty(): _redraw_cells(batch, false)
+    var names := store.name_ids
+    var uppers := store.upper_ids
+    for offset in TREE_OFFSETS:
+        var at: Vector2i = cell + offset - store.origin
+        if at.x < 0 or at.y < 0 or at.x >= store.width or at.y >= store.height: continue
+        var index := at.y * store.width + at.x
+        if not flags[index] & WorldTileStore.PRESENT: continue
+        if _mountainish(names[index]) or _mountainish(uppers[index]): return true
+    return false
 
-## Once armed, the blocks in view are drawn at once; the next few around
-## them while the frame has time, so walking rarely meets an undrawn one.
-func _draw_near_view() -> void:
+func _mountainish(string_id: int) -> bool:
+    var found: Variant = mountain_strings.get(string_id)
+    if found == null:
+        var text := (source_tiles as WorldTileStore).strings[string_id].to_lower()
+        found = "mountain" in text or "ledges3" in text
+        mountain_strings[string_id] = found
+    return bool(found)
+
+## Settles what cells of a tile kind draw on this stream, once (see kinds).
+## It does the work _redraw_cells does for each cell of the kind - the render
+## spec, the GPU id, the atlas source - and keeps its outcome. What depends on
+## more than the kind (gates, hole rewards, beach tide, pins) stays with _redraw_cells.
+func _resolve_kind(key: int, name_id: int, upper_id: int, colored: bool, remember := true) -> int:
+    var store := source_tiles as WorldTileStore
+    var name := store.strings[name_id]
+    var upper := store.strings[upper_id]
+    var kind := KIND_SLOW
+    var identity := (upper if draw_upper else name).to_lower()
+    if gpu_cells != null:
+        var tile := {"name": name, "name_upper": upper, "base": name, "upper": upper, "color": colored, "shore_ocean": "", "is_water": false, "biome": "", "route_belongs_to": null, "has_item": ""}
+        var spec: Dictionary = _cached_render_spec(tile)
+        if "gate" in identity or identity.begins_with("hole1"):
+            # An open gate, a reward: settled per cell by _redraw_cells; the art is made now.
+            if spec.get("texture") != null: _install(-1, Vector2i.ZERO, spec)
+        elif spec.is_empty():
+            kind = KIND_EMPTY
+        elif spec.get("texture") != null:
+            var id := _gpu_id(tile, spec, identity)
+            var animated := identity.begins_with("water") or identity.begins_with("lava") or identity.begins_with("flower") or identity in ["campfire1", "torch1"]
+            # A plain tile drawn by the GPU is a TileMapLayer sprite where a sprite
+            # drawn before it overlaps it (pins): its atlas source is made now, not then.
+            if not animated: _install(-1, Vector2i.ZERO, spec)
+            if id > 0:
+                kind = id
+            elif not animated:
+                var size: Vector2 = spec["region"].size
+                var corner := Vector2i((Vector2(tile_size, tile_size) - size) / 2.0 - Vector2(spec.get("offset", Vector2.ZERO)))
+                var inside := Rect2(Vector2.ZERO, Vector2(tile_size, tile_size)).encloses(Rect2(Vector2(tile_size, tile_size) / 2.0 - size / 2.0 - Vector2(corner), size))
+                var tall: bool = draw_upper and "tree" in (name + " " + upper).to_lower() and Vector2(spec.get("size", Vector2.ZERO)).y > float(tile_size)
+                if remember: kind_sprites[key] = [spec, last_source_id, inside, tall]
+                kind = KIND_SPRITE
+    # Beach tide reads the cell's biome and route, and its neighbours' shoreline.
+    if name.containsn("_tidalwater"): kind = KIND_SLOW
+    if remember: kinds[key] = kind
+    return kind
+
+## Settles the kinds the map uses (every base name on the ground stream; every
+## upper name, and every base name without one, on the sprite stream) now, behind
+## the loading screen, instead of when the view first meets them: a tile that is new
+## to the sheet draws the whole sheet page again and sends it to the graphics chip
+## (~10 ms), a new atlas source makes the engine rebuild every block drawn.
+## Nothing headless: the dedicated server draws nothing.
+func _warm_kinds(seen_names: PackedByteArray, seen_uppers: PackedByteArray) -> void:
+    if gpu_cells == null or DisplayServer.get_name() == "headless": return
+    for color_bit in [1, 2]:
+        for id in seen_names.size():
+            if not seen_names[id] & color_bit: continue
+            _resolve_kind(id | ((color_bit - 1) << 48), id, 0, color_bit == 2)
+            await _pause()
+        if not draw_upper: continue
+        for id in range(1, seen_uppers.size()):
+            if not seen_uppers[id] & color_bit: continue
+            # The base name does not matter to an upper sprite's art.
+            _resolve_kind(0, 0, id, color_bit == 2, false)
+            await _pause()
+
+## Drawing that is not for the view itself (the ring round it, a teleport's
+## destination) shares FRAME_BUDGET_USEC a frame between all the streams.
+static var budget_frame := -1
+static var budget_spent := 0
+
+func _draw_within_budget(blocks: Rect2i, wanted_usec: int) -> bool:
+    var frame := Engine.get_process_frames()
+    if frame != budget_frame:
+        budget_frame = frame
+        budget_spent = 0
+    var started := Time.get_ticks_usec()
+    var done := _draw_blocks_in(blocks, clampi(FRAME_BUDGET_USEC - budget_spent, 0, wanted_usec))
+    budget_spent += Time.get_ticks_usec() - started
+    return done
+
+## Once armed, the blocks in view are drawn at once; the ones around them
+## while the frame has time, more of it the nearer they are, so that walking
+## rarely meets an undrawn one.
+func _draw_near_view(delta: float) -> void:
     if not lazy_blocks or DisplayServer.get_name() == "headless": return
+    _track_view(delta)
+    var preparing := prepared_blocks.has_area()
+    if preparing and _draw_within_budget(prepared_blocks, PREPARE_BUDGET_USEC): prepared_blocks = Rect2i()
     var near := _view_blocks()
-    var ahead := near.grow(AHEAD_BLOCKS)
+    # Inside a building or a cave (the view is off the map), the blocks round
+    # the way out are drawn already; a few seconds after a save is loaded from
+    # inside one, they are not.
+    if not near.intersects(_map_blocks()):
+        off_map_wait -= 1
+        if off_map_wait <= 0:
+            off_map_wait = 30
+            _prepare_way_out()
+    var ahead := _ahead_blocks(near)
     if ahead == drawn_view: return
+    var started := Time.get_ticks_usec()
     if view_armed: _draw_blocks_in(near, -1)
-    if _draw_blocks_in(ahead, AHEAD_BUDGET_USEC): drawn_view = ahead
+    # A frame that had to draw the view's own blocks leaves the rest to later ones.
+    if Time.get_ticks_usec() - started > 2000: return
+    if _draw_within_budget(ahead, _ahead_budget(near)): drawn_view = ahead
 
-func _prepare_tide_sources():
+func _prepare_tide_sources() -> void:
     # Prepare every shoreline corner once. Tide changes then reuse atlas sources
     # rather than changing the shared TileSet and invalidating the whole map.
     if draw_upper:
@@ -390,9 +758,15 @@ func _prepare_tide_sources():
                 var quad = quads[quadrant]
                 for tint in [Color.WHITE,Color(1,1,1,0.5)]:
                     _install(-1,Vector2i.ZERO,{"texture":quad.texture,"region":quad.source,"offset":quad.offset},tint,["shore",shore,quadrant])
+            await _pause()
     else:
         var prepared = {}
+        var named := {}
         for index in (source_tiles as WorldTileStore).with_name_containing("_tidal"):
+            # Each name once (thousands of cells share a few names).
+            var name_id: int = (source_tiles as WorldTileStore).name_ids[index]
+            if named.has(name_id): continue
+            named[name_id] = true
             var name = (source_tiles as WorldTileStore).name_at(index)
             if not "_tidal" in name: continue
             for next_name in [name.replace("_tidalwater","_tidaloff"),name.replace("_tidaloff","_tidalwater")]:
@@ -400,6 +774,7 @@ func _prepare_tide_sources():
                 prepared[next_name]=true
                 var spec = _world_data().render_spec({"base":next_name,"upper":""},false)
                 _install(-1,Vector2i.ZERO,spec)
+            await _pause()
         _install(-1,Vector2i.ZERO,{"texture":_world_data().texture_for("water2"),"region":Rect2(0,0,16,16)},Color(1,1,1,0.5),["tide","",0])
 
 func _refresh_visible_rect(_force):
@@ -422,7 +797,7 @@ func refresh_changed_tiles(cells: Array):
 
 func _process(delta):
     super._process(delta)
-    _draw_near_view()
+    _draw_near_view(delta)
     TileSheet.flush()
     _flush_gpu()
     _flush_tide_budget()
@@ -560,6 +935,9 @@ func refresh_now(changed_hint: Array = []):
     _redraw_cells(affected)
 
 func _redraw_cells(affected: Dictionary, erase_absent: bool = true):
+    # Before the GPU images and atlas sources exist (a deferred build prepares
+    # them over a few frames) nothing is drawn: the blocks are drawn from the store.
+    if not sources_ready: return
     var desired: Array = []
     if erase_absent:
         for index in range(12): desired.append({})
@@ -671,11 +1049,13 @@ func _prepare_dig_sources() -> void:
                 var spec: Dictionary = _cached_render_spec(tile)
                 var animation := ["tile",tile,0] if tile.name.begins_with("flower") else []
                 _install(-1,Vector2i.ZERO,spec,Color.WHITE,animation)
+            await _pause()
         return
     for prefix in ["ledges3", "ledges3snow", "ledges3volcano"]:
         for suffix in ["none", "N", "NE", "E", "SE", "S", "SW", "W", "NW", "NW_inner", "NE_inner", "SW_inner", "SE_inner"]:
             for colored in [false,true]:
                 _install(-1,Vector2i.ZERO,_world_data().render_spec({"base":"green1","upper":prefix+"_"+suffix,"color":colored},true))
+            await _pause()
     # Adding an atlas after play starts invalidates every populated quadrant.
     # Prepare all legal joined-hole shapes (including corner fills and loot)
     # while the TileSet is still empty of world cells.
@@ -693,6 +1073,7 @@ func _prepare_dig_sources() -> void:
             var spec: Dictionary = _world_data().render_spec({"base":"green1","upper":name},true)
             _install(-1,Vector2i.ZERO,spec)
             _install(-1,Vector2i.ZERO,_reward_composite(spec))
+            await _pause()
 
 func _lookup_tile(key):
     var index: int = source_tiles.index_of(key)
@@ -956,19 +1337,39 @@ func _gpu_id(tile, spec: Dictionary, identity: String) -> int:
 ## Puts every frame of an animated kind on the sheet up front, so the
 ## animation never adds to (and re-uploads) a sheet page during play.
 func _gpu_place_frames(spec_key: Dictionary) -> bool:
-    var seen := {}
-    for tick in range(0, 4560, SOURCE_ANIMATION_STEP):
-        var signature = _animation_signature(tick)
+    # The frames come from the name that picks the art (the ground's base name;
+    # the sprite's upper name, or its base name when it has none) and the color:
+    # another upper name over the same water has the same frames.
+    var upper := String(spec_key.upper)
+    var frames_key := [String(spec_key.base) if not draw_upper or upper.is_empty() else upper, bool(spec_key.color)]
+    if frames_placed.has(frames_key): return frames_placed[frames_key]
+    if frame_ticks.is_empty():
+        # The first tick of every animation signature (the clock repeats).
+        var seen_signatures := {}
+        for tick in range(0, 4560, SOURCE_ANIMATION_STEP):
+            var signature = _animation_signature(tick)
+            if seen_signatures.has(signature): continue
+            seen_signatures[signature] = true
+            frame_ticks.append(tick)
+    var result := true
+    for tick in frame_ticks:
         for flower in [0, 1]:
-            if seen.has([signature, flower]): continue
-            seen[[signature, flower]] = true
             var spec: Dictionary = _world_data().render_spec(spec_key, draw_upper, flower, tick)
-            if spec.is_empty() or spec.get("texture") == null: return false
             var region: Rect2 = spec.get("region", Rect2())
-            if region.size != Vector2(tile_size, tile_size): return false
-            var placed: Array = TileSheet.place(spec["texture"], region)
-            if placed.is_empty() or _gpu_page(placed[0]) < 0: return false
-    return true
+            if spec.is_empty() or spec.get("texture") == null or region.size != Vector2(tile_size, tile_size):
+                result = false
+            else:
+                var placed: Array = TileSheet.place(spec["texture"], region)
+                if placed.is_empty() or _gpu_page(placed[0]) < 0: result = false
+            if not result: break
+        if not result: break
+    frames_placed[frames_key] = result
+    return result
+
+## [art name, color] -> whether the frames of that animated art are all on the
+## sheet (_gpu_place_frames), and the ticks that start every animation signature.
+var frames_placed := {}
+var frame_ticks: Array = []
 
 func _gpu_page(texture: Texture2D) -> int:
     for index in mini(TileSheet.pages.size(), GPU_PAGES):
@@ -1053,6 +1454,9 @@ func _reset_gpu() -> void:
     gpu_rows = [{}]
     gpu_animated.clear()
     gpu_fast = [{}, {}]
+    kinds.clear()
+    kind_sprites.clear()
+    frames_placed.clear()
     if shore_cells != null: _reset_shores()
     if tide_view != null: _bind_tide_water()
 

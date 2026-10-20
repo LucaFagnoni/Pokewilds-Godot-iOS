@@ -5029,7 +5029,15 @@ func _show_current_travel_selection() -> void:
         world_message.emit("No known destination can be reached.")
         return
     travel_selection_index = wrapi(travel_selection_index, 0, destinations.size())
+    prepare_view_at(Vector2i(destinations[travel_selection_index].get("cell", spawn_cell)))
     world_message.emit("%s: %s (L/R selects, A confirms)" % [active_field_move, String(destinations[travel_selection_index].get("name", "DESTINATION"))])
+
+## Has the tile streams draw the view round a cell, over the next frames, before
+## the player is moved there (a teleport): it then needs no frame of its own.
+func prepare_view_at(cell: Vector2i) -> void:
+    for path in ["GroundLayer/ExactBaseTileStream", "DecorLayer/ExactUpperTileStream"]:
+        var stream := get_node_or_null(path)
+        if stream != null and stream.has_method("prepare_view"): stream.call("prepare_view", _cell_center(cell))
 
 func _cycle_travel_selection(direction: int) -> void:
     var destinations := _travel_destinations(active_field_move == "FLY")
