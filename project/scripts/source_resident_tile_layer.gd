@@ -89,6 +89,10 @@ var gpu_ids := {}
 ## Per id: {"pos", "page"} and, for animated kinds, {"spec_key", "region"}.
 var gpu_rows: Array = [{}]
 var gpu_animated: Array[int] = []
+## The animation clock and row count _update_gpu_animations last ran with:
+## the rows follow only the source and flower clocks, not the shore one.
+var gpu_animation_clock: Array = []
+var gpu_animation_rows := -1
 ## Ground with no upper name: [color][name] -> id, so most cells skip the spec work.
 var gpu_fast: Array = [{}, {}]
 var upper_spec_empty := {}
@@ -980,11 +984,26 @@ func _set_gpu_cell(cell: Vector2i, id: int, tide := false) -> void:
     gpu_bytes[at + 1] = bits >> 8
     gpu_cells_dirty = true
 
-## Animated kinds move their table row to the current frame's place.
+## Animated kinds move their table row to the current frame's place. Each row
+## keeps the spec of every frame it has shown, keyed as _cached_render_spec
+## keys it, so a frame seen before costs no cache-key string.
 func _update_gpu_animations() -> void:
+    var clock := [source_animation_signature, flower_animation_frame]
+    if clock == gpu_animation_clock and gpu_animated.size() == gpu_animation_rows: return
+    gpu_animation_clock = clock
+    gpu_animation_rows = gpu_animated.size()
     for id in gpu_animated:
         var row: Dictionary = gpu_rows[id]
-        var spec: Dictionary = _cached_render_spec(row.spec_key)
+        if not row.has("frames"):
+            var identity := str(row.spec_key.upper if draw_upper else row.spec_key.base).to_lower()
+            row["frames"] = {}
+            row["clocked"] = identity.begins_with("water") or identity.begins_with("lava") or identity == "campfire1" or identity == "torch1"
+            row["flower"] = not row.clocked and identity.begins_with("flower")
+        var frame_key: int = source_animation_signature + 1 if row.clocked else (1000 + flower_animation_frame if row.flower else 0)
+        var spec = row.frames.get(frame_key)
+        if spec == null:
+            spec = _cached_render_spec(row.spec_key)
+            row.frames[frame_key] = spec
         var region: Rect2 = spec.get("region", row.region)
         if region == row.region: continue
         row.region = region
