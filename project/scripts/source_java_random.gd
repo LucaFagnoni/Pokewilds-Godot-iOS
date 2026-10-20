@@ -39,25 +39,33 @@ func _multiply_48(left: int, right: int) -> int:
     return (low_product + (cross_low << 24)) & MASK_48
 
 func _next_bits(bits: int) -> int:
-    _seed = (_multiply_48(_seed, MULTIPLIER) + ADDEND) & MASK_48
+    # seed * MULTIPLIER mod 2^48 from two 24-bit halves of the seed: each
+    # partial product stays below 2^59, so no 64-bit overflow.
+    _seed = ((_seed & MASK_24) * MULTIPLIER
+        + ((((_seed >> 24) * MULTIPLIER) & MASK_24) << 24) + ADDEND) & MASK_48
     return _seed >> (48 - bits)
 
+# Hot path of world generation: _next_bits is inlined below.
 func next_int(bound: int = -1) -> int:
     if bound < 0:
         var value := _next_bits(32)
         var result := value - 4294967296 if value >= 2147483648 else value
-        _trace_draw(bound, result)
+        if _trace_enabled: _trace_draw(bound, result)
         return result
     assert(bound > 0, "java.util.Random.nextInt bound must be positive")
     if (bound & -bound) == bound:
-        var result := int((bound * _next_bits(31)) >> 31)
-        _trace_draw(bound, result)
+        _seed = ((_seed & MASK_24) * MULTIPLIER
+            + ((((_seed >> 24) * MULTIPLIER) & MASK_24) << 24) + ADDEND) & MASK_48
+        var result := (bound * (_seed >> 17)) >> 31
+        if _trace_enabled: _trace_draw(bound, result)
         return result
     while true:
-        var bits := _next_bits(31)
+        _seed = ((_seed & MASK_24) * MULTIPLIER
+            + ((((_seed >> 24) * MULTIPLIER) & MASK_24) << 24) + ADDEND) & MASK_48
+        var bits := _seed >> 17
         var value := bits % bound
         if bits - value + (bound - 1) <= 2147483647:
-            _trace_draw(bound, value)
+            if _trace_enabled: _trace_draw(bound, value)
             return value
     return 0
 

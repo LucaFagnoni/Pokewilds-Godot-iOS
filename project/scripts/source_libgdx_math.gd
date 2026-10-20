@@ -11,30 +11,28 @@ const DEG_TO_INDEX := float(SIN_COUNT) / 360.0
 static var _sin_table := PackedFloat32Array()
 
 static func float32(value: float) -> float:
-    var bytes := PackedByteArray()
-    bytes.resize(4)
-    bytes.encode_float(0, value)
-    return bytes.decode_float(0)
+    # Vector2 stores 32-bit floats: the same round-to-nearest as Java's
+    # (float) cast, without allocating a byte buffer per call.
+    return Vector2(value, 0.0).x
 
+# Below, building a Vector2 rounds both components to float, as float32()
+# does: the same arithmetic in fewer calls. A Vector2's components already
+# are floats, so float32(vector.x) is vector.x.
 static func rotate_deg(vector: Vector2, degrees: float) -> Vector2:
     _ensure_sine_table()
     var angle := float32(degrees)
-    var index_cos := int(float32(float32(angle + 90.0) * float32(DEG_TO_INDEX))) & SIN_MASK
-    var index_sin := int(float32(angle * float32(DEG_TO_INDEX))) & SIN_MASK
-    var cosine := float(_sin_table[index_cos])
-    var sine := float(_sin_table[index_sin])
-    var old_x := float32(vector.x)
-    var old_y := float32(vector.y)
-    return Vector2(
-        float32(float32(old_x * cosine) - float32(old_y * sine)),
-        float32(float32(old_x * sine) + float32(old_y * cosine))
-    )
+    var deg_to_index := float32(DEG_TO_INDEX)
+    var indices := Vector2(float32(angle + 90.0) * deg_to_index, angle * deg_to_index)
+    var cosine := float(_sin_table[int(indices.x) & SIN_MASK])
+    var sine := float(_sin_table[int(indices.y) & SIN_MASK])
+    var cross := Vector2(vector.x * cosine, vector.y * sine)
+    var along := Vector2(vector.x * sine, vector.y * cosine)
+    return Vector2(cross.x - cross.y, along.x + along.y)
 
 static func distance(left: Vector2, right: Vector2) -> float:
-    var dx := float32(float32(right.x) - float32(left.x))
-    var dy := float32(float32(right.y) - float32(left.y))
-    var squared := float32(float32(dx * dx) + float32(dy * dy))
-    return float32(sqrt(squared))
+    var delta := Vector2(right.x - left.x, right.y - left.y)
+    var squared := Vector2(delta.x * delta.x, delta.y * delta.y)
+    return float32(sqrt(float32(squared.x + squared.y)))
 
 static func _ensure_sine_table() -> void:
     if not _sin_table.is_empty():
