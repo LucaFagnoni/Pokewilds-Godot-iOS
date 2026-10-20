@@ -1,4 +1,5 @@
 extends Node2D
+const TexturePixels = preload("res://scripts/texture_pixels.gd")
 ## Plain floor and wall tiles of an interior drawn by one canvas item, as a
 ## run of Sprite2Ds would draw them (same order, region, filter and depth).
 ## Interiors hold about 10,000 such tiles and each Sprite2D costs about 1.6 KB.
@@ -47,7 +48,9 @@ func add_to_map(image: Image, previews: Dictionary, origin: Vector2) -> void:
             continue
         var preview_key: Array = [texture, rect, size, false, false]
         if not previews.has(preview_key):
-            var preview := texture.get_image().get_region(Rect2i(rect))
+            # One decode per texture (kept in `previews`, whose other keys are arrays).
+            if not previews.has(texture): previews[texture] = TexturePixels.of(texture)
+            var preview := (previews[texture] as Image).get_region(Rect2i(rect))
             preview.resize(size.x, size.y, Image.INTERPOLATE_NEAREST)
             previews[preview_key] = preview
         image.blend_rect(previews[preview_key], Rect2i(Vector2i.ZERO, size), destination)

@@ -1,5 +1,6 @@
 class_name SourceWorldData
 extends RefCounted
+const TexturePixels = preload("res://scripts/texture_pixels.gd")
 
 const TILE_ROOT := "res://assets/source_0_8_11/tiles"
 const EXACT_GLOBAL_ROOT := "res://assets/source_exact/global"
@@ -52,7 +53,7 @@ static var _reflected_day_sky_texture: Texture2D
 
 static func reflected_day_sky_image() -> Image:
     if _reflected_day_sky_image == null:
-        var original: Image = SOURCE_DAY_SKY_TEXTURE.get_image()
+        var original: Image = TexturePixels.of(SOURCE_DAY_SKY_TEXTURE)
         if original == null:
             return null
         _reflected_day_sky_image = original.duplicate()
@@ -471,14 +472,14 @@ static func texture_for(asset_name: String) -> Texture2D:
         for corner in ["ne", "se", "sw", "nw"]: plain = plain.replace("[" + corner + "]", "")
         var base := texture_for(plain)
         if base == null: return null
-        var image := base.get_image()
+        var image := TexturePixels.of(base)
         image.convert(Image.FORMAT_RGBA8)
         # DynamicTextures.cacheHole uses these exact quadrants and color.
         for y in range(image.get_height()):
             for x in range(image.get_width()):
                 var corner := ("n" if y < 10 else "s") + ("w" if x < 8 else "e")
                 if "[" + corner + "]" in key: image.set_pixel(x, y, Color8(160,120,24))
-        var composed := ImageTexture.create_from_image(image)
+        var composed := TexturePixels.texture_from(image)
         _texture_cache[key] = composed
         return composed
     var exact_global_name := String(EXACT_GLOBAL_TEXTURES.get(key, ""))
@@ -539,7 +540,7 @@ static func _clear_connected_tree_backdrop(
             "stipple": Color8(48, 56, 40)
         }
     }
-    var image := texture.get_image()
+    var image := TexturePixels.of(texture)
     if image == null or image.is_empty() or not palettes.has(asset_name):
         return texture
     image.convert(Image.FORMAT_RGBA8)
@@ -610,7 +611,7 @@ static func _clear_connected_tree_backdrop(
                         and footer_pixel.b8 == footer_glint.b8
                     ):
                     image.set_pixel(x, y, accepted[0] as Color)
-    return ImageTexture.create_from_image(image)
+    return TexturePixels.texture_from(image)
 
 static func asset_path(asset_name: String) -> String:
     _ensure_asset_index()
@@ -764,8 +765,8 @@ static func puddle_texture_for(tile_name: String) -> Texture2D:
     var sheet := texture_for("puddle_sheet1")
     if base_texture == null or sheet == null:
         return null
-    var base_image := base_texture.get_image()
-    var sheet_image := sheet.get_image()
+    var base_image := TexturePixels.of(base_texture)
+    var sheet_image := TexturePixels.of(sheet)
     if base_image == null or sheet_image == null:
         return null
     var sky_image: Image = reflected_day_sky_image()
@@ -835,7 +836,7 @@ static func puddle_texture_for(tile_name: String) -> Texture2D:
                     reflection_mask[destination.y * 16 + destination.x] = 1
                 else:
                     output.set_pixelv(destination, source)
-    var texture := ImageTexture.create_from_image(output)
+    var texture := TexturePixels.texture_from(output)
     _puddle_texture_cache[tile_name] = texture
     _puddle_reflection_mask_cache[tile_name] = reflection_mask
     return texture

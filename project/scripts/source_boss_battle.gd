@@ -1,4 +1,5 @@
 extends Control
+const TexturePixels = preload("res://scripts/texture_pixels.gd")
 ## Original RegigigasBattle / SpecialBattleMegaGengar, 60 source ticks/sec.
 signal special_damage_due
 signal sendout_due
@@ -60,13 +61,13 @@ func setup(owner_node: Node, event_kind: String, shiny: bool) -> void:
         _prepare_ground_palettes()
         backdrop=load("res://assets/source_exact/battle/intro_frame6.png")
     else:
-        var base_image := load("res://assets/source_bosses/mgengar_base1.png").get_image() as Image
-        var over_image := load("res://assets/source_bosses/mgengar_over1.png").get_image() as Image
+        var base_image := TexturePixels.of(load("res://assets/source_bosses/mgengar_base1.png")) as Image
+        var over_image := TexturePixels.of(load("res://assets/source_bosses/mgengar_over1.png")) as Image
         for base_offset in [0,-1]:
             for over_offset in [0,-1]:
                 var composite := Image.create(64 if shiny else 56,64 if shiny else 56,false,Image.FORMAT_RGBA8)
                 if shiny:
-                    var shiny_front := preload("res://assets/community_mega_gengar/battle/front-shiny.png").get_image()
+                    var shiny_front := TexturePixels.of(preload("res://assets/community_mega_gengar/battle/front-shiny.png"))
                     composite.blend_rect(shiny_front,Rect2i(0,0,64,64),Vector2i(0,base_offset))
                 else:
                     composite.blend_rect(base_image,Rect2i(0,0,56,56),Vector2i(0,base_offset))
@@ -152,7 +153,7 @@ func set_palette_stage(stage: int) -> void:
 func _prepare_ground_palettes() -> void:
     # SpriteProxy creates these textures before row tint/alpha is applied.
     ground_palettes[0]=ground
-    var original := ground.get_image()
+    var original := TexturePixels.of(ground)
     var colors := preload("res://scripts/source_battle_effects.gd").palette(ground)
     for stage in [2,3,4]:
         var output := original.duplicate() as Image

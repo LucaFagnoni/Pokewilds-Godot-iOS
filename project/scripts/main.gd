@@ -1,4 +1,5 @@
 extends Node
+const TexturePixels = preload("res://scripts/texture_pixels.gd")
 
 @onready var input_router: InputRouter = get_node("/root/InputRouterSingleton")
 
@@ -1742,7 +1743,7 @@ func _build_m3924_dig_minimap_ui() -> void:
     m3924_minimap_respawn.visible = false
 
 func _m3924_minimap_border_layers() -> Dictionary:
-    var inner: Image = (load(M3924_MINIMAP_BORDER) as Texture2D).get_image().duplicate()
+    var inner: Image = TexturePixels.of((load(M3924_MINIMAP_BORDER) as Texture2D)).duplicate()
     _m3924_fit_minimap_ornaments(inner)
     var outer := Image.create(inner.get_width(), inner.get_height(),
         false, Image.FORMAT_RGBA8)
@@ -1890,7 +1891,7 @@ func _refresh_minimap_frame() -> void:
     minimap_north.visible = not original
     if frame != minimap_frame_type:
         minimap_frame_type = frame
-        minimap_frame.texture = ImageTexture.create_from_image(GameOptions.frame_texture().get_image())
+        minimap_frame.texture = ImageTexture.create_from_image(TexturePixels.of(GameOptions.frame_texture()))
 
 func _apply_minimap_rotation(delta: float = 1.0) -> void:
     minimap_angle = 0.0
@@ -2159,7 +2160,7 @@ func _m3924_minimap_render(region: Rect2i, bounds: Rect2i, exact_world) -> Image
                 var recipe: Dictionary = {}
                 var texture := spec.get("texture") as Texture2D
                 if texture != null:
-                    var source: Image = texture.get_image()
+                    var source: Image = TexturePixels.of(texture)
                     var rect: Rect2 = spec.get("region", Rect2(0,0,16,16))
                     var preview := source.get_region(Rect2i(rect))
                     preview.resize(maxi(1,roundi(rect.size.x / 4.0)), maxi(1,roundi(rect.size.y / 4.0)), Image.INTERPOLATE_NEAREST)
@@ -2196,7 +2197,7 @@ func _paint_built_structures_on_map(image: Image, origin: Vector2i) -> void:
         var cache_key := str([actor.texture.get_instance_id(), actor.region_enabled, actor.region_rect, actor.hframes, actor.vframes, actor.frame])
         if not built_map_art_cache.has(cache_key):
             if built_map_art_cache.size() >= 512: built_map_art_cache.clear()
-            var pixels := actor.texture.get_image()
+            var pixels := TexturePixels.of(actor.texture)
             if actor.region_enabled: pixels = pixels.get_region(Rect2i(actor.region_rect))
             elif actor.hframes > 1 or actor.vframes > 1:
                 var frame_size := pixels.get_size() / Vector2i(actor.hframes, actor.vframes)
@@ -5605,7 +5606,7 @@ func _recolor_texture(
     # Imported textures can share their decoded Image. Work on a copy so one
     # chosen color never contaminates another model/color cache entry.
     var image := Image.new()
-    image.copy_from(base.get_image())
+    image.copy_from(TexturePixels.of(base))
     for y in range(image.get_height()):
         for x in range(image.get_width()):
             var pixel := image.get_pixel(x, y)
@@ -6298,7 +6299,7 @@ func _battle_sprite_frame_count(texture: Texture2D) -> int:
     if not facts.is_empty(): return int(facts[0])
     var key := texture.resource_path if not texture.resource_path.is_empty() else str(texture.get_instance_id())
     if not battle_sprite_frame_counts.has(key):
-        var image := texture.get_image()
+        var image := TexturePixels.of(texture)
         var different := 0
         if image != null and not image.is_empty():
             for y in range(texture_width):
@@ -6374,7 +6375,7 @@ func _update_battle_sprite_animation(delta: float) -> void:
     _refresh_battle_sprites()
 
 func _remove_connected_sprite_background(texture: Texture2D) -> Texture2D:
-    var image := texture.get_image()
+    var image := TexturePixels.of(texture)
     if image == null or image.is_empty():
         return texture
     image.convert(Image.FORMAT_RGBA8)
@@ -6415,7 +6416,7 @@ func _remove_connected_sprite_background(texture: Texture2D) -> Texture2D:
         pending.append(cell + Vector2i.DOWN)
     if removed <= 0:
         return texture
-    return ImageTexture.create_from_image(image)
+    return TexturePixels.texture_from(image)
 
 func _set_battle_message_width(full_width: bool) -> void:
     battle_status.offset_left = 16.0
@@ -8947,7 +8948,7 @@ func _battle_ball_art(source: Texture2D) -> Texture2D:
     var key := source.resource_path + "|" + last_battle_ball
     if not battle_ball_art.has(key):
         battle_ball_art[key] = ImageTexture.create_from_image(
-            preload("res://scripts/ball_shell_colors.gd").recolor(source.get_image(), last_battle_ball))
+            preload("res://scripts/ball_shell_colors.gd").recolor(TexturePixels.of(source), last_battle_ball))
     return battle_ball_art[key]
 
 func _clear_battle_capture_ball() -> void:
@@ -10464,7 +10465,7 @@ func _paint_source_map_tile(image: Image, destination: Vector2i,
         return
     var texture_id := texture.get_instance_id()
     if not texture_images.has(texture_id):
-        texture_images[texture_id] = texture.get_image()
+        texture_images[texture_id] = TexturePixels.of(texture)
     var source: Image = texture_images[texture_id]
     if source == null:
         return

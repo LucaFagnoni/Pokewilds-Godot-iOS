@@ -1,4 +1,5 @@
 extends RefCounted
+const TexturePixels = preload("res://scripts/texture_pixels.gd")
 static var cache: Dictionary = {}
 
 static func texture(kind: String, shiny: bool) -> Texture2D:
@@ -14,15 +15,15 @@ static func texture(kind: String, shiny: bool) -> Texture2D:
     if kind == "overworld":
         # Existing credited Princess-Phoenix sheet: front/left/right/back rows,
         # two normal columns followed by the two authored shiny columns.
-        var source := preload("res://assets/community_mega_gengar/princess_phoenix_sheet.png").get_image()
+        var source := TexturePixels.of(preload("res://assets/community_mega_gengar/princess_phoenix_sheet.png"))
         result = Image.create(192, 32, false, Image.FORMAT_RGBA8)
         for index in range(6):
             var row: int = [1, 1, 3, 3, 0, 0][index]
             result.blit_rect(source, Rect2i((index % 2 + (2 if shiny else 0)) * 32, row * 32, 32, 32), Vector2i(index * 32, 0))
     else:
         # Same authored Mega Gengar composition used by the source boss battle.
-        var base := preload("res://assets/source_bosses/mgengar_base1.png").get_image()
-        var overlay := preload("res://assets/source_bosses/mgengar_over1.png").get_image()
+        var base := TexturePixels.of(preload("res://assets/source_bosses/mgengar_base1.png"))
+        var overlay := TexturePixels.of(preload("res://assets/source_bosses/mgengar_over1.png"))
         result = Image.create(56, 56, false, Image.FORMAT_RGBA8)
         result.blend_rect(base, Rect2i(0, 0, 56, 56), Vector2i.ZERO)
         result.blend_rect(overlay, Rect2i(0, 0, 56, 56), Vector2i.ZERO)

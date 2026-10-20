@@ -1,4 +1,5 @@
 extends Node
+const TexturePixels = preload("res://scripts/texture_pixels.gd")
 signal presence_received(actor:String,packet:Dictionary)
 ## Area-scoped visual replication. The host decides which peers share an area.
 const Remote=preload("res://scripts/coop_remote_player.gd")
@@ -180,7 +181,7 @@ func _ball_texture(ball:String)->Texture2D:
     if ball=="POKE BALL":return source
     var key=str(source.get_instance_id())+ball
     if not _ball_textures.has(key):
-        _ball_textures[key]=ImageTexture.create_from_image(preload("res://scripts/ball_shell_colors.gd").recolor(source.get_image(),ball))
+        _ball_textures[key]=ImageTexture.create_from_image(preload("res://scripts/ball_shell_colors.gd").recolor(TexturePixels.of(source),ball))
     return _ball_textures[key]
 
 ## The other player's ball, flown along the same cells at the same speed.

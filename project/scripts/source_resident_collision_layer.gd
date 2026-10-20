@@ -1,4 +1,5 @@
 extends Node
+const TexturePixels = preload("res://scripts/texture_pixels.gd")
 
 ## The overworld ground's collision, read from the tile store. A cell is
 ## worked out the first time the player's box comes near it and then kept;
@@ -283,7 +284,7 @@ func _hole_shape(cell: Vector2i) -> Array[PackedVector2Array]:
     var known = _hole_pieces.get(name)
     if known != null: return known
     var spec := SourceWorldData.render_spec({"base":"green1","upper":name},true)
-    var pixels: Image = spec.texture.get_image().get_region(Rect2i(spec.region))
+    var pixels: Image = TexturePixels.of(spec.texture).get_region(Rect2i(spec.region))
     var bitmap := BitMap.new()
     bitmap.create_from_image_alpha(pixels)
     var pieces: Array[PackedVector2Array] = []

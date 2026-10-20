@@ -1,4 +1,5 @@
 extends RefCounted
+const TexturePixels = preload("res://scripts/texture_pixels.gd")
 
 const Settings = preload("res://scripts/game_options.gd")
 const EMOTES = preload("res://assets/ecology/emotes.png")
@@ -8,7 +9,7 @@ static func texture() -> Texture2D:
     var hd := Settings.enabled("hd_emotes")
     if not check_textures.has(hd):
         # Preserve the original 16-pixel speech balloon, outline and tail.
-        var pixels := preload("res://scripts/emote_style.gd").sheet().get_image().get_region(Rect2i(144, 0, 16, 16))
+        var pixels := TexturePixels.of(preload("res://scripts/emote_style.gd").sheet()).get_region(Rect2i(144, 0, 16, 16))
         for y in range(3, 11):
             for x in range(3, 13):
                 pixels.set_pixel(x, y, Color.WHITE)

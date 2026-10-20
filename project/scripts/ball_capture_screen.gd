@@ -1,4 +1,5 @@
 extends Control
+const TexturePixels = preload("res://scripts/texture_pixels.gd")
 ## Presentation only. Catch odds, inventory, ownership and EXP stay in the caller.
 var main: Node
 var ball: TextureRect
@@ -52,7 +53,7 @@ func play(owner_main: Node, pokemon: Dictionary, ball_name: String, outcome: int
     await settle.finished
     var key:="capture_wiggle:"+ball_name
     if not main.ball_mechanics.ball_textures.has(key):
-        main.ball_mechanics.ball_textures[key]=ImageTexture.create_from_image(preload("res://scripts/ball_shell_colors.gd").recolor(preload("res://assets/source_exact/global/pokeball_wiggleSheet1_color.png").get_image(),ball_name))
+        main.ball_mechanics.ball_textures[key]=ImageTexture.create_from_image(preload("res://scripts/ball_shell_colors.gd").recolor(TexturePixels.of(preload("res://assets/source_exact/global/pokeball_wiggleSheet1_color.png")),ball_name))
     var sheet:Texture2D=main.ball_mechanics.ball_textures[key]
     await wait_frames(12)
     for shake in range(3 if outcome<0 else outcome):

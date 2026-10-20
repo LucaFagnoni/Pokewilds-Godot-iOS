@@ -1,4 +1,5 @@
 extends Node2D
+const TexturePixels = preload("res://scripts/texture_pixels.gd")
 var world: Node
 var records: Dictionary = {}
 var actors: Dictionary = {}
@@ -64,7 +65,7 @@ static func _item_art(item:String)->Texture2D:
     var plain:Texture2D=preload("res://assets/source_0_8_11/tiles/pokeball1.png")
     var Shell=preload("res://scripts/ball_shell_colors.gd")
     if not Shell.PALETTES.has(item):return plain
-    if not _ball_art.has(item):_ball_art[item]=ImageTexture.create_from_image(Shell.recolor(plain.get_image(),item))
+    if not _ball_art.has(item):_ball_art[item]=ImageTexture.create_from_image(Shell.recolor(TexturePixels.of(plain),item))
     return _ball_art[item]
 
 func rebuild() -> void:

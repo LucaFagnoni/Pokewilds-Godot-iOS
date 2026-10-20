@@ -1,8 +1,9 @@
 extends RefCounted
+const TexturePixels = preload("res://scripts/texture_pixels.gd")
 static var cache: Dictionary={}
 static func ring(frame: int, texture: Texture2D) -> Texture2D:
     if cache.has(frame):return cache[frame]
-    var source:=texture.get_image()
+    var source:=TexturePixels.of(texture)
     var result:=Image.create(128,128,false,Image.FORMAT_RGBA8)
     result.fill(Color.TRANSPARENT)
     var edge_width:=maxi(1,source.get_width()-16)
