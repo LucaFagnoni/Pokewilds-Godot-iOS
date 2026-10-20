@@ -1044,6 +1044,8 @@ var bag_action_ui: Control
 var safari_ui: Control
 var map_build_serial := 0
 var map_art_cache_key := ""
+## The cache key of map_art_cache without the discovered ground (fog).
+var map_art_cache_art_key := ""
 var map_art_cache: Texture2D
 var map_building := false
 var planting_bag_target: Variant = null
@@ -10314,7 +10316,10 @@ func _draw_world_map() -> void:
     var serial := map_build_serial
     var loading := _source_ui_label(game_menu_map,"MapLoading",Vector2(8,60),Vector2(304,20),9,"DRAWING MAP...")
     loading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    var raster: Texture2D = map_art_cache if map_art_cache_context == preload("res://scripts/source_map_raster.gd").context_key(self, bounds) else null
+    # The fog is not redrawn while exploring (_warm_map_cache): a map whose
+    # ground was explored since is drawn now.
+    var raster: Texture2D = map_art_cache if map_art_cache_context == preload("res://scripts/source_map_raster.gd").context_key(self, bounds) \
+        and map_art_cache_key == preload("res://scripts/source_map_raster.gd").cache_key(self, bounds) else null
     if raster == null:
         raster = await preload("res://scripts/source_map_raster.gd").build(self, bounds, serial)
     if serial != map_build_serial or raster == null: return
@@ -13135,6 +13140,11 @@ func _warm_map_cache() -> void:
     var bounds: Rect2i = world.get_map_bounds()
     if bounds.size.x <= 0 or bounds.size.y <= 0: return
     if map_art_cache_key == preload("res://scripts/source_map_raster.gd").cache_key(self, bounds): return
+    # Exploring changes only the fog. Redrawing the whole map (a ~25 MB image
+    # and texture) for it every half second while walking new ground cost
+    # far more than drawing it once when the map screen opens.
+    if map_art_cache != null and not (is_instance_valid(game_menu_map_screen) and game_menu_map_screen.visible) and \
+            map_art_cache_art_key == preload("res://scripts/source_map_raster.gd").cache_key(self, bounds, false): return
     map_cache_warming = true
     var texture: Texture2D = await preload("res://scripts/source_map_raster.gd").build(self, bounds, -1)
     map_cache_warming = false
