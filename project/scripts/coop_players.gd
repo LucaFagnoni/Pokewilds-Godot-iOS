@@ -3,6 +3,7 @@ signal presence_received(actor:String,packet:Dictionary)
 ## Area-scoped visual replication. The host decides which peers share an area.
 const Remote=preload("res://scripts/coop_remote_player.gd")
 const SEND_INTERVAL_MS:=50
+const HEARTBEAT_MS:=1000
 const AFK_MS:=180000
 ## A dedicated server's own player is never seen, and it draws nobody.
 const Server=preload("res://scripts/dedicated_server.gd")
@@ -16,6 +17,8 @@ var _last_send:=0
 var _last_input:=0
 var _last_received:Dictionary={}
 var _last_cells:Dictionary={}
+var _last_sent:Dictionary={}
+var _last_sent_at:=0
 
 func configure(game:Node,connection:Node,host_state=null)->void:
     main=game;session=connection;state=host_state
@@ -50,10 +53,17 @@ func _process(_delta:float)->void:
     packet["population_scope"]=main.coop_game.population.local_scope()
     for index in range(main.caught_pokemon.size()):
         if main._storage_is_active(main.caught_pokemon[index]):packet.helper_slot=index;break
-    if session.hosting:_relay(1,session.actor,packet)
-    else:session.send_host(packet)
     for actor in actors.keys():
         if now-int(_last_received.get(actor,now))>5000:_remove(actor)
+    # Only what changed goes out; standing still, a reminder once a second
+    # keeps this player from being dropped by the others (after 5 s, above).
+    if packet==_last_sent and now-_last_sent_at<HEARTBEAT_MS:return
+    _last_sent=packet;_last_sent_at=now
+    # When it was sent, by this device's clock: lets the others tell a pause
+    # from a late packet (coop_remote_player.gd). Wrapped to stay a small number.
+    var outgoing:Dictionary=packet.duplicate();outgoing["t"]=now%1000000
+    if session.hosting:_relay(1,session.actor,outgoing)
+    else:session.send_host(outgoing)
 
 func _message(peer:int,actor:String,packet:Dictionary)->void:
     if packet.get("kind")=="player_effect":
@@ -98,6 +108,8 @@ func _show(actor:String,packet:Dictionary)->void:
             actors.erase(actor)
         return
     if not actors.has(actor):
+        # Someone new in sight: they have not seen this player yet either.
+        _last_sent_at=0
         var remote=Remote.new()
         main.world.add_child(remote);remote.configure(main)
         actors[actor]=remote
@@ -105,6 +117,7 @@ func _show(actor:String,packet:Dictionary)->void:
     last_packets[actor]=packet.duplicate(true)
     var visual:Dictionary=packet.visual.duplicate(true)
     visual["battle"]=bool(packet.get("battle",false));visual["afk"]=bool(packet.get("afk",false))
+    if packet.has("t"):visual["sent"]=packet.t
     actors[actor].receive(visual)
     # Other players leave the same sand and snow footprints the local player does.
     var cell:=Vector2i(int(packet.get("cell_x",0)),int(packet.get("cell_y",0)))
@@ -216,7 +229,7 @@ static func valid_packet(packet:Dictionary)->bool:
     if not packet.get("population_scope","OVERWORLD") is String or packet.get("population_scope","OVERWORLD").length()>100:return false
     if not _number(packet.get("cell_x",0)) or not _number(packet.get("cell_y",0)):return false
     if not _number(packet.get("helper_slot",-1)) or int(packet.get("helper_slot",-1)) not in [-1,0,1,2,3,4,5]:return false
-    for key in ["body_x","body_y"]:
+    for key in ["body_x","body_y","t"]:
         if packet.has(key) and not _number(packet[key]):return false
     var visual=packet.get("visual")
     if not visual is Dictionary or not visual.get("parts") is Dictionary:return false

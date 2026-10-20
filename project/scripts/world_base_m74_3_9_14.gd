@@ -1,6 +1,7 @@
 extends Node2D
 
 const SourceMineRuntime = preload("res://scripts/source_mine_runtime.gd")
+const InteriorTileBatch = preload("res://scripts/interior_tile_batch.gd")
 var source_mine_pokemon: Dictionary = {}
 
 signal generation_progress(value: float, message: String)
@@ -2148,6 +2149,7 @@ func _build_generated_source_interiors(
         source_area_layers[area_id] = area_layer
         var tiles: Dictionary = plan.get("tiles", {})
         var solids: Dictionary = plan.get("solids", {})
+        var batch: InteriorTileBatch = null
         for raw_local_cell in tiles.keys():
             # Most of each frame behind the loading screen (4 ms a frame made this ~1.4 s).
             if cooperative and Time.get_ticks_usec() - slice_started >= 13000:
@@ -2163,6 +2165,16 @@ func _build_generated_source_interiors(
                 if spec.is_empty():
                     continue
                 var region: Rect2 = spec["region"]
+                if not upper and region.size == Vector2(TILE, TILE) and not (tile.name in ["cave1_regi1", "cave1_regi2", "cave1_regi3"] or "__on" in tile.name or "__off" in tile.name):
+                    # A plain floor or wall tile nothing changes later: drawn
+                    # with the tiles before it instead of by its own sprite.
+                    if batch == null or batch.full():
+                        batch = InteriorTileBatch.new()
+                        area_layer.add_child(batch)
+                    batch.add(spec["texture"], Vector2(world_cell * TILE), region)
+                    continue
+                if not upper:
+                    batch = null
                 var tile_sprite := _add_source_sprite(area_layer, spec["texture"],
                     world_cell, 16 if upper else -4, region.size)
                 tile_sprite.region_enabled = true
@@ -11721,6 +11733,10 @@ func interior_map_image(bounds: Rect2i) -> Image:
                 sprites.append(structure_sprite)
     sprites.sort_custom(func(a: Node, b: Node) -> bool: return a.z_index < b.z_index)
     var previews: Dictionary = {}
+    for child in layer.get_children():
+        if child is InteriorTileBatch:
+            (child as InteriorTileBatch).add_to_map(image, previews,
+                Vector2(bounds.position * TILE) - to_local((child as Node2D).global_position))
     for raw_sprite in sprites:
         var sprite := raw_sprite as Sprite2D
         if not sprite.visible or sprite.texture == null:

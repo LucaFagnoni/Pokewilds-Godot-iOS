@@ -17,4 +17,6 @@ static func code()->String:
 static func save_address(value:String)->Error:
     if not available(value):return ERR_INVALID_PARAMETER
     var config=ConfigFile.new();config.set_value("network","address",value)
-    return config.save(Paths.path("zerotier.cfg"))
+    var error:=config.save(Paths.path("zerotier.cfg"))
+    preload("res://scripts/coop_network.gd").settings_changed()
+    return error

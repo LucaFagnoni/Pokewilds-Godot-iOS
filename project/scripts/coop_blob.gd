@@ -1,5 +1,8 @@
 extends RefCounted
 ## Flow-controlled snapshot chunks, with an overall memory limit and digest.
+## The bytes travel compressed (zstd) when that is smaller: a world's records
+## are text that shrinks about 14 times, an area about 3 times. "raw" is then
+## the size they unpack to; the digest is always of the unpacked bytes.
 const CHUNK_BYTES := 24 * 1024
 const MAX_BYTES := 128 * 1024 * 1024
 const TIMEOUT_MS := 60000
@@ -18,7 +21,9 @@ func start_send(peer: int, id: String, bytes: PackedByteArray, trusted_digest: S
     for transfer in outgoing.values():reserved+=transfer.bytes.size()
     if reserved>MAX_BYTES:return false
     if not trusted_digest.is_empty() and (trusted_digest.length()!=64 or not trusted_digest.is_valid_hex_number()):return false
-    outgoing[peer]={"id":id,"bytes":bytes,"offset":0,"hash":digest(bytes) if trusted_digest.is_empty() else trusted_digest}
+    var packed:=bytes.compress(FileAccess.COMPRESSION_ZSTD)
+    var raw:=bytes.size() if not packed.is_empty() and packed.size()<bytes.size() else 0
+    outgoing[peer]={"id":id,"bytes":packed if raw>0 else bytes,"raw":raw,"offset":0,"hash":digest(bytes) if trusted_digest.is_empty() else trusted_digest}
     return true
 
 func pump(peer: int, send: Callable) -> Error:
@@ -28,6 +33,7 @@ func pump(peer: int, send: Callable) -> Error:
     var data:PackedByteArray=transfer.bytes.slice(offset,mini(offset+CHUNK_BYTES,transfer.bytes.size()))
     var packet:Dictionary={"kind":"blob","id":transfer.id,"offset":offset,
         "length":transfer.bytes.size(),"sha256":transfer.hash,"data":Marshalls.raw_to_base64(data)}
+    if int(transfer.raw)>0:packet["raw"]=transfer.raw
     var error:Error=send.call(peer,packet)
     if error!=OK:return error
     transfer.offset+=data.size()
@@ -39,7 +45,8 @@ func receive(peer: int, packet: Dictionary, defer_digest: bool = false) -> Dicti
     var offset:=int(packet.get("offset",-1))
     var length:=int(packet.get("length",-1))
     var encoded:=String(packet.get("data",""))
-    if id.is_empty() or id.length()>64 or length<=0 or length>MAX_BYTES or encoded.length()>CHUNK_BYTES*2:
+    var raw:=int(packet.get("raw",0)) if typeof(packet.get("raw",0)) in [TYPE_INT,TYPE_FLOAT] else -1
+    if id.is_empty() or id.length()>64 or length<=0 or length>MAX_BYTES or encoded.length()>CHUNK_BYTES*2 or raw<0 or raw>MAX_BYTES:
         incoming.erase(peer);return {"error":"invalid_snapshot"}
     var bytes:=Marshalls.base64_to_raw(encoded)
     if bytes.is_empty() or bytes.size()>CHUNK_BYTES or offset<0 or offset+bytes.size()>length:
@@ -49,15 +56,18 @@ func receive(peer: int, packet: Dictionary, defer_digest: bool = false) -> Dicti
         var reserved:=length
         for transfer in incoming.values():reserved+=int(transfer.length)
         if reserved>MAX_BYTES:return {"error":"snapshot_memory_limit"}
-        incoming[peer]={"id":id,"length":length,"hash":String(packet.get("sha256","")),
+        incoming[peer]={"id":id,"length":length,"raw":raw,"hash":String(packet.get("sha256","")),
             "bytes":PackedByteArray(),"seen":Time.get_ticks_msec()}
     var transfer:Dictionary=incoming[peer]
-    if transfer.id!=id or int(transfer.length)!=length or transfer.hash!=packet.get("sha256","") or transfer.bytes.size()!=offset:
+    if transfer.id!=id or int(transfer.length)!=length or int(transfer.raw)!=raw or transfer.hash!=packet.get("sha256","") or transfer.bytes.size()!=offset:
         incoming.erase(peer);return {"error":"out_of_order_snapshot"}
     transfer.bytes.append_array(bytes)
     transfer.seen=Time.get_ticks_msec()
     if transfer.bytes.size()!=length:return {}
     incoming.erase(peer)
+    if raw>0:
+        transfer.bytes=transfer.bytes.decompress(raw,FileAccess.COMPRESSION_ZSTD)
+        if transfer.bytes.size()!=raw:return {"error":"snapshot_unpack"}
     if not defer_digest and digest(transfer.bytes)!=transfer.hash:return {"error":"snapshot_digest"}
     return {"id":id,"bytes":transfer.bytes,"sha256":transfer.hash}
 
