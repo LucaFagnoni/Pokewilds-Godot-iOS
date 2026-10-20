@@ -13,9 +13,14 @@ let package = Package(
         .target(
             name: "Pokewilds",
             dependencies: ["GodotPlugins", "GodotEngine", "MoltenVK"],
-            // The engine's Swift code auto-links SwiftUICore, which only iOS 18+
-            // has; Apple's linker skips it and binds through SwiftUI, lld must be told.
-            linkerSettings: [.unsafeFlags(["-Xlinker", "--ignore-auto-link-option=SwiftUICore"])]
+            linkerSettings: [.unsafeFlags([
+                // The engine's Swift code auto-links SwiftUICore, which only iOS 18+
+                // has; Apple's linker skips it and binds through SwiftUI, lld must be told.
+                "-Xlinker", "--ignore-auto-link-option=SwiftUICore",
+                // The stripped engine is LTO bitcode: keep lld's codegen in the
+                // work folder's cache, so links after the first take seconds.
+                "-Xlinker", "-cache_path_lto", "-Xlinker", Context.packageDirectory + "/../cache/lto",
+            ])]
         ),
         // The export's dummy.cpp: the plugin init functions the engine calls (C++).
         .target(name: "GodotPlugins", publicHeadersPath: "."),
