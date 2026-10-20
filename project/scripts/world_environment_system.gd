@@ -340,6 +340,8 @@ func set_extra_light(holder: Node, light: Array) -> void:
     else: extra_lights[holder] = light
 
 func _update_light_map(center: Vector2, view_size: Vector2, flash: Variant) -> void:
+    if environmental_lights.is_empty() and flash == null and extra_lights.is_empty() and not light_composite.visible:
+        return  # daylight, indoors: nothing to do
     var view := Rect2(center - view_size * 0.5, view_size).grow(1.0)
     var frame := posmod(animation_tick / 10, 2)
     var textures: Array = [light_textures(false)[frame], light_textures(true)[frame]]
@@ -363,9 +365,10 @@ func _update_light_map(center: Vector2, view_size: Vector2, flash: Variant) -> v
         lit = lit.merge(entry[1]) if lit.has_area() else entry[1]
     lit = lit.intersection(view)
     if not lit.has_area():
-        light_composite.visible = false
-        light_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
-        light_draw_list = []
+        if light_composite.visible:
+            light_composite.visible = false
+            light_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+            light_draw_list = []
         return
     var origin := Vector2i(view.position.floor())
     var size := Vector2i(view.end.ceil()) - origin
