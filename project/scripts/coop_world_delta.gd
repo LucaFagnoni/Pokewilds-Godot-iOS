@@ -49,14 +49,17 @@ func motion_only(area:String,patches:Array)->bool:
         if not previous is String or not only_motion(previous,patch.after):return false
     return true
 
+static func _sorted_keys(value:Dictionary)->Array:
+    var keys=value.keys()
+    # Text keys sort the same natively, without a script call per comparison.
+    if keys.all(func(key):return key is String):keys.sort()
+    else:keys.sort_custom(func(a,b):return str(a)<str(b))
+    return keys
+
 static func canonical(value:Variant)->Variant:
     if value is Dictionary:
         var result:Dictionary={}
-        var keys=value.keys()
-        # Text keys sort the same natively, without a script call per comparison.
-        if keys.all(func(key):return key is String):keys.sort()
-        else:keys.sort_custom(func(a,b):return str(a)<str(b))
-        for key in keys:result[key]=canonical(value[key])
+        for key in _sorted_keys(value):result[key]=canonical(value[key])
         return result
     if value is Array:
         var result:Array=[]
@@ -66,6 +69,30 @@ static func canonical(value:Variant)->Variant:
 
 static func encode(value:Variant)->String:
     return Marshalls.raw_to_base64(var_to_bytes(canonical(value)))
+
+## encode() of a map most of whose entries stay the same from one call to the
+## next: the roaming Megas, 16 KB, where putting all of it in order took 0.3 ms
+## each time one moved. An entry is put in order again only when its bytes have
+## changed. `memo` is the caller's own, one per map.
+static func encode_map(value:Variant,memo:Dictionary)->String:
+    if not value is Dictionary:return encode(value)
+    var ordered:Dictionary={}
+    for key in _sorted_keys(value):
+        var raw:=var_to_bytes(value[key])
+        var held:Array=memo.get(key,[])
+        if held.is_empty() or held[0]!=raw:
+            held=[raw,canonical(value[key])];memo[key]=held
+        ordered[key]=held[1]
+    for key in memo.keys():
+        if not value.has(key):memo.erase(key)
+    var result:=Marshalls.raw_to_base64(var_to_bytes(ordered))
+    _made.append(result)
+    if _made.size()>4:_made.pop_front()
+    return result
+
+## The last few encode_map() results: already in encode()'s form, so checking
+## that one needs no second encode.
+static var _made:Array=[]
 
 static func decode(value:String)->Variant:
     # Network data can never instantiate scripts, resources or other objects.
@@ -271,7 +298,7 @@ func prepare_changes(area:String,patches:Array)->Dictionary:
         used[key]=true;bytes+=patch.after.length()
         if patch.after.length()>MAX_ENTRY_BYTES or bytes>MAX_PACKET_BYTES:return {"ok":false,"reason":"too_large"}
         var value=decode_shared(patch.after)
-        if encode(value)!=patch.after:return {"ok":false,"reason":"invalid_value"}
+        if not patch.after in _made and encode(value)!=patch.after:return {"ok":false,"reason":"invalid_value"}
         var group=key.get_slice("/",0)
         if value!=null:
             if group in CELLS+["wild_pokemon"] and not value is Dictionary:return {"ok":false,"reason":"invalid_record"}
