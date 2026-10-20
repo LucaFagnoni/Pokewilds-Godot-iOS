@@ -5352,6 +5352,7 @@ func _start_game() -> void:
     _ensure_machop_lead(false)
     world.call("clear_active_field_move", false)
     await _warm_map_cache()
+    await _draw_world_view()
 
     if coop_game.active and not await coop_game.game_started():
         generation_panel.hide();setup_panel.show();generating=false
@@ -13047,6 +13048,7 @@ func _travel_adjacent_world(direction: Vector2i) -> void:
         if not await coop_game.finish_travel():
             coop_game.end_session("ONLINE AREA COULD NOT BE SAVED. SESSION ENDED.")
             return
+    await _draw_world_view()
     if is_instance_valid(travel_view): travel_view.queue_free()
     message_panel.hide()
     generation_panel.hide()
@@ -13097,6 +13099,13 @@ func _sync_pokedex_owned() -> void:
         if cached_world is Dictionary:
             var crafting: Dictionary = cached_world.get("state", {})
             pokedex_progress.seed_owned(crafting.get("deployed_pokemon", []))
+
+## The overworld tiles draw by map block as the view nears them: the ones
+## in view are drawn before the loading screen goes.
+func _draw_world_view() -> void:
+    for path in ["GroundLayer/ExactBaseTileStream", "DecorLayer/ExactUpperTileStream"]:
+        var stream := world.get_node_or_null(path)
+        if stream != null and stream.has_method("draw_view_async"): await stream.draw_view_async()
 
 func _warm_map_cache() -> void:
     if not is_instance_valid(waypoint_ui):
@@ -13276,6 +13285,7 @@ func switch_gen3_overhaul(next: bool) -> bool:
                     for key in dig_state: world.set(key,dig_state[key])
         await _warm_map_cache()
     world.process_mode = previous_process_mode
+    await _draw_world_view()
     world.set_gameplay_enabled(false)
     if is_instance_valid(world.environment_system):
         for music_player in world.environment_system.music_players:
