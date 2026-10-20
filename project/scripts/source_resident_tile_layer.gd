@@ -23,6 +23,18 @@ var far_tide_order: Array = []
 var far_tide_wait := 0
 ## Cells per side of one map block: the layers' rendering_quadrant_size.
 const TILE_BLOCK := 16
+## Map blocks are drawn as the view nears them (build_resident_async).
+var lazy_blocks := false
+## Blocks drawn so far (never undrawn).
+var built_blocks := {}
+## Blocks in view are drawn in the frame they come into view (after draw_view_async).
+var view_armed := false
+## The block rectangle last found all drawn.
+var drawn_view := Rect2i()
+## Sprites reach at most two cells past their own: one more for the camera.
+const VIEW_MARGIN_CELLS := 3
+const AHEAD_BLOCKS := 3
+const AHEAD_BUDGET_USEC := 2000
 var last_source_parts: Array = []
 var last_source_id := -1
 ## Ground on the GPU. Every plain 16x16 ground tile (still or animated, most
@@ -232,31 +244,110 @@ func configure(tiles, player_node, upper_layer, source_tile_size = 16, pixel_key
     if not deferred_build: refresh_now()
 
 func build_resident_async():
-    # Install the complete world before play, yielding between small batches.
+    # The whole map's data now; its cells are drawn one map block at a time
+    # as the view comes near (_draw_near_view). Drawing every block before
+    # play took ~10 s of a load, mostly for blocks nobody would see soon.
     set_process(false)
     resident_build_count += 1
-    var batch := {}
-    var deadline := Time.get_ticks_usec() + 13000
     var store: WorldTileStore = source_tiles
-    var tidal := {}
-    for index in store.with_name_containing("_tidalwater"): tidal[index] = true
-    for index in store.indices():
-        var key := store.key_of(index)
-        var cell = Vector2i(key / tile_size) if source_keys_are_pixels else key
-        resident_fingerprints.fp_put(key, store.revision_at(index) + 1)
-        if tidal.has(index) and _is_beach_high_tide(store.cursor(index)): frame_tidal_cells[cell] = true
-        batch[cell] = true
-        if batch.size() >= 64 or Time.get_ticks_usec() >= deadline:
-            _redraw_cells(batch, false)
-            batch.clear()
-            if Time.get_ticks_usec() >= deadline:
-                await get_tree().process_frame
-                deadline = Time.get_ticks_usec() + 13000
-    if not batch.is_empty(): _redraw_cells(batch, false)
-    _flush_gpu()
+    # The fingerprints have the store's bounds (_source_bounds): one value
+    # per store index, filled here in a local and handed over once.
+    var flags := store.flags
+    var revisions := store.revisions
+    var names := store.name_ids
+    var biomes := store.biome_ids
+    var routes := store.route_ids
+    var values := PackedInt32Array()
+    values.resize(flags.size())
+    var count := 0
+    # Beach tide reads a cell's name, biome and route: settled once per triple.
+    var tidal_names := {}
+    for id in store.strings.size():
+        if store.strings[id].containsn("_tidalwater"): tidal_names[id] = true
+    var beach := {}
+    var deadline := Time.get_ticks_usec() + 13000
+    for index in flags.size():
+        if flags[index] & WorldTileStore.PRESENT:
+            values[index] = revisions[index] + 1
+            count += 1
+            if tidal_names.has(names[index]):
+                var kind := Vector3i(names[index], biomes[index], routes[index])
+                if not beach.has(kind): beach[kind] = _is_beach_high_tide(store.cursor(index))
+                if beach[kind]: frame_tidal_cells[Vector2i(index % store.width, index / store.width) + store.origin] = true
+        if (index & 4095) == 0 and Time.get_ticks_usec() >= deadline:
+            await get_tree().process_frame
+            deadline = Time.get_ticks_usec() + 13000
+    resident_fingerprints.values = values
+    resident_fingerprints.count = count
+    lazy_blocks = true
     resident_dirty = false
+    # After the camera has moved this frame, so the view drawn is the one shown.
+    process_priority = 1000
     set_process(true)
     await get_tree().process_frame
+
+## Draws the blocks in view before the loading screen goes, a few per frame.
+## From then on a block coming into view is drawn in that same frame.
+## Nothing is drawn headless (the dedicated server).
+func draw_view_async() -> void:
+    while lazy_blocks and DisplayServer.get_name() != "headless" and not _draw_blocks_in(_view_blocks(), 13000):
+        await get_tree().process_frame
+    view_armed = lazy_blocks
+
+## The map blocks under the view and VIEW_MARGIN_CELLS around it. The view
+## is the camera's and the player's (a teleport moves the player before the camera).
+func _view_blocks() -> Rect2i:
+    var shown := get_global_transform_with_canvas().affine_inverse() * get_viewport().get_visible_rect()
+    if is_instance_valid(tracked_player):
+        shown = shown.merge(Rect2(to_local(tracked_player.global_position) - shown.size / 2.0, shown.size))
+    shown = shown.grow(VIEW_MARGIN_CELLS * tile_size)
+    var span := float(tile_size * TILE_BLOCK)
+    var first := Vector2i((shown.position / span).floor())
+    var last := Vector2i((shown.end / span).floor())
+    return Rect2i(first, last - first + Vector2i.ONE)
+
+## Draws the undrawn blocks of a rectangle of blocks, nearest the middle
+## first, until budget_usec runs out (< 0: all). True when all are drawn.
+func _draw_blocks_in(blocks: Rect2i, budget_usec: int) -> bool:
+    var store: WorldTileStore = source_tiles
+    var first := Vector2i(floori(store.origin.x / float(TILE_BLOCK)), floori(store.origin.y / float(TILE_BLOCK)))
+    var last := Vector2i(floori((store.origin.x + store.width - 1) / float(TILE_BLOCK)), floori((store.origin.y + store.height - 1) / float(TILE_BLOCK)))
+    blocks = blocks.intersection(Rect2i(first, last - first + Vector2i.ONE))
+    var todo: Array[Vector2i] = []
+    for y in range(blocks.position.y, blocks.end.y):
+        for x in range(blocks.position.x, blocks.end.x):
+            if not built_blocks.has(Vector2i(x, y)): todo.append(Vector2i(x, y))
+    if todo.is_empty(): return true
+    var middle := Vector2(blocks.position) + Vector2(blocks.size - Vector2i.ONE) / 2.0
+    todo.sort_custom(func(a, b): return (Vector2(a) - middle).length_squared() < (Vector2(b) - middle).length_squared())
+    var deadline := Time.get_ticks_usec() + budget_usec
+    for block in todo:
+        if budget_usec >= 0 and Time.get_ticks_usec() >= deadline: return false
+        _draw_block(block)
+    return true
+
+## Draws every cell of one map block (none was drawn before: _redraw_cells
+## skips the cells of blocks not drawn yet).
+func _draw_block(block: Vector2i) -> void:
+    built_blocks[block] = true
+    var store: WorldTileStore = source_tiles
+    var flags := store.flags
+    var first := block * TILE_BLOCK
+    var batch := {}
+    for y in range(maxi(first.y, store.origin.y), mini(first.y + TILE_BLOCK, store.origin.y + store.height)):
+        for x in range(maxi(first.x, store.origin.x), mini(first.x + TILE_BLOCK, store.origin.x + store.width)):
+            if flags[(y - store.origin.y) * store.width + x - store.origin.x] & WorldTileStore.PRESENT: batch[Vector2i(x, y)] = true
+    if not batch.is_empty(): _redraw_cells(batch, false)
+
+## Once armed, the blocks in view are drawn at once; the next few around
+## them while the frame has time, so walking rarely meets an undrawn one.
+func _draw_near_view() -> void:
+    if not lazy_blocks or DisplayServer.get_name() == "headless": return
+    var near := _view_blocks()
+    var ahead := near.grow(AHEAD_BLOCKS)
+    if ahead == drawn_view: return
+    if view_armed: _draw_blocks_in(near, -1)
+    if _draw_blocks_in(ahead, AHEAD_BUDGET_USEC): drawn_view = ahead
 
 func _prepare_tide_sources():
     # Prepare every shoreline corner once. Tide changes then reuse atlas sources
@@ -314,6 +405,7 @@ func _process(delta):
         last_source_parts = []
         last_source_id = -1
         refresh_now()
+    _draw_near_view()
     TileSheet.flush()
     _flush_gpu()
     _flush_tide_budget()
@@ -466,6 +558,9 @@ func _redraw_cells(affected: Dictionary, erase_absent: bool = true):
     var pin_flips := {}
     var origin := resident_fingerprints.origin
     for cell in affected:
+        # A block not drawn yet is drawn whole, as it is then, when the view
+        # nears it. (>> 4: TILE_BLOCK is 16.)
+        if lazy_blocks and not built_blocks.has(Vector2i(cell.x >> 4, cell.y >> 4)): continue
         if pinned_by.has(cell): _unpin(cell, pin_flips)
         var key = cell * tile_size if source_keys_are_pixels else cell
         var index: int = store.index_of(key)

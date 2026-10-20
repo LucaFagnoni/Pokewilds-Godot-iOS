@@ -2136,7 +2136,8 @@ func _build_generated_source_interiors(
         var tiles: Dictionary = plan.get("tiles", {})
         var solids: Dictionary = plan.get("solids", {})
         for raw_local_cell in tiles.keys():
-            if cooperative and Time.get_ticks_usec() - slice_started >= 4000:
+            # Most of each frame behind the loading screen (4 ms a frame made this ~1.4 s).
+            if cooperative and Time.get_ticks_usec() - slice_started >= 13000:
                 await get_tree().process_frame
                 slice_started = Time.get_ticks_usec()
             var local_cell: Vector2i = raw_local_cell
@@ -9701,6 +9702,11 @@ func _refresh_biome_dig_sites(spread: bool = false) -> void:
     var store: WorldTileStore = exact_world.tiles
     var cell_flags := store.flags
     var cell_uppers := store.upper_ids
+    var cell_names := store.name_ids
+    var cell_biomes := store.biome_ids
+    # dig_site_name reads only the name and biome: once per pair, not per cell
+    # (a proxy per cell made this scan ~1 s of every load).
+    var crack_of := {}
     var ruled_out := WorldTileStore.WATER | WorldTileStore.LAVA | WorldTileStore.SOLID | WorldTileStore.LEDGE | WorldTileStore.GRASS
     for index in cell_flags.size():
         if spread and Time.get_ticks_usec()-slice_started>=_daily_slice_usec():
@@ -9710,13 +9716,16 @@ func _refresh_biome_dig_sites(spread: bool = false) -> void:
             # A dig or a pickup may have changed tiles meanwhile.
             cell_flags = store.flags
             cell_uppers = store.upper_ids
+            cell_names = store.name_ids
+            cell_biomes = store.biome_ids
         if not cell_flags[index] & WorldTileStore.PRESENT or cell_flags[index] & ruled_out or cell_uppers[index] != 0:
             continue
-        var tile := store.cursor(index)
-        var crack := FieldMoveData.dig_site_name(tile)
+        var pair: int = (cell_names[index] << 24) | cell_biomes[index]
+        if not crack_of.has(pair): crack_of[pair] = FieldMoveData.dig_site_name(store.cursor(index))
+        var crack: String = crack_of[pair]
         if not candidates.has(crack):
             continue
-        var cell := SourceWorldData.pixel_to_cell(tile.position)
+        var cell := Vector2i(index % store.width, index / store.width) + store.origin
         if built_structures.has(cell) or landmarks.has(cell) or \
                 resource_objects.has(cell) or blocked.has(cell):
             continue
