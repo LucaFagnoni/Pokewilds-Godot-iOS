@@ -22,14 +22,16 @@ static func build(main: Node, bounds: Rect2i, serial: int) -> Texture2D:
                 for _pixel in range(main.SOURCE_MAP_TILE_PIXELS):
                     row.append_array(PackedByteArray([int(color.r*255),int(color.g*255),int(color.b*255),255]))
             rows.append(row)
+        # Two rows of cells, copied down the map. Building the whole map as
+        # one growing byte array and then copying it into the image held
+        # about 32 MB more at once (a 688x577 world).
         var bytes := PackedByteArray()
-        for y in range(size.y):
+        for y in range(main.SOURCE_MAP_TILE_PIXELS * 2):
             bytes.append_array(rows[int(y/main.SOURCE_MAP_TILE_PIXELS)%2])
-            if Time.get_ticks_usec() >= deadline:
-                await main.get_tree().process_frame
-                if not is_instance_valid(main) or not is_instance_valid(world) or (serial >= 0 and serial != main.map_build_serial) or context_key(main, bounds) != context: return null
-                deadline = Time.get_ticks_usec()+4000
-        image = Image.create_from_data(size.x,size.y,false,Image.FORMAT_RGBA8,bytes)
+        var strip := Image.create_from_data(size.x,main.SOURCE_MAP_TILE_PIXELS * 2,false,Image.FORMAT_RGBA8,bytes)
+        image = Image.create(size.x,size.y,false,Image.FORMAT_RGBA8)
+        for y in range(0, size.y, strip.get_height()):
+            image.blit_rect(strip,Rect2i(Vector2i.ZERO,strip.get_size()),Vector2i(0,y))
     var cells: Array[int] = []
     if not indoor:
         for raw_key in world.discovered_cells.keys():
