@@ -205,6 +205,15 @@ jobs:
           EOF
           grep -n '^application/short_version=\|^application/version=' project/export_presets.cfg
 
+      # The phone's battery for the HUD (an iOS plugin): Godot's export links
+      # this library into the Xcode project. Same deployment target as the preset.
+      - name: Build the battery plugin
+        working-directory: project/ios/plugins/pokewilds_battery
+        run: |
+          xcrun -sdk iphoneos clang++ -arch arm64 -miphoneos-version-min=15.0 -O2 -fobjc-arc \
+            -c pokewilds_battery.mm -o "$RUNNER_TEMP/pokewilds_battery.o"
+          xcrun -sdk iphoneos ar rcs libpokewilds_battery.a "$RUNNER_TEMP/pokewilds_battery.o"
+
       # Godot's import cache (.godot): only assets that changed since are imported again.
       - uses: actions/cache@v4
         with:

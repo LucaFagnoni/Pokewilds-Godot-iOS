@@ -26,6 +26,8 @@ export PATH="$HOME/.local/bin:$PATH"
 # The SDK is in ~/.swiftpm or ~/.config/swiftpm, wherever SwiftPM keeps its config.
 sdk=$(xtool sdk status 2>/dev/null | grep -A1 "is installed" | sed -n 's/^ *Path: //p')
 [ -d "$sdk" ] || { echo "No xtool or iOS SDK: run tools/ios_xtool/setup.sh first" >&2; exit 1; }
+ios_sdk=$sdk/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk
+swiftbin=$(cd && swiftly use --print-location)/usr/bin
 
 # Godot editor and the official iOS export template (downloaded once).
 base=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
@@ -68,7 +70,6 @@ if [ "$engine" = stripped ] && [ ! -f "$ios_lib" ]; then
   # osxcross mode wants <triple>clang, ar, ranlib, libtool in
   # $APPLE_TOOLCHAIN_PATH/usr/bin: here Swift's clang and llvm-ar (named by
   # target, so clang builds for iOS) and xtool's llvm-libtool-darwin.
-  swiftbin=$(cd && swiftly use --print-location)/usr/bin
   tc=$cache/ios-toolchain
   mkdir -p "$tc/usr/bin"
   for t in clang clang++; do ln -sf "$swiftbin/clang" "$tc/usr/bin/arm64-apple-ios-$t"; done
@@ -76,7 +77,7 @@ if [ "$engine" = stripped ] && [ ! -f "$ios_lib" ]; then
   ln -sf "$sdk/toolset/bin/llvm-lib" "$tc/usr/bin/arm64-apple-ios-libtool"
   OSXCROSS_IOS=1 godot_scons platform=ios arch=arm64 lto=thin cache_path="$cache/scons-ios" \
     APPLE_TOOLCHAIN_PATH="$tc" apple_target_triple=arm64-apple-ios- SWIFT_FRONTEND="$swiftbin/swift-frontend" \
-    APPLE_SDK_PATH="$sdk/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk"
+    APPLE_SDK_PATH="$ios_sdk"
   cp "$src/bin/libgodot.ios.template_release.arm64.a" "$ios_lib"
 fi
 if [ "$smoke" = 1 ] && [ ! -x "$linux_engine" ]; then
@@ -105,6 +106,14 @@ text = re.sub(r'(?m)^application/short_version="[^"]*"', 'application/short_vers
 text = re.sub(r'(?m)^application/version="[^"]*"', 'application/version="%s"' % os.environ["BUNDLE"], text)
 open(path, "w", newline="").write(text)
 EOF
+
+# The phone's battery for the HUD (an iOS plugin): Godot's export copies this
+# library into the Xcode project and Package.swift links it, as the ios job's
+# xcodebuild does. Same deployment target as the preset.
+plugin=$work/project/ios/plugins/pokewilds_battery
+"$swiftbin/clang" -target arm64-apple-ios15.0 -isysroot "$ios_sdk" -O2 -fobjc-arc \
+  -c "$plugin/pokewilds_battery.mm" -o "$cache/pokewilds_battery.o"
+"$swiftbin/llvm-ar" rcs "$plugin/libpokewilds_battery.a" "$cache/pokewilds_battery.o"
 
 # Export the Xcode project straight into the SwiftPM package xtool builds.
 app=$work/app
@@ -168,7 +177,7 @@ bin=$work/Payload/Pokewilds.app/Pokewilds
 # the deployment target as the SDK version (15.0) and iOS would apply old-SDK
 # compatibility behaviour. Write the real SDK version, as Xcode's link does, and
 # drop the rpath into this machine's Swift toolchain.
-python3 - "$bin" "$sdk/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk/SDKSettings.json" <<'EOF'
+python3 - "$bin" "$ios_sdk/SDKSettings.json" <<'EOF'
 import json, struct, sys
 path, settings = sys.argv[1:]
 data = bytearray(open(path, "rb").read())

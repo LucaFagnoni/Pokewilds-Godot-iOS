@@ -19,6 +19,7 @@
 **/lobby_server.txt
 **/lobby_server.txt*
 **/build_id.txt
+**/ios/plugins/pokewilds_battery/*.a
 **/wrangler.private.toml
 **/.wrangler/
 ._*

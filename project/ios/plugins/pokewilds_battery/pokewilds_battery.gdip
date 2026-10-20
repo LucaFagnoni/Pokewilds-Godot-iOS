@@ -1,0 +1,11 @@
+; The phone's battery for the HUD: see pokewilds_battery.mm. The library is
+; built from it before the iOS export (CI's ios job and tools/ios_xtool), and
+; the iOS preset enables it with plugins/PokeWildsBattery=true.
+[config]
+name="PokeWildsBattery"
+binary="libpokewilds_battery.a"
+initialization="pokewilds_battery_init"
+deinitialization="pokewilds_battery_deinit"
+
+[dependencies]
+system=["UIKit.framework"]

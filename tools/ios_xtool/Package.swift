@@ -20,6 +20,9 @@ let package = Package(
                 // The stripped engine is LTO bitcode: keep lld's codegen in the
                 // work folder's cache, so links after the first take seconds.
                 "-Xlinker", "-cache_path_lto", "-Xlinker", Context.packageDirectory + "/../cache/lto",
+                // The game's iOS plugin (the phone's battery), where Godot's export
+                // put it; xcodebuild links it from the Xcode project instead.
+                "-Xlinker", Context.packageDirectory + "/Pokewilds/ios/plugins/pokewilds_battery/libpokewilds_battery.a",
             ])]
         ),
         // The export's dummy.cpp: the plugin init functions the engine calls (C++).

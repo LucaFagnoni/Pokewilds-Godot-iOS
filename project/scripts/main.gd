@@ -1847,8 +1847,10 @@ func _update_m3924_dig_hud_and_minimap(delta: float) -> void:
         m3924_dig_right_label.text = String(state.get("right", ""))
         _fit_compact_dig_label(m3924_dig_right_label)
         m3924_dig_left_label.modulate = Color.WHITE if bool(state.get("diggable", false)) else Color(0.55, 0.55, 0.55, 1.0)
-    var minimap_should_show: bool = GameOptions.enabled("minimap") and started and world.visible and not _m3924_minimap_top_box_visible()
+    var top_free: bool = started and world.visible and not _m3924_minimap_top_box_visible()
+    var minimap_should_show: bool = GameOptions.enabled("minimap") and top_free
     m3924_minimap_root.visible = minimap_should_show
+    status_hud.refresh(delta, top_free)
     if not minimap_should_show:
         return
     var player_node: Node2D = world.get_node_or_null("Player") as Node2D
@@ -3228,6 +3230,8 @@ func _build_m66_source_ui() -> void:
 
 var fps_label: Label
 var fps_refresh := 0.0
+## OPTIONS > BATTERY and CLOCK, top left.
+var status_hud = preload("res://scripts/status_hud.gd").new(self)
 
 ## OPTIONS > FPS COUNTER: frames drawn per second, top right.
 var last_input_msec := 0

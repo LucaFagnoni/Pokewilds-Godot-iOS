@@ -5994,8 +5994,7 @@ func _interact_built_structure(cell: Vector2i) -> void:
         else:
             world_message.emit("The PLANT needs another day to grow.")
     elif build_name == "CLOCK":
-        var day_fraction := fmod(world_elapsed_seconds, WORLD_DAY_SECONDS) / WORLD_DAY_SECONDS
-        var total_minutes := int(floor(day_fraction * 24.0 * 60.0))
+        var total_minutes := clock_minutes()
         world_message.emit("The CLOCK reads %02d:%02d on day %d." % [total_minutes / 60, total_minutes % 60, _world_day_index() + 1])
     elif build_name == "STOOL":
         _sit_on_stool(cell)
@@ -10053,6 +10052,11 @@ func _daily_slice_usec() -> int:
 
 func _world_day_index() -> int:
     return int(floor(world_elapsed_seconds / WORLD_DAY_SECONDS))
+
+## The world's time of day in minutes (0-1439), as a CLOCK reads it: the day
+## starts at dawn and the 24 hours run evenly over one day-night cycle.
+func clock_minutes() -> int:
+    return int(floor(fmod(world_elapsed_seconds, WORLD_DAY_SECONDS) / WORLD_DAY_SECONDS * 24.0 * 60.0))
 
 func _refresh_sand_traps(spread: bool = false) -> void:
     if not exact_world_mode or exact_world == null or get_node_or_null("WildPokemonLayer") == null:

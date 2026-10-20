@@ -86,12 +86,17 @@ func _field() -> Dictionary:
     var rows := []
     if is_instance_valid(minimap) and minimap.is_visible_in_tree(): rows.append(minimap.get_global_rect())
     var buttons: Array = field_hud.buttons()
-    if rows.is_empty() and buttons.is_empty(): return {}
+    # A tap on the clock switches real time and game time.
+    var hotspots := []
+    var clock: Label = m.status_hud.clock
+    if is_instance_valid(clock) and clock.is_visible_in_tree(): hotspots.append(["CLOCK", func(): m.status_hud.switch_clock(), grown(clock, Vector2(3, 6))])
+    if rows.is_empty() and buttons.is_empty() and hotspots.is_empty(): return {}
     return {
         "modal": false,
         "rows": rows,
         "tap": func(_i): _open_map_from_minimap(),
         "buttons": buttons,
+        "hotspots": hotspots,
     }
 
 func _finish_layout_edit() -> void:

@@ -23,7 +23,8 @@ the macOS job).
 The steps mirror the `smoke` and `ios` jobs in `.github/workflows/build.yml`:
 build the stripped engine from Godot 4.7.2's source with `.github/engine/custom.py`
 (for iOS, and for Linux headless for the smoke test), minify JSON, stamp
-`build_id.txt` and the versions, import and export the "iOS" preset, run the
+`build_id.txt` and the versions, build the game's iOS plugin (the phone's
+battery, `project/ios/plugins/pokewilds_battery`), import and export the "iOS" preset, run the
 smoke test on that pack, build the app, strip it, zip `Payload/`. Godot's export
 only makes an Xcode project; `Package.swift` and `xtool.yml` turn it into a
 SwiftPM package that xtool builds into `Pokewilds.app`.

@@ -17,6 +17,8 @@ const ROWS := [
     ["zoom","ZOOM","Enable gameplay and map zoom controls."],
     ["minimap","MINIMAP","Show the minimap while exploring."],
     ["fps_counter","FPS COUNTER","Show frames per second in the top right corner."],
+    ["battery_hud","BATTERY","Show the phone battery in the top left corner."],
+    ["clock","CLOCK","REAL: phone time. GAME: world time, in gold. Tap the clock to switch."],
     ["diagonal","DIAGONAL MOVE","Allow diagonal thumbstick movement."],
     ["auto_run","AUTO RUN","Run automatically when walking."],
     ["battle_animations","BATTLE ANIMATIONS","Play battle animations."],
@@ -44,7 +46,7 @@ const TOUCH_ONLY := ["touch_size", "touch_opacity", "touch_theme", "touch_autohi
 const CATEGORIES := [
     ["AUDIO", "Music, effects, cries and footsteps.", ["music","sound","world_sound","cries","footsteps","lofi_music"]],
     ["GAMEPLAY", "Speed, running, movement, wheels and throwing.", ["game_speed","text_speed","auto_run","diagonal","radial","ball_mechanics","zoom","weather_events"]],
-    ["DISPLAY", "Frame, dark mode, minimap and visual extras.", ["frame","dark_mode","minimap","fps_counter","battery_saver","battle_animations","held_emotes","shiny_sparkles","hd_emotes","circle_lights","map_waypoint"]],
+    ["DISPLAY", "Frame, dark mode, minimap and visual extras.", ["frame","dark_mode","minimap","fps_counter","battery_hud","clock","battery_saver","battle_animations","held_emotes","shiny_sparkles","hd_emotes","circle_lights","map_waypoint"]],
     ["CONTROLS", "On-screen buttons, vibration and button mapping.", ["touch_size","touch_opacity","touch_theme","touch_autohide","haptics","touch_move","touch_reset","button_layout","controls"]],
     ["ONLINE", "Settings for the world you host.", ["horde_mode","raids_mode","players","autosave"]],
 ]
@@ -169,6 +171,9 @@ func open() -> void:
     # Builds that leave out optional packs (iOS) hide their toggles.
     if not ResourceLoader.exists("res://assets/lofi/music/route_1.ogg"):
         menu_rows=menu_rows.filter(func(row): return row[0]!="lofi_music")
+    # Only the iPhone build reads a battery (ios/plugins/pokewilds_battery).
+    if not preload("res://scripts/status_hud.gd").battery_available():
+        menu_rows=menu_rows.filter(func(row): return row[0]!="battery_hud")
     if not TouchUI.touch_runtime():
         menu_rows=menu_rows.filter(func(row): return row[0] not in TOUCH_ONLY)
     if is_instance_valid(main.coop_game) and main.coop_game.active and main.coop_game.hosting:
@@ -304,7 +309,7 @@ func handle(event: InputEvent) -> void:
     var value=Settings.values[key]
     if key in ["music","sound","world_sound","cries","footsteps"]:value=clampi(int(value)+direction*5,0,100)
     elif key=="game_speed":value=Settings.GAME_SPEEDS[wrapi(Settings.GAME_SPEEDS.find(float(value))+direction,0,Settings.GAME_SPEEDS.size())]
-    elif key in ["text_speed","battery_saver"]:value=wrapi(int(value)+direction,0,3)
+    elif key in ["text_speed","battery_saver","clock"]:value=wrapi(int(value)+direction,0,3)
     elif key=="frame":value=wrapi(int(value)+direction,0,124)
     elif key=="button_layout":value=1-int(value)
     else:value=not bool(value)
@@ -412,6 +417,7 @@ func refresh() -> void:
             if key in ["frame","button_layout"]:choices=["TYPE 1","TYPE 2"];selected=int(Settings.values[key])
             elif key=="text_speed":choices=["DEFAULT","FAST","FASTER"];selected=int(Settings.values.text_speed)
             elif key=="battery_saver":choices=["OFF","AUTO","ON"];selected=int(Settings.values.battery_saver)
+            elif key=="clock":choices=["OFF","REAL","GAME"];selected=int(Settings.values.clock)
             if TouchUI.touch_runtime() and choices==["ON","OFF"]:
                 toggle(row,selected==0)
                 continue
@@ -485,7 +491,7 @@ func touch_tap(row_index: int, point: Vector2) -> void:
         touch_set(key,clampi(roundi((x-138.0)/0.98/5.0)*5,0,100));return
     if key=="game_speed" and x>=132.0:
         touch_set(key,Settings.GAME_SPEEDS[clampi(int((x-132.0)/30.0),0,Settings.GAME_SPEEDS.size()-1)]);return
-    if key in ["text_speed","battery_saver"] and x>=132.0:
+    if key in ["text_speed","battery_saver","clock"] and x>=132.0:
         touch_set(key,clampi(int((x-132.0)/52.0),0,2));return
     if key=="button_layout" and x>=132.0:
         touch_set(key,clampi(int((x-132.0)/78.0),0,1));return
