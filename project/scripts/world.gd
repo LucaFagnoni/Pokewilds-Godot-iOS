@@ -1457,6 +1457,11 @@ func _update_tidal_wade_visual() -> void:
                 var foot_cell := Vector2i(
                     floori((player.position.x + foot_x) / TILE),
                     floori((player.position.y + 6.0) / TILE))
+                # Name test first, from the store: three tile objects a frame
+                # on dry land otherwise, only to find no tide water.
+                var foot_names := _exact_names_at(foot_cell)
+                if foot_names.is_empty() or not foot_names[0].to_lower().contains("_tidalwater"):
+                    continue
                 var foot_tile: SourceTile = exact_world.tile_at(foot_cell)
                 if foot_tile != null and _is_beach_tidal_tile(foot_tile) and \
                         foot_tile.name.to_lower().contains("_tidalwater"):
@@ -1851,14 +1856,15 @@ func _fill_source_dig_holes() -> void:
         var parts := String(key).split(",")
         if parts.size() != 2: continue
         var cell := Vector2i(int(parts[0]), int(parts[1]))
-        var tile: SourceTile = exact_world.tile_at(cell)
-        if tile == null or not tile.name_upper.begins_with("hole1"): continue
+        # Names straight from the tile store: no tile object per edited cell.
+        var here := _exact_names_at(cell)
+        if here.is_empty() or not here[1].begins_with("hole1"): continue
         var water := false
         var lava := false
         for direction in [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
-            var neighbor: SourceTile = exact_world.tile_at(cell + direction)
-            if neighbor == null: continue
-            var names := neighbor.name + " " + neighbor.name_upper
+            var neighbor := _exact_names_at(cell + direction)
+            if neighbor.is_empty(): continue
+            var names := neighbor[0] + " " + neighbor[1]
             if "water" in names: water = true
             elif "lava" in names: lava = true
         if water or lava: replacements[cell] = "soot1" if water and lava else "water2" if water else "lava1"

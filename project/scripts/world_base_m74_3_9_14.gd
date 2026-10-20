@@ -10335,15 +10335,21 @@ func environment_context() -> Dictionary:
     var cell := _player_cell()
     var route_name := ""
     var dungeon := false
+    # The environment asks every frame: one tile object for both the route
+    # and the biome (biome_at would build a second one for the same cell).
+    var biome := "INTERIOR"
     if active_area_id == "OVERWORLD":
         if exact_world_mode and exact_world != null:
-            var route := exact_world.route_at(cell)
+            var exact_tile := exact_world.tile_at(cell)
+            var route: SourceRoute = exact_tile.route_belongs_to if exact_tile != null else null
             if route != null:
                 route_name = route.name
                 dungeon = route.is_dungeon
+            biome = "OCEAN" if exact_tile == null else _source_biome_for_tile(exact_tile)
         else:
             route_name = String(habitat_routes.get(cell, ""))
             dungeon = SourceRouteData.is_dungeon(route_name)
+            biome = biome_at(cell)
     else:
         var route_data := _active_source_interior_route()
         route_name = String(route_data.get("name", ""))
@@ -10354,7 +10360,7 @@ func environment_context() -> Dictionary:
         "dungeon": dungeon,
         "route_name": route_name,
         "route_type": SourceRouteData.route_type(route_name),
-        "biome": biome_at(cell) if active_area_id == "OVERWORLD" else "INTERIOR"
+        "biome": biome
     }
 
 func environment_tile_flags() -> Dictionary:
