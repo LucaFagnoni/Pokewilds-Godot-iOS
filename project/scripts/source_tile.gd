@@ -21,10 +21,10 @@ func _mark_resident_change() -> void:
     if _loading: return
     resident_revision += 1
     if _store != null: _store.bump(_index)
-    if OS.get_thread_caller_id() == _MAIN_THREAD_ID:
+    if OS.get_thread_caller_id() == _main_thread_id:
         resident_changed_cells[position] = true
 
-static var _MAIN_THREAD_ID := OS.get_main_thread_id()
+static var _main_thread_id := OS.get_main_thread_id()
 
 static func bound_to(store: WorldTileStore, index: int) -> SourceTile:
     var tile := SourceTile.new(_BIND, Vector2i.ZERO)
