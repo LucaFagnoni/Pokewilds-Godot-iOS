@@ -6,6 +6,11 @@ name: PokeWilds build
 # is deleted. So releases/latest/download/<file> always gives a matching pair.
 on:
   workflow_dispatch:
+    inputs:
+      fallback:
+        description: "Skip the macOS job and build the IPA with the xtool fallback (to test it)"
+        type: boolean
+        default: false
   push:
     branches: [main]
     tags: ["v*"]
@@ -121,6 +126,7 @@ jobs:
   ios:
     # Only a pack that passed the smoke test goes into the release.
     needs: [draft, smoke]
+    if: ${{ !inputs.fallback }}
     runs-on: macos-26
     env:
       TAG: ${{ needs.draft.outputs.tag }}
@@ -219,6 +225,68 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$TAG" build/ios/Pokewilds-unsigned.ipa
 
+  # When the macOS job did not build the IPA (no runner, a failure, or skipped
+  # to test this), build the same IPA on Linux with xtool (tools/ios_xtool):
+  # same stripped engine, version and build id. Xcode, which xtool turns into
+  # the iOS SDK, comes from the private LucaFagnoni/xcode-sdk release through a
+  # read-only token (XCODE_SDK_TOKEN). Never on pull requests.
+  ios_xtool:
+    needs: [draft, smoke, ios]
+    if: ${{ always() && github.event_name != 'pull_request' && needs.draft.result == 'success' && needs.smoke.result == 'success' && needs.ios.result != 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      TAG: ${{ needs.draft.outputs.tag }}
+    steps:
+      # Unpacking Xcode takes about 20 GB: drop preinstalled SDKs this job does
+      # not use, and unpack on /mnt.
+      - name: Room for Xcode
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo mkdir -p /mnt/xcode /mnt/tmp && sudo chown "$USER" /mnt/xcode /mnt/tmp
+          df -h / /mnt
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download Xcode from the private repository
+        env:
+          GH_TOKEN: ${{ secrets.XCODE_SDK_TOKEN }}
+        run: |
+          gh release download xcode-27.1 -R LucaFagnoni/xcode-sdk -D /mnt/xcode
+          cd /mnt/xcode
+          # A release holds the .xip whole, or in pieces when over GitHub's 2 GiB limit.
+          if ls *.part* >/dev/null 2>&1; then cat $(ls *.part* | sort) > Xcode.xip && rm -f *.part*; else mv Xcode_*.xip Xcode.xip; fi
+          ls -la /mnt/xcode
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/pokewilds-ios/cache/engine
+          # The stripped iOS engine, rebuilt only when the profile changes.
+          key: xtool-engine-4.7.2-${{ hashFiles('.github/engine/custom.py') }}
+
+      - name: Swift, xtool and the iOS SDK
+        env:
+          TMPDIR: /mnt/tmp
+        run: |
+          bash tools/ios_xtool/setup.sh /mnt/xcode/Xcode.xip
+          rm -rf /mnt/xcode /mnt/tmp/*
+
+      # The smoke job already checked this pack with the stripped engine.
+      - name: Build the IPA with xtool
+        run: SMOKE=0 bash tools/ios_xtool/build_ipa.sh
+
+      - name: Add the IPA to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$TAG" "$HOME/pokewilds-ios/Pokewilds-unsigned.ipa"
+          gh release view "$TAG" --json body --jq .body > notes.md
+          echo "" >> notes.md
+          echo "IPA built on Linux with xtool (no macOS runner): same engine, version and build id; plain PNG icons and launch screen." >> notes.md
+          gh release edit "$TAG" --notes-file notes.md
+
   server:
     needs: draft
     # On pull requests there is no draft: build and test only.
@@ -278,7 +346,9 @@ jobs:
         run: gh release upload "$TAG" PokeWilds-Server-win64.zip
 
   publish:
-    needs: [draft, ios, server]
+    needs: [draft, ios, ios_xtool, server]
+    # The IPA from macOS or, failing that, from the xtool fallback.
+    if: ${{ always() && needs.draft.result == 'success' && needs.server.result == 'success' && (needs.ios.result == 'success' || needs.ios_xtool.result == 'success') }}
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}

@@ -1,9 +1,23 @@
 # iPhone IPA without a Mac (WSL + xtool)
 
 Fallback for when GitHub has no macOS runner for the `ios` job: builds the
-unsigned `Pokewilds-unsigned.ipa` on a Windows PC, inside WSL, with
-[xtool](https://github.com/xtool-org/xtool) in place of Xcode. Sign it with
-Feather as usual.
+unsigned `Pokewilds-unsigned.ipa` on Linux with
+[xtool](https://github.com/xtool-org/xtool) in place of Xcode, on a Windows PC
+inside WSL or in CI (the `ios_xtool` job). Sign it with Feather as usual.
+
+## In CI
+
+`ios_xtool` runs on Ubuntu when the `ios` job did not build the IPA (no
+runner, a failure), never on pull requests, and puts its IPA in the same
+release. It runs `setup.sh` and `SMOKE=0 build_ipa.sh` (the `smoke` job already
+tested the pack); only the iOS engine library is cached, never the SDK.
+`Xcode.xip` comes from the release `xcode-27.1` of the private repository
+`LucaFagnoni/xcode-sdk`, read with the secret `XCODE_SDK_TOKEN` (a fine-grained
+token with read-only access to that repository's contents). For a newer Xcode,
+upload it there as a new release and change the tag in the job.
+
+To test it: Actions > PokeWilds build > Run workflow, tick "fallback" (skips
+the macOS job).
 
 The steps mirror the `smoke` and `ios` jobs in `.github/workflows/build.yml`:
 build the stripped engine from Godot 4.7.2's source with `.github/engine/custom.py`
