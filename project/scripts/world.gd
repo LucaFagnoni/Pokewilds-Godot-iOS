@@ -1294,6 +1294,7 @@ func _update_wild_pokemon(delta: float) -> void:
         var phase = 1 - int(data.get("anim_phase", 0))
         data["anim_phase"] = phase
         data["cell"] = target
+        _wild_cell_moved(wild_id, target)
         if online:coordinator.wild.mark_motion(wild_id)
         if is_instance_valid(sprite):
             _set_overworld_motion_frame(sprite, direction, phase)

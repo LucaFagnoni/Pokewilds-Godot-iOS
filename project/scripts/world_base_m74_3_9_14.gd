@@ -1199,6 +1199,7 @@ func _spawn_extra_biome_pokemon(_records: Array[Dictionary], spread: bool = fals
                                 occupied[first] = id
                                 occupied[second] = new_id
                                 original.cell = first
+                                _wild_cell_moved(id, first)
                                 var sprite := original.get("sprite") as Sprite2D
                                 if is_instance_valid(sprite): sprite.position = _cell_center(first)
                                 partner_id = new_id
@@ -8281,6 +8282,7 @@ func _add_wild_pokemon(
     stored["fed_until"] = float(stored.get("fed_until", 0.0))
     stored["flee_steps"] = int(stored.get("flee_steps", 0))
     wild_pokemon[wild_id] = stored
+    _wild_cell_moved(wild_id, cell)
     _update_pokemon_water_visual(stored)
 
 func _wild_move_delay(species: String, data: Dictionary = {}) -> float:
@@ -8734,6 +8736,7 @@ func _update_wild_pokemon(delta: float) -> void:
         var phase := 1 - int(data.get("anim_phase", 0))
         data["anim_phase"] = phase
         data["cell"] = target
+        _wild_cell_moved(wild_id, target)
         if is_instance_valid(sprite):
             _set_overworld_motion_frame(sprite, direction, phase)
             sprite.z_index = _depth_z(target)
@@ -8791,6 +8794,7 @@ func _remove_wild_pokemon(wild_id: int) -> void:
     if is_instance_valid(sand_sprite):
         sand_sprite.queue_free()
     wild_pokemon.erase(wild_id)
+    if is_same(wild_index_of, wild_pokemon): _wild_unindex(wild_id)
 
 func _cardinal_direction(delta: Vector2i, away: bool) -> Vector2i:
     var direction := Vector2i.ZERO
@@ -8800,7 +8804,59 @@ func _cardinal_direction(delta: Vector2i, away: bool) -> Vector2i:
         direction = Vector2i(0, signi(delta.y))
     return -direction if away else direction
 
+## Wild Pokemon by cell: cell -> id, or an Array of ids when several share a
+## cell. It describes the wild_pokemon dictionary in wild_index_of and is
+## kept by _wild_cell_moved / _wild_unindex at every add, move and removal;
+## it is built again from wild_pokemon whenever that is another dictionary
+## or holds another number of Pokemon.
+var wild_by_cell := {}
+## id -> the cell it is indexed at.
+var wild_indexed_cell := {}
+var wild_index_of: Dictionary = {}
+
+func _wild_index_valid() -> bool:
+    return is_same(wild_index_of, wild_pokemon) and wild_indexed_cell.size() == wild_pokemon.size()
+
+func _wild_index_all() -> void:
+    wild_by_cell = {}
+    wild_indexed_cell = {}
+    wild_index_of = wild_pokemon
+    for raw_id in wild_pokemon:
+        _wild_index_add(int(raw_id), Vector2i(wild_pokemon[raw_id].get("cell", Vector2i(-1, -1))))
+
+func _wild_index_add(wild_id: int, cell: Vector2i) -> void:
+    wild_indexed_cell[wild_id] = cell
+    var at = wild_by_cell.get(cell)
+    if at == null: wild_by_cell[cell] = wild_id
+    elif at is Array: at.append(wild_id)
+    else: wild_by_cell[cell] = [at, wild_id]
+
+func _wild_unindex(wild_id: int) -> void:
+    if not wild_indexed_cell.has(wild_id): return
+    var cell: Vector2i = wild_indexed_cell[wild_id]
+    wild_indexed_cell.erase(wild_id)
+    var at = wild_by_cell.get(cell)
+    if at is Array:
+        at.erase(wild_id)
+        if at.size() == 1: wild_by_cell[cell] = at[0]
+    elif at == wild_id: wild_by_cell.erase(cell)
+
+## Call after every write of a wild Pokemon's "cell" (and after adding one).
+func _wild_cell_moved(wild_id: int, cell: Vector2i) -> void:
+    if not is_same(wild_index_of, wild_pokemon): return
+    _wild_unindex(wild_id)
+    _wild_index_add(wild_id, cell)
+
 func _wild_id_at_cell(cell: Vector2i, ignored_id: int = -1) -> int:
+    if not _wild_index_valid(): _wild_index_all()
+    var at = wild_by_cell.get(cell)
+    if at == null: return -1
+    if at is Array: return _wild_id_at_cell_scan(cell, ignored_id)  # several: the first in wild_pokemon, as before
+    return -1 if at == ignored_id else at
+
+## The first wild Pokemon at the cell in wild_pokemon order (the index's
+## answer must equal this one).
+func _wild_id_at_cell_scan(cell: Vector2i, ignored_id: int = -1) -> int:
     for raw_id in wild_pokemon.keys():
         var wild_id := int(raw_id)
         if wild_id == ignored_id:
@@ -11774,6 +11830,7 @@ func _try_push_fenced_pokemon(cell: Vector2i, direction: Vector2i, require_fence
     var sprite := data.get("sprite") as Sprite2D
     if not is_instance_valid(sprite) or sprite.position.distance_to(_cell_center(cell)) > 1.5: return false
     data["cell"] = target
+    if not owned: _wild_cell_moved(wild_id, target)
     data["x"] = target.x
     data["y"] = target.y
     data["move_timer"] = 1.0
