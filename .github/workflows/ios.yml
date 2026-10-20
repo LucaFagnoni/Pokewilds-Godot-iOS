@@ -110,6 +110,11 @@ jobs:
           # Keep the ten newest builds.
           gh release list --limit 100 --json tagName --jq '.[].tagName' | grep '^ios-build-' | tail -n +11 \
             | while read -r old; do gh release delete "$old" --cleanup-tag --yes; done
+          # ios-latest always holds the newest IPA, so the README link never changes.
+          gh release view ios-latest >/dev/null 2>&1 || gh release create ios-latest --latest=false \
+            --target "$GITHUB_SHA" --title "PokeWilds iOS (latest)" --notes "Newest IPA."
+          gh release upload ios-latest build/ios/Pokewilds-unsigned.ipa --clobber
+          gh release edit ios-latest --latest=false --notes-file notes.md
 
   # Same engine profile on Linux (headless), run against the iOS pack: catches a
   # class or module the game needs but the profile dropped before it hits a phone.
