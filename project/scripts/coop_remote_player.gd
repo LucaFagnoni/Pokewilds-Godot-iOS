@@ -3,6 +3,12 @@ extends Node2D
 const Pokemon=preload("res://scripts/pokemon_data.gd")
 const MountLayers=preload("res://scripts/mount_layers.gd")
 const INTERPOLATION_MS:=100
+## coop_players.gd SEND_INTERVAL_MS, and a gap that means nothing was sent.
+const SEND_INTERVAL_MS:=50
+const HOLD_GAP_MS:=200
+
+static func _number(value:Variant)->bool:
+    return (value is int or value is float) and is_finite(float(value))
 class Rider extends Node2D:
     var sprite:Sprite2D
 var player:Rider
@@ -20,6 +26,8 @@ var _afk:Label
 var _in_battle:=false
 var _pose_cache:Dictionary={}
 var _night=preload("res://scripts/coop_night_visuals.gd").new()
+## What render_at last drew: [first, second, weight, local z, local y].
+var _drawn:Array=[null,null,-1.0,0,0.0]
 
 func configure(main:Node)->void:
     _main=main
@@ -56,6 +64,13 @@ func configure(main:Node)->void:
 func receive(snapshot:Dictionary,received_ms:int=-1)->void:
     if _main==null or not snapshot.get("parts") is Dictionary:return
     var now=Time.get_ticks_msec() if received_ms<0 else received_ms
+    # A player standing still sends nothing new (coop_players.gd). When they
+    # move again, the last pose is held until one send interval ago, as the
+    # steady stream used to, so the first step is not drawn early. "sent" is
+    # the sender's clock: a gap there is a pause, not a slow network.
+    if not _frames.is_empty() and _number(snapshot.get("sent")) and _number(_frames[-1].data.get("sent")) \
+            and float(snapshot.sent)-float(_frames[-1].data.sent)>HOLD_GAP_MS and now-int(_frames[-1].time)>SEND_INTERVAL_MS:
+        _frames.append({"time":now-SEND_INTERVAL_MS,"data":_frames[-1].data})
     _frames.append({"time":now,"data":snapshot.duplicate(true)})
     while _frames.size()>8:_frames.pop_front()
 
@@ -68,6 +83,16 @@ func render_at(time_ms:int)->void:
     var first:Dictionary=_frames[0]
     var second:Dictionary=_frames[1] if _frames.size()>1 else first
     var weight=clampf(float(time_ms-int(first.time))/maxi(1,int(second.time)-int(first.time)),0.0,1.0)
+    # Standing still, nothing below changes between packets: drawn again only
+    # when a packet, the blend or the local player's depth has moved on.
+    var mine=_main.world.player
+    if not (is_same(first,_drawn[0]) and is_same(second,_drawn[1]) and weight==_drawn[2] and mine.z_index==_drawn[3] and mine.sprite.global_position.y==_drawn[4]):
+        _drawn=[first,second,weight,mine.z_index,mine.sprite.global_position.y]
+        _draw_frames(first,second,weight)
+    _update_light(second.data)
+
+## Draws the blend `weight` of the way from packet `first` to `second`.
+func _draw_frames(first:Dictionary,second:Dictionary,weight:float)->void:
     var data:Dictionary=second.data
     var model=clampi(int(data.get("model",0)),0,_main.PLAYER_MODEL_WALK_TEXTURES.size()-1)
     var color=clampi(int(data.get("color",0)),0,_main.PLAYER_COLOR_VALUES.size()-1)
@@ -147,6 +172,8 @@ func render_at(time_ms:int)->void:
     var battle=bool(data.get("battle",false))
     if battle!=_in_battle:_in_battle=battle;_status.queue_redraw()
     _afk.visible=not battle and (bool(data.get("afk",false)) or bool(data.get("sleeping",false)))
+
+func _update_light(data:Dictionary)->void:
     var environment=_main.world.environment_system
     if is_instance_valid(environment):
         var flash=active_field_move in ["FLASH","POWER"]

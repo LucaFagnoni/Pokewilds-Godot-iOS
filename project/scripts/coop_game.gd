@@ -15,6 +15,7 @@ const Network=preload("res://scripts/coop_network.gd")
 const Lobby=preload("res://scripts/coop_lobby.gd")
 const Patch=preload("res://scripts/coop_patch.gd")
 const PrivateBox=preload("res://scripts/coop_private_box.gd")
+const WorldDelta=preload("res://scripts/coop_world_delta.gd")
 var main:Node
 var session:Node
 var visuals:Node
@@ -85,6 +86,8 @@ var clock_seconds:=0.0
 var clock_speed:=1.0
 var _clock_received:=0
 var _clock_sent:=0
+var _clock_sent_speed:=1.0
+const CLOCK_SEND_MS:=1000
 var _checkpoint_running:=false
 var pvp:Node
 var wild:Node
@@ -582,10 +585,20 @@ func _profile_shape_ok(profile:Variant)->bool:
     return profile.get("save") is Dictionary
 
 func _committed(commit:Dictionary)->void:
+    var deltas:Dictionary={}
     for peer in session.players:
         if peer==1:continue
         var actor=String(session.players[peer].actor)
         var visible=Commands.visible_result(commit,actor)
+        # A world record the player holds goes to them as what changed in it
+        # (coop_world_delta.gd), checked there against its fingerprint.
+        for change in visible.get("changes",[]):
+            var key:=String(change.get("key",""))
+            var old:Array=state.replaced.get(key,[])
+            if not change.get("after") is String or old.is_empty() or old[0]!=change.get("before") or not _shared_key(key,actor):continue
+            if not deltas.has(key):deltas[key]=WorldDelta.entry_delta(old[1],change.after)
+            if deltas[key]==null:continue
+            change.erase("after");change["delta"]=deltas[key];change["print"]=state.print_of(key)
         # A player's own record goes to them as what changed, not whole.
         var own_edits=commit.get("player_edits",{}).get("player/"+actor)
         if own_edits is Array:
@@ -599,8 +612,25 @@ func _committed(commit:Dictionary)->void:
     own["profile_base"]=state.print_of("player/"+session.actor,{})
     _apply_visible(own)
 
+## Guest: true until the host's records have arrived (joining, or after asking
+## for them again because a world change did not fit the copy here).
+var _awaiting_state:=true
+
 func _apply_visible(result:Dictionary)->void:
     if result.get("resync",false) and not hosting:session.send_host({"kind":"state_request"})
+    # World records sent as what changed in them, rebuilt on the copy held here.
+    # One that does not fit is left out and everything is asked for again;
+    # until that arrives (or the first one, while joining) such changes wait.
+    var kept:Array=[]
+    for change in result.get("changes",[]):
+        if change is Dictionary and change.has("delta") and not change.has("after"):
+            var rebuilt:=WorldDelta.apply_delta(shared_records.get(String(change.get("key",""))),change.delta)
+            if rebuilt.is_empty() or State.fingerprint(rebuilt)!=change.get("print"):
+                if not hosting and not _awaiting_state:_awaiting_state=true;session.send_host({"kind":"state_request"})
+                continue
+            change["after"]=rebuilt
+        kept.append(change)
+    if result.has("changes"):result["changes"]=kept
     # This player's own record arrives as edits to the copy held here.
     for change in result.get("changes",[]):
         if change is Dictionary and change.has("edits") and not change.has("after"):
@@ -697,7 +727,9 @@ func world_time(delta:float)->float:
     if hosting:return clock_seconds
     if _clock_received==0:return main.world.world_elapsed_seconds+delta
     var now:=Time.get_ticks_msec()
-    var target:=clock_seconds+minf(2.0,float(now-_clock_received)/1000.0)*clock_speed
+    # Updates come once a second (CLOCK_SEND_MS); the cap leaves a late one
+    # about the slack it had at four a second (two seconds, was 1.75).
+    var target:=clock_seconds+minf(3.0,float(now-_clock_received)/1000.0)*clock_speed
     if delta<=0.0:return _smooth_clock if _smooth_clock>=0.0 else target
     var step:=float(now-_smooth_at)/1000.0*clock_speed
     _smooth_at=now
@@ -729,8 +761,10 @@ func _process(delta:float)->void:
     var now=Time.get_ticks_msec()
     if hosting:
         clock_seconds+=delta
-        if now-_clock_sent>=250:
-            _clock_sent=now
+        # Guests run the clock on their own between updates (world_time), so
+        # once a second is enough; a change of speed goes out at once.
+        if now-_clock_sent>=CLOCK_SEND_MS or Engine.time_scale!=_clock_sent_speed:
+            _clock_sent=now;_clock_sent_speed=Engine.time_scale
             for peer in session.players:
                 if peer!=1:session.send_to(peer,{"kind":"world_clock","seconds":clock_seconds,"speed":Engine.time_scale})
     if hosting and now-_journal_checked>=20000 and not _checkpoint_running and not _request_busy and not _publishing and not interaction_ui.visible and not main.generating and not main.edge_travel_busy and not main.battle_active:
@@ -1187,6 +1221,7 @@ func _message(_peer:int,actor:String,packet:Dictionary)->void:
     if packet.get("kind")=="interaction_update" and packet.get("result") is Dictionary:
         interaction_ui.update(packet.result);return
     if packet.get("kind")=="state_snapshot" and packet.get("records") is Dictionary:
+        _awaiting_state=false
         events.results_dirty=true
         for key in shared_records.keys():
             if _shared_key(String(key),session.actor):shared_records.erase(key)

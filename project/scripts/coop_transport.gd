@@ -61,8 +61,21 @@ func receive_expired(state:Dictionary, now:int)->bool:
     var limit:=FIRST_CONTACT_MS if joining and not state.get("heard",false) else TIMEOUT_MS
     return now-int(state.seen)>limit and now>int(state.get("local_loading_until",0)) and now>int(state.get("remote_loading_until",0))
 
+## Traffic counters for benchmarks: null unless a test sets a Dictionary.
+## key -> [messages, bytes, microseconds spent encoding or decoding].
+static var stats=null
+
+static func count(key:String,bytes:int,started_usec:int)->void:
+    if stats==null:return
+    var entry:Array=stats.get(key,[0,0,0])
+    entry[0]+=1;entry[1]+=bytes;entry[2]+=Time.get_ticks_usec()-started_usec
+    stats[key]=entry
+
 func send(peer: int, message: Dictionary) -> Error:
-    return send_encoded(peer,JSON.stringify(message).to_utf8_buffer())
+    var started:=Time.get_ticks_usec()
+    var bytes:=JSON.stringify(message).to_utf8_buffer()
+    count("enc:"+String(message.get("kind","")),bytes.size(),started)
+    return send_encoded(peer,bytes)
 
 func send_encoded(peer:int, bytes:PackedByteArray)->Error:
     if not peers.has(peer): return ERR_DOES_NOT_EXIST
@@ -75,6 +88,8 @@ func send_encoded(peer:int, bytes:PackedByteArray)->Error:
     frame.append_array(bytes)
     state.tx.append(frame)
     state.queued += frame.size()
+    # Anything sent keeps the connection alive; keepalives fill silences only.
+    state.ping = Time.get_ticks_msec()
     return OK
 
 func _process(_delta:float)->void:
@@ -128,12 +143,14 @@ func _process(_delta:float)->void:
                 _drop(peer,"invalid_frame_size_"+str(length))
                 break
             if state.rx.size() < length + 4: break
+            var started := Time.get_ticks_usec()
             var decoded = JSON.parse_string(state.rx.slice(4, length + 4).get_string_from_utf8())
             state.rx = state.rx.slice(length + 4)
             read_count += 1
             if not decoded is Dictionary:
                 _drop(peer,"invalid_frame_json")
                 break
+            if stats != null: count("rx:"+String(decoded.get("kind","")), length + 4, started)
             if decoded.get("kind", "") != "keepalive": received.emit(peer, decoded)
         if not peers.has(peer): continue
         var remaining := FRAME_BUDGET

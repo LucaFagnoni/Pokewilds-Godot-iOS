@@ -106,6 +106,7 @@ func apply_results()->void:
         world.complete_battle_event(result)
     pending_results.clear()
 var _published_stamps:Dictionary={}
+var _whole_motion:=false
 
 func publish_motion()->void:
     var world=game.main.world;var patches:Array=[]
@@ -118,11 +119,18 @@ func publish_motion()->void:
         _published_stamps[game._area()+"/"+name]=stamp
         var before=records().get("world/"+game._area()+"/"+key,Delta.encode(null))
         var after=Delta.encode(world.event_progress.get(name,{}))
-        if after!=before:patches.append({"key":key,"before":game.state.fingerprint(before),"after":after})
+        if after==before:continue
+        var patch:Dictionary={"key":key,"before":game.state.fingerprint(before)}
+        # From a guest, only the Megas that changed (coop_world_delta.gd).
+        var delta:Variant=null if game.hosting or _whole_motion else Delta.entry_delta(before,after)
+        if delta==null:patch["after"]=after
+        else:patch["delta"]=delta;patch["print"]=game.state.fingerprint(after)
+        patches.append(patch)
     if patches.is_empty():return
     motion_busy=true
     var result:Dictionary=await game.command("event_motion",{"area":game._area(),"epoch":game.area_epoch,"patches":patches})
     motion_busy=false
+    _whole_motion=not result.get("ok",false)
     if not result.get("ok",false):_published_stamps.clear()
     if result.get("reason")=="save_failed":game.end_session("EVENT MOVEMENT COULD NOT BE SAVED.")
 func committed(changes:Array,actor:String,request_id:String)->void:
