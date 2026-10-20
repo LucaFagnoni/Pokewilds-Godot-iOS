@@ -165,6 +165,9 @@ func _flush_tide_budget():
     # stale and redrawn when it comes near (a block not drawn yet is drawn as
     # it is then anyway): nothing is spent on coasts nobody looks at.
     if lazy_blocks:
+        # Once the tide has finished queueing, as before: marking them as
+        # they came made every frame of the change look for stale blocks.
+        if pending_tide_far.is_empty() or Time.get_ticks_msec()-far_tide_queued_at<1500: return
         for cell in pending_tide_far:
             var block := Vector2i(cell.x >> 4, cell.y >> 4)
             if not built_blocks.has(block): continue
