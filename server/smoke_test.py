@@ -1,6 +1,10 @@
-"""Dedicated server smoke test: start a headless server, join it with a headless
-client (a wrong password first), walk into a new area the server has to make,
-and check that the client received the world and that the server saved it.
+"""Dedicated server smoke test, in three runs of a headless server on one world:
+1. no player IDs: another build and a wrong shared password are refused; a
+   client joins, walks into a new area the server has to make, and is saved;
+2. player IDs, open: no ID is refused, a first login makes an ID, a wrong
+   password is refused, the same ID on a second device gets the same character
+   back, and a device that played before IDs keeps its character;
+3. player IDs, closed: an unknown ID is refused until `account add` makes it.
 
     python server/smoke_test.py GODOT            (GODOT = editor binary, runs project/)
     python server/smoke_test.py PokeWilds.console.exe --exe
@@ -53,61 +57,99 @@ if "--exe" not in sys.argv:
     if "ADDRESS CHECK: 0 failed" not in check.stdout: print(check.stdout[-2000:], check.stderr[-2000:]); print("SMOKE FAIL: address check"); sys.exit(1)
     print("address check ok")
 
-server_data, client_data = os.path.join(work, "server"), os.path.join(work, "client")
-server = start("server", ["--server", "--port", port, "--world", "Smoke", "--size", "S", "--data", server_data, "--password", "smoke",
-                         "--no-upnp", "--area-size", "S"])
-try:
+server_data = os.path.join(work, "server")
+server = None
+
+
+def start_server(name, extra):
+    global server
+    server = start(name, ["--server", "--port", port, "--world", "Smoke", "--size", "S", "--data", server_data, "--no-upnp", "--area-size", "S"] + extra)
     started = time.time()
-    wait_for("server", server, "listening on TCP port " + port, 900)
-    print(f"server ready in {time.time() - started:.0f}s")
+    wait_for(name, server, "listening on TCP port " + port, 900)
+    print(f"{name} ready in {time.time() - started:.0f}s")
+    return name
 
-    # A game from another build is refused before anything else.
-    stranger = start("stranger", ["--join", "127.0.0.1:" + port, "--password", "smoke", "--data", os.path.join(work, "stranger")], build="smoke-b")
-    try: stranger.wait(300)
-    except subprocess.TimeoutExpired: stranger.kill(); fail("another build neither joined nor failed")
-    if "DIFFERENT GAME BUILD" not in text("stranger"): fail("another build was not refused")
-    print("another build refused")
 
-    # A wrong password is refused; the right one, carried by the server's challenge, gets in.
-    intruder = start("intruder", ["--join", "127.0.0.1:" + port, "--password", "wrong", "--data", os.path.join(work, "intruder")])
-    try: intruder.wait(300)
-    except subprocess.TimeoutExpired: intruder.kill(); fail("wrong password neither joined nor failed")
-    if "WRONG PASSWORD" not in text("intruder"): fail("wrong password was not refused")
-    print("wrong password refused")
-
-    # The client also walks into a new area, which the server must make for it.
-    client = start("client", ["--join", "127.0.0.1:" + port, "--password", "smoke", "--travel", "--quit-after-join", "--data", client_data])
-    try: client.wait(900)
-    except subprocess.TimeoutExpired: client.kill(); fail("client did not finish joining")
-    joined = re.search(r"CLIENT joined world (\w+)", text("client"))
-    if client.returncode != 0 or not joined: fail(f"client exit {client.returncode}, no join")
-    print(joined.group(0))
-    if "CLIENT travelled to area 1,0" not in text("client") or "SERVER made area 1,0" not in text("server"): fail("the server did not make the new area")
-    print("the server made the new area the client walked into")
-    wait_for("server", server, "SERVER join:", 30)
-
-    saves_before = text("server").count("SERVER world saved")
-    send(server, "save")
-    deadline = time.time() + 120
-    while text("server").count("SERVER world saved") == saves_before:
-        if time.time() > deadline or server.poll() is not None: fail("server did not save")
-        time.sleep(1)
-
-    # The saved world must hold the client's player record.
-    world = os.path.join(server_data, "online_worlds", joined.group(1), "world.json")
-    if not os.path.isfile(world): fail("no world.json for the joined world")
-    payload = json.load(open(world, encoding="utf-8"))["payload"]
-    token = re.search(r'token="(\w+)"', open(os.path.join(client_data, "coop_identity.cfg")).read()).group(1)
-    if "player/" + hashlib.sha256(token.encode()).hexdigest() not in payload: fail("client's player is not in the saved world")
-    print("server saved the world with the client's player in it")
-
+def stop_server(name):
+    saves = text(name).count("SERVER world saved")
     send(server, "stop")
     # Closing the input as the launcher does lets the console-reading thread end
     # (on Linux the process otherwise waits for it at exit).
     server.stdin.close()
     try: server.wait(120)
-    except subprocess.TimeoutExpired: fail("server did not stop")
-    if text("server").count("SERVER world saved") < saves_before + 2: fail("server did not save on stop")
-    print("SMOKE OK: server started, client joined, got the world and a server-made area, server saved and stopped")
+    except subprocess.TimeoutExpired: fail(f"{name} did not stop")
+    if text(name).count("SERVER world saved") <= saves: fail(f"{name} did not save on stop")
+
+
+def join(name, args, needle, build="smoke-a"):
+    """Runs a client to its end; its log must contain `needle`."""
+    client = start(name, ["--join", "127.0.0.1:" + port, "--data", os.path.join(work, "device-" + name.split("-")[0])] + args, build)
+    try: client.wait(900)
+    except subprocess.TimeoutExpired: client.kill(); fail(f"{name} neither joined nor failed")
+    if needle not in text(name): fail(f"{name}: expected {needle!r}")
+    return text(name)
+
+
+def actor_of(name):
+    found = re.search(r"CLIENT joined world (\w+) in area (\S+) .* as (\w+)", text(name))
+    if not found: fail(f"{name} did not join")
+    return found.groups()
+
+
+def device_actor(device):
+    token = re.search(r'token="(\w+)"', open(os.path.join(work, "device-" + device, "coop_identity.cfg")).read()).group(1)
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+try:
+    # --- 1: no player IDs, the shared password ---------------------------------
+    run = start_server("server1", ["--accounts", "off", "--password", "smoke"])
+    join("stranger", ["--password", "smoke"], "DIFFERENT GAME BUILD", build="smoke-b")
+    print("another build refused")
+    join("intruder", ["--password", "wrong"], "WRONG PASSWORD")
+    print("wrong shared password refused")
+    # The client also walks into a new area, which the server must make for it.
+    join("old", ["--password", "smoke", "--travel", "--quit-after-join"], "CLIENT travelled to area 1,0")
+    world_id = actor_of("old")[0]
+    if "SERVER made area 1,0" not in text(run): fail("the server did not make the new area")
+    print("client joined; the server made the new area it walked into")
+    stop_server(run)
+    world = os.path.join(server_data, "online_worlds", world_id, "world.json")
+    if "player/" + device_actor("old") not in json.load(open(world, encoding="utf-8"))["payload"]: fail("the client's player is not in the saved world")
+    print("server saved the world with the client's player in it")
+
+    # --- 2: player IDs, a first login makes the ID -----------------------------
+    run = start_server("server2", [])
+    join("noid", ["--quit-after-join"], "NEEDS A PLAYER ID")
+    print("a player without an ID refused")
+    join("phone", ["--id", "Alice", "--password", "secret-1", "--travel", "--quit-after-join"], "CLIENT travelled to area 1,0")
+    _, _, alice = actor_of("phone")
+    if "SERVER new player ID: alice" not in text(run): fail("the new ID was not registered")
+    print("first login made the ID alice")
+    join("tablet-wrong", ["--id", "alice", "--password", "secret-2"], "WRONG PLAYER ID OR PASSWORD")
+    print("wrong password for alice refused")
+    join("tablet", ["--id", "ALICE", "--password", "secret-1", "--quit-after-join"], "CLIENT joined world")
+    _, area, again = actor_of("tablet")
+    if again != alice or area != "1,0": fail(f"alice on a second device got {again} in {area}, not {alice} in 1,0")
+    print("alice on a second device got her character back, where she left it")
+    join("old-id", ["--id", "bob", "--password", "secret-3", "--quit-after-join"], "CLIENT joined world")
+    if actor_of("old-id")[2] != device_actor("old")[:12]: fail("a device that played before IDs did not keep its character")
+    print("a device that played before IDs kept its character as bob")
+    stop_server(run)
+    stored = open(os.path.join(server_data, "accounts.json"), encoding="utf-8").read()
+    accounts = json.loads(stored)["accounts"]
+    if set(accounts) != {"alice", "bob"} or "secret-1" in stored or not all(len(a["verifier"]) == 64 and a["salt"] for a in accounts.values()):
+        fail("accounts.json is not just salted hashes of alice and bob")
+    print("accounts.json holds salted hashes only")
+
+    # --- 3: closed: only IDs made on the server --------------------------------
+    run = start_server("server3", ["--accounts", "closed"])
+    join("carol-unknown", ["--id", "carol", "--password", "pass-4"], "UNKNOWN PLAYER ID")
+    send(server, "account add carol pass-4")
+    wait_for(run, server, "carol can now log in", 30)
+    join("carol", ["--id", "carol", "--password", "pass-4", "--quit-after-join"], "CLIENT joined world")
+    print("closed server: unknown ID refused, admitted after account add")
+    stop_server(run)
+    print("SMOKE OK: builds, shared password, server-made area, saves, and player IDs (open and closed) all behave")
 finally:
-    if server.poll() is None: server.kill()
+    if server is not None and server.poll() is None: server.kill()
