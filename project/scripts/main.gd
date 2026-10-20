@@ -7812,9 +7812,12 @@ func _refresh_battle_item_pocket_menu() -> void:
         item_pocket_list.position.y
         + float(battle_item_menu_index - page_start) * item_pitch
     )
-    if battle_item_menu_index < battle_item_menu_names.size():
-        item_pocket_description.text = ItemData.description(
-            battle_item_menu_names[battle_item_menu_index])
+    var selected_name := String(battle_item_menu_names[battle_item_menu_index])         if battle_item_menu_index < battle_item_menu_names.size() else ""
+    if selected_name != bag_notice_item: bag_notice = ""
+    if not bag_notice.is_empty():
+        item_pocket_description.text = bag_notice
+    elif not selected_name.is_empty():
+        item_pocket_description.text = ItemData.description(selected_name)
     else:
         item_pocket_description.text = ""
 
@@ -9220,9 +9223,20 @@ func _update_battle_field_visuals() -> void:
     battle_weather_overlay.color = color
     _update_battle_hud()
 
+## Set when a message arrives while the bag is open: shown in the bag's own
+## description box (the field dialogue box is hidden under the bag) until a
+## different item is selected.
+var bag_notice := ""
+var bag_notice_item := ""
+
 func _show_message(message: String) -> void:
     if trainer_tip_open:
         _close_trainer_tip()
+    if game_menu_open and item_pocket_menu.visible and not battle_active:
+        bag_notice = message
+        bag_notice_item = battle_item_menu_names[battle_item_menu_index]             if battle_item_menu_index < battle_item_menu_names.size() else ""
+        item_pocket_description.text = message
+        return
     # Active field moves must not paint control instructions across the bottom
     # dialogue area. Keep actual results/errors, but suppress selection/control
     # hints because the dedicated field/build UI already carries the state.
@@ -9377,6 +9391,7 @@ func _open_game_menu() -> void:
 
 func _close_game_menu() -> void:
     planting_bag_target = null
+    bag_notice = ""
     game_menu_open = false
     game_menu_detail_open = false
     pokemon_menu_open = false
