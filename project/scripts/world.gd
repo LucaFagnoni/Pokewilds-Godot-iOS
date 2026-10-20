@@ -803,8 +803,8 @@ func field_motion_completed(before: Vector2, after: Vector2, movement_direction:
     var stopped := before.distance_squared_to(after) < 0.0025 and movement_direction.length_squared() > 0.0001
     if not stopped and still_on_ice:
         _align_ice_slide(after_cell)
-    for index in range(player.get_slide_collision_count()):
-        if player.get_slide_collision(index).get_normal().dot(m3922_ice_slide_direction) < -0.5:
+    for normal in player.slide_normals:
+        if normal.dot(m3922_ice_slide_direction) < -0.5:
             stopped = true
     if stopped: ice_blocked_direction = m3922_ice_slide_direction
     if not still_on_ice or stopped:
