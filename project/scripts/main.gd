@@ -1044,9 +1044,9 @@ var item_pocket_context := ""
 var bag_action_ui: Control
 var safari_ui: Control
 var map_build_serial := 0
-var map_art_cache_key := ""
+var map_art_cache_key := []
 ## The cache key of map_art_cache without the discovered ground (fog).
-var map_art_cache_art_key := ""
+var map_art_cache_art_key := []
 var map_art_cache: Texture2D
 var map_building := false
 var planting_bag_target: Variant = null
@@ -5328,14 +5328,6 @@ func _start_game() -> void:
 
     if selected_mode == "LOAD":
         GameOptions.restore_game_options(load_data.get("options", {}),String(load_data.get("world_name",world_name)))
-    var gen3 := load("res://scripts/gen3_overhaul.gd")
-    if GameOptions.enabled("gen3_overhaul") != gen3.enabled:
-        if not await gen3.apply(GameOptions.enabled("gen3_overhaul"),get_tree()):
-            generation_panel.hide();setup_panel.show();generating=false
-            menu_status.text="OVERHAUL COULD NOT LOAD"
-            return
-        player_appearance_texture_cache.clear()
-        _apply_player_appearance()
 
     if seed_value == 0:
         seed_value = 81102
@@ -5613,12 +5605,6 @@ func _recolor_texture(
         return player_appearance_texture_cache[cache_key] as Texture2D
     # Imported textures can share their decoded Image. Work on a copy so one
     # chosen color never contaminates another model/color cache entry.
-    var overhaul := preload("res://scripts/gen3_overhaul.gd")
-    if overhaul.enabled and not overhaul.user_paths.has(base.resource_path):
-        if base.resource_path.begins_with("res://assets/source_exact/player/red/"):
-            source_color = Color8(248,112,88) if base.resource_path.ends_with("back.png") else Color8(192,56,56)
-        elif base.resource_path.begins_with("res://assets/source_exact/player/may-"):
-            source_color = Color8(197,65,65) if base.resource_path.ends_with("back.png") else Color8(185,54,54)
     var image := Image.new()
     image.copy_from(TexturePixels.of(base))
     for y in range(image.get_height()):
@@ -13145,7 +13131,7 @@ func _travel_adjacent_world(direction: Vector2i) -> void:
 
 func _invalidate_travel_maps() -> void:
     map_art_cache = null
-    map_art_cache_key = ""
+    map_art_cache_key = []
     m257_minimap_raster_key.clear()
     m3924_minimap_source_cache.clear()
     m3924_minimap_cache_world_id = 0
@@ -13194,6 +13180,36 @@ func _draw_world_view() -> void:
     for path in ["GroundLayer/ExactBaseTileStream", "DecorLayer/ExactUpperTileStream"]:
         var stream := world.get_node_or_null(path)
         if stream != null and stream.has_method("draw_view_async"): await stream.draw_view_async()
+    await _warm_world_shaders()
+
+## A canvas shader is compiled when it is first drawn: tens of ms each on a
+## phone, so the first frame showing a coast, the tide, a night light or a
+## swimming Pokemon stalled. Each one in the world is drawn once here, as a
+## pixel under the loading screen.
+func _warm_world_shaders() -> void:
+    if DisplayServer.get_name() == "headless": return
+    var materials := {}
+    for node in world.find_children("*", "CanvasItem", true, false):
+        var material: Material = (node as CanvasItem).material
+        if material != null: materials[material.shader if material is ShaderMaterial else material] = material
+    for path in ["GroundLayer/ExactBaseTileStream", "DecorLayer/ExactUpperTileStream"]:
+        # Animated tiles' shader: on TileSet tiles, not nodes.
+        var stream := world.get_node_or_null(path)
+        var shader = null if stream == null else stream.get("resident_shader")
+        if shader is Shader:
+            var material := ShaderMaterial.new()
+            material.shader = shader
+            materials[shader] = material
+    var warm := Node2D.new()
+    warm.position = world.player.position
+    for material in materials.values():
+        var dot := Node2D.new()
+        dot.material = material
+        dot.draw.connect(func(): dot.draw_rect(Rect2(0, 0, 1, 1), Color.WHITE))
+        warm.add_child(dot)
+    world.add_child(warm)
+    await get_tree().process_frame
+    warm.queue_free()
 
 func _warm_map_cache() -> void:
     if not is_instance_valid(waypoint_ui):
@@ -13269,126 +13285,3 @@ func _handle_swipe_menu(event: InputEvent) -> void:
     elif event.is_action_pressed("confirm") or change!=0:
         if row is CheckButton:row.button_pressed=not row.button_pressed
         elif event.is_action_pressed("confirm"):row.pressed.emit()
-
-var gen3_switch_busy := false
-
-func _gen3_snapshot() -> Dictionary:
-    _sync_pokedex_owned()
-    var player = world.player
-    var world_name = world_edit.text.strip_edges()
-    return {
-        "version": 2,
-        "world_seed": int(world.get("world_seed")),
-        "world_size": int(world.get("map_size_index")),
-        "world_name": world_name,
-        "player_name": player_model_name.text,
-        "player_name_custom": not custom_player_name.is_empty(),
-        "player_color": player_color_index,
-        "player_model": player_model_index,
-        "player_x": player.position.x,
-        "player_y": player.position.y,
-        "options": GameOptions.values.duplicate(),
-        "waypoints": map_waypoints.duplicate(true),
-        "pokedex": pokedex_progress.entries.duplicate(),
-        "pokedex_shiny": pokedex_progress.shiny_entries.duplicate(),
-        "caught_pokemon": caught_pokemon,
-        "pokemon_storage": pokemon_storage,
-        "preferred_storage_box": preferred_storage_box,
-        "inventory": inventory,
-        "source_key_items_initialized": true,
-        "egg_step_timer": egg_step_timer,
-        "friendship_step_timer": friendship_step_timer,
-        "next_party_ecology_id": next_party_ecology_id,
-        "adjacent_worlds": adjacent_worlds,
-        "world_grid_x": current_world_grid.x,
-        "world_grid_y": current_world_grid.y,
-        "crafting_state": world.get_crafting_save_state()
-    }
-
-
-func switch_gen3_overhaul(next: bool) -> bool:
-    if gen3_switch_busy or generating: return false
-    var overhaul := load("res://scripts/gen3_overhaul.gd")
-    if is_instance_valid(coop_game) and coop_game.active:
-        # Applying it in place rebuilds the whole world beside the one already
-        # loaded. In an online world that took the game to about 6 GB and
-        # Android closed it. Keep the choice and apply it on the next load,
-        # where the art is swapped before the world is built.
-        # The choice is compared with what is saved, not with what is showing:
-        # the art has not changed yet, so comparing with that made a second
-        # press do nothing and the option could not be turned back off.
-        if GameOptions.enabled("gen3_overhaul") == next: return true
-        return GameOptions.change("gen3_overhaul",next) == OK
-    if overhaul.enabled == next: return true
-    var previous: bool = overhaul.enabled
-    if GameOptions.change("gen3_overhaul",next) != OK: return false
-    gen3_switch_busy = true
-    var previous_process_mode := world.process_mode
-    world.process_mode = Node.PROCESS_MODE_DISABLED
-    var snapshot: Dictionary = _gen3_snapshot().duplicate(true)
-    var field_name := String(world.active_field_move)
-    var field_record: Dictionary = world.active_field_pokemon.duplicate(true)
-    var leader_position: Vector2 = world.player.position
-    var trainer_position: Vector2 = world.work_trainer_position
-    var trail: Array = world.work_trail.duplicate()
-    var facing: Vector2 = world.player.facing
-    var dig_state := {}
-    for key in ["dig_step_active","dig_step_target","dig_step_direction","dig_action_pending"]: dig_state[key] = world.get(key)
-    options_menu.hide()
-    generating = true
-    generation_panel.show()
-    generation_status.text = "APPLYING GEN3 OPTION...\nPLEASE WAIT..."
-    await get_tree().process_frame
-    var okay: bool = await overhaul.apply(next,get_tree())
-    var rebuilt := false
-    if okay:
-        player_appearance_texture_cache.clear()
-        battle_animation_cache.clear()
-        battle_sprite_alpha_cache.clear()
-        battle_sprite_frame_counts.clear()
-        m3924_minimap_texture_images.clear()
-        m3924_minimap_source_cache.clear()
-        built_map_art_cache.clear()
-        map_art_cache_key = ""
-        map_art_cache_context = ""
-        map_art_cache = null
-        rebuilt = true
-        await world.generate_world(int(snapshot.world_seed),int(snapshot.world_size),true)
-        okay = world.generation_error.is_empty()
-    if not okay:
-        GameOptions.change("gen3_overhaul",previous)
-        snapshot.options.gen3_overhaul = previous
-        if overhaul.enabled != previous:
-            await overhaul.apply(previous,get_tree())
-            await world.generate_world(int(snapshot.world_seed),int(snapshot.world_size),true)
-    if rebuilt and world.generation_error.is_empty():
-        world.set_meta("gen3_art_refresh",true)
-        await _restore_game_save(snapshot)
-        world.remove_meta("gen3_art_refresh")
-        if not field_name.is_empty() and not field_record.is_empty():
-            world.player.facing = facing
-            if field_name in ["CUT","BUILD","DIG","HEADBUTT","SMASH"]: world.player.position=trainer_position
-            if world.set_active_field_move(field_record,field_name):
-                world.player.position=leader_position
-                if field_name in ["CUT","BUILD","DIG","HEADBUTT","SMASH"]:
-                    world.work_trail.assign(trail)
-                    world.work_trainer_position=trainer_position
-                world._place_field_helper_live()
-                if field_name == "DIG":
-                    for key in dig_state: world.set(key,dig_state[key])
-        await _warm_map_cache()
-    world.process_mode = previous_process_mode
-    await _draw_world_view()
-    world.set_gameplay_enabled(false)
-    if is_instance_valid(world.environment_system):
-        for music_player in world.environment_system.music_players:
-            if music_player.playing:
-                music_player.play()
-    generating = false
-    gen3_switch_busy = false
-    generation_panel.hide()
-    options_menu.show()
-    options_menu.refresh()
-    _apply_game_options()
-    if not okay: _show_message("GEN3 OVERHAUL could not be applied. The previous option was restored.")
-    return okay

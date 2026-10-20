@@ -79,3 +79,8 @@ jobs:
           # Keep the five newest builds.
           gh release list --limit 100 --json tagName --jq '.[].tagName' | grep '^server-build-' | tail -n +6 \
             | while read -r old; do gh release delete "$old" --cleanup-tag --yes; done
+          # server-latest always holds the newest server zip, so the README link never changes.
+          gh release view server-latest >/dev/null 2>&1 || gh release create server-latest --latest=false \
+            --target "$GITHUB_SHA" --title "PokeWilds dedicated server (latest)" --notes "Newest server."
+          gh release upload server-latest PokeWilds-Server-win64.zip --clobber
+          gh release edit server-latest --latest=false --notes-file notes.md

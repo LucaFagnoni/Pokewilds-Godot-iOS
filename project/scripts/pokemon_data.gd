@@ -163,8 +163,6 @@ static func record_texture(record: Dictionary, kind: String = "overworld") -> Te
     return texture(String(record.get("species", record.get("name", ""))), kind, is_shiny(record))
 
 static func texture(species: String, kind: String = "overworld", shiny: bool = false) -> Texture2D:
-    var legendary := preload("res://scripts/gen3_legendary_art.gd").texture(species, kind, shiny)
-    if legendary != null: return legendary
     if shiny:
         return _shiny_texture(species, kind)
     var community := preload("res://scripts/divinakra_mega_art.gd").texture(species, kind)

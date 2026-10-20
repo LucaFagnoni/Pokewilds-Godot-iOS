@@ -51,7 +51,7 @@ func play(owner_main: Node, pokemon: Dictionary, ball_name: String, outcome: int
     var settle:=create_tween()
     settle.tween_property(ball,"position",Vector2(236,92),0.16)
     await settle.finished
-    var key:="capture_wiggle:"+ball_name+str(preload("res://scripts/gen3_overhaul.gd").enabled)
+    var key:="capture_wiggle:"+ball_name
     if not main.ball_mechanics.ball_textures.has(key):
         main.ball_mechanics.ball_textures[key]=ImageTexture.create_from_image(preload("res://scripts/ball_shell_colors.gd").recolor(TexturePixels.of(preload("res://assets/source_exact/global/pokeball_wiggleSheet1_color.png")),ball_name))
     var sheet:Texture2D=main.ball_mechanics.ball_textures[key]

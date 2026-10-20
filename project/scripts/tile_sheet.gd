@@ -17,8 +17,6 @@ const LARGEST := 256
 const KEEP_FRAMES := 120
 
 static var enabled := true
-## Goes up when tile art is swapped while the game runs (the Gen 3 pack).
-static var generation := 0
 ## Each: {"image", "texture", "tiles", "x", "y", "row", "dirty", "added"}.
 ## A page's 16 MB image is let go once no tile was added for KEEP_FRAMES
 ## (the graphics chip has the texture); a tile added later draws the page
@@ -35,12 +33,6 @@ static var sources: Dictionary = {}
 ## unusual kind of texture, or too large).
 static func place(texture: Texture2D, region: Rect2) -> Array:
     if not enabled or texture == null: return []
-    # Nearly every tile image is wrapped by the Gen 3 pack's switch, whether or
-    # not the pack is on. The picture it currently shows is what goes on the
-    # sheet; when the pack is switched, `generation` changes and the tile
-    # layers place every tile again.
-    if texture.has_method("use") and texture.get("current") is Texture2D:
-        texture = texture.get("current")
     if not (texture is CompressedTexture2D or texture is ImageTexture or texture is PortableCompressedTexture2D): return []
     var size := Vector2i(region.size)
     if size.x <= 0 or size.y <= 0 or size.x > LARGEST or size.y > LARGEST: return []

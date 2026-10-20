@@ -573,7 +573,7 @@ func present_capture(sprite: Sprite2D, center: Vector2, ball: String, outcome: i
         if not await capture_pause(1,serial) or not is_instance_valid(sprite): return false
         sprite.scale = held_scale*(1.0-(step+1)/9.0)
     sprite.hide()
-    var key = "capture_wiggle:"+ball+str(preload("res://scripts/gen3_overhaul.gd").enabled)
+    var key = "capture_wiggle:"+ball
     if not ball_textures.has(key):
         ball_textures[key] = ImageTexture.create_from_image(preload("res://scripts/ball_shell_colors.gd").recolor(TexturePixels.of(preload("res://assets/source_exact/global/pokeball_wiggleSheet1_color.png")),ball))
     var sheet: Texture2D = ball_textures[key]

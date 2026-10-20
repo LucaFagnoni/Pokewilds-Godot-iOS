@@ -229,3 +229,99 @@ static func capture(main:Node)->Dictionary:
         result.shadow={"x":world.fly_shadow.global_position.x,"y":world.fly_shadow.global_position.y,"z":world.fly_shadow.z_index}
     result["night"]=preload("res://scripts/coop_night_visuals.gd").capture(world)
     return result
+
+## player_visual on the wire (coop_transport.gd): bytes instead of JSON, about
+## half the size. Each group of keys below is a 32-bit mask of the keys present,
+## then their values in this order: a type byte (0 false, 1 true, 2 float32,
+## 3 UTF-8 text under 256 bytes) and the value. A packet that does not fit (any
+## other key or type, a number a float32 does not hold exactly) goes as JSON.
+## Read back, numbers are floats as JSON gave them, and the packet still goes
+## through coop_players.valid_packet before use.
+const WIRE_TAG:=1
+const WIRE_MAX_BYTES:=16384
+const WIRE_TOP:=["area","layer","population_scope","battle","afk","cell_x","cell_y","body_x","body_y","helper_slot","field_level","party_level","t","actor"]
+const WIRE_VISUAL:=["model","color","running","move","fx","fy","helper_species","helper_shiny","helper_form","follower_species","follower_shiny","follower_form","pose","pose_frame","sleeping","thrown_species","thrown_shiny","thrown_form"]
+const WIRE_PARTS:=["player","helper","follower","rest","thrown"]
+const WIRE_PART:=["x","y","z","frame","hframes","vframes","flip_h","centered","ox","oy","s"]
+const WIRE_SHADOW:=["x","y","z"]
+const WIRE_NIGHT:=["id","texture","x","y","z","visible","centered","flip_h","hframes","vframes","frame","region","rx","ry","rw","rh"]
+
+## The packet as bytes, or empty when it has to go as JSON.
+static func pack(packet:Dictionary)->PackedByteArray:
+    var visual=packet.get("visual")
+    if packet.get("kind")!="player_visual" or not visual is Dictionary or not visual.get("parts") is Dictionary or not visual.get("shadow") is Dictionary \
+            or not visual.get("night") is Array or visual.night.size()>64:return PackedByteArray()
+    var out:=PackedByteArray([WIRE_TAG])
+    if not (_pack(out,packet,WIRE_TOP,["kind","visual"]) and _pack(out,visual,WIRE_VISUAL,["parts","shadow","night"]) \
+            and _pack(out,visual.parts,WIRE_PARTS,[],WIRE_PART) and _pack(out,visual.shadow,WIRE_SHADOW)):return PackedByteArray()
+    out.append(visual.night.size())
+    for entry in visual.night:
+        if not entry is Dictionary or not _pack(out,entry,WIRE_NIGHT):return PackedByteArray()
+    return out if out.size()<=WIRE_MAX_BYTES else PackedByteArray()
+
+static func _pack(out:PackedByteArray,data:Dictionary,keys:Array,skip:Array=[],inner:Array=[])->bool:
+    var mask:=0
+    for key in data:
+        var index:=keys.find(key)
+        if index>=0:mask|=1<<index
+        elif not key in skip:return false
+    out.resize(out.size()+4);out.encode_u32(out.size()-4,mask)
+    for key in keys:
+        if not data.has(key):continue
+        var value=data[key]
+        if not inner.is_empty():
+            if not value is Dictionary or not _pack(out,value,inner):return false
+        elif value is bool:out.append(1 if value else 0)
+        elif (value is int or value is float) and is_finite(float(value)):
+            out.append(2);out.resize(out.size()+4);out.encode_float(out.size()-4,value)
+            if out.decode_float(out.size()-4)!=float(value):return false
+        elif value is String and value.to_utf8_buffer().size()<256:
+            var text:PackedByteArray=value.to_utf8_buffer()
+            out.append(3);out.append(text.size());out.append_array(text)
+        else:return false
+    return true
+
+## The packet pack() made, or null for anything malformed.
+static func unpack(bytes:PackedByteArray)->Variant:
+    if bytes.is_empty() or bytes.size()>WIRE_MAX_BYTES or bytes[0]!=WIRE_TAG:return null
+    var at:=[1]
+    var packet=_unpack(bytes,at,WIRE_TOP)
+    var visual=_unpack(bytes,at,WIRE_VISUAL) if packet!=null else null
+    var parts=_unpack(bytes,at,WIRE_PARTS,WIRE_PART) if visual!=null else null
+    var shadow=_unpack(bytes,at,WIRE_SHADOW) if parts!=null else null
+    if shadow==null or int(at[0])>=bytes.size() or bytes[at[0]]>64:return null
+    var night:Array=[]
+    var count:int=bytes[at[0]];at[0]+=1
+    for _entry in count:
+        var entry=_unpack(bytes,at,WIRE_NIGHT)
+        if entry==null:return null
+        night.append(entry)
+    if int(at[0])!=bytes.size():return null
+    visual["parts"]=parts;visual["shadow"]=shadow;visual["night"]=night
+    packet["kind"]="player_visual";packet["visual"]=visual
+    return packet
+
+static func _unpack(bytes:PackedByteArray,at:Array,keys:Array,inner:Array=[])->Variant:
+    var i:int=at[0]
+    if i+4>bytes.size():return null
+    var mask:=bytes.decode_u32(i);i+=4
+    if mask>>keys.size()!=0:return null
+    var data:={}
+    for index in keys.size():
+        if mask&(1<<index)==0:continue
+        if not inner.is_empty():
+            at[0]=i
+            var value=_unpack(bytes,at,inner)
+            if value==null:return null
+            data[keys[index]]=value;i=at[0]
+            continue
+        if i>=bytes.size():return null
+        var type:=bytes[i];i+=1
+        if type<=1:data[keys[index]]=type==1
+        elif type==2 and i+4<=bytes.size():data[keys[index]]=bytes.decode_float(i);i+=4
+        elif type==3 and i<bytes.size() and i+1+bytes[i]<=bytes.size():
+            var length:=bytes[i]
+            data[keys[index]]=bytes.slice(i+1,i+1+length).get_string_from_utf8();i+=1+length
+        else:return null
+    at[0]=i
+    return data

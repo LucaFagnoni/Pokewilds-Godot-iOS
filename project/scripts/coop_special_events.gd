@@ -107,6 +107,8 @@ func apply_results()->void:
     pending_results.clear()
 var _published_stamps:Dictionary={}
 var _whole_motion:=false
+## Delta.encode_map's memo for each of KEYS.
+var _packed:Dictionary={}
 
 func publish_motion()->void:
     var world=game.main.world;var patches:Array=[]
@@ -117,10 +119,12 @@ func publish_motion()->void:
         var stamp:int=hash(world.event_progress.get(name,{}))
         if _published_stamps.get(game._area()+"/"+name)==stamp:continue
         _published_stamps[game._area()+"/"+name]=stamp
-        var before=records().get("world/"+game._area()+"/"+key,Delta.encode(null))
-        var after=Delta.encode(world.event_progress.get(name,{}))
+        var stored:String="world/"+game._area()+"/"+key
+        var before=records().get(stored,Delta.encode(null))
+        var after=Delta.encode_map(world.event_progress.get(name,{}),_packed.get_or_add(name,{}))
         if after==before:continue
-        var patch:Dictionary={"key":key,"before":game.state.fingerprint(before)}
+        # The host has the stored record's fingerprint already worked out.
+        var patch:Dictionary={"key":key,"before":game.state.print_of(stored,Delta.encode(null)) if game.hosting else game.state.fingerprint(before)}
         # From a guest, only the Megas that changed (coop_world_delta.gd).
         var delta:Variant=null if game.hosting or _whole_motion else Delta.entry_delta(before,after)
         if delta==null:patch["after"]=after

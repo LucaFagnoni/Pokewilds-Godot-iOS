@@ -5,7 +5,7 @@ static var PATH := "user://game.ini"
 const LEGACY_PATH := "user://game_options.cfg"
 const Files = preload("res://scripts/game_files.gd")
 static var settings_error := ""
-const DEFAULTS := {"music":100,"sound":100,"world_sound":100,"cries":100,"footsteps":100,"radial":true,"zoom":true,"minimap":true,"diagonal":true,"auto_run":false,"battle_animations":true,"held_emotes":true,"shiny_sparkles":true,"map_waypoint":true,"weather_events":true,"dark_mode":false,"circle_lights":false,"lofi_music":false,"hd_emotes":false,"gen3_overhaul":false,"ball_mechanics":true,"haptics":true,"fps_counter":false,"text_speed":0,"battery_saver":1,"frame":0,"button_layout":0,"game_speed":1.0}
+const DEFAULTS := {"music":100,"sound":100,"world_sound":100,"cries":100,"footsteps":100,"radial":true,"zoom":true,"minimap":true,"diagonal":true,"auto_run":false,"battle_animations":true,"held_emotes":true,"shiny_sparkles":true,"map_waypoint":true,"weather_events":true,"dark_mode":false,"circle_lights":false,"lofi_music":false,"hd_emotes":false,"ball_mechanics":true,"haptics":true,"fps_counter":false,"text_speed":0,"battery_saver":1,"frame":0,"button_layout":0,"game_speed":1.0}
 const GAME_SPEEDS := [1.0, 1.5, 2.0, 3.0, 4.0]
 
 static func _valid_type(key: String, value: Variant) -> bool:

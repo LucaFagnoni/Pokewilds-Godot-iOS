@@ -377,7 +377,6 @@ var environment_system: WorldEnvironmentSystem
 var tide_initialized := false
 var low_tide_active := false
 var tide_target_low := false
-var tide_transition_tiles: Array[SourceTile] = []
 var tide_band_cursor := 0
 var tide_transition_bands: Array = []
 var tide_topology_bands: Array = []
@@ -576,7 +575,6 @@ func generate_world(
     tide_initialized = false
     low_tide_active = false
     tide_target_low = false
-    tide_transition_tiles.clear()
     tide_transition_bands.clear()
     tide_topology_bands.clear()
     tide_transition_band_index = 0
@@ -922,11 +920,15 @@ func _generate_exact_live_world(
     collision_stream.configure(exact_world.tiles, player, TILE, true)
     SourceTile.resident_changed_cells.clear()
     await _build_source_interiors(collision_body)
-    _register_exact_exterior_interactables()
-    var source_pokemon_records := exact_world.pokemon_cell_records()
-    await _spawn_exact_source_pokemon(source_pokemon_records, true)
-    await _spawn_extra_biome_pokemon(source_pokemon_records, true)
-    _spawn_exact_burrowed_pokemon(exact_world.burrowed_cell_records())
+    await _register_exact_exterior_interactables()
+    # A saved world's Pokemon come from its save (restore_crafting_save_state),
+    # which replaced these anyway: ~1.3 s of spawning thrown away on every load.
+    # A save without them is given this same population there.
+    if not prefer_saved_cache:
+        var source_pokemon_records := exact_world.pokemon_cell_records()
+        await _spawn_exact_source_pokemon(source_pokemon_records, true)
+        await _spawn_extra_biome_pokemon(source_pokemon_records, true)
+        _spawn_exact_burrowed_pokemon(exact_world.burrowed_cell_records())
     _discover_around(spawn_cell, DISCOVERY_RADIUS)
 
     player.visible = true
@@ -942,7 +944,7 @@ func _generate_exact_live_world(
         preload("res://scripts/biome_megas.gd").install(self)
     # Prepare the coast topology before gameplay: the first full-world scan
     # must not block movement or the first focus return after loading.
-    _update_tide_state(false, 0.0)
+    await _update_tide_state(false, 0.0, true)
     generated = true
     gameplay_enabled = true
     generation_progress.emit(1.0, "Exact source world ready!")
@@ -971,12 +973,27 @@ func _register_exact_exterior_interactables() -> void:
                     layer_index, source_cell.x, source_cell.y
                 ]
     var store: WorldTileStore = exact_world.tiles
+    var door_ids := {store.string_ids.get("cave1_door1", -1): true, store.string_ids.get("pkmnmansion_ext_door", -1): true}
+    # Of the upper names only these do anything below: a cursor for every
+    # tree and rock on the map made this ~200 ms of a load, in one frame.
+    var upper_kinds := {}
+    for upper in ["odd_keystone2", "pokedoll1", "pokedoll1_banette", "pokedoll1_mimikyu", "gravestone2", "pkmnmansion_ext_locked", "pkmnmansion_ext_door"]:
+        if store.string_ids.has(upper): upper_kinds[store.string_ids[upper]] = true
     var item_ids := store.has_item_ids
     var upper_ids := store.upper_ids
-    var door_ids := {store.string_ids.get("cave1_door1", -1): true, store.string_ids.get("pkmnmansion_ext_door", -1): true}
-    for index in store.flags.size():
-        if not (item_ids[index] != 0 or upper_ids[index] != 0 or door_ids.has(store.name_ids[index])) \
-                or not store.flag(index, WorldTileStore.PRESENT):
+    var name_ids := store.name_ids
+    var flags := store.flags
+    var deadline := Time.get_ticks_usec() + 13000
+    for index in flags.size():
+        if (index & 4095) == 0 and Time.get_ticks_usec() >= deadline:
+            await get_tree().process_frame
+            deadline = Time.get_ticks_usec() + 13000
+            item_ids = store.has_item_ids
+            upper_ids = store.upper_ids
+            name_ids = store.name_ids
+            flags = store.flags
+        if not (item_ids[index] != 0 or upper_kinds.has(upper_ids[index]) or door_ids.has(name_ids[index])) \
+                or not flags[index] & WorldTileStore.PRESENT:
             continue
         var tile := store.cursor(index)
         var cell := SourceWorldData.pixel_to_cell(tile.position)
@@ -1183,6 +1200,10 @@ func _spawn_extra_biome_pokemon(_records: Array[Dictionary], spread: bool = fals
                 # both the terrain and the encounter species list intact.
                 for radius in range(1, 17):
                     if partner_id >= 0: break
+                    # A search that finds nothing took ~220 ms: a ring per slice.
+                    if spread and Time.get_ticks_usec() >= spawn_deadline:
+                        await get_tree().process_frame
+                        spawn_deadline = Time.get_ticks_usec() + 13000
                     for y in range(-radius, radius + 1):
                         if partner_id >= 0: break
                         for x in range(-radius, radius + 1):
@@ -4433,15 +4454,22 @@ func _exact_tile_is_large_tree(cell: Vector2i) -> bool:
 func _repair_orphaned_large_trees() -> void:
     if exact_world == null:
         return
-    for index in exact_world.tiles.with_name(["tree_large1_noSprite"]):
-        var tile: SourceTile = exact_world.tiles.proxy(index)
+    # Anchors are read from the store's arrays: a proxy for each of the
+    # thousands of cells made this ~220 ms of every load.
+    var store: WorldTileStore = exact_world.tiles
+    var names := store.name_ids
+    var tree: int = store.string_ids.get("tree_large1", -1)
+    for index in store.with_name(["tree_large1_noSprite"]):
         var rooted := false
         for offset in [Vector2i(-16, 0), Vector2i(0, -16), Vector2i(-16, -16)]:
-            var anchor: SourceTile = exact_world.tiles.tile(tile.position + offset)
-            if anchor != null and anchor.name == "tree_large1":
+            var key: Vector2i = store.key_of(index) + offset
+            var at := store.index_of(key)
+            var anchor: SourceTile = null if at >= 0 else store.tile(key)
+            if (at >= 0 and names[at] == tree) or (anchor != null and anchor.name == "tree_large1"):
                 rooted = true
                 break
         if not rooted:
+            var tile: SourceTile = store.proxy(index)
             tile.color = true
             tile.set_names("bush1", "")
 
@@ -6785,16 +6813,14 @@ func _refresh_record_habitat(
     # Build the seven-by-seven habitat window once. The old implementation
     # rebuilt the same strings once per required type and then again for
     # shelter, multiplying work across hundreds of exact-world Pokemon.
-    var nearby_names: Array[String] = []
+    var nearby_names := PackedStringArray()
     var fence_count := 0
     var roof_count := 0
     for y in range(cell.y - PokemonEcology.HABITAT_RADIUS, cell.y + PokemonEcology.HABITAT_RADIUS + 1):
         for x in range(cell.x - PokemonEcology.HABITAT_RADIUS, cell.x + PokemonEcology.HABITAT_RADIUS + 1):
             var habitat_cell := Vector2i(x, y)
-            var names := ""
-            if ecology_name_cache.has(habitat_cell):
-                names = String(ecology_name_cache[habitat_cell])
-            else:
+            var names = ecology_name_cache.get(habitat_cell)
+            if names == null:
                 names = _ecology_names_at(habitat_cell)
                 ecology_name_cache[habitat_cell] = names
             nearby_names.append(names)
@@ -6802,20 +6828,27 @@ func _refresh_record_habitat(
                 fence_count += 1
             elif "roof" in names:
                 roof_count += 1
+    # No habitat option holds a space, so one is in the joined window exactly
+    # when it is in one of the cells' names. The species' groups (decoded
+    # from the packed species data) are kept in the same cache by name.
+    var window := " ".join(nearby_names)
+    var habitat = ecology_name_cache.get(species)
+    if habitat == null:
+        var groups := []
+        for raw_group in PokemonEcology.habitat_groups(species):
+            groups.append([String(raw_group), String(raw_group).to_lower().split("|")])
+        habitat = [groups, PokemonEcology.requires_night(species)]
+        ecology_name_cache[species] = habitat
     var missing: Array[String] = []
-    for raw_group in PokemonEcology.habitat_groups(species):
-        var group := String(raw_group)
+    for group in habitat[0]:
         var satisfied := false
-        for names in nearby_names:
-            for raw_option in group.to_lower().split("|"):
-                if String(raw_option) in names:
-                    satisfied = true
-                    break
-            if satisfied:
+        for option in group[1]:
+            if option in window:
+                satisfied = true
                 break
         if not satisfied:
-            missing.append(group)
-    if PokemonEcology.requires_night(species) and not _is_night_time():
+            missing.append(group[0])
+    if habitat[1] and not _is_night_time():
         missing.append("night")
     data["missing_habitats"] = missing
     data["in_habitat"] = missing.is_empty()
@@ -6940,7 +6973,7 @@ func _ecology_names_at(cell: Vector2i) -> String:
             names.append("gravestone")
     if landmarks.has(cell):
         names.append(String((landmarks[cell] as Dictionary).get("type", "")).to_lower())
-    if bool(terrain_changes.get("ice:%s" % _cell_key(cell), false)):
+    if not terrain_changes.is_empty() and bool(terrain_changes.get("ice:%d,%d" % [cell.x, cell.y], false)):
         names.append("snow")
     return " ".join(names)
 
@@ -6952,7 +6985,7 @@ func _update_ecology(delta: float) -> void:
     ecology_accumulator = fmod(
         ecology_accumulator, PokemonEcology.HABITAT_CHECK_SECONDS
     )
-    _refresh_ecology_relationships()
+    var active_wild := _refresh_ecology_relationships()
     _release_old_eggs()
 
     for raw_cell in deployed_pokemon.keys():
@@ -6974,18 +7007,12 @@ func _update_ecology(delta: float) -> void:
         data = _advance_breeding_clock(data, ecology_delta)
         deployed_pokemon[cell] = data
 
-    var active_center := _player_cell()
-    for raw_id in wild_pokemon.keys():
-        if not wild_pokemon.has(raw_id):
-            continue
-        var data: Dictionary = wild_pokemon[raw_id]
-        var wild_cell: Vector2i = data.get("cell", Vector2i.ZERO)
-        if (
-                not bool(data.get("burrowed", false))
-                and _wild_ecology_is_active(wild_cell, active_center)
-            ):
-            data = _advance_breeding_clock(data, ecology_delta, true)
-        wild_pokemon[raw_id] = data
+    # The wild Pokemon in play are the ones the relationship pass just took
+    # (not burrowed, near the player or a habitat); nothing since has moved
+    # one, and each clock is its own record's. Scanning every wild Pokemon in
+    # the world again for them was a fifth of this pass.
+    for data in active_wild:
+        _advance_breeding_clock(data, ecology_delta, true)
 
 func _advance_breeding_clock(
         data: Dictionary, delta: float, allow_wild_crowding: bool = false
@@ -7012,8 +7039,10 @@ func _advance_breeding_clock(
         )
     return data
 
-func _refresh_ecology_relationships() -> void:
+## Returns the wild records it covered, in wild_pokemon order.
+func _refresh_ecology_relationships() -> Array[Dictionary]:
     var records: Array[Dictionary] = []
+    var active_wild: Array[Dictionary] = []
     # Habitat windows heavily overlap. Cache each cell's ecology string for this
     # refresh so the 1.6-second relationship pass does not repeatedly resolve
     # the same tile/biome dozens of times and hitch while the player is running.
@@ -7025,13 +7054,22 @@ func _refresh_ecology_relationships() -> void:
             "data": deployed_pokemon[cell]
         })
     var active_center := _player_cell()
-    for raw_id in wild_pokemon.keys():
+    # With no habitats out, only the player's square counts: most of the
+    # world's wild Pokemon are settled by these two comparisons.
+    var player_only := deployed_pokemon.is_empty()
+    for raw_id in wild_pokemon:
         var wild_data: Dictionary = wild_pokemon[raw_id]
         if bool(wild_data.get("burrowed", false)):
             continue
         var wild_cell: Vector2i = wild_data.get("cell", Vector2i.ZERO)
+        if player_only and (
+                absi(wild_cell.x - active_center.x) > ECOLOGY_ACTIVE_RADIUS
+                or absi(wild_cell.y - active_center.y) > ECOLOGY_ACTIVE_RADIUS
+            ):
+            continue
         if not _wild_ecology_is_active(wild_cell, active_center):
             continue
+        active_wild.append(wild_data)
         records.append({
             "kind": "wild", "key": raw_id,
             "cell": wild_cell,
@@ -7200,6 +7238,7 @@ func _refresh_ecology_relationships() -> void:
         descriptor["data"] = data
         records[index] = descriptor
         _store_ecology_descriptor(descriptor)
+    return active_wild
 
 func _wild_ecology_is_active(
         cell: Vector2i, active_center: Vector2i
@@ -7212,7 +7251,7 @@ func _wild_ecology_is_active(
     # Player-owned habitat populations keep their nearby wild interactions
     # even while the player is elsewhere; unrelated offscreen wild Pokemon do
     # not need per-frame behavior or relationship scans.
-    for raw_cell in deployed_pokemon.keys():
+    for raw_cell in deployed_pokemon:
         var deployed_cell := Vector2i(raw_cell)
         if (
                 absi(cell.x - deployed_cell.x) <= PokemonEcology.HABITAT_RADIUS
@@ -7458,21 +7497,31 @@ func _ecology_record_by_id(ecology_id: String) -> Dictionary:
     for data in deployed_pokemon.values():
         if String((data as Dictionary).get("ecology_id", "")) == ecology_id:
             return data as Dictionary
-    for data in wild_pokemon.values():
-        if String((data as Dictionary).get("ecology_id", "")) == ecology_id:
-            return data as Dictionary
-    return {}
+    return _wild_ecology_record(ecology_id)
 
 func _ecology_cell_by_id(ecology_id: String) -> Vector2i:
     for raw_cell in deployed_pokemon.keys():
         var data: Dictionary = deployed_pokemon[raw_cell]
         if String(data.get("ecology_id", "")) == ecology_id:
             return Vector2i(raw_cell)
-    for data in wild_pokemon.values():
-        var record := data as Dictionary
-        if String(record.get("ecology_id", "")) == ecology_id:
-            return Vector2i(record.get("cell", Vector2i.ZERO))
+    var record := _wild_ecology_record(ecology_id)
+    if not record.is_empty():
+        return Vector2i(record.get("cell", Vector2i.ZERO))
     return Vector2i(-2147483648, -2147483648)
+
+## The wild record with this ecology id, {} if none. _add_wild_pokemon names
+## each one "wild:<its key>" (one per key), so that key is looked at first:
+## scanning every wild Pokemon in the world for a mate was most of the time a
+## wandering step took.
+func _wild_ecology_record(ecology_id: String) -> Dictionary:
+    if ecology_id.begins_with("wild:"):
+        var record = wild_pokemon.get(int(ecology_id.substr(5)))
+        if record != null and String(record.get("ecology_id", "")) == ecology_id:
+            return record
+    for data in wild_pokemon.values():
+        if String((data as Dictionary).get("ecology_id", "")) == ecology_id:
+            return data as Dictionary
+    return {}
 
 func _paired_wander_direction(
         data: Dictionary, origin: Vector2i, fallback: Vector2i
@@ -7731,6 +7780,8 @@ func _serializable_ecology_record(data: Dictionary, cell: Vector2i) -> Dictionar
 
 func restore_crafting_save_state(state: Dictionary) -> void:
     if state.is_empty():
+        # Loading spawns no Pokemon before this (_generate_exact_live_world).
+        await _ensure_overworld_pokemon_population()
         return
     var prior_gameplay := gameplay_enabled
     gameplay_enabled = false
@@ -7928,12 +7979,14 @@ func restore_crafting_save_state(state: Dictionary) -> void:
             var cell := Vector2i(int(entry.get("x", -1)), int(entry.get("y", -1)))
             _restore_deployed_pokemon(entry, cell)
 
+    var wild_restored := false
     if state.has("wild_pokemon"):
         var saved_wild = state.get("wild_pokemon", [])
         # Early port saves wrote an empty array here, which erased every
         # source-generated overworld Pokemon on load. Preserve the freshly
         # reconstructed source population for those saves.
         if typeof(saved_wild) == TYPE_ARRAY and (not saved_wild.is_empty() or bool(state.get("coop_authoritative_population", false))):
+            wild_restored = true
             _clear_wild_pokemon()
             for raw in saved_wild:
                 if Time.get_ticks_usec() >= restore_deadline:
@@ -7954,8 +8007,10 @@ func restore_crafting_save_state(state: Dictionary) -> void:
                     entry.get("source_record", {}) as Dictionary,
                     entry
                 )
-    if not bool(state.get("coop_authoritative_population", false)):
-        _ensure_overworld_pokemon_population()
+    # Without saved Pokemon a load gets the world's own population here: none
+    # is spawned before a load.
+    if not bool(state.get("coop_authoritative_population", false)) or not wild_restored:
+        await _ensure_overworld_pokemon_population()
 
     if state.has("wild_eggs"):
         _clear_wild_eggs()
@@ -8009,8 +8064,7 @@ func restore_crafting_save_state(state: Dictionary) -> void:
             source_plant_farms.erase(_cell_key(cell))
         if not repaired_roof_cells.is_empty():
             _refresh_exact_streams()
-    if not has_meta("gen3_art_refresh"):
-        await _refresh_daily_events(true)
+    await _refresh_daily_events(true)
     SourceForestBoss.install(self)
     await preload("res://scripts/biome_megas.gd").prepare_load(self)
     preload("res://scripts/biome_megas.gd").install(self)
@@ -8146,8 +8200,8 @@ func _ensure_overworld_pokemon_population() -> void:
         return
     if exact_world_mode and exact_world != null:
         var source_records := exact_world.pokemon_cell_records()
-        _spawn_exact_source_pokemon(source_records)
-        _spawn_extra_biome_pokemon(source_records)
+        await _spawn_exact_source_pokemon(source_records, true)
+        await _spawn_extra_biome_pokemon(source_records, true)
         _spawn_exact_burrowed_pokemon(exact_world.burrowed_cell_records())
         return
     _spawn_wild_pokemon()
@@ -10734,8 +10788,8 @@ func _redraw_exact_tide_streams(changed_cells: Array = []) -> void:
     if is_instance_valid(reflection_layer):
         reflection_layer.queue_redraw()
 
-func _build_tide_transition_bands(lowering: bool) -> Array:
-    tide_transition_tiles.clear()
+## spread: the first build takes three frames (a load's: ~9, 14 and 21 ms here).
+func _build_tide_transition_bands(lowering: bool, spread := false) -> Array:
     if not tide_topology_bands.is_empty():
         # Retain the cached cell lists. Resolve and validate cells as each small
         # portion changes, rather than rescanning every beach on one frame.
@@ -10745,12 +10799,34 @@ func _build_tide_transition_bands(lowering: bool) -> Array:
             if not tide_topology_bands[at].is_empty(): ordered.append(tide_topology_bands[at])
         return ordered
 
-    var tidal_cells: Dictionary = {}
-    var changing_cells: Dictionary = {}
+    # The first build reads the tile store's arrays: a proxy and dictionaries
+    # keyed by cell for every tidal cell made this one step ~280 ms of a load.
+    var store: WorldTileStore = exact_world.tiles
+    var width := store.width
+    # Per store index: 1 beach tide cell, 2 joined to its component, 3 with a
+    # distance from the ocean.
+    var state := PackedByteArray()
+    state.resize(store.flags.size())
+    var beach_cells := PackedInt32Array()
+    var changing := {}
     var restored_non_beach_tide := false
     var restored_ground_cells: Array[Vector2i] = []
-    for index in exact_world.tiles.with_name_containing("_tidal"):
-        var tile: SourceTile = exact_world.tiles.proxy(index)
+    var names := store.name_ids
+    var biomes := store.biome_ids
+    var routes := store.route_ids
+    var flags := store.flags
+    # _is_beach_tidal_tile reads only these four fields: settled once per kind.
+    var beach_kinds := {}
+    for index: int in store.with_name_containing("_tidal"):
+        var kind := Vector4i(names[index], biomes[index], routes[index], flags[index] & WorldTileStore.WATER)
+        if not beach_kinds.has(kind): beach_kinds[kind] = _is_beach_tidal_tile(store.cursor(index))
+        if beach_kinds[kind]:
+            state[index] = 1
+            beach_cells.append(index)
+            var tile_name := store.strings[names[index]]
+            if (lowering and "_tidalwater" in tile_name) or (not lowering and "_tidaloff" in tile_name):
+                changing[index] = true
+            continue
         # *_tidaloff is runtime-only; the 0.8.11 generator emits water-state
         # tidal identities. Older port builds could incorrectly include untagged
         # cells in the ocean tide. sand4_tidal* is specifically the generated
@@ -10758,34 +10834,25 @@ func _build_tide_transition_bands(lowering: bool) -> Array:
         # and must become the nearby native ground (this removes the pale inland
         # squares). sand3_tidal* is also used by legitimate mountain/wooded-lake
         # shore systems, so a stale dry sand3 cell is restored to water instead.
-        var tile_name_lower := tile.name.to_lower()
-        var is_beach_tide := _is_beach_tidal_tile(tile)
-        var cell: Vector2i = SourceWorldData.pixel_to_cell(tile.position)
-        if not is_beach_tide and "sand4_tidal" in tile_name_lower:
+        var tile_name_lower := store.strings[names[index]].to_lower()
+        var cell := Vector2i(index % width, index / width) + store.origin
+        if "sand4_tidal" in tile_name_lower:
             var native_ground := _nearest_native_ground_name(cell)
             if not native_ground.is_empty():
+                var tile := store.proxy(index)
                 tile.set_names(native_ground, tile.name_upper)
                 restored_ground_cells.append(cell)
                 restored_non_beach_tide = true
             continue
-        if not is_beach_tide and "_tidaloff" in tile_name_lower:
+        if "_tidaloff" in tile_name_lower:
+            var tile := store.proxy(index)
             tile.set_names(tile.name.replace("_tidaloff", "_tidalwater"), tile.name_upper)
             restored_non_beach_tide = true
-            continue
-        if not is_beach_tide:
-            continue
-        tidal_cells[cell] = tile
-        var needs_change: bool = (
-            (lowering and "_tidalwater" in tile.name)
-            or (not lowering and "_tidaloff" in tile.name)
-        )
-        if needs_change:
-            changing_cells[cell] = tile
-            tide_transition_tiles.append(tile)
     if not restored_ground_cells.is_empty():
         _recoastify_exact_cells(restored_ground_cells)
     if restored_non_beach_tide:
         _redraw_exact_tide_streams()
+    if spread: await get_tree().process_frame
 
     # The source footage shows every tidal beach beginning its transition at
     # the same time, while each individual beach still advances as a coherent
@@ -10795,61 +10862,80 @@ func _build_tide_transition_bands(lowering: bool) -> Array:
     # the water movement around the player.
     # Connected beach water must stay edge-connected while the tide moves.
     # Cardinal propagation prevents diagonal checkerboard islands.
-    var offsets: Array[Vector2i] = [
-        Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN
-    ]
     var phase_bands: Array = []
     var topology_bands: Array = []
     for _phase_index in range(TIDE_TRANSITION_STEPS):
         phase_bands.append([])
         topology_bands.append([])
     var cleanup_cells: Array[Vector2i] = []
+    # The store as the cleanup above left it.
+    names = store.name_ids
+    biomes = store.biome_ids
+    routes = store.route_ids
+    flags = store.flags
+    var last := flags.size() - 1
+    var distances := PackedInt32Array()
+    distances.resize(flags.size())
 
-    var unvisited: Dictionary = {}
-    for raw_cell in tidal_cells.keys():
-        unvisited[raw_cell] = true
+    for start_index: int in beach_cells:
+        if state[start_index] != 1:
+            continue
+        # Cells join in the order left, right, up, down, as they always did:
+        # band order follows it.
+        var component := PackedInt32Array([start_index])
+        state[start_index] = 2
+        var component_at := 0
+        while component_at < component.size():
+            var index := component[component_at]
+            component_at += 1
+            var x := index % width
+            if x > 0 and state[index - 1] == 1:
+                state[index - 1] = 2
+                component.append(index - 1)
+            if x < width - 1 and state[index + 1] == 1:
+                state[index + 1] = 2
+                component.append(index + 1)
+            if index >= width and state[index - width] == 1:
+                state[index - width] = 2
+                component.append(index - width)
+            if index + width <= last and state[index + width] == 1:
+                state[index + width] = 2
+                component.append(index + width)
 
-    while not unvisited.is_empty():
-        var remaining: Array = unvisited.keys()
-        var start_cell: Vector2i = Vector2i(remaining[0])
-        var component: Array[Vector2i] = []
-        var component_queue: Array[Vector2i] = [start_cell]
-        var component_lookup: Dictionary = {}
-        unvisited.erase(start_cell)
-        component_lookup[start_cell] = true
-
-        var component_index: int = 0
-        while component_index < component_queue.size():
-            var component_cell: Vector2i = component_queue[component_index]
-            component_index += 1
-            component.append(component_cell)
-            for offset in offsets:
-                var neighbor_cell: Vector2i = component_cell + offset
-                if not tidal_cells.has(neighbor_cell) or component_lookup.has(neighbor_cell):
-                    continue
-                component_lookup[neighbor_cell] = true
-                unvisited.erase(neighbor_cell)
-                component_queue.append(neighbor_cell)
-
-        var distances: Dictionary = {}
-        var distance_queue: Array[Vector2i] = []
-        for component_cell in component:
-            if _tide_cell_adjoins_permanent_water(component_cell):
-                distances[component_cell] = 0
-                distance_queue.append(component_cell)
+        # Tide fronts advance from true shoreline contact: a cardinal
+        # neighbour that is water but not beach tide
+        # (_tide_cell_adjoins_permanent_water, which border cells still use).
+        var distance_queue := PackedInt32Array()
+        for index: int in component:
+            var x := index % width
+            var adjoins := false
+            if x == 0 or x == width - 1 or index < width or index + width > last:
+                adjoins = _tide_cell_adjoins_permanent_water(Vector2i(x, index / width) + store.origin)
+            else:
+                for neighbor: int in [index - 1, index + 1, index - width, index + width]:
+                    if flags[neighbor] & (WorldTileStore.PRESENT | WorldTileStore.WATER) != (WorldTileStore.PRESENT | WorldTileStore.WATER):
+                        continue
+                    var kind := Vector4i(names[neighbor], biomes[neighbor], routes[neighbor], WorldTileStore.WATER)
+                    if not beach_kinds.has(kind): beach_kinds[kind] = _is_beach_tidal_tile(store.cursor(neighbor))
+                    if not beach_kinds[kind]:
+                        adjoins = true
+                        break
+            if adjoins:
+                state[index] = 3
+                distances[index] = 0
+                distance_queue.append(index)
         if distance_queue.is_empty():
             # A tidal beach must be cardinally connected to permanent source
             # water. A stale disconnected *_tidaloff cell is still rendered as
             # pale beach sand, which produced the white checkerboard patches seen
             # inland. Remove the entire orphan tidal component by restoring a
             # nearby native non-tidal ground identity instead of merely drying it.
-            for component_cell in component:
-                var orphan_tile: SourceTile = tidal_cells.get(component_cell) as SourceTile
-                if orphan_tile == null:
-                    continue
+            for index: int in component:
+                var component_cell := Vector2i(index % width, index / width) + store.origin
                 var native_ground := _nearest_native_ground_name(component_cell)
                 if native_ground.is_empty():
                     continue
+                var orphan_tile := store.proxy(index)
                 orphan_tile.set_names(native_ground, orphan_tile.name_upper)
                 cleanup_cells.append(component_cell)
             continue
@@ -10857,36 +10943,39 @@ func _build_tide_transition_bands(lowering: bool) -> Array:
         var distance_index: int = 0
         var max_distance: int = 0
         while distance_index < distance_queue.size():
-            var distance_cell: Vector2i = distance_queue[distance_index]
+            var index := distance_queue[distance_index]
             distance_index += 1
-            var next_distance: int = int(distances[distance_cell]) + 1
-            for offset in offsets:
-                var neighbor_cell: Vector2i = distance_cell + offset
-                if not component_lookup.has(neighbor_cell) or distances.has(neighbor_cell):
+            var next_distance: int = distances[index] + 1
+            var x := index % width
+            for neighbor: int in [index - 1 if x > 0 else -1, index + 1 if x < width - 1 else -1, index - width, index + width]:
+                if neighbor < 0 or neighbor > last or state[neighbor] != 2:
                     continue
-                distances[neighbor_cell] = next_distance
+                state[neighbor] = 3
+                distances[neighbor] = next_distance
                 max_distance = maxi(max_distance, next_distance)
-                distance_queue.append(neighbor_cell)
+                distance_queue.append(neighbor)
 
-        for component_cell in component:
-            var distance: int = int(distances.get(component_cell, 0))
+        for index: int in component:
             var normalized: float = (
                 0.0 if max_distance <= 0
-                else float(distance) / float(max_distance)
+                else float(distances[index]) / float(max_distance)
             )
             var incoming_band_index: int = clampi(
                 roundi(normalized * float(TIDE_TRANSITION_STEPS - 1)),
                 0, TIDE_TRANSITION_STEPS - 1
             )
+            var component_cell := Vector2i(index % width, index / width) + store.origin
             (topology_bands[incoming_band_index] as Array).append(component_cell)
-            if not changing_cells.has(component_cell):
+            if not changing.has(index):
                 continue
             var band_index := (
                 TIDE_TRANSITION_STEPS - 1 - incoming_band_index
                 if lowering else incoming_band_index
             )
-            (phase_bands[band_index] as Array).append(changing_cells[component_cell])
+            # Cells: _apply_tide_band resolves each as it changes.
+            (phase_bands[band_index] as Array).append(component_cell)
 
+    if spread: await get_tree().process_frame
     if not cleanup_cells.is_empty():
         _recoastify_exact_cells(cleanup_cells)
         _redraw_exact_tide_streams()
@@ -10920,7 +11009,7 @@ func _apply_tide_band(band: Array, lowering: bool) -> Array[Vector2i]:
         _redraw_exact_tide_streams(changed_cells)
     return changed_cells
 
-func _update_tide_state(force: bool = false, delta: float = 0.0) -> void:
+func _update_tide_state(force: bool = false, delta: float = 0.0, spread := false) -> void:
     if not exact_world_mode or exact_world == null:
         tide_initialized = true
         low_tide_active = false
@@ -10934,13 +11023,7 @@ func _update_tide_state(force: bool = false, delta: float = 0.0) -> void:
     var was_initialized: bool = tide_initialized
     if force or not tide_initialized or desired_low_tide != tide_target_low:
         tide_target_low = desired_low_tide
-        tide_transition_bands = _build_tide_transition_bands(desired_low_tide)
-        # Defensive invariant: transition tiles are beach-tidal only. The band
-        # builder already enforces this; keep the guard here too so no future
-        # caller can accidentally expand tide physics beyond the beach.
-        for tile in tide_transition_tiles:
-            if not _is_beach_tidal_tile(tile):
-                continue
+        tide_transition_bands = await _build_tide_transition_bands(desired_low_tide, spread)
         tide_transition_band_index = 0
         tide_band_cursor = 0
         tide_transition_accumulator = frontier_seconds if force else 0.0
@@ -11041,6 +11124,12 @@ func _recoastify_exact_cells(changed_cells: Array[Vector2i]) -> void:
         for y in range(changed.y - 1, changed.y + 2):
             for x in range(changed.x - 1, changed.x + 2):
                 targets[Vector2i(x, y)] = true
+    # Neighbours are read from the tile store's arrays: a proxy for each of
+    # them cost ~0.5 ms per changed cell (48 ms for a load's tide cleanup).
+    var store: WorldTileStore = exact_world.tiles
+    var flags := store.flags
+    var name_ids := store.name_ids
+    var water6: int = store.string_ids.get("water6", -1)
     for raw_cell in targets.keys():
         var cell := raw_cell as Vector2i
         var tile := exact_world.tile_at(cell)
@@ -11059,15 +11148,23 @@ func _recoastify_exact_cells(changed_cells: Array[Vector2i]) -> void:
         var ocean := ""
         var tidal := ""
         for index in range(offsets.size()):
-            var neighbor := exact_world.tile_at(cell + offsets[index])
-            if neighbor == null or neighbor.name == "water6":
-                continue
+            var at := store.index_of((cell + offsets[index]) * TILE)
+            var bits := 0
+            if at >= 0:
+                if name_ids[at] == water6:
+                    continue
+                bits = flags[at]
+            else:
+                var neighbor := exact_world.tile_at(cell + offsets[index])
+                if neighbor == null or neighbor.name == "water6":
+                    continue
+                bits = (WorldTileStore.TIDAL if neighbor.is_tidal else 0) | (WorldTileStore.WATER if neighbor.is_water else 0)
             var direction := String(names[index])
-            if not tile.is_tidal and neighbor.is_tidal:
+            if not tile.is_tidal and bits & WorldTileStore.TIDAL:
                 if not _shore_diagonal_already_present(tidal, direction):
                     tidal += "[" + direction + "]"
                 continue
-            if not neighbor.is_water or \
+            if not bits & WorldTileStore.WATER or \
                     _shore_diagonal_already_present(ocean, direction):
                 continue
             ocean += "[" + direction + "]"
