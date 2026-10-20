@@ -71,23 +71,29 @@ static func encode(value:Variant)->String:
     return Marshalls.raw_to_base64(var_to_bytes(canonical(value)))
 
 ## encode() of a map most of whose entries stay the same from one call to the
-## next: the roaming Megas, 16 KB, where putting all of it in order took 0.3 ms
-## each time one moved. An entry is put in order again only when its bytes have
-## changed. `memo` is the caller's own, one per map.
+## next: the roaming Megas, 16 KB, which took 0.3 ms to pack each time one of
+## them moved. Each entry is packed again only when its bytes have changed; the
+## map's bytes are its header and the entries' bytes in key order, as
+## var_to_bytes writes them. `memo` is the caller's own, one per map.
 static func encode_map(value:Variant,memo:Dictionary)->String:
     if not value is Dictionary:return encode(value)
-    var ordered:Dictionary={}
-    for key in _sorted_keys(value):
+    var keys:=_sorted_keys(value)
+    var bytes:=var_to_bytes({})
+    bytes.encode_u32(4,keys.size())
+    for key in keys:
         var raw:=var_to_bytes(value[key])
         var held:Array=memo.get(key,[])
         if held.is_empty() or held[0]!=raw:
-            held=[raw,canonical(value[key])];memo[key]=held
-        ordered[key]=held[1]
+            held=[raw,var_to_bytes(key)+var_to_bytes(canonical(value[key]))];memo[key]=held
+        bytes.append_array(held[1])
     for key in memo.keys():
         if not value.has(key):memo.erase(key)
-    var result:=Marshalls.raw_to_base64(var_to_bytes(ordered))
+    var result:=Marshalls.raw_to_base64(bytes)
     _made.append(result)
     if _made.size()>4:_made.pop_front()
+    # Whoever publishes it reads it straight back (decode_shared): from the
+    # bytes at hand, not the text.
+    _remember(result,bytes_to_var(bytes))
     return result
 
 ## The last few encode_map() results: already in encode()'s form, so checking
@@ -109,9 +115,13 @@ static var _decoded_order:Array=[]
 static func decode_shared(value:String)->Variant:
     if _decoded.has(value):return _decoded[value]
     var result=decode(value)
-    _decoded[value]=result;_decoded_order.append(value)
-    if _decoded_order.size()>SHARED_DECODES:_decoded.erase(_decoded_order.pop_front())
+    _remember(value,result)
     return result
+
+static func _remember(value:String,decoded:Variant)->void:
+    if _decoded.has(value):return
+    _decoded[value]=decoded;_decoded_order.append(value)
+    if _decoded_order.size()>SHARED_DECODES:_decoded.erase(_decoded_order.pop_front())
 
 ## A change to a record that is a dictionary, as only the entries that differ:
 ## {"set":[[path,value],...],"drop":[path,...]}. A path is the list of keys down
