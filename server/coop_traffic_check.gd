@@ -99,6 +99,10 @@ func _visuals() -> void:
 	var crowd := packet.duplicate(true)
 	for i in 64: crowd.visual.night.append(crowd.visual.night[0].merged({"id": str(i)}, true))
 	check(Remote.pack(crowd).is_empty(), "more than 64 night sprites go as JSON")
+	var wordy := packet.duplicate(true)
+	wordy.visual.night.clear()
+	for i in 64: wordy.visual.night.append(packet.visual.night[0].merged({"id": str(i), "texture": "t".repeat(250)}, true))
+	check(Remote.pack(wordy).is_empty(), "a packet over the size limit goes as JSON")
 	# Random bytes after the tag: refused or read as some packet, never a crash.
 	var noise := RandomNumberGenerator.new(); noise.seed = 7
 	for i in 300:

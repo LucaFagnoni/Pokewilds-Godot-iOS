@@ -257,7 +257,7 @@ static func pack(packet:Dictionary)->PackedByteArray:
     out.append(visual.night.size())
     for entry in visual.night:
         if not entry is Dictionary or not _pack(out,entry,WIRE_NIGHT):return PackedByteArray()
-    return out
+    return out if out.size()<=WIRE_MAX_BYTES else PackedByteArray()
 
 static func _pack(out:PackedByteArray,data:Dictionary,keys:Array,skip:Array=[],inner:Array=[])->bool:
     var mask:=0
