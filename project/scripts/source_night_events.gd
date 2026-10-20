@@ -79,10 +79,14 @@ func tick() -> void:
             world.environment_system.set_source_night_alert("night1_chase1")
         return
     if not world.gameplay_enabled and not sleeping(): return
-    var context: Dictionary = world.environment_context()
-    if world.bed_rest_active:
-        var exterior_route = world.exact_world.route_at(world.active_built_house_door)
-        context = {"route_type": "graveyard" if exterior_route != null and "graveyard" in exterior_route.name.to_lower() else ""}
+    # Only a sleeper's surroundings are read below: awake, skip building the
+    # context (route and biome lookups) on all 60 ticks a second.
+    var context: Dictionary = {}
+    if sleeping():
+        context = world.environment_context()
+        if world.bed_rest_active:
+            var exterior_route = world.exact_world.route_at(world.active_built_house_door)
+            context = {"route_type": "graveyard" if exterior_route != null and "graveyard" in exterior_route.name.to_lower() else ""}
     if String(context.get("route_type","")) == "graveyard" and sleeping():
         if gengar_countdown == 0:
             gengar_countdown = -1
