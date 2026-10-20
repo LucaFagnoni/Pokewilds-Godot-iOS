@@ -6,6 +6,12 @@ extends RefCounted
 # Dictionary/HashMap iteration order or screenshots.
 static func build(result: Dictionary, spawn_seed: int) -> Dictionary:
     var tiles: Dictionary = result.get("tiles", {})
+    var ocean: Array = result.get("ocean_tiles", [])
+    if not ocean.is_empty():
+        # A fresh world's ocean cells are ints (SourceIslandGenerator.ocean_tiles).
+        tiles = tiles.duplicate()
+        for key in tiles:
+            if tiles[key] is int: tiles[key] = (ocean[tiles[key]] as SourceTile).copy_at(key)
     var surface_tiles := _sorted_tiles_by_position(tiles)
     var hash_context := HashingContext.new()
     hash_context.start(HashingContext.HASH_SHA256)

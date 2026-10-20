@@ -84,8 +84,10 @@ static func with_bounds(bounds: Rect2i) -> WorldTileStore:
     store.revisions.resize(cells)
     return store
 
-## Packs a Dictionary of SourceTile objects keyed by pixel position.
-static func from_dictionary(tiles: Dictionary) -> WorldTileStore:
+## Packs a Dictionary of SourceTile objects keyed by pixel position. An int
+## value stands for `templates[value]` at its key (a fresh world's ocean: see
+## SourceIslandGenerator.ocean_tiles).
+static func from_dictionary(tiles: Dictionary, templates: Array = []) -> WorldTileStore:
     var first := true
     var bounds := Rect2i()
     for key in tiles:
@@ -98,7 +100,8 @@ static func from_dictionary(tiles: Dictionary) -> WorldTileStore:
     if not first: bounds.size += Vector2i.ONE
     var store := with_bounds(bounds)
     for key in tiles:
-        var tile := tiles[key] as SourceTile
+        var raw: Variant = tiles[key]
+        var tile := (templates[raw] if raw is int else raw) as SourceTile
         if tile != null: store._write(Vector2i(key), tile)
     return store
 
