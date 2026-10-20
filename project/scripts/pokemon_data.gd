@@ -84,6 +84,10 @@ static func _ensure_loaded() -> void:
             if implemented.has(String(learned.get("move", ""))):
                 supported.append(learned)
         entry["learnset"] = supported
+    # Species are only read through info(), which hands out a fresh copy. Kept
+    # packed, the ~1000 species take about 3.5 MB instead of about 28 MB.
+    var species: Dictionary = _database.get("species", {})
+    for key in species.keys(): species[key] = var_to_bytes(species[key])
 
 static func all_species() -> Array[String]:
     _ensure_loaded()
@@ -117,7 +121,8 @@ static func info(species: String) -> Dictionary:
     var all: Dictionary = _database.get("species", {})
     var key := species.to_lower().replace(" ", "_")
     key = canonical_species(key)
-    var entry := (all.get(key, {}) as Dictionary).duplicate(true)
+    var packed: Variant = all.get(key)
+    var entry: Dictionary = bytes_to_var(packed) if packed is PackedByteArray else {}
     if key=="nidoran_m":entry["name"]="NIDORAN♂"
     elif key=="nidoran_f":entry["name"]="NIDORAN♀"
     # Make the source sheet visible to population eligibility as well as the
