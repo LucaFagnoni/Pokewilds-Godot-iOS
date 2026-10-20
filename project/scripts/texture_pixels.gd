@@ -31,9 +31,6 @@ static func of(texture: Texture2D) -> Image:
         if rect.size.x == 0: rect.size.x = whole.get_width()
         if rect.size.y == 0: rect.size.y = whole.get_height()
         return whole.get_region(rect)
-    elif texture.get_script() != null and texture.get("current") is Texture2D:
-        # The Gen 3 pack's switch shows another texture.
-        return of(texture.get("current"))
     return texture.get_image()
 
 ## An ImageTexture that keeps `image` (do not change it afterwards) for of().
