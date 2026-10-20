@@ -3,6 +3,8 @@ const TexturePixels = preload("res://scripts/texture_pixels.gd")
 
 const SourceMineRuntime = preload("res://scripts/source_mine_runtime.gd")
 const InteriorTileBatch = preload("res://scripts/interior_tile_batch.gd")
+## The player's collision box (BODY_OFFSET, BODY_HALF).
+const PLAYER_BODY = preload("res://scripts/player_controller.gd")
 var source_mine_pokemon: Dictionary = {}
 
 signal generation_progress(value: float, message: String)
@@ -11354,7 +11356,7 @@ func constrain_player_motion(before: Vector2, after: Vector2) -> Vector2:
             exact_world == null or active_area_id != "OVERWORLD":
         return after
     if before_cell == after_cell:
-        return after
+        return _keep_box_off_closed_ledges(before, after)
     var movement := after - before
     # The direction is the sign of the step, however small. Rounding the step
     # to a whole pixel first turned a short one (a light push on the stick, or
@@ -11410,7 +11412,68 @@ func constrain_player_motion(before: Vector2, after: Vector2) -> Vector2:
         if (strict_brown_drop_edge or active_field_move != "RIDE") and \
                 permitted != Vector2i.ZERO and direction != permitted:
             return before
-    return after
+    return _keep_box_off_closed_ledges(before, after)
+
+## A ledge row is open ground for the player's box, so that it can be entered
+## from the side it is jumped from, and the rule above only checks the box's
+## centre: from any other side the box (and the sprite) went half onto the
+## edge and stopped there, which looked like being stuck in a rock wall. Push
+## the box back to the edge of such a cell, as a wall would. RIDE keeps its own
+## rule for edges.
+func _keep_box_off_closed_ledges(before: Vector2, at: Vector2) -> Vector2:
+    if active_field_move == "RIDE":
+        return at
+    var store = exact_world.tiles
+    var half: Vector2 = PLAYER_BODY.BODY_HALF
+    var offset: Vector2 = PLAYER_BODY.BODY_OFFSET
+    var centre := Vector2i(floori(at.x / TILE), floori(at.y / TILE))
+    var box := Rect2(at + offset - half, half * 2.0)
+    var first := Vector2i(floori(box.position.x / TILE), floori(box.position.y / TILE))
+    var last := Vector2i(floori((box.end.x - 0.001) / TILE), floori((box.end.y - 0.001) / TILE))
+    var result := at
+    for y in range(first.y, last.y + 1):
+        for x in range(first.x, last.x + 1):
+            var cell := Vector2i(x, y)
+            var side := cell - centre
+            if side == Vector2i.ZERO:
+                continue
+            if store is WorldTileStore:
+                var index: int = store.index_of(cell * TILE)
+                if index < 0 or store.flags[index] & WorldTileStore.LEDGE == 0:
+                    continue
+            var tile: SourceTile = exact_world.tile_at(cell)
+            if tile == null or not tile.is_ledge:
+                continue
+            # Open only from the side it is jumped from. A corner cell is the
+            # next cell of the same edge when the player comes from that side
+            # (heading for the jump), and closed otherwise.
+            var permitted := _permitted_ledge_direction(tile)
+            var diagonal := side.x != 0 and side.y != 0
+            if not diagonal and side == permitted:
+                continue
+            if diagonal and ((permitted.x != 0 and side.x == permitted.x) or (permitted.y != 0 and side.y == permitted.y)):
+                continue
+            # Back out the way it came in. Off a corner, sideways to the way the
+            # player is going (so the corner never stops it), or along the
+            # shallower overlap when it goes exactly diagonally.
+            var along_x := side.y == 0
+            if diagonal:
+                var moved := at - before
+                if absf(moved.y) > absf(moved.x) + 0.01:
+                    along_x = true
+                elif absf(moved.x) > absf(moved.y) + 0.01:
+                    along_x = false
+                else:
+                    var into_x: float = box.end.x - x * TILE if side.x > 0 else (x + 1) * TILE - box.position.x
+                    var into_y: float = box.end.y - y * TILE if side.y > 0 else (y + 1) * TILE - box.position.y
+                    along_x = into_x < into_y
+            if along_x:
+                result.x = minf(result.x, x * TILE - half.x - offset.x) if side.x > 0 \
+                    else maxf(result.x, (x + 1) * TILE + half.x - offset.x)
+            else:
+                result.y = minf(result.y, y * TILE - half.y - offset.y) if side.y > 0 \
+                    else maxf(result.y, (y + 1) * TILE + half.y - offset.y)
+    return result
 
 func _player_cell() -> Vector2i:
     return Vector2i(
