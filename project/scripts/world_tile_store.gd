@@ -261,8 +261,15 @@ func with_upper(names: Array) -> Array:
         if string_ids.has(text): ids[string_ids[text]] = true
     var result := []
     if ids.is_empty(): return result
-    for index in upper_ids.size():
-        if ids.has(upper_ids[index]) and flags[index] & PRESENT: result.append(proxy(index))
+    # Native searches per name: a script loop over every cell took ~20 ms on a size M map.
+    var found := PackedInt32Array()
+    for id in ids:
+        var index := upper_ids.find(id)
+        while index >= 0:
+            if flags[index] & PRESENT: found.append(index)
+            index = upper_ids.find(id, index + 1)
+    found.sort()
+    for index in found: result.append(proxy(index))
     return result
 
 ## Indices of the cells whose name is one of `names`, in order.

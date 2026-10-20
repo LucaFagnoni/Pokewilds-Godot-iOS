@@ -1073,10 +1073,15 @@ func breakout_poof(sprite: Sprite2D, serial: int) -> bool:
     projectile.hide()
     return true
 
-func silhouette(color: Color) -> ShaderMaterial:
-    var shader=Shader.new()
-    shader.code="shader_type canvas_item; uniform vec4 tint : source_color = vec4(1.0); void fragment(){ COLOR=vec4(tint.rgb,texture(TEXTURE,UV).a*COLOR.a); }"
+static var silhouette_shader: Shader
+
+## One shader for every tint: each call used to make a shader of its own, which
+## compiled when first drawn (when a Pokemon came out of its ball).
+static func silhouette(color: Color) -> ShaderMaterial:
+    if silhouette_shader == null:
+        silhouette_shader=Shader.new()
+        silhouette_shader.code="shader_type canvas_item; uniform vec4 tint : source_color = vec4(1.0); void fragment(){ COLOR=vec4(tint.rgb,texture(TEXTURE,UV).a*COLOR.a); }"
     var material=ShaderMaterial.new()
-    material.shader=shader
+    material.shader=silhouette_shader
     material.set_shader_parameter("tint",color)
     return material
