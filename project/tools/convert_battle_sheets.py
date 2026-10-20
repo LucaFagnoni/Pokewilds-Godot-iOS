@@ -52,6 +52,7 @@ def main() -> None:
     for key, frames in converted.items():
         battle_atlas.write(manifest["animations"][key], key, frames, folder)
         battle_atlas.embed_directives(manifest["animations"][key])
+    manifest["directive_table"] = battle_atlas.stringify_directive_table(manifest["directive_table"])
     manifest["version"] = 4
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n",
                              encoding="utf-8")

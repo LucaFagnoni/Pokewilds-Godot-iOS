@@ -120,7 +120,7 @@ func open()->void:
     main.setup_panel.hide();show();_go("title")
 
 func close()->void:
-    _hide_keyboard();hide();page="";splash.hide()
+    _hide_keyboard();hide();page="";splash.hide();_load_artwork(false)
     main.coop_game.lobby.browse(false)
     main.setup_panel.show()
 
@@ -156,9 +156,16 @@ func _names()->Array:
 func _count()->int:
     return _names().size()
 
+## The 6 MB title artwork only exists while the title is shown.
+func _load_artwork(shown:bool)->void:
+    var artwork:=splash.get_node("Artwork") as TextureRect
+    if not shown:artwork.texture=null
+    elif artwork.texture==null:artwork.texture=load("res://assets/startup_splash.png")
+
 func refresh()->void:
     var on_title:=page=="title"
     splash.visible=visible and on_title
+    _load_artwork(splash.visible)
     var unseen:=on_title or page in ["loading","connecting"]
     backdrop.visible=not unseen;panel.visible=not unseen
     entry.visible=_typing();entry.text=buffer+"_"

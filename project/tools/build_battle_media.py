@@ -69,7 +69,7 @@ def share_directives(manifest: dict) -> None:
                 table.append(directive)
             directives[frame] = index[key]
         battle_atlas.embed_directives(animation)
-    manifest["directive_table"] = table
+    manifest["directive_table"] = battle_atlas.stringify_directive_table(table)
     manifest["version"] = 4
 
 

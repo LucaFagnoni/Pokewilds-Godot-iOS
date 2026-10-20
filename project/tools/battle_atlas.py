@@ -10,7 +10,8 @@ Manifest fields per animation (version 4): "pages" (res:// paths) and
 "frame_table", a base64 string of little-endian uint16 values, 8 per frame:
 page, x, y, w, h (the crop in the page), ox, oy (the crop's place in the
 frame), directive (index into the manifest's "directive_table", 0xFFFF for
-none). w == 0 means the frame is empty. Keeping per-frame data in one string
+none). Each directive_table entry is a JSON string the game parses on first use
+(a parsed table of nested arrays costs ~10 MB). w == 0 means the frame is empty. Keeping per-frame data in one string
 instead of dictionaries keeps the parsed manifest small (~1 MB, not ~30 MB).
 
 Import the pages with process/fix_alpha_border=false: the default rewrites the
@@ -20,6 +21,7 @@ colour of nearly transparent pixels, which would change the picture.
 from __future__ import annotations
 
 import base64
+import json
 import math
 import struct
 from pathlib import Path
@@ -104,6 +106,10 @@ def write(animation: dict, key: str, frames: list[Image.Image], out_dir: Path) -
     animation["pages"] = [f"res://assets/battle_animations/{p.name}" for p in paths]
     animation["frame_table"] = base64.b64encode(table).decode("ascii")
     return paths
+
+
+def stringify_directive_table(table: list) -> list[str]:
+    return [json.dumps(entry, sort_keys=True, separators=(",", ":")) for entry in table]
 
 
 def embed_directives(animation: dict) -> None:

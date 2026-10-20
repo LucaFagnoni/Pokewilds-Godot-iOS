@@ -136,7 +136,7 @@ func configure(owner_main: Node) -> void:
 func player_icon(parent: Node, player: Dictionary, at: Vector2) -> void:
     var model:=clampi(int(player.get("model",0)),0,main.PLAYER_MODEL_WALK_TEXTURES.size()-1)
     var color:=clampi(int(player.get("color",0)),0,main.PLAYER_COLOR_VALUES.size()-1)
-    var sheet:Texture2D=main._recolor_texture(main.PLAYER_MODEL_WALK_TEXTURES[model],main.PLAYER_MODEL_REPLACE_COLORS[model],main.PLAYER_COLOR_VALUES[color],"coop:%d:%d:false:walk"%[model,color])
+    var sheet:Texture2D=main._recolor_texture(main.lazy_texture(main.PLAYER_MODEL_WALK_TEXTURES[model]),main.PLAYER_MODEL_REPLACE_COLORS[model],main.PLAYER_COLOR_VALUES[color],"coop:%d:%d:false:walk"%[model,color])
     var frame:=Vector2(sheet.get_width()/8.0,sheet.get_height())
     main._source_texture_rect(parent,"PlayerIcon",at,frame,main._source_texture_region(sheet,Rect2(Vector2.ZERO,frame)))
 
