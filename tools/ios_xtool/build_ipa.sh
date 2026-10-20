@@ -3,8 +3,10 @@
 # setup.sh. Same steps as the CI "ios" job, with xtool in place of xcodebuild.
 # It builds the committed HEAD, not uncommitted changes. See README.md.
 #
-#   tools/ios_xtool/build_ipa.sh            # versions from export_presets.cfg
-#   RUN=7 tools/ios_xtool/build_ipa.sh      # versions CI run 7 would give: 0.10.7 (107)
+#   tools/ios_xtool/build_ipa.sh
+#
+# The versions are the ones CI gives the same commit: MAJOR.MINOR from the iOS
+# preset plus the commit count, e.g. 0.10.166 (166).
 set -euo pipefail
 
 GODOT_VERSION=4.7.2
@@ -41,9 +43,9 @@ python3 "$repo/.github/engine/minify_json.py" "$work/project"
 
 # The commit this build comes from: hosts refuse players of another build.
 git -C "$repo" rev-parse HEAD > "$work/project/build_id.txt"
-if [ -n "${RUN:-}" ]; then
-  VERSION="$(sed -n 's/^application\/short_version="\([0-9]*\.[0-9]*\).*/\1/p' "$work/project/export_presets.cfg").$RUN" \
-  BUNDLE=$((100 + RUN)) python3 - "$work/project/export_presets.cfg" <<'EOF'
+count=$(git -C "$repo" rev-list --count HEAD)
+VERSION="$(sed -n 's/^application\/short_version="\([0-9]*\.[0-9]*\).*/\1/p' "$work/project/export_presets.cfg").$count" \
+BUNDLE=$count python3 - "$work/project/export_presets.cfg" <<'EOF'
 import os, re, sys
 path = sys.argv[1]
 text = open(path, newline="").read()
@@ -51,7 +53,6 @@ text = re.sub(r'(?m)^application/short_version="[^"]*"', 'application/short_vers
 text = re.sub(r'(?m)^application/version="[^"]*"', 'application/version="%s"' % os.environ["BUNDLE"], text)
 open(path, "w", newline="").write(text)
 EOF
-fi
 
 # Export the Xcode project straight into the SwiftPM package xtool builds.
 app=$work/app

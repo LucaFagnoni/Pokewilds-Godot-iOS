@@ -40,13 +40,13 @@ from a Windows `git worktree`: its `.git` file holds a `D:/` path. The script
 builds the committed `HEAD`, not uncommitted changes.
 
 ```bash
-bash tools/ios_xtool/build_ipa.sh           # versions from export_presets.cfg (0.10.0, 93)
-RUN=7 bash tools/ios_xtool/build_ipa.sh     # the versions CI run 7 would give: 0.10.7 (107)
+bash tools/ios_xtool/build_ipa.sh
 ```
 
-As a fallback for a CI run that got no macOS runner, pass that run's number as
-`RUN` and build the same commit: `build_id.txt` is the commit, so the IPA plays
-with the server zip of that commit.
+The versions are the ones CI gives the same commit: MAJOR.MINOR from the iOS
+preset plus the commit count (e.g. 0.10.166, build 166). `build_id.txt` is the
+commit, so an IPA built here plays with the server zip CI built from the same
+commit: a fallback when a CI run got no macOS runner.
 
 Work happens in `~/pokewilds-ios`, on WSL's own disk (the project has ~17k
 files: importing them through `/mnt/d` is very slow). The Godot import cache
@@ -93,6 +93,5 @@ Two link fixes keep the binary as compatible as the Xcode one:
   toolchain's clang and xtool's iOS SDK) is not tried yet.
 - **Smoke test.** CI only ships a pack that passed the Linux smoke test of the
   stripped engine; this script does not run it.
-- **Version numbers.** CI numbers builds by run; here you pass `RUN` by hand.
 - **Icons and launch screen** stay simplified (see the table) until there is an
   `actool`/`ibtool` replacement on Linux.

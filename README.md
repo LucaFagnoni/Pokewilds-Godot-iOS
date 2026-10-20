@@ -11,7 +11,7 @@ Both links always point to the newest release. Each release holds an IPA and a s
 
 ## Versions
 
-Every build is a release named after its version, for example **PokeWilds 0.10.3**. The last number goes up with every build, so a new IPA always installs as an update. The first two numbers are set in the iOS export preset (`application/short_version` in `project/export_presets.cfg`) and are raised by hand for bigger steps. All releases: [Releases](https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases).
+Every build is a release named after its version, for example **PokeWilds 0.10.166**. The last number is the commit count of `main`, so it goes up with every change and a new IPA always installs as an update. An IPA built locally from the same commit ([tools/ios_xtool](tools/ios_xtool/README.md), on Windows with WSL) gets the same version and plays with the same server. The first two numbers are set in the iOS export preset (`application/short_version` in `project/export_presets.cfg`) and are raised by hand for bigger steps. All releases: [Releases](https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases).
 
 ## Source code
 

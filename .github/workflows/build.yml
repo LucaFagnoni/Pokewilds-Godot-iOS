@@ -35,18 +35,22 @@ jobs:
       bundle: ${{ steps.names.outputs.bundle }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       # Zero-padded: GitHub lists releases by tag name, so build-0010 must come
       # after build-0009. The IPA's visible version is MAJOR.MINOR from the iOS
-      # preset's short_version plus the build number (0.10.0 -> 0.10.<n>); raise
+      # preset's short_version plus the commit count (0.10.0 -> 0.10.<n>); raise
       # MAJOR.MINOR there by hand for bigger steps. Its internal version
-      # (CFBundleVersion) is 100 + n, above the 93 the preset started at.
+      # (CFBundleVersion) is the commit count too. Counting commits, not runs,
+      # gives a local build of the same commit (tools/ios_xtool) the same version.
       - id: names
         run: |
           base=$(sed -n 's/^application\/short_version="\([0-9]*\.[0-9]*\).*/\1/p' project/export_presets.cfg)
           test -n "$base"
+          count=$(git rev-list --count HEAD)
           echo "tag=build-$(printf '%04d' "$GITHUB_RUN_NUMBER")" >> "$GITHUB_OUTPUT"
-          echo "version=$base.$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
-          echo "bundle=$((100 + GITHUB_RUN_NUMBER))" >> "$GITHUB_OUTPUT"
+          echo "version=$base.$count" >> "$GITHUB_OUTPUT"
+          echo "bundle=$count" >> "$GITHUB_OUTPUT"
       - name: Create the draft release
         env:
           TAG: ${{ steps.names.outputs.tag }}
