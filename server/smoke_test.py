@@ -56,6 +56,11 @@ if "--exe" not in sys.argv:
     check = subprocess.run(command + ["--headless", "-s", os.path.abspath("server/address_check.gd")], capture_output=True, text=True, errors="replace")
     if "ADDRESS CHECK: 0 failed" not in check.stdout: print(check.stdout[-2000:], check.stderr[-2000:]); print("SMOKE FAIL: address check"); sys.exit(1)
     print("address check ok")
+    # The phone's list of saved servers: add, edit, delete, survive a restart, join.
+    check = subprocess.run(command + ["--headless", "-s", os.path.abspath("server/saved_servers_test.gd"), "--", "--touch-ui"], capture_output=True, text=True, errors="replace", timeout=900)
+    found = re.search(r"SAVED SERVERS TEST: (\d+) checks, (\d+) failed", check.stdout)
+    if not found or found.group(2) != "0": print(check.stdout[-3000:]); print("SMOKE FAIL: saved servers list"); sys.exit(1)
+    print(f"saved servers list ok ({found.group(1)} checks)")
 
 server_data = os.path.join(work, "server")
 server = None
