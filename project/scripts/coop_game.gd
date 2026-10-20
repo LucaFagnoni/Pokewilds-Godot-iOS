@@ -618,7 +618,6 @@ var _awaiting_state:=true
 
 func _apply_visible(result:Dictionary)->void:
     if result.get("resync",false) and not hosting:session.send_host({"kind":"state_request"})
-    # This player's own record arrives as edits to the copy held here.
     # World records sent as what changed in them, rebuilt on the copy held here.
     # One that does not fit is left out and everything is asked for again;
     # until that arrives (or the first one, while joining) such changes wait.
@@ -632,6 +631,7 @@ func _apply_visible(result:Dictionary)->void:
             change["after"]=rebuilt
         kept.append(change)
     if result.has("changes"):result["changes"]=kept
+    # This player's own record arrives as edits to the copy held here.
     for change in result.get("changes",[]):
         if change is Dictionary and change.has("edits") and not change.has("after"):
             var held=shared_records.get(String(change.get("key","")))

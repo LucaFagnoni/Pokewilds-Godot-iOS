@@ -27,6 +27,9 @@ func _init() -> void:
 	var sent = JSON.parse_string(JSON.stringify(delta))
 	check(Delta.apply_delta(old, sent) == new, "the delta rebuilds the record exactly")
 	check(Delta.apply_delta(Delta.encode({"x": 1}), sent) != new, "on another record it does not")
+	var moved := before.duplicate(true)
+	moved.y = 5; moved.record.level = 9
+	check(Delta.apply_delta(old, JSON.parse_string(JSON.stringify(Delta.entry_delta(old, Delta.encode(moved))))) == Delta.encode(moved), "a move alone rebuilds exactly")
 	check(Delta.entry_delta(old, Delta.encode({"other": "p".repeat(3000)})) == null, "a rewritten record goes whole")
 	check(Delta.apply_delta(old, {"set": [[1, 2]], "drop": []}).is_empty(), "a malformed delta is refused")
 

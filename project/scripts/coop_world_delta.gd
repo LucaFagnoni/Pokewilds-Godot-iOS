@@ -34,7 +34,7 @@ static func _moved_only(before:Dictionary,after:Dictionary)->bool:
 ## True when two encoded values differ only by a creature having wandered. The
 ## value is one creature record, or a map of them (the roaming event Pokemon).
 static func only_motion(before:String,after:String)->bool:
-    var old=decode(before);var next=decode(after)
+    var old=decode_shared(before);var next=decode_shared(after)
     if not old is Dictionary or not next is Dictionary:return false
     if old.has("x") and next.has("x"):return _moved_only(old,next)
     if old.size()!=next.size():return false
@@ -52,7 +52,10 @@ func motion_only(area:String,patches:Array)->bool:
 static func canonical(value:Variant)->Variant:
     if value is Dictionary:
         var result:Dictionary={}
-        var keys=value.keys();keys.sort_custom(func(a,b):return str(a)<str(b))
+        var keys=value.keys()
+        # Text keys sort the same natively, without a script call per comparison.
+        if keys.all(func(key):return key is String):keys.sort()
+        else:keys.sort_custom(func(a,b):return str(a)<str(b))
         for key in keys:result[key]=canonical(value[key])
         return result
     if value is Array:
@@ -68,6 +71,21 @@ static func decode(value:String)->Variant:
     # Network data can never instantiate scripts, resources or other objects.
     return bytes_to_var(Marshalls.base64_to_raw(value))
 
+## decode() for readers that never change the result: a record is decoded
+## several times on its way through one commit (checked, compared with the
+## one before, diffed for the players), 0.2 ms each for the Megas' 16 KB.
+## The last few are kept and shared.
+const SHARED_DECODES:=16
+static var _decoded:Dictionary={}
+static var _decoded_order:Array=[]
+
+static func decode_shared(value:String)->Variant:
+    if _decoded.has(value):return _decoded[value]
+    var result=decode(value)
+    _decoded[value]=result;_decoded_order.append(value)
+    if _decoded_order.size()>SHARED_DECODES:_decoded.erase(_decoded_order.pop_front())
+    return result
+
 ## A change to a record that is a dictionary, as only the entries that differ:
 ## {"set":[[path,value],...],"drop":[path,...]}. A path is the list of keys down
 ## nested dictionaries; paths and values are var_to_bytes in base64. A wild
@@ -79,7 +97,7 @@ const MAX_DELTA_DEPTH:=8
 
 static func entry_delta(before:Variant,after:String)->Variant:
     if not before is String:return null
-    var old=decode(before);var next=decode(after)
+    var old=decode_shared(before);var next=decode_shared(after)
     if not old is Dictionary or not next is Dictionary:return null
     var set:Array=[];var drop:Array=[]
     _delta_walk(old,next,[],set,drop)
@@ -110,17 +128,21 @@ static func apply_delta(before:Variant,delta:Variant)->String:
     if delta.set.size()+delta.drop.size()>MAX_DELTA_ENTRIES:return ""
     var record=decode(before)
     if not record is Dictionary:return ""
+    # The record and the values come from encode(), already in its order; only
+    # a new key needs the whole record put in order again.
+    var added:=false
     for pair in delta.set:
         if not pair is Array or pair.size()!=2 or not pair[0] is String or not pair[1] is String or pair[0].length()>4096 or pair[1].length()>MAX_ENTRY_BYTES*2:return ""
         var parent=_delta_parent(record,decode(pair[0]))
         if parent==null:return ""
+        if not parent[0].has(parent[1]):added=true
         parent[0][parent[1]]=decode(pair[1])
     for encoded in delta.drop:
         if not encoded is String or encoded.length()>4096:return ""
         var parent=_delta_parent(record,decode(encoded))
         if parent==null:return ""
         parent[0].erase(parent[1])
-    return encode(record)
+    return encode(record) if added else Marshalls.raw_to_base64(var_to_bytes(record))
 
 ## [dictionary, key] that a path ends at, or null when it leads nowhere.
 static func _delta_parent(record:Dictionary,path:Variant)->Variant:
@@ -248,7 +270,7 @@ func prepare_changes(area:String,patches:Array)->Dictionary:
         if not valid_key(key) or used.has(key):return {"ok":false,"reason":"invalid_key"}
         used[key]=true;bytes+=patch.after.length()
         if patch.after.length()>MAX_ENTRY_BYTES or bytes>MAX_PACKET_BYTES:return {"ok":false,"reason":"too_large"}
-        var value=decode(patch.after)
+        var value=decode_shared(patch.after)
         if encode(value)!=patch.after:return {"ok":false,"reason":"invalid_value"}
         var group=key.get_slice("/",0)
         if value!=null:
@@ -260,6 +282,7 @@ func prepare_changes(area:String,patches:Array)->Dictionary:
             if group in SETS and str(value)!=key.get_slice("/",1).uri_decode():return {"ok":false,"reason":"wrong_set_entry"}
         var full="world/"+area+"/"+key
         var previous=state.records.get(full,encode(null))
-        if State.fingerprint(previous)!=patch.before:return {"ok":false,"reason":"conflict","key":key,"current":previous}
+        # The stored record's fingerprint, worked out once per change to it.
+        if state.print_of(full,encode(null))!=patch.before:return {"ok":false,"reason":"conflict","key":key,"current":previous}
         changes.append(state.change(full,patch.after))
     return {"ok":true,"changes":changes}
