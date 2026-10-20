@@ -48,10 +48,21 @@ static func embedded()->bool:
         if wrapped!=null and wrapped.available():bridge=wrapped
     return bridge!=null
 
+## zerotier.cfg as last read. The lobby asks for it every frame while hosting;
+## reading the file each time cost the host up to 8 ms a second.
+static var _config:ConfigFile
+static var _config_path:=""
+
 static func _setting(key:String,fallback:Variant)->Variant:
-    var config=ConfigFile.new()
-    if config.load(Paths.path("zerotier.cfg"))!=OK:return fallback
-    return config.get_value("lobby",key,fallback)
+    var path:=Paths.path("zerotier.cfg")
+    if path!=_config_path:
+        _config_path=path;_config=ConfigFile.new()
+        if _config.load(path)!=OK:_config=null
+    return fallback if _config==null else _config.get_value("lobby",key,fallback)
+
+## After zerotier.cfg is written: read it again on the next question.
+static func settings_changed()->void:
+    _config_path=""
 
 static func directory_url()->String:
     return String(_setting("url",String(lobby_access()[0]))).strip_edges().trim_suffix("/")

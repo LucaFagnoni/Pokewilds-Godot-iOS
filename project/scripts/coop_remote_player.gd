@@ -3,6 +3,12 @@ extends Node2D
 const Pokemon=preload("res://scripts/pokemon_data.gd")
 const MountLayers=preload("res://scripts/mount_layers.gd")
 const INTERPOLATION_MS:=100
+## coop_players.gd SEND_INTERVAL_MS, and a gap that means nothing was sent.
+const SEND_INTERVAL_MS:=50
+const HOLD_GAP_MS:=200
+
+static func _number(value:Variant)->bool:
+    return (value is int or value is float) and is_finite(float(value))
 class Rider extends Node2D:
     var sprite:Sprite2D
 var player:Rider
@@ -58,6 +64,13 @@ func configure(main:Node)->void:
 func receive(snapshot:Dictionary,received_ms:int=-1)->void:
     if _main==null or not snapshot.get("parts") is Dictionary:return
     var now=Time.get_ticks_msec() if received_ms<0 else received_ms
+    # A player standing still sends nothing new (coop_players.gd). When they
+    # move again, the last pose is held until one send interval ago, as the
+    # steady stream used to, so the first step is not drawn early. "sent" is
+    # the sender's clock: a gap there is a pause, not a slow network.
+    if not _frames.is_empty() and _number(snapshot.get("sent")) and _number(_frames[-1].data.get("sent")) \
+            and float(snapshot.sent)-float(_frames[-1].data.sent)>HOLD_GAP_MS and now-int(_frames[-1].time)>SEND_INTERVAL_MS:
+        _frames.append({"time":now-SEND_INTERVAL_MS,"data":_frames[-1].data})
     _frames.append({"time":now,"data":snapshot.duplicate(true)})
     while _frames.size()>8:_frames.pop_front()
 

@@ -20,6 +20,7 @@ var motion_busy:=false
 var last_motion:=0
 var players:Dictionary={}
 var motion_dirty:Dictionary={}
+var _whole_motion:=false
 
 func mark_motion(wild_id:int)->void:
     motion_dirty[wild_id]=true
@@ -89,13 +90,21 @@ func publish_motion()->void:
         var next:Variant=null if data.is_empty() else world._serializable_ecology_record(data,data.cell)
         var encoded=Delta.encode(next)
         if encoded==records[key]:motion_dirty.erase(wild_id);continue
-        patches.append({"key":"wild_pokemon/"+str(wild_id),"before":game.state.fingerprint(records[key]),"after":encoded})
+        var patch:Dictionary={"key":"wild_pokemon/"+str(wild_id),"before":game.state.fingerprint(records[key])}
+        # From a guest, only what changed in the record (coop_world_delta.gd).
+        var delta:Variant=null if game.hosting or _whole_motion else Delta.entry_delta(records[key],encoded)
+        if delta==null:patch["after"]=encoded
+        else:patch["delta"]=delta;patch["print"]=game.state.fingerprint(encoded)
+        patches.append(patch)
         sent[wild_id]=motion_stamp(data)
         if patches.size()>=64:break
     if patches.is_empty():return
     motion_busy=true
     var result:Dictionary=await game.command("wild_motion",{"area":game._area(),"epoch":game.area_epoch,"patches":patches})
     motion_busy=false
+    # After a refusal the next try sends whole records, in case the edits
+    # were what did not fit.
+    _whole_motion=not result.get("ok",false)
     if result.get("ok",false):
         for wild_id in sent:
             var data:Dictionary=world.wild_pokemon.get(wild_id,{})
@@ -103,10 +112,34 @@ func publish_motion()->void:
             if current==sent[wild_id]:motion_dirty.erase(wild_id)
     if result.get("reason")=="save_failed":game.end_session("POKEMON MOVEMENT COULD NOT BE SAVED.")
 
+## The Pokemon near enough to touch this player soon, in the world's order.
+## Walking every wild Pokemon each frame to find the one or two beside the
+## player cost about 0.1 ms a frame on every device; the short list is made
+## again four times a second, or at once when the player or the herd changes.
+const CONTACT_REACH:=12
+const CONTACT_REFRESH_MS:=250
+var _contact_ids:Array=[]
+var _contact_at:=-CONTACT_REFRESH_MS
+var _contact_cell:=Vector2i(-999999,-999999)
+var _contact_herd:Dictionary={}
+var _contact_size:=-1
+
+func _contact_candidates(world:Node)->Array:
+    var here:Vector2i=world._player_cell()
+    var now:=Time.get_ticks_msec()
+    if now-_contact_at>=CONTACT_REFRESH_MS or not is_same(_contact_herd,world.wild_pokemon) or _contact_size!=world.wild_pokemon.size() or maxi(absi(here.x-_contact_cell.x),absi(here.y-_contact_cell.y))>2:
+        _contact_at=now;_contact_cell=here;_contact_herd=world.wild_pokemon;_contact_size=world.wild_pokemon.size()
+        _contact_ids.clear()
+        for wild_id in world.wild_pokemon:
+            var at:Vector2i=world.wild_pokemon[wild_id].get("cell",_contact_cell+Vector2i(CONTACT_REACH*4,0))
+            if maxi(absi(at.x-here.x),absi(at.y-here.y))<=CONTACT_REACH:_contact_ids.append(wild_id)
+    return _contact_ids
+
 func contact()->void:
     var world=game.main.world
     if not world.gameplay_enabled or game.main.battle_active or game.main.battle_entry_pending or encounter_pending or not encounter.is_empty() or world.active_area_id!="OVERWORLD" or world.active_field_move in ["FLY","SURF"] or world.encounter_grace_active():return
-    for wild_id in world.wild_pokemon:
+    for wild_id in _contact_candidates(world):
+        if not world.wild_pokemon.has(wild_id):continue
         var data:Dictionary=world.wild_pokemon[wild_id]
         if data.get("coop_target")!=game.session.actor or not data.get("aggro_player",false) or data.get("ball_reserved",false):continue
         if world._player_cell().distance_squared_to(data.cell)>1 or world._repel_blocks(int(data.level)) or world._charm_suppresses(data):continue

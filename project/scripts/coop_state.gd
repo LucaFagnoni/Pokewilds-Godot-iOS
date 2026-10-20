@@ -26,6 +26,7 @@ var loose := 0
 ## walking every record several times a second.
 var key_epoch := 0
 var _prints := {}
+var replaced := {}
 ## Host option: when false nothing is appended to the journal; the world is
 ## written only by an explicit save. For telling save cost apart from the rest.
 static var journal_enabled := true
@@ -137,6 +138,12 @@ func transact(actor: String, id: String, changes: Array, command_hash: String = 
         if key.begins_with("player/") and change.get("after") is Dictionary and records.get(key) is Dictionary:
             var edits := Patch.diff(records[key], change.after)
             if not edits.is_empty() and Patch.valid(edits): player_edits[key] = edits
+    # The encoded records this commit replaces, by key, with the fingerprint
+    # they had: the host sends players only what changed in them (coop_game).
+    replaced.clear()
+    for change in changes:
+        if change.get("after") is String and records.get(change.key) is String:
+            replaced[String(change.key)] = [String(change.before), records[change.key]]
     # Durable write before acknowledging or changing the visible state.
     if not durable or not journal_enabled: unwritten += 1; loose += 1
     elif commit_writer.is_valid():

@@ -2,6 +2,7 @@ extends RefCounted
 ## Ordered, bounded delivery for large storage/party records over the small TCP frames.
 signal delivery_failed(peer:int)
 const Blob=preload("res://scripts/coop_blob.gd")
+const Transport=preload("res://scripts/coop_transport.gd")
 const MAX_MESSAGE:=8*1024*1024
 const MAX_QUEUED:=16*1024*1024
 const DIRECT_LIMIT:=192*1024
@@ -28,7 +29,9 @@ func send(peer:int,payload:Dictionary)->Error:
     if payload.get("kind") in ["player_visual","world_clock"]:
         var error:Error=send_frame.call(peer,payload)
         return OK if error==ERR_BUSY else error
+    var started:=Time.get_ticks_usec()
     var bytes=JSON.stringify(payload).to_utf8_buffer()
+    Transport.count("enc:"+String(payload.get("kind","")),bytes.size(),started)
     if bytes.is_empty() or bytes.size()>MAX_MESSAGE:return ERR_INVALID_DATA
     if bytes.size()<=DIRECT_LIMIT and not blobs.outgoing.has(peer) and queues.get(peer,[]).is_empty():
         var error:Error=_send_bytes(peer,bytes,payload)
@@ -67,6 +70,10 @@ func _fragment(peer:int,packet:Dictionary)->Error:
 
 func receive(peer:int,packet:Dictionary)->Dictionary:
     var length=packet.get("length",null)
+    var raw=packet.get("raw",0)
+    if typeof(raw) not in [TYPE_INT,TYPE_FLOAT] or not is_finite(float(raw)) or raw<0 or raw>MAX_MESSAGE:
+        blobs.drop(peer)
+        return {"error":"message_too_large"}
     if typeof(length) not in [TYPE_INT,TYPE_FLOAT] or not is_finite(float(length)) or float(length)!=floor(float(length)) or length<=0 or length>MAX_MESSAGE:
         blobs.drop(peer)
         return {"error":"message_too_large"}
@@ -75,7 +82,9 @@ func receive(peer:int,packet:Dictionary)->Dictionary:
     if result.has("error"):return result
     if not result.has("bytes"):return {}
     var parser=JSON.new()
+    var started:=Time.get_ticks_usec()
     if parser.parse(result.bytes.get_string_from_utf8())!=OK or not parser.data is Dictionary:return {"error":"invalid_message"}
+    Transport.count("rx_blob:"+String(parser.data.get("kind","")),result.bytes.size(),started)
     if parser.data.get("kind")=="session_blob":return {"error":"nested_message"}
     return {"packet":parser.data}
 
