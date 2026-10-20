@@ -220,7 +220,7 @@ static func try_step(world: Node, group: String, direction: Vector2i) -> bool:
     if maxi(absi(target.x-home.x), absi(target.y-home.y)) > 8 or not available(world, target, group): return false
     var sprite := world.source_interior_upper_sprites.get(cell) as Sprite2D
     if not is_instance_valid(sprite): return false
-    var collision := world.source_event_collisions.get(cell) as CollisionShape2D
+    var collision := world.source_event_collisions.get(cell) as CollisionBox
     if is_instance_valid(collision): collision.queue_free()
     world.source_event_collisions.erase(cell)
     world.source_interior_upper_sprites.erase(cell)

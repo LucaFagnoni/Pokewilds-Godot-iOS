@@ -51,7 +51,9 @@ func clear_actors() -> void:
         var entry:Dictionary=actors[cell]
         var blocker = entry.blocked_map.get(cell)
         if typeof(blocker)==TYPE_STRING and blocker==entry.marker:entry.blocked_map.erase(cell)
-        var body:StaticBody2D=entry.body
+        var box:CollisionBox=entry.box
+        if is_instance_valid(box):box.queue_free()
+        var body:Node2D=entry.body
         remove_child(body);body.queue_free()
     actors.clear()
 static var _ball_art:Dictionary={}
@@ -71,12 +73,13 @@ func rebuild() -> void:
         var record:Dictionary=records[id]
         if String(record.get("scope",""))!=current_scope:continue
         var cell:=Vector2i(int(record.x),int(record.y))
-        var body:=StaticBody2D.new();body.position=world._cell_center(cell);add_child(body)
+        var body:=Node2D.new();body.position=world._cell_center(cell);add_child(body)
         var sprite:=Sprite2D.new();sprite.texture=_item_art(String(record.get("item","")));sprite.texture_filter=CanvasItem.TEXTURE_FILTER_NEAREST
         body.add_child(sprite);body.z_index=world._depth_z(cell,20)
-        var shape:=CollisionShape2D.new();var rect:=RectangleShape2D.new();rect.size=Vector2(16,16);shape.shape=rect;body.add_child(shape)
+        var solids:=world.get_node_or_null("WorldCollision") as CollisionBody
+        var box:CollisionBox=solids.add_cell(cell) if solids!=null else null
         var marker := "dropped-item:"+str(body.get_instance_id())
-        actors[cell]={"body":body,"blocked_map":world.blocked,"marker":marker}
+        actors[cell]={"body":body,"box":box,"blocked_map":world.blocked,"marker":marker}
         if not world.blocked.has(cell):world.blocked[cell]=marker
 func _process(_delta: float) -> void:
     if is_instance_valid(world) and current_scope!=scope():rebuild()

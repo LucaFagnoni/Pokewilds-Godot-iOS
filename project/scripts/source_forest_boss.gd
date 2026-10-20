@@ -74,7 +74,7 @@ static func install(world: Node) -> void:
                 world._hide_event_cell(old_cell)
         return
     var layer := world.get_node_or_null("LandmarkLayer") as Node2D
-    var body := world.get_node_or_null("WorldCollision") as StaticBody2D
+    var body := world.get_node_or_null("WorldCollision") as CollisionBody
     if layer == null or body == null:
         return
     var chosen: Variant = null
@@ -157,7 +157,7 @@ static func try_step(world: Node, direction: Vector2i) -> bool:
         or world.resource_objects.has(target) or world.landmarks.has(target): return false
     var sprite := world.source_interior_upper_sprites.get(cell) as Sprite2D
     if not is_instance_valid(sprite): return false
-    var collision := world.source_event_collisions.get(cell) as CollisionShape2D
+    var collision := world.source_event_collisions.get(cell) as CollisionBox
     if is_instance_valid(collision): collision.queue_free()
     world.source_event_collisions.erase(cell)
     world.source_interior_upper_sprites.erase(cell)
