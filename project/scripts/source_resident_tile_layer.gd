@@ -31,7 +31,8 @@ var built_blocks := {}
 var view_armed := false
 ## The block rectangle last found all drawn.
 var drawn_view := Rect2i()
-const VIEW_MARGIN_BLOCKS := 1
+## Sprites reach at most two cells past their own: one more for the camera.
+const VIEW_MARGIN_CELLS := 3
 const AHEAD_BLOCKS := 3
 const AHEAD_BUDGET_USEC := 2000
 var last_source_parts: Array = []
@@ -289,19 +290,20 @@ func build_resident_async():
 ## From then on a block coming into view is drawn in that same frame.
 ## Nothing is drawn headless (the dedicated server).
 func draw_view_async() -> void:
-    while lazy_blocks and DisplayServer.get_name() != "headless" and not _draw_blocks_in(_view_blocks(VIEW_MARGIN_BLOCKS), 13000):
+    while lazy_blocks and DisplayServer.get_name() != "headless" and not _draw_blocks_in(_view_blocks(), 13000):
         await get_tree().process_frame
     view_armed = lazy_blocks
 
-## The map blocks the view covers, grown by margin blocks. The view is the
-## camera's and the player's (a teleport moves the player before the camera).
-func _view_blocks(margin: int) -> Rect2i:
+## The map blocks under the view and VIEW_MARGIN_CELLS around it. The view
+## is the camera's and the player's (a teleport moves the player before the camera).
+func _view_blocks() -> Rect2i:
     var shown := get_global_transform_with_canvas().affine_inverse() * get_viewport().get_visible_rect()
     if is_instance_valid(tracked_player):
         shown = shown.merge(Rect2(to_local(tracked_player.global_position) - shown.size / 2.0, shown.size))
+    shown = shown.grow(VIEW_MARGIN_CELLS * tile_size)
     var span := float(tile_size * TILE_BLOCK)
-    var first := Vector2i((shown.position / span).floor()) - Vector2i.ONE * margin
-    var last := Vector2i((shown.end / span).floor()) + Vector2i.ONE * margin
+    var first := Vector2i((shown.position / span).floor())
+    var last := Vector2i((shown.end / span).floor())
     return Rect2i(first, last - first + Vector2i.ONE)
 
 ## Draws the undrawn blocks of a rectangle of blocks, nearest the middle
@@ -337,12 +339,11 @@ func _draw_block(block: Vector2i) -> void:
             if flags[(y - store.origin.y) * store.width + x - store.origin.x] & WorldTileStore.PRESENT: batch[Vector2i(x, y)] = true
     if not batch.is_empty(): _redraw_cells(batch, false)
 
-## Once armed, the blocks in view (and a block around it, for sprites
-## reaching past their cell) are drawn at once; the next few around them
-## while the frame has time, so walking rarely meets an undrawn one.
+## Once armed, the blocks in view are drawn at once; the next few around
+## them while the frame has time, so walking rarely meets an undrawn one.
 func _draw_near_view() -> void:
     if not lazy_blocks or DisplayServer.get_name() == "headless": return
-    var near := _view_blocks(VIEW_MARGIN_BLOCKS)
+    var near := _view_blocks()
     var ahead := near.grow(AHEAD_BLOCKS)
     if ahead == drawn_view: return
     if view_armed: _draw_blocks_in(near, -1)
