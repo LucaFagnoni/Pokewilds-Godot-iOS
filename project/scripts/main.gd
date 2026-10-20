@@ -876,8 +876,10 @@ var source_mewtwo: Control
 var source_mewtwo_intro_seen := false
 var battle_animation_manifest: Dictionary = {}
 var battle_animation_cache: Dictionary = {}
+var battle_frame_table_key := ""
+var battle_frame_table := PackedByteArray()
 
-## Each move sheet decodes to ~21 MB: keep only the current move's (at most two).
+## A move's atlas page is 0.1-8 MB decoded: keep only the current move's (at most two).
 func _cache_battle_sheet(path: String, sheet: Texture2D) -> void:
     if battle_animation_cache.size() >= 2: battle_animation_cache.clear()
     battle_animation_cache[path] = sheet
@@ -3593,60 +3595,61 @@ func _source_texture_region(texture: Texture2D, region: Rect2) -> Texture2D:
     atlas.region = region
     return atlas
 
+## Per-frame data of an animation: 8 uint16 per frame, see tools/battle_atlas.py.
+func _battle_frame_table(source_key: String) -> PackedByteArray:
+    if battle_frame_table_key != source_key:
+        var animation: Dictionary = battle_animation_manifest.get("animations", {}).get(source_key, {})
+        battle_frame_table = Marshalls.base64_to_raw(String(animation.get("frame_table", "")))
+        battle_frame_table_key = source_key
+    return battle_frame_table
+
+## One frame of a battle animation. A frame stores only the crop of its
+## non-transparent pixels (tools/battle_atlas.py); the AtlasTexture margin puts
+## the crop back at its offset, so it draws like the full frame. Null when the
+## frame is empty. `clip` limits the frame to a part of it.
 func _source_animation_frame_texture(source_key: String,
-        frame_index: int) -> Texture2D:
-    var animations: Dictionary = battle_animation_manifest.get("animations", {})
-    var animation: Dictionary = animations.get(source_key, {})
+        frame_index: int, clip: Rect2 = Rect2()) -> Texture2D:
+    var animation: Dictionary = battle_animation_manifest.get("animations", {}).get(source_key, {})
     if animation.is_empty():
         return null
-    var raw_sheets = animation.get("sheets", [])
-    var sheets: Array = raw_sheets if typeof(raw_sheets) == TYPE_ARRAY else []
-    if sheets.is_empty():
-        sheets.append({
-            "path": String(animation.get("path", "")),
-            "start_frame": 0,
-            "frames": int(animation.get("frames", 0))
-        })
-    var sheet_entry: Dictionary = {}
-    for raw_sheet in sheets:
-        if typeof(raw_sheet) != TYPE_DICTIONARY:
-            continue
-        var candidate := raw_sheet as Dictionary
-        var start := int(candidate.get("start_frame", 0))
-        var length := int(candidate.get("frames", 0))
-        if frame_index >= start and frame_index < start + length:
-            sheet_entry = candidate
-            break
-    if sheet_entry.is_empty():
+    var table := _battle_frame_table(source_key)
+    var at := frame_index * 16
+    if at < 0 or at + 16 > table.size():
         return null
-    var sheet_path := String(sheet_entry.get("path", ""))
-    var sheet := battle_animation_cache.get(sheet_path) as Texture2D
-    if sheet == null and ResourceLoader.exists(sheet_path):
-        sheet = load(sheet_path) as Texture2D
+    var shown := Rect2(table.decode_u16(at + 10), table.decode_u16(at + 12),
+        table.decode_u16(at + 6), table.decode_u16(at + 8))
+    var view := clip if clip.has_area() else Rect2(0.0, 0.0,
+        float(animation.get("frame_width", 160)), float(animation.get("frame_height", 144)))
+    var part := shown.intersection(view)
+    if not part.has_area():
+        return null
+    var page_path := String((animation.get("pages", []) as Array)[table.decode_u16(at)])
+    var sheet := battle_animation_cache.get(page_path) as Texture2D
+    if sheet == null and ResourceLoader.exists(page_path):
+        sheet = load(page_path) as Texture2D
         if sheet != null:
-            _cache_battle_sheet(sheet_path, sheet)
+            _cache_battle_sheet(page_path, sheet)
     if sheet == null:
         return null
-    var columns := maxi(1, int(animation.get("columns", 15)))
-    var frame_width := int(animation.get("frame_width", 160))
-    var frame_height := int(animation.get("frame_height", 144))
-    var local_frame := frame_index - int(sheet_entry.get("start_frame", 0))
-    return _source_texture_region(sheet, Rect2(
-        float((local_frame % columns) * frame_width),
-        float(int(local_frame / columns) * frame_height),
-        float(frame_width), float(frame_height)))
+    var atlas := AtlasTexture.new()
+    atlas.atlas = sheet
+    atlas.region = Rect2(Vector2(table.decode_u16(at + 2), table.decode_u16(at + 4))
+        + part.position - shown.position, part.size)
+    atlas.margin = Rect2(part.position - view.position, view.size - part.size)
+    return atlas
 
 func _source_animation_directive(source_key: String,
         frame_index: int) -> Dictionary:
-    var animations: Dictionary = battle_animation_manifest.get("animations", {})
-    var animation: Dictionary = animations.get(source_key, {})
-    return _battle_directive(animation, frame_index + 1)
+    return _battle_directive(source_key, frame_index + 1)
 
 ## Frames store an index into the manifest's shared directive table.
-func _battle_directive(animation: Dictionary, frame_number: int) -> Dictionary:
-    var index = (animation.get("directives", {}) as Dictionary).get(str(frame_number))
-    if index == null: return {}
-    return battle_animation_manifest.get("directive_table", [])[int(index)]
+func _battle_directive(source_key: String, frame_number: int) -> Dictionary:
+    var table := _battle_frame_table(source_key)
+    var at := (frame_number - 1) * 16 + 14
+    if frame_number < 1 or at + 2 > table.size(): return {}
+    var index := table.decode_u16(at)
+    if index == 0xFFFF: return {}
+    return battle_animation_manifest.get("directive_table", [])[index]
 
 func _show_level_up_stats(pokemon: Dictionary) -> void:
     _reset_progression_overlay()
@@ -4230,9 +4233,8 @@ func _run_evolution_sequence(pokemon: Dictionary, new_species: String,
     for frame_index in range(frame_count):
         if frame_index >= SOURCE_EVOLUTION_CANCEL_END_FRAME:
             progression_mode = "EVOLUTION_FINISHING"
-        progression_animation.texture = _source_texture_region(
-            _source_animation_frame_texture("evolve_gsc", frame_index),
-            Rect2(0, 0, 160, 96))
+        progression_animation.texture = _source_animation_frame_texture(
+            "evolve_gsc", frame_index, Rect2(0, 0, 160, 96))
         var directive := _source_animation_directive("evolve_gsc", frame_index)
         _set_evolution_sprite_halves(
             old_texture, new_texture, directive, frame_index >= 33)
@@ -8667,22 +8669,9 @@ func _play_source_battle_feedback(move_name: String, player_attacks: bool,
     # lunge/pulse. Only the source animation library is rendered here.
     if animation.is_empty():
         return
-    var raw_sheets = animation.get("sheets", [])
-    var sheets: Array = raw_sheets if typeof(raw_sheets) == TYPE_ARRAY else []
-    if sheets.is_empty():
-        var compatibility_path := String(animation.get("path", ""))
-        if not compatibility_path.is_empty():
-            sheets.append({
-                "path": compatibility_path,
-                "start_frame": 0,
-                "frames": int(animation.get("frames", 0))
-            })
     var frames := int(animation.get("frames", 0))
     var visual_end_frame := int(animation.get("visual_end_frame", frames - 1))
     frames = mini(frames, visual_end_frame + 1)
-    var columns := maxi(1, int(animation.get("columns", 4)))
-    var frame_width := int(animation.get("frame_width", 160))
-    var frame_height := int(animation.get("frame_height", 144))
     var frame_time := float(animation.get("frame_time", 1.0 / 60.0))
     var player_origin := player_battle_sprite.position
     var enemy_origin := enemy_sprite.position
@@ -8696,47 +8685,16 @@ func _play_source_battle_feedback(move_name: String, player_attacks: bool,
     var player_hud_visible := player_hud.visible
     var enemy_hud_visible := enemy_hud.visible
     var source_hud_visible := source_single_hud.visible
-    var active_sheet_path := ""
-    var active_sheet: Texture2D = null
     var effects = preload("res://scripts/source_battle_effects.gd").new()
     effects.begin(self, source_key)
     source_effect_playing = true
     var animation_deadline := preload("res://scripts/game_clock.gd").ticks_usec()
     for frame_index in range(frames):
-        var sheet_entry: Dictionary = {}
-        for raw_sheet in sheets:
-            if typeof(raw_sheet) != TYPE_DICTIONARY:
-                continue
-            var candidate := raw_sheet as Dictionary
-            var start := int(candidate.get("start_frame", 0))
-            var length := int(candidate.get("frames", 0))
-            if frame_index >= start and frame_index < start + length:
-                sheet_entry = candidate
-                break
-        if sheet_entry.is_empty():
-            continue
-        var sheet_path := String(sheet_entry.get("path", ""))
-        if sheet_path != active_sheet_path:
-            active_sheet_path = sheet_path
-            active_sheet = battle_animation_cache.get(sheet_path) as Texture2D
-            if active_sheet == null and ResourceLoader.exists(sheet_path):
-                active_sheet = load(sheet_path) as Texture2D
-                if active_sheet != null:
-                    _cache_battle_sheet(sheet_path, active_sheet)
-        if active_sheet == null:
-            continue
-        var local_frame := frame_index - int(sheet_entry.get("start_frame", 0))
-        var atlas := AtlasTexture.new()
-        atlas.atlas = active_sheet
-        atlas.region = Rect2(
-            float((local_frame % columns) * frame_width),
-            float(int(local_frame / columns) * frame_height),
-            float(frame_width), float(frame_height))
-        battle_move_animation.texture = atlas
+        battle_move_animation.texture = _source_animation_frame_texture(source_key, frame_index)
+        var directive := _battle_directive(source_key, frame_index + 1)
         _apply_source_battle_frame(
-            _battle_directive(animation, frame_index + 1),
-            source_key, player_origin, enemy_origin, animation_origin)
-        await effects.apply(_battle_directive(animation, frame_index + 1), frame_index + 1)
+            directive, source_key, player_origin, enemy_origin, animation_origin)
+        await effects.apply(directive, frame_index + 1)
         animation_deadline += roundi(frame_time * 1000000.0)
         while preload("res://scripts/game_clock.gd").ticks_usec() < animation_deadline:
             await get_tree().process_frame
