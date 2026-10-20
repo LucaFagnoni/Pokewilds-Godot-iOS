@@ -189,10 +189,21 @@ static func install(world: Node) -> void:
     world.event_progress[SAVE_KEY] = states
     world.set_meta("biome_megas_pending", false)
 
+## The argument of _update_pokemon_water_visual (it only reads it), kept and
+## refilled instead of making a new Dictionary per Mega per frame.
+static var _water_args := {"sprite": null, "species": ""}
+## Per Mega sprite (by instance id): [position, tile edit count, material] as
+## _update_pokemon_water_visual last left them. Its result only follows those
+## (where the sprite stands, the tiles under it, and a material someone else may
+## have swapped in), so it is run again only when one of them differs.
+static var _water_seen := {}
+
 static func update(world: Node) -> void:
     if world.active_area_id != "OVERWORLD" or not world.exact_world_mode or world.exact_world == null: return
     if bool(world.get_meta("biome_megas_pending", false)) and world.gameplay_enabled: install(world)
     var states: Dictionary = world.event_progress.get(SAVE_KEY, {})
+    var tiles = world.exact_world.tiles
+    var edits: int = tiles.edit_count if tiles is WorldTileStore else -1
     for group: String in states:
         var saved: Dictionary = states[group]
         if not saved.has("x"): continue
@@ -201,8 +212,16 @@ static func update(world: Node) -> void:
         var sprite := world.source_interior_upper_sprites.get(cell) as Sprite2D
         if not is_instance_valid(sprite): continue
         sprite.frame = int(saved.get("facing_pair", 4)) + int(world.world_elapsed_seconds / 0.30) % 2
-        sprite.flip_h = bool(saved.get("flip_h", false))
-        world._update_pokemon_water_visual({"sprite": sprite, "species": saved.species})
+        # Setting flip_h queues a redraw even when it does not change.
+        var flip := bool(saved.get("flip_h", false))
+        if sprite.flip_h != flip: sprite.flip_h = flip
+        var seen: Variant = _water_seen.get(sprite.get_instance_id())
+        if edits < 0 or seen == null or seen[0] != sprite.position or seen[1] != edits or seen[2] != sprite.material:
+            _water_args["sprite"] = sprite
+            _water_args["species"] = saved.species
+            world._update_pokemon_water_visual(_water_args)
+            if _water_seen.size() > 32: _water_seen.clear()
+            _water_seen[sprite.get_instance_id()] = [sprite.position, edits, sprite.material]
         if world.gameplay_enabled and world.world_elapsed_seconds >= float(saved.get("next_move", 0.0)):
             saved["next_move"] = world.world_elapsed_seconds + world._wild_move_delay(group)
             try_step(world, group, DIRECTIONS[world.rng.randi_range(0, 3)])

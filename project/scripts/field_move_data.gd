@@ -161,7 +161,9 @@ static func info(species: String) -> Dictionary:
     var key := species.to_lower()
     var imported := PokemonData.info(key)
     if not imported.is_empty():
-        if imported.get("harvest", []).is_empty():
+        if imported.has("harvest") and imported.get("harvest", []).is_empty():
+            # PokemonData.info() hands out a shared dictionary: change a copy.
+            imported = imported.duplicate()
             imported.erase("harvest")
         return imported
     if SPECIES.has(key):
