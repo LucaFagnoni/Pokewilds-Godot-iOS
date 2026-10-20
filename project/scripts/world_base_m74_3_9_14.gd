@@ -2149,19 +2149,19 @@ func _build_generated_source_interiors(
         area_layer.visible = false
         parent.add_child(area_layer)
         source_area_layers[area_id] = area_layer
-        var tiles: Dictionary = plan.get("tiles", {})
+        var tiles: InteriorTileStore = plan["tiles"]
         var solids: Dictionary = plan.get("solids", {})
         var batch: InteriorTileBatch = null
-        for raw_local_cell in tiles.keys():
+        # A cursor of its own: other code may use the store's while this waits.
+        var tile := tiles.new_cursor()
+        for tile_index in tiles.cells.size():
             # Most of each frame behind the loading screen (4 ms a frame made this ~1.4 s).
             if cooperative and Time.get_ticks_usec() - slice_started >= 13000:
                 await get_tree().process_frame
                 slice_started = Time.get_ticks_usec()
-            var local_cell: Vector2i = raw_local_cell
+            var local_cell: Vector2i = tiles.cells[tile_index]
             var world_cell := origin + local_cell
-            var tile := tiles[local_cell] as SourceTile
-            if tile == null:
-                continue
+            tile.repoint(tile_index)
             for upper in [false, true]:
                 var spec := SourceWorldData.interior_render_spec(tile, upper)
                 if spec.is_empty():
@@ -2228,7 +2228,7 @@ func _build_generated_source_interiors(
             var spawn := raw_spawn as Dictionary
             var pokemon_cell := origin + Vector2i(spawn.get("cell", Vector2i.ZERO))
             var species := String(spawn.get("name", "")).to_lower()
-            if species == "dusclops" and SourceMineRuntime.is_mine_tile(tiles.get(Vector2i(spawn.get("cell", Vector2i.ZERO)))):
+            if species == "dusclops" and SourceMineRuntime.is_mine_tile(tiles.tile(Vector2i(spawn.get("cell", Vector2i.ZERO)))):
                 SourceMineRuntime.add(self, area_layer, collision_body, plan, spawn)
                 continue
             var pokemon_texture := PokemonData.texture(species, "overworld")
@@ -2271,17 +2271,18 @@ func _find_route_entry(plan: Dictionary, route_name: String) -> Vector2i:
         for cell in plan.get("transitions", {}):
             if bool(plan.transitions[cell].get("exit_overworld", false)):
                 return Vector2i(cell)
-    var tiles := plan.get("tiles", {}) as Dictionary
+    var tiles := plan.get("tiles") as InteriorTileStore
     var fallback := Vector2i.ZERO
-    for raw_cell in tiles:
-        var cell := Vector2i(raw_cell)
-        var tile := tiles[cell] as SourceTile
-        if tile == null or tile.route_belongs_to == null:
+    if tiles == null:
+        return fallback
+    # Read from the packed arrays: no tile object per cell.
+    for index in tiles.cells.size():
+        var route := tiles.route_at(index)
+        if route == null or route.name != route_name or tiles.flag(index, WorldTileStore.SOLID):
             continue
-        if tile.route_belongs_to.name != route_name or tile.is_solid:
-            continue
+        var cell := tiles.cells[index]
         fallback = cell
-        if "stairs" in tile.name_upper or "rug" in tile.name or "entrance" in tile.name:
+        if "stairs" in tiles.upper_at(index) or "rug" in tiles.name_at(index) or "entrance" in tiles.name_at(index):
             return cell
     return fallback
 
@@ -11738,8 +11739,9 @@ func _source_interior_tile_at_world_cell(cell: Vector2i) -> SourceTile:
         var area_id := String(plan["id"])
         if not source_area_origins.has(area_id): continue
         var local_cell: Vector2i = cell - Vector2i(source_area_origins[area_id])
-        if (plan["tiles"] as Dictionary).has(local_cell):
-            return plan["tiles"][local_cell] as SourceTile
+        var tile := (plan["tiles"] as InteriorTileStore).tile(local_cell)
+        if tile != null:
+            return tile
     return null
 
 func _recover_source_dungeon_return(area_id: String, interior_cell: Vector2i = Vector2i(-2147483648, -2147483648)) -> Vector2i:
@@ -11791,13 +11793,14 @@ func _interior_map_bounds() -> Rect2i:
         for plan in generated_source_interior_plans:
             var origin: Vector2i = source_area_origins.get(String(plan.id), Vector2i.ZERO)
             if origin != plane.position: continue
-            for local_cell in plan.tiles:
-                var candidate: SourceTile = plan.tiles[local_cell]
-                if candidate.route_belongs_to == null: continue
-                var distance := Vector2(origin+Vector2i(local_cell)-_player_cell()).length_squared()
+            var tiles: InteriorTileStore = plan.tiles
+            for index in tiles.cells.size():
+                var candidate_route := tiles.route_at(index)
+                if candidate_route == null: continue
+                var distance := Vector2(origin+tiles.cells[index]-_player_cell()).length_squared()
                 if distance < nearest_distance:
                     nearest_distance = distance
-                    route = candidate.route_belongs_to
+                    route = candidate_route
     var key: Array = [active_area_id, plane, route.name if route != null else ""]
     if key == interior_map_bounds_key:
         return interior_map_bounds_cache
@@ -11806,11 +11809,12 @@ func _interior_map_bounds() -> Rect2i:
         var origin: Vector2i = source_area_origins.get(String(plan.id), Vector2i.ZERO)
         if origin != plane.position:
             continue
-        for local_cell in plan.tiles:
-            var tile: SourceTile = plan.tiles[local_cell]
-            if route != null and (tile.route_belongs_to == null or tile.route_belongs_to.name != route.name):
+        var tiles: InteriorTileStore = plan.tiles
+        for index in tiles.cells.size():
+            var tile_route := tiles.route_at(index)
+            if route != null and (tile_route == null or tile_route.name != route.name):
                 continue
-            var cell: Vector2i = origin + Vector2i(local_cell)
+            var cell: Vector2i = origin + tiles.cells[index]
             result = Rect2i(cell, Vector2i.ONE) if result.size == Vector2i.ZERO else result.merge(Rect2i(cell, Vector2i.ONE))
     interior_map_bounds_key = key
     interior_map_bounds_cache = result if result.size != Vector2i.ZERO else plane

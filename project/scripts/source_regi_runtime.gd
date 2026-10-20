@@ -16,9 +16,13 @@ static func sync(world) -> void:
         if int(plan.layer_index) != 90:
             continue
         var origin: Vector2i = world.source_area_origins.get(plan.id, Vector2i.ZERO)
-        for local in plan.tiles:
-            var tile: SourceTile = plan.tiles[local]
-            var cell: Vector2i = origin + Vector2i(local)
+        var tiles: InteriorTileStore = plan.tiles
+        for index in tiles.cells.size():
+            # Every tile below is a cave1_regi one: no tile object for the rest.
+            if not tiles.name_at(index).begins_with("cave1_regi"):
+                continue
+            var tile := tiles.proxy(index)
+            var cell: Vector2i = origin + tiles.cells[index]
             if tile.name in ["cave1_regi1", "cave1_regi2", "cave1_regi3"]:
                 if completed:
                     world._hide_event_cell(cell)

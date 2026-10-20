@@ -955,7 +955,7 @@ func _gpu_id(tile, spec: Dictionary, identity: String) -> int:
         id = gpu_rows.size()
         var row := {"pos": placed[1].position, "page": page}
         # A see-through tile may be drawn in any order.
-        if not animated: row["clear"] = (TileSheet.pages[page].image as Image).get_region(Rect2i(placed[1])).is_invisible()
+        if not animated: row["clear"] = placed[2]
         if animated:
             var spec_key := {"base": name, "upper": upper, "color": color}
             if not _gpu_place_frames(spec_key): return 0

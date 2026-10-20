@@ -130,7 +130,8 @@ static func _make_layer_plan(
         "layer_index": layer_index,
         "source_bounds": Rect2i(minimum, maximum - minimum + Vector2i.ONE),
         "size": maximum - minimum + Vector2i.ONE,
-        "tiles": normalized_tiles,
+        # Packed: the tile objects are freed once the plan is made.
+        "tiles": InteriorTileStore.pack(normalized_tiles),
         "solids": normalized_solids,
         "transitions": normalized_transitions,
         "interactables": normalized_interactables,
