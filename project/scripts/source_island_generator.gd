@@ -55,6 +55,35 @@ var unown_counter := 0
 var tiles_to_add: Dictionary = {}
 var interior_tiles_to_add: Array = []
 var edges: Array[SourceTile] = []
+## The ocean filled around the island (most of the map) is not made of tile
+## objects: each such cell of tiles_to_add holds an int, an index into these
+## read-only templates (bit 0: bottom edge row, bit 1: ocean1 route), until
+## code needs that tile. tile_at() then makes it, equal to what the fill used
+## to make. Loops over a snapshot of tiles_to_add skip or only read these
+## cells: none of them changes an ocean tile in place.
+var ocean_tiles: Array[SourceTile] = []
+
+## The tile at `position` (null if none), made real if still an ocean cell.
+func tile_at(position: Vector2i) -> SourceTile:
+    return _get_tile(tiles_to_add, position)
+
+## Like tiles.get(position) for any tile map (only tiles_to_add holds ocean
+## cells), making an ocean cell real.
+func _get_tile(tiles: Dictionary, position: Vector2i) -> SourceTile:
+    var raw: Variant = tiles.get(position)
+    if raw is int:
+        raw = ocean_tiles[raw].copy_at(position)
+        tiles[position] = raw
+    return raw
+
+## Read-only look at a cell: an ocean cell gives its shared template, whose
+## position is not the cell's. Never change or keep what this returns.
+func peek_tile(position: Vector2i) -> SourceTile:
+    var raw: Variant = tiles_to_add.get(position)
+    return ocean_tiles[raw] if raw is int else raw
+
+func _name_of(raw: Variant) -> String:
+    return ocean_tiles[raw].name if raw is int else (raw as SourceTile).name
 var bottom_left := Vector2i.ZERO
 var top_right := Vector2i.ZERO
 var done_pkmn_mansion := false
@@ -203,6 +232,8 @@ func generate_surface() -> Dictionary:
     ledgify(tiles_to_add, tiles_to_add, "mountain4", "sand4", "beach")
     _qa_surface_stage("before_stalagmites")
     for raw_tile in SourceJavaHashOrder.values(tiles_to_add):
+        if raw_tile is int:
+            continue
         var tile := raw_tile as SourceTile
         if tile.name_upper != "stalagmite1":
             continue
@@ -261,7 +292,7 @@ func _qa_dump_surface(path: String) -> void:
     var file := FileAccess.open(path, FileAccess.WRITE)
     for raw_position in positions:
         var position: Vector2i = raw_position
-        var tile := tiles_to_add[position] as SourceTile
+        var tile := peek_tile(position)
         var route_name := ""
         var route_level := 0
         if tile.route_belongs_to != null:
@@ -282,7 +313,7 @@ func qa_surface_sha256() -> String:
     context.start(HashingContext.HASH_SHA256)
     for raw_position in positions:
         var position: Vector2i = raw_position
-        var tile := tiles_to_add[position] as SourceTile
+        var tile := peek_tile(position)
         var route_name := ""
         var route_level := 0
         if tile.route_belongs_to != null:
@@ -329,7 +360,7 @@ func generate_complete(used_dungeons: Array[String] = []) -> Dictionary:
     _complete_missing_landmarks()
     var burrowed_pokemon: Array[Dictionary] = []
     for position in trapinch_spawns:
-        var trap_tile := tiles_to_add.get(position) as SourceTile
+        var trap_tile := tile_at(position)
         if trap_tile == null or trap_tile.name != "desert2":
             continue
         trap_tile.items["trapinch"] = 1
@@ -348,6 +379,7 @@ func generate_complete(used_dungeons: Array[String] = []) -> Dictionary:
         "interior_pokemon": interior_pokemon,
         "interiors": interior_tiles_to_add,
         "edges": edges,
+        "ocean_tiles": ocean_tiles,
         "bottom_left": bottom_left,
         "top_right": top_right,
         "already_used_dungeons": already_used_dungeons,
@@ -370,7 +402,7 @@ func _add_required_regi_after_source_world(candidates: Array) -> void:
         # The centered 208px box starts at x-104, eight pixels off-grid.
         # Query exactly the non-null source layout cells the cave will replace.
         for position in _regi_exterior_positions(candidate.position):
-            var tile := tiles_to_add.get(position) as SourceTile
+            var tile := peek_tile(position)
             if tile != null and ("pkmnmansion" in tile.name or "pkmnmansion" in tile.name_upper or "building" in tile.name or "building" in tile.name_upper or "ruins" in tile.name or tile.name_upper == "pokemon_mansion_key"):
                 structure_overlap = true
                 break
@@ -378,7 +410,7 @@ func _add_required_regi_after_source_world(candidates: Array) -> void:
         generate_regi_dungeon(candidate.position)
         for position in pokemon_to_add.keys():
             if bounds.has_point(position):
-                var tile := tiles_to_add.get(position) as SourceTile
+                var tile := peek_tile(position)
                 if tile != null and (tile.is_solid or "door" in tile.name): pokemon_to_add.erase(position)
         if not already_used_dungeons.has("regi1"): already_used_dungeons.append("regi1")
         return
@@ -415,7 +447,7 @@ func _required_landmark_site(mansion: bool) -> Dictionary:
     var protected: Dictionary = {}
     var candidates: Array[Vector2i] = []
     for pos in tiles_to_add:
-        var tile: SourceTile = tiles_to_add[pos]
+        var tile := peek_tile(pos)
         var names := tile.name + " " + tile.name_upper
         if ("pkmnmansion" in names or "building" in names or "ruins" in names
                 or "cave" in names or "pokemon_mansion_key" in names
@@ -442,7 +474,7 @@ func _required_landmark_site(mansion: bool) -> Dictionary:
             for y in range(rect.position.y,rect.end.y,16):
                 for x in range(rect.position.x,rect.end.x,16):
                     var p := Vector2i(x,y)
-                    var tile := tiles_to_add.get(p) as SourceTile
+                    var tile := peek_tile(p)
                     if protected.has(p) or tile == null:
                         valid = false; break
                     if not prepare_terrain and (mountain_tiles.has(p) or tile.is_water):
@@ -455,12 +487,12 @@ func _required_landmark_site(mansion: bool) -> Dictionary:
 func _clearing_has_land_access(rect: Rect2i) -> bool:
     for x in range(rect.position.x,rect.end.x,16):
         for y in [rect.position.y-16,rect.end.y]:
-            var tile := tiles_to_add.get(Vector2i(x,y)) as SourceTile
+            var tile := peek_tile(Vector2i(x,y))
             if tile != null and not tile.is_solid and not tile.is_water and not tile.is_ledge:
                 return true
     for y in range(rect.position.y,rect.end.y,16):
         for x in [rect.position.x-16,rect.end.x]:
-            var tile := tiles_to_add.get(Vector2i(x,y)) as SourceTile
+            var tile := peek_tile(Vector2i(x,y))
             if tile != null and not tile.is_solid and not tile.is_water and not tile.is_ledge:
                 return true
     return false
@@ -566,6 +598,9 @@ func _cleanup_and_place_deep_forest_landmarks(
         complete = true
         var restart_pass := false
         for raw_tile in SourceJavaHashOrder.values(tiles_to_add):
+            # Untouched ocean: no tree, rock, cactus, pokemon, door or forest.
+            if raw_tile is int:
+                continue
             var tile := raw_tile as SourceTile
             if "tree_large1" in tile.name:
                 _repair_incomplete_large_tree(tile)
@@ -601,7 +636,7 @@ func _cleanup_and_place_deep_forest_landmarks(
                 break
 
             var down_position := tile.position + Vector2i(0, -16)
-            var down_tile := tiles_to_add.get(down_position) as SourceTile
+            var down_tile := peek_tile(down_position)
             if (tile.biome == "deep_forest" and "green" in tile.name
                     and not done_pkmn_mansion_key and down_tile != null
                     and "tree" not in down_tile.name_upper):
@@ -697,10 +732,10 @@ func _repair_incomplete_large_tree(tile: SourceTile) -> void:
             var top_right_position := tile.position + Vector2i(-16 * j + 16, 16 * k)
             var bottom_left_position := tile.position + Vector2i(-16 * j, 16 * k - 16)
             var bottom_right_position := tile.position + Vector2i(-16 * j + 16, 16 * k - 16)
-            var top_left_tile := tiles_to_add.get(top_left) as SourceTile
-            var top_right_tile := tiles_to_add.get(top_right_position) as SourceTile
-            var bottom_left_tile := tiles_to_add.get(bottom_left_position) as SourceTile
-            var bottom_right_tile := tiles_to_add.get(bottom_right_position) as SourceTile
+            var top_left_tile := peek_tile(top_left)
+            var top_right_tile := peek_tile(top_right_position)
+            var bottom_left_tile := peek_tile(bottom_left_position)
+            var bottom_right_tile := peek_tile(bottom_right_position)
             if (top_left_tile != null and top_left_tile.name == "tree_large1_noSprite"
                     and top_right_tile != null and top_right_tile.name == "tree_large1_noSprite"
                     and bottom_left_tile != null and bottom_left_tile.name == "tree_large1"
@@ -745,7 +780,7 @@ func _remove_blocking_rock(tile: SourceTile) -> void:
 
 func _any_solid(positions: Array) -> bool:
     for position in positions:
-        var tile := tiles_to_add.get(position) as SourceTile
+        var tile := peek_tile(position)
         if tile != null and tile.is_solid:
             return true
     return false
@@ -758,10 +793,13 @@ func _postprocess_source_shores() -> void:
         Vector2i(0, -16), Vector2i(0, 16)
     ]
     for raw_tile in SourceJavaHashOrder.values(tiles_to_add):
+        # Untouched ocean: not lake water, and water2 is skipped below.
+        if raw_tile is int:
+            continue
         var tile := raw_tile as SourceTile
         if tile.route_belongs_to != null and tile.route_belongs_to.name == "wooded_lake_water1":
             for offset in positions:
-                var next_tile := tiles_to_add.get(tile.position + offset) as SourceTile
+                var next_tile := peek_tile(tile.position + offset)
                 if (next_tile != null and next_tile.name == "water2"
                         and (next_tile.route_belongs_to == null
                         or next_tile.route_belongs_to.name != "wooded_lake_water1")):
@@ -771,12 +809,16 @@ func _postprocess_source_shores() -> void:
                 or "ice" in tile.name or "waterfall" in tile.name):
             continue
         for offset in positions:
-            var next_tile := tiles_to_add.get(tile.position + offset) as SourceTile
+            var next_tile := peek_tile(tile.position + offset)
             if next_tile == null or next_tile.name != "water2":
                 continue
+            # An ocean cell's template has no position of its own.
+            var next_position := next_tile.position
+            if tiles_to_add.get(tile.position + offset) is int:
+                next_position = tile.position + offset
             if no_ice_here.has(tile.position) and "ledges3" in tile.name_upper:
                 tile.set_names("sand3", tile.name_upper)
-                if tile.position.x == next_tile.position.x or tile.position.y == next_tile.position.y:
+                if tile.position.x == next_position.x or tile.position.y == next_position.y:
                     mountain_water_tiles.append(tile)
                     break
                 continue
@@ -788,7 +830,7 @@ func _postprocess_source_shores() -> void:
             elif tile.biome == "beach_blacksand":
                 shore_name = "sand3_black"
             var new_tile := SourceTile.new(
-                shore_name, next_tile.position, "", true, tile.route_belongs_to)
+                shore_name, next_position, "", true, tile.route_belongs_to)
             tiles_to_add[new_tile.position] = new_tile
             var excluded := (
                 "beach" in tile.biome or "mountain" in tile.biome
@@ -806,7 +848,7 @@ func _postprocess_source_shores() -> void:
         var new_water_tiles: Array[SourceTile] = []
         while not water_positions.is_empty():
             var position: Vector2i = water_positions.pop_front()
-            var next_tile := tiles_to_add.get(position) as SourceTile
+            var next_tile := tile_at(position)
             new_water_tiles.append(next_tile)
             if new_water_tiles.size() > 25:
                 new_water_tiles.clear()
@@ -836,7 +878,9 @@ func _postprocess_source_shores() -> void:
                     waterfall_tile.set_names("sand3", previous_name)
 
     for raw_tile in SourceJavaHashOrder.values(tiles_to_add):
-        _coastify(raw_tile as SourceTile)
+        # Untouched ocean is water: coastify leaves it as it is.
+        if not raw_tile is int:
+            _coastify(raw_tile as SourceTile)
 
 func _waterfallify(tile: SourceTile) -> void:
     if (("water" in tile.name or "lava" in tile.name)
@@ -862,7 +906,7 @@ func _coastify(tile: SourceTile) -> bool:
     var ocean_direction := ""
     var tidal_direction := ""
     for index in 8:
-        var next_tile := tiles_to_add.get(tile.position + COAST_OFFSETS[index]) as SourceTile
+        var next_tile := peek_tile(tile.position + COAST_OFFSETS[index])
         if next_tile == null or next_tile.name == "water6":
             continue
         var direction: String = COAST_DIRECTIONS[index]
@@ -899,13 +943,15 @@ func _postprocess_source_puddles() -> void:
     ]
     var puddles: Array[SourceTile] = []
     for raw_tile in SourceJavaHashOrder.values(tiles_to_add):
+        if raw_tile is int:
+            continue
         var tile := raw_tile as SourceTile
         if "_puddle1" in tile.name:
             puddles.append(tile)
     for tile in puddles:
         var direction := ""
         for index in range(positions.size()):
-            var next_tile := tiles_to_add.get(tile.position + positions[index]) as SourceTile
+            var next_tile := peek_tile(tile.position + positions[index])
             if next_tile != null and "_puddle1" in next_tile.name:
                 direction += "[" + String(directions[index]) + "]"
         tile.set_names(tile.name.replace("_puddle1", "_puddle1" + direction), tile.name_upper)
@@ -914,16 +960,28 @@ func _spawn_source_overworld_pokemon() -> void:
     var spawn_order_path := OS.get_environment("POKEWILDS_QA_SPAWN_ORDER")
     if not spawn_order_path.is_empty():
         var order_file := FileAccess.open(spawn_order_path, FileAccess.WRITE)
-        for raw_order_tile in SourceJavaHashOrder.values(tiles_to_add):
-            var order_tile := raw_order_tile as SourceTile
+        for order_position in SourceJavaHashOrder.keys(tiles_to_add):
+            var order_tile := tile_at(order_position)
             order_file.store_line("%d\t%d\t%s\t%s\t%s" % [
                 order_tile.position.x, order_tile.position.y,
                 order_tile.route_belongs_to.name if order_tile.route_belongs_to != null else "",
                 order_tile.name, order_tile.name_upper
             ])
         order_file.close()
-    for raw_tile in SourceJavaHashOrder.values(tiles_to_add):
-        var tile := raw_tile as SourceTile
+    # Ocean cells take part (ocean1 spawns): read through their template, at
+    # their key. Nothing here changes a tile.
+    var spawn_positions := SourceJavaHashOrder.keys(tiles_to_add)
+    var spawn_tiles := SourceJavaHashOrder.values(tiles_to_add)
+    for spawn_index in spawn_tiles.size():
+        var raw_tile: Variant = spawn_tiles[spawn_index]
+        var tile: SourceTile
+        var tile_position: Vector2i
+        if raw_tile is int:
+            tile = ocean_tiles[raw_tile]
+            tile_position = spawn_positions[spawn_index]
+        else:
+            tile = raw_tile as SourceTile
+            tile_position = tile.position
         var route := tile.route_belongs_to
         if ((tile.is_solid and "water" not in tile.name) or tile.name_upper != ""
                 or route == null or route.name == "" or route.allowed_pokemon().is_empty()
@@ -941,7 +999,7 @@ func _spawn_source_overworld_pokemon() -> void:
             var desert_level := route.level + global_random.next_int(3)
             if desert_name in ["numel", "kangaskhan", "cubone"]:
                 desert_level = 10
-            _spawn(tile.position, desert_name, desert_level, {
+            _spawn(tile_position, desert_name, desert_level, {
                 "generation": "CRYSTAL",
                 "aggressive": desert_name == "drapion"
             })
@@ -953,7 +1011,7 @@ func _spawn_source_overworld_pokemon() -> void:
                 and random.trace_count() >= 58265
                 and random.trace_count() <= 58280):
             print("SOURCE_SPAWN_TRACE draw=%d pos=%s route=%s roll=%d allowed=%s" % [
-                random.trace_count(), tile.position, route.name, spawn_roll,
+                random.trace_count(), tile_position, route.name, spawn_roll,
                 JSON.stringify(allowed)
             ])
         if spawn_roll < base_chance:
@@ -979,7 +1037,7 @@ func _spawn_source_overworld_pokemon() -> void:
             extra["gender"] = "female"
         elif pokemon_name == "gallade":
             extra["gender"] = "male"
-        _spawn(tile.position, pokemon_name, pokemon_level, extra)
+        _spawn(tile_position, pokemon_name, pokemon_level, extra)
 
 func _source_spawn_base_chance(route_name: String) -> int:
     if "oasis" in route_name:
@@ -1167,21 +1225,25 @@ func _fill_source_ocean(minimum_position: Vector2i, maximum_position: Vector2i) 
     var fill_maximum := maximum_position + Vector2i(896, 448)
     var fill_minimum := minimum_position - Vector2i(896, 896)
     var ocean_route := SourceRoute.new("ocean1", 40)
+    ocean_tiles.clear()
+    for kind in 4:
+        ocean_tiles.append(SourceTile.new("water2_edge1" if kind & 1 else "water2", Vector2i.ZERO,
+            "", true, ocean_route if kind & 2 else null))
     for x in range(fill_minimum.x, fill_maximum.x + 1, 16):
         for y in range(fill_minimum.y, fill_maximum.y + 1, 16):
             var position := Vector2i(x, y)
             if tiles_to_add.has(position):
                 continue
-            var tile_route: SourceRoute = null
+            var kind := 1 if y == fill_maximum.y else 0
             if not (position.x >= boundary_min.x and position.x <= boundary_max.x and position.y >= boundary_min.y and position.y <= boundary_max.y):
-                tile_route = ocean_route
-            tiles_to_add[position] = SourceTile.new("water2_edge1" if y == fill_maximum.y else "water2", position, "", true, tile_route)
+                kind |= 2
+            tiles_to_add[position] = kind
     bottom_left = fill_minimum
     top_right = fill_maximum
 
 func generate_oasis(oasis_origin: Vector2i) -> void:
     var oasis_route := SourceRoute.new("oasis1", 30)
-    var origin_tile := tiles_to_add.get(oasis_origin) as SourceTile
+    var origin_tile := tile_at(oasis_origin)
     assert(origin_tile != null)
     origin_tile.biome = "desert"
     var next_size := 250 + random.next_int(50)
@@ -1282,7 +1344,7 @@ func generate_regi_dungeon(dungeon_origin: Vector2i) -> void:
 
 func generate_desert_ruins(ruins_origin: Vector2i) -> void:
     var route := SourceRoute.new("ruins1_outer", 25)
-    var origin_tile := tiles_to_add.get(ruins_origin) as SourceTile
+    var origin_tile := tile_at(ruins_origin)
     assert(origin_tile != null)
     var ruins_tiles: Dictionary = {}
     var generated: Dictionary = {}
@@ -1302,7 +1364,7 @@ func generate_desert_ruins(ruins_origin: Vector2i) -> void:
     for x_offset in range(-1, 2):
         for y_offset in range(-1, 2):
             var position := origin_tile.position + Vector2i(16 * x_offset, 16 * y_offset)
-            var tile := tiles_to_add.get(position) as SourceTile
+            var tile := peek_tile(position)
             if tile != null and tile.name != "desert4":
                 tiles_to_add[position] = SourceTile.new("ruins_floor2", position, "", true)
     for position in [
@@ -2275,7 +2337,7 @@ func _make_mewtwo_room(mansion_interiors: Array, stairs_down_position: Vector2i)
 func _merge_exterior_preserving_mansion_key(exterior: Dictionary) -> void:
     for raw_tile in SourceJavaHashOrder.values(exterior):
         var tile := raw_tile as SourceTile
-        var existing := tiles_to_add.get(tile.position) as SourceTile
+        var existing := tile_at(tile.position)
         if existing != null and existing.name_upper == "pokemon_mansion_key":
             tiles_to_add[tile.position] = SourceTile.new(tile.name, existing.position, existing.name_upper, true, existing.route_belongs_to)
         else:
@@ -2770,7 +2832,10 @@ func ledgify(
     var null_name := SourceTile.new(null_type, Vector2i.ZERO).name
     # First of the source's sweeps; it repeats them until one replaces nothing.
     var changed: Array[Vector2i] = []
+    # Ocean cells are never tile_type and never become it here: skipped.
     for raw_tile in next_island_tiles.values():
+        if raw_tile is int:
+            continue
         var tile := raw_tile as SourceTile
         if tile.name == tile_type and _ledgify_replaces(tiles, tile.position, tile_type, null_name):
             _ledgify_replace(tiles, next_island_tiles, tile.position, replace_with, biome_name)
@@ -2778,10 +2843,13 @@ func ledgify(
     if not changed.is_empty():
         _ledgify_later_sweeps(tiles, next_island_tiles, changed, tile_type, replace_with, biome_name, null_name)
     for raw_tile in next_island_tiles.values():
-        var candidate := raw_tile as SourceTile
-        var tile := tiles.get(candidate.position) as SourceTile
-        if tile == null or tile.name != tile_type:
+        if raw_tile is int:
             continue
+        var candidate := raw_tile as SourceTile
+        var current: Variant = tiles.get(candidate.position)
+        if current == null or current is int or (current as SourceTile).name != tile_type:
+            continue
+        var tile := current as SourceTile
         var names := _neighbour_names(tiles, tile.position, null_name)
         var left := names[0] == tile_type
         var right := names[1] == tile_type
@@ -2811,8 +2879,8 @@ func ledgify(
 
 ## The source's verdict for the tile at `position` in one ledgify sweep.
 func _ledgify_replaces(tiles: Dictionary, position: Vector2i, tile_type: String, null_name: String) -> bool:
-    var current := tiles.get(position) as SourceTile
-    if current != null and current.name != tile_type:
+    var current: Variant = tiles.get(position)
+    if current != null and _name_of(current) != tile_type:
         return false
     var names := _neighbour_names(tiles, position, null_name)
     var left_same := names[0] == tile_type
@@ -2857,12 +2925,15 @@ func _ledgify_later_sweeps(tiles: Dictionary, next_island_tiles: Dictionary, cha
     var index_of: Dictionary = {}
     for index in keys.size():
         var key: Variant = keys[index]
-        if not key is Vector2i or (next_island_tiles[key] as SourceTile).position != key:
+        var entry: Variant = next_island_tiles[key]
+        if not key is Vector2i or (not entry is int and (entry as SourceTile).position != key):
             # Entries away from their own key: run the plain full sweeps.
             var done := false
             while not done:
                 done = true
                 for raw_tile in next_island_tiles.values():
+                    if raw_tile is int:
+                        continue
                     var tile := raw_tile as SourceTile
                     if tile.name == tile_type and _ledgify_replaces(tiles, tile.position, tile_type, null_name):
                         _ledgify_replace(tiles, next_island_tiles, tile.position, replace_with, biome_name)
@@ -2884,8 +2955,7 @@ func _ledgify_later_sweeps(tiles: Dictionary, next_island_tiles: Dictionary, cha
             var index := _heap_pop(heap)
             queued[index] = 0
             var position: Vector2i = keys[index]
-            var tile := next_island_tiles[position] as SourceTile
-            if tile.name != tile_type or not _ledgify_replaces(tiles, position, tile_type, null_name):
+            if _name_of(next_island_tiles[position]) != tile_type or not _ledgify_replaces(tiles, position, tile_type, null_name):
                 continue
             _ledgify_replace(tiles, next_island_tiles, position, replace_with, biome_name)
             for offset in BLOCK_OFFSETS_9:
@@ -2944,8 +3014,10 @@ func _neighbour_names(tiles: Dictionary, position: Vector2i, null_name: String) 
     var names := PackedStringArray()
     names.resize(8)
     for index in 8:
-        var tile := tiles.get(position + LEDGIFY_OFFSETS[index]) as SourceTile
-        names[index] = tile.name if tile != null else null_name
+        var tile: Variant = tiles.get(position + LEDGIFY_OFFSETS[index])
+        if tile == null: names[index] = null_name
+        elif tile is int: names[index] = ocean_tiles[tile].name
+        else: names[index] = tile.name
     return names
 
 const LEDGIFY_OFFSETS: Array[Vector2i] = [
@@ -4195,7 +4267,7 @@ func _style_graveyard_fence_group(
     ) -> void:
     for y in range(rectangle_bottom_left.y - 16, rectangle_top_right.y + 32, 16):
         for x in range(rectangle_bottom_left.x - 16, rectangle_top_right.x + 32, 16):
-            var tile := tiles.get(Vector2i(x, y)) as SourceTile
+            var tile := _get_tile(tiles, Vector2i(x, y))
             if (tile == null or "fence" not in tile.name_upper
                     or "house" in tile.name_upper or "gate" in tile.name_upper):
                 continue
@@ -4206,7 +4278,7 @@ func _style_graveyard_fence_group(
     # gate/door cells.
     for y in range(rectangle_bottom_left.y + 16, rectangle_top_right.y, 16):
         for x in [rectangle_bottom_left.x, rectangle_top_right.x]:
-            var side_tile := tiles.get(Vector2i(x, y)) as SourceTile
+            var side_tile := _get_tile(tiles, Vector2i(x, y))
             if side_tile == null or "fence" not in side_tile.name_upper or \
                     "gate" in side_tile.name_upper or "door" in side_tile.name_upper:
                 continue
@@ -4223,20 +4295,20 @@ func _style_graveyard_fence_group(
     }
     for raw_corner in authored_corners.keys():
         var corner: Vector2i = raw_corner
-        var corner_tile := tiles.get(corner) as SourceTile
+        var corner_tile := _get_tile(tiles, corner)
         if corner_tile != null and "door" not in corner_tile.name_upper and \
                 "gate" not in corner_tile.name_upper:
             corner_tile.set_names(corner_tile.name, String(authored_corners[corner]))
 
     for y in range(rectangle_bottom_left.y, rectangle_top_right.y + 16, 16):
         for x in range(rectangle_bottom_left.x, rectangle_top_right.x + 16, 16):
-            var tile := tiles.get(Vector2i(x, y)) as SourceTile
+            var tile := _get_tile(tiles, Vector2i(x, y))
             if tile == null or "door" not in tile.name_upper:
                 continue
-            var left := tiles.get(tile.position + Vector2i(-16, 0)) as SourceTile
-            var right := tiles.get(tile.position + Vector2i(16, 0)) as SourceTile
-            var up := tiles.get(tile.position + Vector2i(0, 16)) as SourceTile
-            var down := tiles.get(tile.position + Vector2i(0, -16)) as SourceTile
+            var left := _get_tile(tiles, tile.position + Vector2i(-16, 0))
+            var right := _get_tile(tiles, tile.position + Vector2i(16, 0))
+            var up := _get_tile(tiles, tile.position + Vector2i(0, 16))
+            var down := _get_tile(tiles, tile.position + Vector2i(0, -16))
             if (left != null and right != null
                     and ("fence" in left.name_upper or "gate" in left.name_upper)
                     and ("fence" in right.name_upper or "gate" in right.name_upper)):
@@ -4259,7 +4331,7 @@ func _style_graveyard_fence_group(
             var on_top: bool = y == rectangle_top_right.y
             if not (on_left or on_right or on_bottom or on_top):
                 continue
-            var perimeter_tile: SourceTile = tiles.get(position) as SourceTile
+            var perimeter_tile: SourceTile = _get_tile(tiles, position)
             if perimeter_tile == null:
                 continue
             var current_upper: String = perimeter_tile.name_upper.to_lower()
@@ -4279,10 +4351,10 @@ func _style_graveyard_fence_group(
             perimeter_tile.set_names(perimeter_tile.name, visible_fence)
 
 func _adjust_fence_tile(tile: SourceTile, tiles: Dictionary) -> void:
-    var up := tiles.get(tile.position + Vector2i(0, 16)) as SourceTile
-    var down := tiles.get(tile.position + Vector2i(0, -16)) as SourceTile
-    var right := tiles.get(tile.position + Vector2i(16, 0)) as SourceTile
-    var left := tiles.get(tile.position + Vector2i(-16, 0)) as SourceTile
+    var up := _get_tile(tiles, tile.position + Vector2i(0, 16))
+    var down := _get_tile(tiles, tile.position + Vector2i(0, -16))
+    var right := _get_tile(tiles, tile.position + Vector2i(16, 0))
+    var left := _get_tile(tiles, tile.position + Vector2i(-16, 0))
     var tokens := tile.name_upper.split("_")
     var base_name := String(tokens[0])
     for index in range(1, tokens.size() - 1):
