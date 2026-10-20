@@ -1,13 +1,16 @@
 extends RefCounted
 
 const CONFIG := "user://native_mods.cfg"
-const BUNDLED := "res://mods/gen3-overhaul-1.5.0.pwmod"
 const INSTALLED := "user://mod_packages/selected.pwmod"
 static var active_name := "OFF"
 static var last_error := ""
-static var retained: Array[Resource] = []
+## The resources enabled mods supply, by the res:// path they replace (keeps them alive).
+static var replaced: Dictionary = {}
 static var species_patches: Dictionary = {}
 static var palettes: Dictionary = {}
+# Battle animations are cropped atlas pages (tools/battle_atlas.py): a mod can
+# repaint a page in place, the old full-frame sheets have nowhere to go.
+const OLD_BATTLE_SHEET := "Battle animations are now atlas pages to repaint at the same size; old full-frame sheets are not supported: "
 
 static func _safe_path(path: String) -> bool:
     return not path.is_empty() and not path.begins_with("/") and not ":" in path and not "\\" in path and not ".." in path.split("/")
@@ -33,7 +36,7 @@ static func validate(path: String) -> Dictionary:
     for target in manifest.get("resources",{}):
         var file: String = str(manifest.resources[target])
         if not catalog.has(target) or not names.has(file) or not _safe_path(file):
-            zip.close();return {"error":"Unsupported asset destination: " + str(target)}
+            zip.close();return {"error":(OLD_BATTLE_SHEET if "/battle_animations/" in str(target) else "Unsupported asset destination: ") + str(target)}
         var bytes := zip.read_file(file)
         total += bytes.size()
         if bytes.size() > 33554432 or total > 268435456:
@@ -49,8 +52,10 @@ static func validate(path: String) -> Dictionary:
                 valid = image.get_width() > 0 and image.get_width() <= 96 and image.get_height() % image.get_width() == 0 and image.get_height() <= 8192
             # Converted walking strips replace source vertical sheets.
             if "overworld" in str(target) and image.get_size() == Vector2i(96,16): valid = true
+            # The transition sheet before it kept only its first row of frames.
+            if str(target).ends_with("/battle_intro_anim1_sheet1.png") and image.get_size() == Vector2i(8192,256): valid = true
             if not valid:
-                zip.close();return {"error":"Wrong image dimensions: " + file}
+                zip.close();return {"error":(OLD_BATTLE_SHEET if "/battle_animations/" in str(target) else "Wrong image dimensions: ") + file}
             resource = ImageTexture.create_from_image(image)
         elif str(target).ends_with(".ogg"):
             resource = AudioStreamOggVorbis.load_from_buffer(bytes)
@@ -150,13 +155,13 @@ static func library() -> Array:
     # Keep the previous imported pack even when its selection was OFF.
     var rows := []
     var selection := str(config.get_value("mods", "selected", "off"))
-    for path in [INSTALLED, BUNDLED]:
+    for path in [INSTALLED]:
         if not FileAccess.file_exists(path): continue
         var manifest := _manifest(path)
         if manifest.is_empty(): continue
         rows.append({"id":_identity(manifest,path), "path":path,
             "name":str(manifest.get("name","Mod")), "version":str(manifest.get("version","")),
-            "enabled":selection == ("installed" if path == INSTALLED else "bundled")})
+            "enabled":selection == "installed"})
     if _store(rows) != OK: last_error = "Could not save migrated mod library. Existing packages retained."
     return rows
 
@@ -210,6 +215,8 @@ static func conflicts() -> Array:
     return result
 
 static func start() -> void:
+    # Android kept a 16 MB copy of the removed built-in Gen 3 pack here.
+    if FileAccess.file_exists("user://builtin_gen3_overhaul.pwmod"): DirAccess.remove_absolute("user://builtin_gen3_overhaul.pwmod")
     active_name = "OFF"
     last_error = ""
     species_patches = {}
@@ -239,10 +246,8 @@ static func start() -> void:
             species_patches[species].merge(result.manifest.species[species],true)
         palettes.merge(result.manifest.get("palettes",{}),true)
         active.append(str(row.name) + " " + str(row.version))
-    retained.assign(loaded_resources.values())
+    replaced = loaded_resources
     if not active.is_empty(): active_name = ", ".join(active)
-    # Base feature wraps resource references after user mods have established precedence.
-    preload("res://scripts/gen3_overhaul.gd").initialize(loaded_resources)
 
 static func install(path: String) -> String:
     var result := validate(path)

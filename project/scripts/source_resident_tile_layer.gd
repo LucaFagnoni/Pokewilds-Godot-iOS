@@ -5,7 +5,6 @@ extends "res://scripts/source_chunk_tile_layer.gd"
 const TileSheet = preload("res://scripts/tile_sheet.gd")
 const CellFingerprints = preload("res://scripts/cell_fingerprints.gd")
 var resident_layers: Array = []
-var sheet_generation := 0
 var resident_tileset: TileSet
 var resident_sources: Dictionary = {}
 var resident_animations: Array = []
@@ -117,9 +116,8 @@ var shore_table_dirty := false
 ## [ocean view, tidal view] and the map blocks each covers.
 var shore_views: Array = []
 var shore_blocks: Array = [{}, {}]
-## The shore sheets as shoreline_quads returns them, and the pictures they show.
+## The shore sheets as shoreline_quads returns them.
 var shore_sources: Array = []
-var shore_textures: Array = []
 ## Shore string -> id (-1: drawn by the TileMapLayers); per id (0 is none),
 ## four [sheet, frame-0 position]; quads (as text) -> id.
 var shore_ids := {}
@@ -423,15 +421,6 @@ func refresh_changed_tiles(cells: Array):
 
 func _process(delta):
     super._process(delta)
-    if sheet_generation != TileSheet.generation:
-        # Tile art was swapped (the Gen 3 pack): place every tile again.
-        sheet_generation = TileSheet.generation
-        _reset_gpu()
-        upper_spec_empty.clear()
-        resident_fingerprints.clear()
-        last_source_parts = []
-        last_source_id = -1
-        refresh_now()
     _draw_near_view()
     TileSheet.flush()
     _flush_gpu()
@@ -813,16 +802,11 @@ func _mark_block(view: Node2D, blocks: Dictionary, cell: Vector2i) -> void:
     view.queue_redraw()
 
 func _bind_tide_water() -> void:
-    var water: Texture2D = _picture(_world_data().texture_for("water2"))
+    var water: Texture2D = _world_data().texture_for("water2")
     (tide_view.material as ShaderMaterial).set_shader_parameter("water", water)
     (tide_view.material as ShaderMaterial).set_shader_parameter("water_size", water.get_size())
 
-## The picture a tile image shows (the Gen 3 pack wraps most of them).
-func _picture(texture: Texture2D) -> Texture2D:
-    if texture != null and texture.has_method("use") and texture.get("current") is Texture2D: return texture.get("current")
-    return texture
-
-## Forgets every shore id and binds the shore sheets' current pictures.
+## Forgets every shore id and binds the shore sheets.
 func _reset_shores() -> void:
     shore_bytes.fill(0)
     shore_cells_dirty = true
@@ -830,12 +814,11 @@ func _reset_shores() -> void:
     shore_rows = [null]
     shore_keys = {}
     shore_sources = [_world_data().texture_for("shore_sheet4"), _world_data().texture_for("shore1inner_sheet2")]
-    shore_textures = shore_sources.map(_picture)
     for view in shore_views:
         var material := view.material as ShaderMaterial
         for sheet in range(2):
-            material.set_shader_parameter(["outer", "inner"][sheet], shore_textures[sheet])
-            material.set_shader_parameter(["outer_size", "inner_size"][sheet], shore_textures[sheet].get_size() if shore_textures[sheet] != null else Vector2.ONE)
+            material.set_shader_parameter(["outer", "inner"][sheet], shore_sources[sheet])
+            material.set_shader_parameter(["outer_size", "inner_size"][sheet], shore_sources[sheet].get_size() if shore_sources[sheet] != null else Vector2.ONE)
 
 ## A cell's [ocean, tidal] shore ids, or [] when its shoreline stays on the
 ## TileMapLayers (no GPU, or out of ids).

@@ -6,7 +6,6 @@ reports 4.7.2.stable.official.ed1daf0bf. Use matching export templates. Engine,
 SDKs and export-template binaries are external dependencies, not bundled here.
 2. Import project/project.godot. Allow asset imports to finish, then press F5.
 The .godot cache is intentionally absent and is regenerated locally.
-3. The project contains its default Gen 3 overhaul pack in data. Retain it.
 
 ANDROID
 1. Install JDK 17, Android SDK and matching Godot Android export templates.

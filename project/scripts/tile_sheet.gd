@@ -12,8 +12,6 @@ const GAP := 1
 const LARGEST := 256
 
 static var enabled := true
-## Goes up when tile art is swapped while the game runs (the Gen 3 pack).
-static var generation := 0
 static var pages: Array = []      # each: {"image", "texture", "x", "y", "row", "dirty"}
 static var placed: Dictionary = {}
 static var sources: Dictionary = {}
@@ -22,12 +20,6 @@ static var sources: Dictionary = {}
 ## its own image (switched off, an unusual kind of texture, or too large).
 static func place(texture: Texture2D, region: Rect2) -> Array:
     if not enabled or texture == null: return []
-    # Nearly every tile image is wrapped by the Gen 3 pack's switch, whether or
-    # not the pack is on. The picture it currently shows is what goes on the
-    # sheet; when the pack is switched, `generation` changes and the tile
-    # layers place every tile again.
-    if texture.has_method("use") and texture.get("current") is Texture2D:
-        texture = texture.get("current")
     if not (texture is CompressedTexture2D or texture is ImageTexture or texture is PortableCompressedTexture2D): return []
     var size := Vector2i(region.size)
     if size.x <= 0 or size.y <= 0 or size.x > LARGEST or size.y > LARGEST: return []
