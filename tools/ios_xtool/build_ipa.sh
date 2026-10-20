@@ -4,10 +4,15 @@
 # It builds the committed HEAD, not uncommitted changes. See README.md.
 #
 #   tools/ios_xtool/build_ipa.sh
+#   ENGINE=official tools/ios_xtool/build_ipa.sh   # Godot's own template library, no engine build
+#   SMOKE=0 tools/ios_xtool/build_ipa.sh           # skip CI's smoke test of the pack
 #
 # The versions are the ones CI gives the same commit: MAJOR.MINOR from the iOS
 # preset plus the commit count, e.g. 0.10.166 (166).
 set -euo pipefail
+engine=${ENGINE:-stripped}
+smoke=${SMOKE:-1}
+[ "$engine" = official ] && smoke=0  # the smoke test checks the stripped profile
 
 GODOT_VERSION=4.7.2
 repo=$(cd "$(dirname "$0")/../.." && pwd)
@@ -35,6 +40,50 @@ if [ ! -f "$tpl/ios.zip" ]; then
   rm "$cache/templates.tpz"
 fi
 
+# The stripped engine, built from source with CI's profile: the iOS library
+# (ios job) and the Linux headless engine for the smoke test (smoke job). Each is
+# built once per Godot version and profile.
+profile=$repo/.github/engine/custom.py
+key=$GODOT_VERSION-$(sha256sum "$profile" | cut -c1-12)
+ios_lib=$cache/engine/libgodot.ios.$key.a
+linux_engine=$cache/engine/godot.linuxbsd.$key
+src=$cache/godot-src
+sdk=$HOME/.swiftpm/swift-sdks/darwin.artifactbundle
+godot_scons() {
+  (cd "$src" && "$cache/scons/bin/scons" target=template_release profile="$profile" -j"$(nproc)" "$@")
+}
+if { [ "$engine" = stripped ] && [ ! -f "$ios_lib" ]; } || { [ "$smoke" = 1 ] && [ ! -x "$linux_engine" ]; }; then
+  [ -d "$src" ] || git clone -q --depth 1 -b "$GODOT_VERSION-stable" https://github.com/godotengine/godot.git "$src"
+  # Godot's iOS cross-build ("osxcross" mode) passes the Swift resource dir of its own build container.
+  sed -i "s|\"/root/Xcode.app/|\"$sdk/Xcode.app/|" "$src/platform_methods.py"
+  if [ ! -x "$cache/scons/bin/scons" ]; then  # stock Ubuntu has no pip: venv + get-pip
+    python3 -m venv --without-pip "$cache/scons"
+    curl -fsSL https://bootstrap.pypa.io/get-pip.py | "$cache/scons/bin/python" - -q
+    "$cache/scons/bin/pip" -q install scons
+  fi
+  mkdir -p "$cache/engine"
+fi
+if [ "$engine" = stripped ] && [ ! -f "$ios_lib" ]; then
+  # osxcross mode wants <triple>clang, ar, ranlib, libtool in
+  # $APPLE_TOOLCHAIN_PATH/usr/bin: here Swift's clang and llvm-ar (named by
+  # target, so clang builds for iOS) and xtool's llvm-libtool-darwin.
+  swiftbin=$(cd && swiftly use --print-location)/usr/bin
+  tc=$cache/ios-toolchain
+  mkdir -p "$tc/usr/bin"
+  for t in clang clang++; do ln -sf "$swiftbin/clang" "$tc/usr/bin/arm64-apple-ios-$t"; done
+  for t in ar ranlib; do ln -sf "$swiftbin/llvm-ar" "$tc/usr/bin/arm64-apple-ios-$t"; done
+  ln -sf "$sdk/toolset/bin/llvm-lib" "$tc/usr/bin/arm64-apple-ios-libtool"
+  OSXCROSS_IOS=1 godot_scons platform=ios arch=arm64 lto=thin cache_path="$cache/scons-ios" \
+    APPLE_TOOLCHAIN_PATH="$tc" apple_target_triple=arm64-apple-ios- SWIFT_FRONTEND="$swiftbin/swift-frontend" \
+    APPLE_SDK_PATH="$sdk/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk"
+  cp "$src/bin/libgodot.ios.template_release.arm64.a" "$ios_lib"
+fi
+if [ "$smoke" = 1 ] && [ ! -x "$linux_engine" ]; then
+  godot_scons platform=linuxbsd use_llvm=yes cache_path="$cache/scons-linux" disable_path_overrides=no \
+    x11=no wayland=no alsa=no pulseaudio=no dbus=no speechd=no fontconfig=no udev=no
+  cp "$src/bin/godot.linuxbsd.template_release.x86_64.llvm" "$linux_engine"
+fi
+
 # Fresh copy of the committed project; the .godot import cache is kept between runs.
 mkdir -p "$work/project"
 find "$work/project" -mindepth 1 -maxdepth 1 ! -name .godot -exec rm -rf {} +
@@ -43,6 +92,8 @@ python3 "$repo/.github/engine/minify_json.py" "$work/project"
 
 # The commit this build comes from: hosts refuse players of another build.
 git -C "$repo" rev-parse HEAD > "$work/project/build_id.txt"
+[ "$(git -C "$repo" rev-parse --is-shallow-repository)" = false ] \
+  || { echo "Shallow clone: the version is the commit count, run git fetch --unshallow" >&2; exit 1; }
 count=$(git -C "$repo" rev-list --count HEAD)
 VERSION="$(sed -n 's/^application\/short_version="\([0-9]*\.[0-9]*\).*/\1/p' "$work/project/export_presets.cfg").$count" \
 BUNDLE=$count python3 - "$work/project/export_presets.cfg" <<'EOF'
@@ -61,6 +112,21 @@ cp "$repo/tools/ios_xtool/Package.swift" "$repo/tools/ios_xtool/xtool.yml" "$app
 : > "$app/Sources/Pokewilds/stub.swift"
 (cd "$work/project" && "$godot" --headless --import && "$godot" --headless --export-release "iOS" "$app/Pokewilds.ipa")
 cp "$app/Pokewilds/dummy.cpp" "$app/Pokewilds/dummy.h" "$app/Sources/GodotPlugins/"
+[ "$engine" = stripped ] && cp "$ios_lib" "$app/Pokewilds.xcframework/ios-arm64/libgodot.a"
+
+# CI's smoke test on the pack going into the IPA: the stripped engine (Linux,
+# headless) loads every script and scene, then runs the game for 900 frames.
+if [ "$smoke" = 1 ]; then
+  log=$work/smoke.log
+  timeout 600 "$linux_engine" --headless --main-pack "$app/Pokewilds.pck" -s "$repo/.github/engine/smoke.gd" 2>&1 | tee "$log" || true
+  timeout 300 "$linux_engine" --headless --main-pack "$app/Pokewilds.pck" --quit-after 900 2>&1 | tee -a "$log" || true
+  grep -E "ERROR|SMOKE" "$log" | sort | uniq -c
+  grep -q "SMOKE: checked [0-9]*, failed 0" "$log"
+  if grep -E "SMOKE FAIL|SCRIPT ERROR|Parse Error|Cannot get class|Failed to load|not declared in the current scope" "$log"; then
+    echo "Smoke test failed: see $log" >&2
+    exit 1
+  fi
+fi
 
 # No ibtool/actool on Linux: plain PNG icons instead of Assets.car, and the
 # UILaunchScreen key instead of the launch storyboard.
