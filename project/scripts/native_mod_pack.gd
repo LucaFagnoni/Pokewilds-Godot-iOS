@@ -8,6 +8,9 @@ static var last_error := ""
 static var retained: Array[Resource] = []
 static var species_patches: Dictionary = {}
 static var palettes: Dictionary = {}
+# Battle animations are cropped atlas pages (tools/battle_atlas.py): a mod can
+# repaint a page in place, the old full-frame sheets have nowhere to go.
+const OLD_BATTLE_SHEET := "Battle animations are now atlas pages to repaint at the same size; old full-frame sheets are not supported: "
 
 static func _safe_path(path: String) -> bool:
     return not path.is_empty() and not path.begins_with("/") and not ":" in path and not "\\" in path and not ".." in path.split("/")
@@ -33,7 +36,7 @@ static func validate(path: String) -> Dictionary:
     for target in manifest.get("resources",{}):
         var file: String = str(manifest.resources[target])
         if not catalog.has(target) or not names.has(file) or not _safe_path(file):
-            zip.close();return {"error":"Unsupported asset destination: " + str(target)}
+            zip.close();return {"error":(OLD_BATTLE_SHEET if "/battle_animations/" in str(target) else "Unsupported asset destination: ") + str(target)}
         var bytes := zip.read_file(file)
         total += bytes.size()
         if bytes.size() > 33554432 or total > 268435456:
@@ -49,8 +52,10 @@ static func validate(path: String) -> Dictionary:
                 valid = image.get_width() > 0 and image.get_width() <= 96 and image.get_height() % image.get_width() == 0 and image.get_height() <= 8192
             # Converted walking strips replace source vertical sheets.
             if "overworld" in str(target) and image.get_size() == Vector2i(96,16): valid = true
+            # The transition sheet before it kept only its first row of frames.
+            if str(target).ends_with("/battle_intro_anim1_sheet1.png") and image.get_size() == Vector2i(8192,256): valid = true
             if not valid:
-                zip.close();return {"error":"Wrong image dimensions: " + file}
+                zip.close();return {"error":(OLD_BATTLE_SHEET if "/battle_animations/" in str(target) else "Wrong image dimensions: ") + file}
             resource = ImageTexture.create_from_image(image)
         elif str(target).ends_with(".ogg"):
             resource = AudioStreamOggVorbis.load_from_buffer(bytes)

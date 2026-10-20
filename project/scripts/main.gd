@@ -3638,7 +3638,9 @@ func _source_animation_frame_texture(source_key: String,
     var animation: Dictionary = battle_animation_manifest.get("animations", {}).get(source_key, {})
     if animation.is_empty():
         return null
-    var table := _battle_frame_table(source_key)
+    # The Gen 3 overhaul crops its pages differently; directives stay in the base table.
+    var table: PackedByteArray = preload("res://scripts/gen3_overhaul.gd").frame_table(source_key)
+    if table.is_empty(): table = _battle_frame_table(source_key)
     var at := frame_index * 16
     if at < 0 or at + 16 > table.size():
         return null

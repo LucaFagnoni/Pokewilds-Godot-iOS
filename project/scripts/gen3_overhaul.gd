@@ -1,7 +1,7 @@
 extends RefCounted
 
 const PACK := "res://data/gen3_overhaul.pwmod"
-const PACK_HASH := "3ce142decbe36d4c413177fa1a7690da04225f209771297e7719a8ccc2a02225"
+const PACK_HASH := "af6d1e66300a3d2081fcc3325007ad1d5a6d0512268ea181cb2072bd848cbd11"
 const CACHE := "user://builtin_gen3_overhaul.pwmod"
 const TextureSwitch = preload("res://scripts/gen3_texture.gd")
 static var enabled := false
@@ -13,6 +13,7 @@ static var manifest := {}
 static var user_paths := {}
 static var user_species := {}
 static var user_palettes := {}
+static var frame_tables := {}
 static var error := ""
 
 static func initialize(overrides: Dictionary) -> void:
@@ -40,6 +41,16 @@ static func initialize(overrides: Dictionary) -> void:
         elif original is AudioStreamOggVorbis:
             baseline[path] = original
             audio_baseline[path] = original.packet_sequence
+    # Battle animation pages crop the pack's frames in their own layout
+    # (tools/convert_pack_battle_sheets.py); a user mod's page keeps the base one.
+    var tables: Dictionary = manifest.get("battle_frame_tables",{})
+    for key in tables:
+        if (tables[key].pages as Array).all(func(page): return proxies.has(page)):
+            frame_tables[key] = Marshalls.base64_to_raw(String(tables[key].frame_table))
+
+## The pack's crops of a battle animation while it is on, else empty.
+static func frame_table(key: String) -> PackedByteArray:
+    return frame_tables.get(key, PackedByteArray()) if enabled else PackedByteArray()
 
 static func apply(next: bool, tree: SceneTree) -> bool:
     # Builds without the pack (iOS) keep the original art instead of failing,
