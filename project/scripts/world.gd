@@ -274,7 +274,10 @@ func _process(delta: float) -> void:
         var stream = get_node_or_null("GroundLayer/ExactBaseTileStream")
         if stream != null:
             tick = int(stream.get("source_animation_tick"))
-        splash.material.set_shader_parameter("water_frame", posmod(int(tick / 19), 2))
+        # A shader parameter write is sent to the renderer even when equal.
+        var water_frame := posmod(int(tick / 19), 2)
+        if splash.material.get_shader_parameter("water_frame") != water_frame:
+            splash.material.set_shader_parameter("water_frame", water_frame)
     if generated and gameplay_enabled:
         _update_overworld_idle_sprites(delta)
 
@@ -355,14 +358,20 @@ func _setup_normal_grass_front_overlay() -> void:
 func _update_normal_grass_front_overlay(_cell: Vector2i) -> void:
     if not is_instance_valid(normal_grass_front_sprite):
         return
-    normal_grass_front_sprite.hide()
-    for front in m257_grass_fronts:
-        if is_instance_valid(front):
-            front.hide()
+    # Hide only the fronts left unused: hiding all of them and showing them
+    # again sent two visibility changes to the renderer every frame in grass.
+    var used := _place_normal_grass_fronts()
+    if used == 0:
+        normal_grass_front_sprite.hide()
+    for k in range(m257_grass_fronts.size()):
+        if k + 1 >= used and is_instance_valid(m257_grass_fronts[k]):
+            m257_grass_fronts[k].hide()
+
+func _place_normal_grass_fronts() -> int:
     if active_area_id != "OVERWORLD" or not exact_world_mode or exact_world == null:
-        return
+        return 0
     if active_field_move in ["FLY", "RIDE", "SURF"]:
-        return
+        return 0
     # DrawPlayerLower/Upper splits the 16px actor at row 8. Grass is between
     # those two parts: preserve the head, cover the lower half with source art.
     var center := to_local(player.sprite.global_position.round())
@@ -373,13 +382,15 @@ func _update_normal_grass_front_overlay(_cell: Vector2i) -> void:
     for y in range(first.y, last.y + 1):
         for x in range(first.x, last.x + 1):
             var cell := Vector2i(x, y)
-            var tile := exact_world.tile_at(cell)
-            if tile == null:
+            # Names first: the tile object is only needed under grass.
+            var names := _exact_names_at(cell)
+            if names.is_empty():
                 continue
-            var base := _source_tile_key(tile.name)
-            var upper := _source_tile_key(tile.name_upper)
+            var base := _source_tile_key(names[0])
+            var upper := _source_tile_key(names[1])
             if base not in ["grass1", "grass2", "grass3", "grass4", "grass_sand1", "grass_sand2", "grass_sand3", "grass_graveyard1", "grass_savanna1", "grass_savanna2"] and upper not in ["grass1", "grass2_over", "grass3_over", "grass4_over", "grass5_over", "grass6_over", "grass_savanna1", "grass_savanna2"]:
                 continue
+            var tile := exact_world.tile_at(cell)
             var tick := int(world_elapsed_seconds * 60.0)
             var stream = get_node_or_null("DecorLayer/ExactUpperTileStream")
             if stream != null:
@@ -407,10 +418,12 @@ func _update_normal_grass_front_overlay(_cell: Vector2i) -> void:
                 front = m257_grass_fronts[index - 1]
             front.texture = spec.get("texture")
             front.region_rect = Rect2(region.position + clipped.position - origin, clipped.size)
-            front.position = clipped.position
-            front.z_index = player.z_index + 1
+            # Neither setter skips an unchanged value.
+            if front.position != clipped.position: front.position = clipped.position
+            if front.z_index != player.z_index + 1: front.z_index = player.z_index + 1
             front.show()
             index += 1
+    return index
 
 func set_active_field_move(pokemon_data: Dictionary, move: String, ball_landing: bool = false) -> bool:
     if is_instance_valid(sleeping_bag_sprite):
@@ -1152,7 +1165,10 @@ func _update_wild_pokemon(delta: float) -> void:
         var active_sprite = data.get("sprite") as Sprite2D
         if is_instance_valid(active_sprite):
             active_sprite.visible = true
-            active_sprite.z_index = _depth_z(old_cell)
+            # z_index has no same-value check: writing it every frame for
+            # every nearby Pokemon re-sent it to the renderer each time.
+            var depth := _depth_z(old_cell)
+            if active_sprite.z_index != depth: active_sprite.z_index = depth
         _update_pokemon_water_visual(data)
         if local_target:_update_friendly_passby(data, old_cell, false)
         var was_charmed = bool(data.get("charmed", false))
@@ -1441,6 +1457,11 @@ func _update_tidal_wade_visual() -> void:
                 var foot_cell := Vector2i(
                     floori((player.position.x + foot_x) / TILE),
                     floori((player.position.y + 6.0) / TILE))
+                # Name test first, from the store: three tile objects a frame
+                # on dry land otherwise, only to find no tide water.
+                var foot_names := _exact_names_at(foot_cell)
+                if foot_names.is_empty() or not foot_names[0].to_lower().contains("_tidalwater"):
+                    continue
                 var foot_tile: SourceTile = exact_world.tile_at(foot_cell)
                 if foot_tile != null and _is_beach_tidal_tile(foot_tile) and \
                         foot_tile.name.to_lower().contains("_tidalwater"):
@@ -1835,14 +1856,15 @@ func _fill_source_dig_holes() -> void:
         var parts := String(key).split(",")
         if parts.size() != 2: continue
         var cell := Vector2i(int(parts[0]), int(parts[1]))
-        var tile: SourceTile = exact_world.tile_at(cell)
-        if tile == null or not tile.name_upper.begins_with("hole1"): continue
+        # Names straight from the tile store: no tile object per edited cell.
+        var here := _exact_names_at(cell)
+        if here.is_empty() or not here[1].begins_with("hole1"): continue
         var water := false
         var lava := false
         for direction in [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
-            var neighbor: SourceTile = exact_world.tile_at(cell + direction)
-            if neighbor == null: continue
-            var names := neighbor.name + " " + neighbor.name_upper
+            var neighbor := _exact_names_at(cell + direction)
+            if neighbor.is_empty(): continue
+            var names := neighbor[0] + " " + neighbor[1]
             if "water" in names: water = true
             elif "lava" in names: lava = true
         if water or lava: replacements[cell] = "soot1" if water and lava else "water2" if water else "lava1"
