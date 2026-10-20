@@ -44,6 +44,9 @@ var amounts := PackedInt32Array()
 ## 0 = no route, otherwise routes[id - 1].
 var route_ids := PackedInt32Array()
 var revisions := PackedInt32Array()
+## Counts every edit of any cell (put, erase, bump): one number that says
+## whether anything in the world's tiles changed since it was last read.
+var edit_count := 0
 ## Sparse: index -> Dictionary / Array[Vector2i].
 var items := {}
 var doors := {}
@@ -185,11 +188,13 @@ func put(key: Vector2i, tile: SourceTile) -> void:
     if at.x < 0 or at.y < 0 or at.x >= width or at.y >= height:
         if not extra.has(key): _keys_valid = false
         extra[key] = tile
+        edit_count += 1
         return
     var index := at.y * width + at.x
     var revision := revisions[index]
     _write(key, tile)
     revisions[index] = revision + 1
+    edit_count += 1
     var live = _proxies.get(index)
     var held: SourceTile = null if live == null else (live as WeakRef).get_ref()
     if tile._store == null:
@@ -205,6 +210,7 @@ func put(key: Vector2i, tile: SourceTile) -> void:
 func erase(key: Vector2i) -> bool:
     if extra.erase(key):
         _keys_valid = false
+        edit_count += 1
         return true
     var index := index_of(key)
     if index < 0: return false
@@ -216,6 +222,7 @@ func erase(key: Vector2i) -> bool:
     items.erase(index)
     doors.erase(index)
     revisions[index] += 1
+    edit_count += 1
     count -= 1
     _keys_valid = false
     return true
@@ -348,7 +355,9 @@ func set_ledge_dir(index: int, text: String) -> void: ledge_dir_ids[index] = sid
 func set_has_item(index: int, text: String) -> void: has_item_ids[index] = sid(text)
 func set_amount(index: int, value: int) -> void: amounts[index] = value
 func set_route(index: int, route: SourceRoute) -> void: route_ids[index] = route_slot(route)
-func bump(index: int) -> void: revisions[index] += 1
+func bump(index: int) -> void:
+    revisions[index] += 1
+    edit_count += 1
 func set_items(index: int, value: Variant) -> void:
     if value == null: items.erase(index)
     else: items[index] = value

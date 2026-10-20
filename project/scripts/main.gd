@@ -1109,8 +1109,11 @@ var m3924_minimap_source_cache := {}
 var m3924_minimap_cache_world_id := 0
 var m3924_minimap_cache_discovered := -1
 var m3924_minimap_cache_until := 0
+## What the source picture was drawn from (tile edits, map art, structures),
+## and a number bumped whenever the picture itself changes.
+var m3924_minimap_cache_revision: Array = []
+var m3924_minimap_source_serial := 0
 var m257_minimap_raster_key: Array = []
-var m257_minimap_raster_until := 0
 var m257_minimap_recipes: Dictionary = {}
 var teleport_map_mode := false
 var teleport_destinations: Array = []
@@ -1920,7 +1923,8 @@ func _refresh_m3924_minimap(bounds: Rect2i, player_position: Vector2) -> void:
     var map_left: float = map_center.x - M3924_MINIMAP_MAP_RADIUS
     var map_top: float = map_center.y - M3924_MINIMAP_MAP_RADIUS
     var player_cell_position: Vector2 = player_position / 16.0
-    var indoor := world.interior_map_image(bounds) != null
+    var interior_image: Image = world.interior_map_image(bounds)
+    var indoor := interior_image != null
     # Fit the floor's diagonal in the circular view, preserving centered-player
     # panning and uniform scale. Outdoors retain the approved 24-cell window.
     var centered := indoor
@@ -1952,18 +1956,22 @@ func _refresh_m3924_minimap(bounds: Rect2i, player_position: Vector2) -> void:
     var exact = world.get("exact_world")
     m3924_minimap_map.set_meta("view_origin",view_origin)
     m3924_minimap_map.set_meta("window_cells",window_cells)
+    # The picture is redrawn only when what it samples changed: the view, the
+    # source picture (rebuilt on tile edits, patched on discovery) or, without
+    # one, the tiles themselves. It used to be redrawn every 2 s regardless.
+    var source_region: Dictionary = _m3924_minimap_source_region(bounds, view_origin)
+    var source_image: Image = source_region.get("image")
     var raster_key: Array = [bounds, view_origin, window_cells, indoor, centered,
         0 if exact == null else exact.get_instance_id(),
-        (world.get("discovered_cells") as Dictionary).size() if Time.get_ticks_msec() - m3924_minimap_cache_built >= 400 else m3924_minimap_cache_discovered]
-    if raster_key == m257_minimap_raster_key and Time.get_ticks_msec() < m257_minimap_raster_until and m3924_minimap_map.texture != null:
+        (world.get("discovered_cells") as Dictionary).size() if Time.get_ticks_msec() - m3924_minimap_cache_built >= 400 else m3924_minimap_cache_discovered,
+        0 if source_image == null else source_image.get_instance_id(), m3924_minimap_source_serial,
+        _m3924_minimap_world_revision() if source_image == null else []]
+    if raster_key == m257_minimap_raster_key and m3924_minimap_map.texture != null:
         _position_m3924_minimap_markers(bounds, player_position, view_origin, window_cells)
         return
     m257_minimap_raster_key = raster_key
-    m257_minimap_raster_until = Time.get_ticks_msec() + 2000
     var image := Image.create(canvas_size.x, canvas_size.y, false, Image.FORMAT_RGBA8)
     image.fill(Color(0, 0, 0, 0))
-    var source_region: Dictionary = _m3924_minimap_source_region(bounds, view_origin)
-    var source_image: Image = source_region.get("image")
     var source_origin: Vector2i = source_region.get("origin", Vector2i.ZERO)
     if source_image != null:
         # Sampling is separable: calculate X/Y indices once, rather than
@@ -2030,6 +2038,14 @@ func _refresh_m3924_minimap(bounds: Rect2i, player_position: Vector2) -> void:
     m3924_minimap_draw_offset = Vector2i.ZERO
     _position_m3924_minimap_markers(bounds, player_position, view_origin, window_cells)
 
+## Changes whenever anything the minimap draws from changed: a tile edit
+## (tide, digging, building, pickups...), the map art, or the structures.
+func _m3924_minimap_world_revision() -> Array:
+    var exact = world.get("exact_world")
+    var store = null if exact == null else exact.get("tiles")
+    return [store.edit_count if store is WorldTileStore else 0,
+        int(world.get("map_art_revision")), (world.get("built_structures") as Dictionary).size()]
+
 func _m3924_minimap_source_region(bounds: Rect2i, view_origin: Vector2) -> Dictionary:
     var interior: Image = world.interior_map_image(bounds)
     if interior != null:
@@ -2053,10 +2069,12 @@ func _m3924_minimap_source_region(bounds: Rect2i, view_origin: Vector2) -> Dicti
     # The picture is built for a wider area than the minimap shows and kept
     # while the view stays inside it, so walking does not rebuild it. Newly
     # discovered ground is painted in at once, but only the patch that
-    # changed, not the whole picture.
+    # changed, not the whole picture. Other changes (tide, digs, builds)
+    # rebuild it, at most every 2 s, as the 2 s refresh it replaces did.
+    var revision := _m3924_minimap_world_revision()
     var cache_ok: bool = not m3924_minimap_source_cache.is_empty() and \
             world_id == m3924_minimap_cache_world_id and \
-            now < m3924_minimap_cache_until and \
+            (revision == m3924_minimap_cache_revision or now < m3924_minimap_cache_until) and \
             m3924_minimap_source_cache["bounds"] == bounds and \
             (m3924_minimap_source_cache["region"] as Rect2i).encloses(needed)
     if cache_ok and discovered_count == m3924_minimap_cache_discovered:
@@ -2087,6 +2105,7 @@ func _m3924_minimap_source_region(bounds: Rect2i, view_origin: Vector2) -> Dicti
             (m3924_minimap_source_cache["image"] as Image).blit_rect(fresh,
                 Rect2i((patch.position - drawn.position) * SOURCE_MAP_TILE_PIXELS, patch.size * SOURCE_MAP_TILE_PIXELS),
                 patch.position * SOURCE_MAP_TILE_PIXELS)
+            m3924_minimap_source_serial += 1
             return m3924_minimap_source_cache
     var region := needed.grow(6)
     origin = region.position
@@ -2100,6 +2119,8 @@ func _m3924_minimap_source_region(bounds: Rect2i, view_origin: Vector2) -> Dicti
     m3924_minimap_cache_world_id = world_id
     m3924_minimap_cache_discovered = discovered_count
     m3924_minimap_cache_until = now + 2000
+    m3924_minimap_cache_revision = revision
+    m3924_minimap_source_serial += 1
     m3924_minimap_source_cache = {
         "image": image, "origin": origin, "region": region, "bounds": bounds
     }
@@ -13058,7 +13079,6 @@ func _invalidate_travel_maps() -> void:
     map_art_cache = null
     map_art_cache_key = ""
     m257_minimap_raster_key.clear()
-    m257_minimap_raster_until = 0
     m3924_minimap_source_cache.clear()
     m3924_minimap_cache_world_id = 0
     m3924_minimap_cache_until = 0
