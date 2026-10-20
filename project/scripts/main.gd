@@ -5966,6 +5966,8 @@ func _start_battle_context(context: Dictionary, source_alert: bool = false) -> v
         if not enemy_partner_entry.is_empty(): entry_messages.append(enemy_partner_entry)
         if not player_partner_entry.is_empty(): entry_messages.append(player_partner_entry)
     battle_context["_entry_messages"] = entry_messages.duplicate()
+    _request_pokemon_cry(battle_enemy)
+    _request_pokemon_cry(battle_player)
 
     var battle_texture: Texture2D = PokemonData.record_texture(battle_enemy, "front")
     if battle_texture == null:
@@ -6239,6 +6241,25 @@ func _ghost_battle_texture() -> Texture2D:
     return atlas
 
 var battle_sprite_frame_counts: Dictionary = {}
+var battle_sprite_facts: Dictionary = {}
+
+## Imported sheets come with what the GPU check below would find worked out
+## beforehand (tools/battle_sprite_facts.gd): reading a sprite back from the GPU
+## stalls the iPhone. [idle frames, frames whose background is removed...], or
+## [] for art the table does not know (mods), which is checked as before.
+func _battle_sprite_facts(texture: Texture2D) -> Array:
+    if not texture is CompressedTexture2D: return []
+    if battle_sprite_facts.is_empty():
+        var parsed = JSON.parse_string(FileAccess.get_file_as_string("res://data/battle_sprite_facts.json"))
+        battle_sprite_facts = parsed if parsed is Dictionary else {}
+        battle_sprite_facts["plain"] = PackedInt64Array(battle_sprite_facts.get("plain", []))
+    var key := "%s:%dx%d" % [texture.resource_path, texture.get_width(), texture.get_height()]
+    var listed: Array = (battle_sprite_facts.get("listed", {}) as Dictionary).get(key, [])
+    if not listed.is_empty(): return listed
+    # Most sheets animate every frame and keep their background: only a hash.
+    var plain: PackedInt64Array = battle_sprite_facts.plain
+    var at := plain.bsearch(key.hash())
+    return [_battle_sprite_sheet_frames(texture)] if at < plain.size() and plain[at] == key.hash() else []
 
 ## How many frames the sheet holds, stacked top to bottom.
 func _battle_sprite_sheet_frames(texture: Texture2D) -> int:
@@ -6264,6 +6285,8 @@ func _battle_sprite_frame_count(texture: Texture2D) -> int:
     # An idle animation is the same pose with small changes. A sheet whose
     # second frame is a different drawing (Mega Gyarados) is not one: flipping
     # between the two makes the Pokemon thrash about. Show its first frame.
+    var facts := _battle_sprite_facts(texture)
+    if not facts.is_empty(): return int(facts[0])
     var key := texture.resource_path if not texture.resource_path.is_empty() else str(texture.get_instance_id())
     if not battle_sprite_frame_counts.has(key):
         var image := texture.get_image()
@@ -6304,7 +6327,11 @@ func _battle_sprite_frame_at(texture: Texture2D, animation_frame: int) -> Textur
             mini(frame_height, texture_height - frame_y)
         )
         result = frame
-    result = _remove_connected_sprite_background(result)
+    var facts := _battle_sprite_facts(texture)
+    if facts.is_empty() or facts.slice(1).has(float(frame_index)):
+        result = _remove_connected_sprite_background(result)
+    # Each entry keeps its Pokemon's sheet loaded: hold only the recent ones.
+    if battle_sprite_alpha_cache.size() >= 48: battle_sprite_alpha_cache.clear()
     battle_sprite_alpha_cache[cache_key] = result
     return result
 
@@ -6393,6 +6420,7 @@ var world_hidden_by_battle := false
 func _hide_world_under_battle() -> void:
     var backdrop: ColorRect = battle_panel.get_node("Background")
     var covered: bool = battle_active and battle_panel.visible and backdrop.visible         and backdrop.color.a >= 1.0 and battle_panel.modulate.a >= 1.0
+    _pause_field_reflections(covered)
     # Full-screen touch menus (the map, the bag, the party...) are opaque too.
     if not covered and is_instance_valid(touch_ui):
         var menu_backdrop: ColorRect = touch_ui.surfaces.backdrop
@@ -6403,6 +6431,23 @@ func _hide_world_under_battle() -> void:
     # nodes under the world (~9 ms at every battle start and end). The title
     # screen's own world.visible = false still wins.
     RenderingServer.canvas_item_set_visible(world.get_canvas_item(), world.visible and not covered)
+
+var paused_reflections: Node = null
+
+## Under an opaque battle screen the field is not drawn, so its water
+## reflections (about a sixth of a battle frame's CPU) need not be worked out.
+## The tile streams keep running: they also bring in the tide, which has to be
+## in place the moment the field shows again.
+func _pause_field_reflections(paused: bool) -> void:
+    if paused == is_instance_valid(paused_reflections): return
+    if not paused:
+        paused_reflections.set_process(true)
+        paused_reflections = null
+        return
+    var reflections := world.get_node_or_null("ExactReflectionLayer")
+    if reflections != null and reflections.is_processing():
+        reflections.set_process(false)
+        paused_reflections = reflections
 
 func _restore_battle_background() -> void:
     if not is_instance_valid(battle_panel): return
@@ -8491,6 +8536,7 @@ func _end_battle(outcome: String = "") -> void:
     battle_item_menu_index = 0
     item_pocket_menu.visible = false
     battle_audio.stop()
+    _release_cry_requests()
     battle_move_animation.texture = null
     _clear_battle_capture_ball()
     for index in range(caught_pokemon.size()):
@@ -9116,13 +9162,29 @@ func _play_source_battle_sound(filename: String) -> void:
         AudioBalance.apply(battle_audio)
         battle_audio.play()
 
-func _play_pokemon_cry(pokemon: Dictionary, gain: float = 1.0) -> void:
+func _pokemon_cry_path(pokemon: Dictionary) -> String:
     if pokemon.is_empty():
-        return
+        return ""
     var cry_path := "res://assets/source_audio/cries/000.ogg" if bool(pokemon.get("is_ghost", false)) else PokemonData.cry_path(String(pokemon.get("species", "")))
-    if cry_path.is_empty() or not ResourceLoader.exists(cry_path):
+    return cry_path if not cry_path.is_empty() and ResourceLoader.exists(cry_path) else ""
+
+## Cries a battle is about to play load on a worker thread during the transition.
+var cry_requests: Dictionary = {}
+func _request_pokemon_cry(pokemon: Dictionary) -> void:
+    var cry_path := _pokemon_cry_path(pokemon)
+    if not cry_path.is_empty() and not cry_requests.has(cry_path) and ResourceLoader.load_threaded_request(cry_path) == OK:
+        cry_requests[cry_path] = true
+
+## Hands back (and so releases) cries requested but never played.
+func _release_cry_requests() -> void:
+    for cry_path in cry_requests: ResourceLoader.load_threaded_get(cry_path)
+    cry_requests.clear()
+
+func _play_pokemon_cry(pokemon: Dictionary, gain: float = 1.0) -> void:
+    var cry_path := _pokemon_cry_path(pokemon)
+    if cry_path.is_empty():
         return
-    battle_audio.stream = load(cry_path) as AudioStream
+    battle_audio.stream = (ResourceLoader.load_threaded_get(cry_path) if cry_requests.erase(cry_path) else load(cry_path)) as AudioStream
     AudioBalance.apply(battle_audio)
     battle_audio.volume_db += linear_to_db(maxf(gain, 0.001))
     battle_audio.play()
