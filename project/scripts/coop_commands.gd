@@ -70,7 +70,8 @@ func execute(actor:String,payload:Dictionary)->Dictionary:
     budget.count+=1;_budgets[actor]=budget
     if int(budget.count)>MAX_PER_SECOND:return {"ok":false,"reason":"rate_limited"}
     var consent_command:bool=operation in ["interact","answer","trade_offer","trade_confirm","battle_action","battle_done","cancel"]
-    var request_hash:String=state.fingerprint([operation,args])
+    # Only these keep their answer by request; a world motion's runs to 16 KB.
+    var request_hash:String=state.fingerprint([operation,args]) if consent_command else ""
     if consent_command:
         var saved:Dictionary=_interaction_replies.get(actor,{}).get(id,{})
         if not saved.is_empty():

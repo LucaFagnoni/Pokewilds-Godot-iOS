@@ -275,6 +275,7 @@ func configure(game:Node)->void:
     session.connection_lost.connect(_connection_lost)
     session.departed.connect(func(_peer,_actor):_broadcast_authority.call_deferred())
     session.departed.connect(func(peer,_actor):_player_notice(peer,"","left"))
+    session.departed.connect(func(peer,_actor):_join_records_sent.erase(peer))
     visuals=Players.new();add_child(visuals);visuals.configure(main,session,state)
     visuals.presence_received.connect(_presence)
     commands=Commands.new();add_child(commands);commands.bind(session,state)
@@ -967,6 +968,9 @@ func game_started()->bool:
     rest.apply_on_entry()
     if not hosting:
         visuals.set_area(_area());session.send_host({"kind":"entered","area":_area()});_loading=false;_refresh_drops();building.sync_current()
+        # Loading the game emptied the storage mirror; the host's records came
+        # on being let in (not again on entering, see _message).
+        storage.refresh()
         var joined:bool=await wild.initialize_ids()
         if joined:_travelling_box_enter.call_deferred()
         return joined
@@ -1137,6 +1141,9 @@ func show_notice(player:String,event:String)->void:
     _notice_fade.tween_interval(4.0)
     _notice_fade.tween_property(_notice_box,"modulate:a",0.0,1.0)
 
+## Host: players sent the records on being let in who have not entered yet.
+var _join_records_sent:Dictionary={}
+
 func _admitted(peer:int,actor:String,profile:Dictionary)->void:
     state.enroll(actor,profile)
     _join_sequence+=1;_joined_at[peer]=_join_sequence
@@ -1172,6 +1179,7 @@ func _admitted(peer:int,actor:String,profile:Dictionary)->void:
         var enrolled=state.transact(actor,"enroll/"+_id(),[state.change("player/"+actor,personal)])
         if not enrolled.get("ok",false):session.transport._drop(peer);return
     await _send_state(peer,actor)
+    _join_records_sent[peer]=true
     var error:Error=session.send_to(peer,{"kind":"game_begin","area":destination,"game":data,"profile_base":state.print_of("player/"+actor,{})})
     if error!=OK:session.transport._drop(peer)
 
@@ -1189,7 +1197,11 @@ func _message(_peer:int,actor:String,packet:Dictionary)->void:
         if packet.get("kind")=="entered" and packet.get("area") is String:
             _player_notice(_peer,"","joined")
             var entry=service.areas.enter(actor,packet.area)
-            if entry.get("ok",false):await _send_state(_peer,actor)
+            # A player arriving from another area is sent the records again.
+            # One who is joining had them on being let in, and every change
+            # since: sending them twice was a second ~60 KB on every join.
+            var joining:bool=_join_records_sent.erase(_peer)
+            if entry.get("ok",false) and not joining:await _send_state(_peer,actor)
             session.send_to(_peer,{"kind":"entered_reply","entry":entry})
             _broadcast_authority()
         return

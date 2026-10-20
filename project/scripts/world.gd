@@ -1153,6 +1153,8 @@ func _update_wild_pokemon(delta: float) -> void:
         if bool(data.get("burrowed", false)):
             continue
         var old_cell = data.get("cell", Vector2i.ZERO)
+        # A dedicated server skips the frames nobody would see (coop_wild_runtime.gd).
+        if online and coordinator.wild.idle_frame(data, delta): continue
         var local_target=true
         var target_player = null
         if online:

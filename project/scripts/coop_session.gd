@@ -7,7 +7,7 @@ signal message(peer: int, actor: String, payload: Dictionary)
 signal rejected(reason: String)
 signal connection_lost
 const Transport = preload("res://scripts/coop_transport.gd")
-const PROTOCOL := "pokewilds-godot-coop-6"
+const PROTOCOL := "pokewilds-godot-coop-7"
 var transport: Node
 var hosting := false
 var world_id := ""

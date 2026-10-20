@@ -5,6 +5,8 @@ signal disconnected(peer: int)
 signal received(peer: int, message: Dictionary)
 signal failed(reason: String)
 const JoinCode = preload("res://scripts/coop_join_code.gd")
+## Positions travel as bytes, everything else as JSON.
+const Remote = preload("res://scripts/coop_remote_player.gd")
 const MAX_FRAME := 256 * 1024
 const MAX_QUEUE := 4 * 1024 * 1024
 const FRAME_BUDGET := 64 * 1024
@@ -73,7 +75,8 @@ static func count(key:String,bytes:int,started_usec:int)->void:
 
 func send(peer: int, message: Dictionary) -> Error:
     var started:=Time.get_ticks_usec()
-    var bytes:=JSON.stringify(message).to_utf8_buffer()
+    var bytes:=Remote.pack(message) if message.get("kind")=="player_visual" else PackedByteArray()
+    if bytes.is_empty():bytes=JSON.stringify(message).to_utf8_buffer()
     count("enc:"+String(message.get("kind","")),bytes.size(),started)
     return send_encoded(peer,bytes)
 
@@ -144,7 +147,8 @@ func _process(_delta:float)->void:
                 break
             if state.rx.size() < length + 4: break
             var started := Time.get_ticks_usec()
-            var decoded = JSON.parse_string(state.rx.slice(4, length + 4).get_string_from_utf8())
+            var frame: PackedByteArray = state.rx.slice(4, length + 4)
+            var decoded = Remote.unpack(frame) if frame[0] == Remote.WIRE_TAG else JSON.parse_string(frame.get_string_from_utf8())
             state.rx = state.rx.slice(length + 4)
             read_count += 1
             if not decoded is Dictionary:
