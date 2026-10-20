@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import base64
 import json
 import re
 from pathlib import Path
@@ -78,7 +79,7 @@ def main() -> int:
                 f"frame count mismatch: {folder.name}", failures)
         require(int(entry.get("source_frame_count", -1)) == count,
                 f"source frame audit mismatch: {folder.name}", failures)
-        require(sum(int(sheet.get("frames", 0)) for sheet in entry.get("sheets", [])) == count,
+        require(len(base64.b64decode(entry.get("frame_table", ""))) == 14 * count,
                 f"sheet frame total mismatch: {folder.name}", failures)
 
     state_text = (project / "scripts/pokemon_state.gd").read_text()
