@@ -25,6 +25,9 @@ static func validate(generator) -> Dictionary:
     var interior_owners := {}
     var keys := 0
     for tile in generator.tiles_to_add.values():
+        # Ocean cells (ints, see SourceIslandGenerator.ocean_tiles): no
+        # biome, key, forest or oasis.
+        if tile is int: continue
         if tile.name_upper == "pokemon_mansion_key": keys += 1
         if not tile.biome.is_empty(): biomes[tile.biome] = true
         if tile.route_belongs_to != null:
@@ -42,6 +45,7 @@ static func validate(generator) -> Dictionary:
                 _error(errors,"Landmark exterior overlap")
             exterior_owners[pos] = kind
             var tile = generator.tiles_to_add.get(pos)
+            if tile is int: tile = generator.ocean_tiles[tile]
             if tile == null or signature(tile) != record.exterior[pos]:
                 _error(errors,kind + " exterior overwritten or missing")
         var layers := {}
@@ -62,6 +66,7 @@ static func validate(generator) -> Dictionary:
         var entries := 0
         for pos in record.exterior:
             var tile = generator.tiles_to_add.get(pos)
+            if tile is int: tile = generator.ocean_tiles[tile]
             if tile != null and entry_name in [tile.name,tile.name_upper]: entries += 1
         if entries != 1: _error(errors,kind+" surface entry missing or duplicated")
         if kind == "mine":

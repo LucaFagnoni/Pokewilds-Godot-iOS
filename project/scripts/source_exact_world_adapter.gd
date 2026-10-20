@@ -15,6 +15,9 @@ var spawn_cell := Vector2i.ZERO
 var interior_plans: Array[Dictionary] = []
 var used_dungeons: Array[String] = []
 var regi_relocated_cells: Dictionary = {}
+## A fresh world's ocean cells are ints in the Dictionary until packed:
+## indices into these read-only templates (SourceIslandGenerator.ocean_tiles).
+var _ocean: Array = []
 
 ## Every tile as a list, built once. Asking the dictionary for its values makes
 ## a fresh copy of the whole map each time; the dawn and dusk passes each did
@@ -46,6 +49,7 @@ static func from_generator_result(
         adapter._finish(result, spawn_random)
         return adapter
     adapter.tiles = result.get("tiles", {})
+    adapter._ocean = result.get("ocean_tiles", [])
     adapter.pokemon = result.get("pokemon", {})
     adapter.repair_regi_mansion_overlap()
     adapter.repair_graveyard_side_fences()
@@ -58,7 +62,13 @@ static func from_generator_result(
     adapter._normalize_oasis_facades_for_godot()
     adapter.repair_mansion_roof_grass()
     adapter._normalize_mansion_exterior_for_godot()
-    adapter.tiles = WorldTileStore.from_dictionary(adapter.tiles)
+    adapter.tiles = WorldTileStore.from_dictionary(adapter.tiles, adapter._ocean)
+    adapter._ocean = []
+    # Packed: the generator's tile objects are not needed any more. Free them
+    # now rather than when the caller drops the result (it keeps it while the
+    # world is built).
+    result.erase("tiles")
+    result.erase("mountains")
     # Edges were tile objects: keep positions, so no object outlives packing.
     # Built locally and assigned once: writing adapter.edges[i] one element at
     # a time copied the whole array each time (minutes on a size M map).
@@ -68,8 +78,24 @@ static func from_generator_result(
         var edge: Variant = adapter.edges[index]
         edge_positions[index] = (edge as SourceTile).position if edge is SourceTile else edge
     adapter.edges = edge_positions
+    result.erase("edges")
     adapter._finish(result, spawn_random)
     return adapter
+
+## The Dictionary's tile at `position` (null if none), an ocean cell made
+## real (it may be changed).
+func _dict_tile(position: Vector2i) -> SourceTile:
+    var raw: Variant = tiles.get(position)
+    if raw is int:
+        raw = (_ocean[raw] as SourceTile).copy_at(position)
+        tiles[position] = raw
+    return raw
+
+## Read-only look at the Dictionary's tile: an ocean cell gives its template,
+## whose position is not the cell's.
+func _dict_peek(position: Vector2i) -> SourceTile:
+    var raw: Variant = tiles.get(position)
+    return _ocean[raw] if raw is int else raw
 
 func _finish(result: Dictionary, spawn_random: SourceJavaRandom) -> void:
     var adapter := self
@@ -92,7 +118,9 @@ func repair_regi_mansion_overlap() -> Array[Vector2i]:
     var repaired: Array[Vector2i] = []
     var corners: Dictionary = {}
     var cave_doors: Array[SourceTile] = []
+    # Ocean cells (ints) are no door, roof, cave or forest: skipped below.
     for raw in tiles.values():
+        if raw is int: continue
         var tile := raw as SourceTile
         if tile == null: continue
         if tile.name == "cave1_door1": cave_doors.append(tile)
@@ -113,6 +141,7 @@ func repair_regi_mansion_overlap() -> Array[Vector2i]:
             var cave: Array[SourceTile] = []
             var contained := true
             for raw in tiles.values():
+                if raw is int: continue
                 var tile := raw as SourceTile
                 if tile.route_belongs_to == door.route_belongs_to:
                     cave.append(tile)
@@ -121,6 +150,7 @@ func repair_regi_mansion_overlap() -> Array[Vector2i]:
             if not contained or cave.size() != 54: continue
             var candidates: Array[Vector2i] = []
             for raw in tiles.values():
+                if raw is int: continue
                 var tile := raw as SourceTile
                 if (tile.biome == "deep_forest" or "deepforest" in tile.name) and not tile.is_solid and not tile.is_water:
                     candidates.append(tile.position)
@@ -133,12 +163,12 @@ func repair_regi_mansion_overlap() -> Array[Vector2i]:
                 var safe := true
                 for original in cave:
                     var target := candidate + original.position - door.position
-                    var tile := tiles.get(target) as SourceTile
+                    var tile := _dict_peek(target)
                     if roof.grow(16).has_point(target) or pokemon.has(target) or tile==null or tile.is_water or tile.is_lava or tile.is_ledge or tile.is_bottom_mtn_layer or not tile.has_item.is_empty() or not tile.item_snapshot().is_empty():
                         safe=false;break
                     if "mtn" in tile.name or "mountain" in tile.name or "cave" in tile.name or "ruins" in tile.name or "building" in tile.name or "pkmnmansion" in tile.name or "pkmnmansion" in tile.name_upper or "fence" in tile.name or "fence" in tile.name_upper or "grave" in tile.name or "grave" in tile.name_upper or "key" in tile.name_upper:
                         safe=false;break
-                var entrance := tiles.get(candidate + Vector2i(0,-16)) as SourceTile
+                var entrance := _dict_peek(candidate + Vector2i(0,-16))
                 for original in cave:
                     if original.position == door.position + Vector2i(0,-16): entrance = original
                 if entrance==null or entrance.is_solid or entrance.is_water: safe=false
@@ -170,6 +200,7 @@ func repair_mansion_roof_grass() -> Array[Vector2i]:
     var repaired: Array[Vector2i] = []
     var corner_names := ["pkmnmansion_roof_NW", "pkmnmansion_roof_NE", "pkmnmansion_roof_SW", "pkmnmansion_roof_SE"]
     for raw_tile in (tiles.with_upper(corner_names) if tiles is WorldTileStore else tiles.values()):
+        if raw_tile is int: continue  # ocean
         var tile := raw_tile as SourceTile
         if tile == null or tile.route_belongs_to == null:
             continue
@@ -191,7 +222,7 @@ func repair_mansion_roof_grass() -> Array[Vector2i]:
         for y in range(mini(nw.position.y, sw.position.y), maxi(nw.position.y, sw.position.y) + TILE_SIZE, TILE_SIZE):
             for x in range(nw.position.x, ne.position.x + TILE_SIZE, TILE_SIZE):
                 var position := Vector2i(x, y)
-                var tile := (tiles.tile(position) if tiles is WorldTileStore else tiles.get(position)) as SourceTile
+                var tile := (tiles.tile(position) if tiles is WorldTileStore else _dict_peek(position)) as SourceTile
                 if tile == null: continue
                 var grass_base := tile.name.begins_with("grass") or tile.name.begins_with("green")
                 var grass_upper := tile.name_upper.begins_with("grass")
@@ -218,6 +249,7 @@ func _normalize_mansion_exterior_for_godot() -> void:
     var route_counts: Dictionary = {}
     var route_refs: Dictionary = {}
     for raw_tile in tiles.values():
+        if raw_tile is int: continue  # ocean
         var tile := raw_tile as SourceTile
         if tile == null or tile.route_belongs_to == null:
             continue
@@ -248,6 +280,7 @@ func _normalize_mansion_exterior_for_godot() -> void:
     var minimum_y := 2147483647
     var maximum_y := -2147483648
     for raw_tile in tiles.values():
+        if raw_tile is int: continue  # ocean
         var tile := raw_tile as SourceTile
         if tile == null or not is_same(tile.route_belongs_to, mansion_route):
             continue
@@ -265,7 +298,7 @@ func _normalize_mansion_exterior_for_godot() -> void:
     var position_map: Dictionary = {}
     var replacements: Dictionary = {}
     for old_position in route_positions:
-        var tile := tiles.get(old_position) as SourceTile
+        var tile := _dict_tile(old_position)
         if tile == null:
             continue
         var new_position := Vector2i(
@@ -363,6 +396,7 @@ func _normalize_oasis_facades_for_godot() -> void:
     # screenshot. Convert that facade too, while keeping its fossil-lab identity.
     var facades: Dictionary = {}
     for tile in tiles.values():
+        if tile is int: continue  # ocean
         if tile.route_belongs_to == null or tile.route_belongs_to.name != "oasis1":
             continue
         if not (tile.name_upper.begins_with("pkmnmansion_ext") or tile.name_upper.begins_with("pkmnmansion_roof")):
@@ -390,25 +424,26 @@ func repair_graveyard_side_fences() -> int:
     # Run before saved player mutations, so deliberately CUT fences stay removed.
     var repaired := 0
     for raw_tile in tiles.values():
+        if raw_tile is int: continue  # ocean
         var corner := raw_tile as SourceTile
         if corner == null or corner.name_upper != "fence1_NE":
             continue
         if corner.biome != "graveyard" and (corner.route_belongs_to == null or not "graveyard" in corner.route_belongs_to.name):
             continue
         for width in range(4, 9):
-            var right := tiles.get(corner.position + Vector2i(width * 16, 0)) as SourceTile
+            var right := _dict_tile(corner.position + Vector2i(width * 16, 0))
             if right == null or right.name_upper != "fence1_NW" or not is_same(right.route_belongs_to, corner.route_belongs_to):
                 continue
             for height in range(4, 10):
-                var left_top := tiles.get(corner.position + Vector2i(0, height * 16)) as SourceTile
-                var right_top := tiles.get(right.position + Vector2i(0, height * 16)) as SourceTile
+                var left_top := _dict_tile(corner.position + Vector2i(0, height * 16))
+                var right_top := _dict_tile(right.position + Vector2i(0, height * 16))
                 if left_top == null or right_top == null or left_top.name_upper != "fence1_SE" or right_top.name_upper != "fence1_SW":
                     continue
                 if not is_same(left_top.route_belongs_to, corner.route_belongs_to) or not is_same(right_top.route_belongs_to, corner.route_belongs_to):
                     continue
                 for row in range(1, height):
                     for x in [corner.position.x, right.position.x]:
-                        var side := tiles.get(Vector2i(x, corner.position.y + row * 16)) as SourceTile
+                        var side := _dict_tile(Vector2i(x, corner.position.y + row * 16))
                         if side == null or not is_same(side.route_belongs_to, corner.route_belongs_to):
                             continue
                         var upper := side.name_upper.to_lower()
