@@ -7,7 +7,7 @@ quando escono tutti.
 
 ## In tre passi
 
-1. **Scarica** l'ultimo server: [PokeWilds-Server-win64.zip](https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/server-latest/PokeWilds-Server-win64.zip).
+1. **Scarica** l'ultimo server: [PokeWilds-Server-win64.zip](https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/latest/download/PokeWilds-Server-win64.zip).
    Estrailo in una cartella, per esempio `C:\PokeWilds-Server`.
 2. **Doppio clic su `start_server.bat`.** La prima volta Windows chiede il
    permesso di aprire il firewall per PokeWilds: rispondi **Sì**. Dopo qualche
@@ -39,9 +39,8 @@ spegne, apre da solo il firewall di Windows e tiene sveglio il PC finché è
 acceso (lo schermo può spegnersi): di solito non serve toccare nient'altro.
 
 Server e telefoni devono essere **della stessa build** e avere le stesse mod
-attive. Ogni release dice da che commit viene ("Build ab97cc63" per il server,
-"Unsigned IPA built from ab97cc63" per l'iPhone): usa un `server-build` e un
-`ios-build` con lo stesso codice. Altrimenti il telefono viene rifiutato con
+attive. Ogni release contiene l'IPA e il server costruiti dallo stesso commit:
+scarica entrambi dalla stessa release. Altrimenti il telefono viene rifiutato con
 "DIFFERENT GAME BUILD: HOST ..., YOURS ...": i due codici dicono quale build
 ha il server e quale il telefono. Aggiorna il server ogni volta che installi
 una nuova build iOS (e viceversa). Le build fatte in locale non hanno codice e

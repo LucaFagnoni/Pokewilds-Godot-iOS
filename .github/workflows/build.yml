@@ -1,0 +1,263 @@
+name: PokeWilds build
+
+# One release per commit with both files: the iPhone IPA and the Windows server
+# zip. It starts as a draft (nobody sees it), each build uploads its file, and
+# it is published as "Latest" only when both builds passed; otherwise the draft
+# is deleted. So releases/latest/download/<file> always gives a matching pair.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  # Pull requests build and test the server, but publish nothing.
+  pull_request:
+    branches: [main]
+
+env:
+  GODOT_VERSION: 4.7.2
+  # Stripped engine profile shared by the iOS template and the Linux smoke test.
+  ENGINE_PROFILE: ${{ github.workspace }}/.github/engine/custom.py
+  TAG: build-${{ github.run_number }}
+
+# Releases hold the files: they do not count against the Actions storage quota
+# that artifacts fill up.
+permissions:
+  contents: write
+
+jobs:
+  draft:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create the draft release
+        run: |
+          git log -1 --pretty=%B > notes.md
+          echo "" >> notes.md
+          echo "IPA and server built from ${GITHUB_SHA::8}: they play together (a host refuses players of another build)." >> notes.md
+          echo "- **Pokewilds-unsigned.ipa**: sign it with Feather (or similar) before installing." >> notes.md
+          echo "- **PokeWilds-Server-win64.zip**: unzip it and run start_server.bat. Guide: README_SERVER.md." >> notes.md
+          gh release create "$TAG" --draft --target "$GITHUB_SHA" \
+            --title "PokeWilds build ${{ github.run_number }}" --notes-file notes.md
+
+  # Same engine profile on Linux (headless), run against the iOS pack: catches a
+  # class or module the game needs but the profile dropped before it hits a phone.
+  smoke:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: godotengine/godot
+          ref: ${{ env.GODOT_VERSION }}-stable
+          path: godot-src
+
+      - name: Install Godot editor and SCons
+        run: |
+          curl -sSL -o godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip
+          echo "GODOT=$PWD/Godot_v${GODOT_VERSION}-stable_linux.x86_64" >> "$GITHUB_ENV"
+          python3 -m venv "$RUNNER_TEMP/scons" && "$RUNNER_TEMP/scons/bin/pip" -q install scons
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.scons_cache
+          # The engine source is a fixed tag: one cache per build profile is enough.
+          key: scons-linux-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py') }}
+
+      - name: Build stripped engine (Linux, headless only)
+        working-directory: godot-src
+        run: |
+          "$RUNNER_TEMP/scons/bin/scons" platform=linuxbsd target=template_release profile="$ENGINE_PROFILE" \
+            disable_path_overrides=no \
+            x11=no wayland=no alsa=no pulseaudio=no dbus=no speechd=no fontconfig=no udev=no \
+            cache_path="$HOME/.scons_cache" -j"$(nproc)"
+
+      - name: Minify JSON data
+        run: python3 .github/engine/minify_json.py project
+
+      - name: Export the iOS pack
+        working-directory: project
+        run: |
+          "$GODOT" --headless --import
+          "$GODOT" --headless --export-pack "iOS" "$RUNNER_TEMP/game.pck"
+
+      - name: Load every script/scene, then run the game
+        run: |
+          engine=godot-src/bin/godot.linuxbsd.template_release.x86_64
+          timeout 600 "$engine" --headless --main-pack "$RUNNER_TEMP/game.pck" -s "$PWD/.github/engine/smoke.gd" 2>&1 | tee smoke.log
+          timeout 300 "$engine" --headless --main-pack "$RUNNER_TEMP/game.pck" --quit-after 900 2>&1 | tee -a smoke.log || true
+          grep -E "ERROR|SMOKE" smoke.log | sort | uniq -c | sed 's/^/::notice::/'
+          grep -q "SMOKE: checked [0-9]*, failed 0" smoke.log
+          ! grep -E "SMOKE FAIL|SCRIPT ERROR|Parse Error|Cannot get class|Failed to load|not declared in the current scope" smoke.log
+
+  ios:
+    # Only a pack that passed the smoke test goes into the release.
+    needs: [draft, smoke]
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: godotengine/godot
+          ref: ${{ env.GODOT_VERSION }}-stable
+          path: godot-src
+
+      - name: Install Godot + export templates
+        run: |
+          base=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
+          curl -sSL -o godot.zip "$base/Godot_v${GODOT_VERSION}-stable_macos.universal.zip"
+          curl -sSL -o templates.tpz "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          unzip -q godot.zip
+          tpl="$HOME/Library/Application Support/Godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p "$tpl"
+          unzip -q -j templates.tpz 'templates/ios.zip' 'templates/version.txt' -d "$tpl"
+          echo "GODOT=$PWD/Godot.app/Contents/MacOS/Godot" >> "$GITHUB_ENV"
+          echo "TPL=$tpl" >> "$GITHUB_ENV"
+          python3 -m venv "$RUNNER_TEMP/scons" && "$RUNNER_TEMP/scons/bin/pip" -q install scons
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.scons_cache
+          # The engine source is a fixed tag: one cache per build profile is enough.
+          key: scons-ios-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py') }}
+
+      - name: Build stripped engine (iOS arm64)
+        working-directory: godot-src
+        run: |
+          "$RUNNER_TEMP/scons/bin/scons" platform=ios arch=arm64 target=template_release profile="$ENGINE_PROFILE" lto=thin \
+            cache_path="$HOME/.scons_cache" -j"$(sysctl -n hw.ncpu)"
+          ls -la bin
+
+      - name: Swap engine library into the iOS template
+        run: |
+          work="$RUNNER_TEMP/ios_template"
+          unzip -q "$TPL/ios.zip" -d "$work"
+          lib="$work/libgodot.ios.release.xcframework/ios-arm64/libgodot.a"
+          test -f "$lib" || { find "$work" -name '*.a'; exit 1; }
+          echo "::notice::official engine lib $(du -h "$lib" | cut -f1)"
+          cp godot-src/bin/libgodot.ios.template_release.arm64.a "$lib"
+          echo "::notice::stripped engine lib $(du -h "$lib" | cut -f1)"
+          rm "$TPL/ios.zip" && (cd "$work" && zip -qry "$TPL/ios.zip" .)
+
+      - name: Minify JSON data
+        run: python3 .github/engine/minify_json.py project
+
+      # The commit this build comes from: hosts refuse players of another build.
+      - name: Stamp build id
+        run: echo "$GITHUB_SHA" > project/build_id.txt
+
+      - name: Export Xcode project
+        working-directory: project
+        run: |
+          mkdir -p ../build/ios
+          "$GODOT" --headless --import
+          "$GODOT" --headless --export-release "iOS" ../build/ios/Pokewilds.ipa
+
+      - name: Build unsigned .app and pack IPA
+        working-directory: build/ios
+        run: |
+          set -o pipefail
+          # Surface compiler errors as annotations (readable without log access).
+          xcodebuild -project Pokewilds.xcodeproj -scheme Pokewilds -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath dd \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build 2>&1 | tee xb.log \
+            || { grep -E -A3 'error[:]|FAILED|ld: |Undefined sym|referenced from|warning: .*(built for|newer)' xb.log | head -80 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}' | sed 's/^/::error::/'; echo; exit 1; }
+          mkdir Payload
+          cp -R dd/Build/Products/Release-iphoneos/Pokewilds.app Payload/
+          # Drop local/debug symbols from the engine binary; Feather re-signs afterwards.
+          xcrun strip -Sx Payload/Pokewilds.app/Pokewilds
+          du -sh Payload/Pokewilds.app/* | sed 's/^/::notice::/'
+          zip -qry -9 Pokewilds-unsigned.ipa Payload
+
+      - name: Add the IPA to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" build/ios/Pokewilds-unsigned.ipa
+
+  server:
+    needs: draft
+    # On pull requests there is no draft: build and test only.
+    if: ${{ !cancelled() && (needs.draft.result == 'success' || github.event_name == 'pull_request') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Stock editor + official templates (no custom engine): Windows only.
+      - name: Install Godot + Windows export templates
+        run: |
+          base=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
+          curl -sSL -o godot.zip "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          curl -sSL -o templates.tpz "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          unzip -q godot.zip
+          tpl="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p "$tpl"
+          unzip -q -j templates.tpz 'templates/windows_release_x86_64*' 'templates/version.txt' -d "$tpl"
+          ls -la "$tpl"
+          echo "GODOT=$PWD/Godot_v${GODOT_VERSION}-stable_linux.x86_64" >> "$GITHUB_ENV"
+
+      # Same data as the iOS build, so the bundled mods (and their digest) match.
+      - name: Minify JSON data
+        run: python3 .github/engine/minify_json.py project
+
+      # The commit this build comes from: the server refuses players of another
+      # build, which is why both files share one release.
+      - name: Stamp build id
+        run: echo "$GITHUB_SHA" > project/build_id.txt
+
+      - name: Import + export Windows server
+        working-directory: project
+        run: |
+          mkdir -p ../build/server
+          "$GODOT" --headless --import
+          "$GODOT" --headless --export-release "Windows Server" ../build/server/PokeWilds.exe
+          ls -la ../build/server
+
+      # Only a server that a client could join and that saved goes into the release.
+      - name: Server smoke test
+        run: timeout 1800 python3 server/smoke_test.py "$GODOT"
+
+      - name: Package zip
+        run: |
+          cd build/server
+          cp ../../README_SERVER.md ../../server/start_server.bat ../../server/server_launcher.ps1 ../../server/server.cfg.example .
+          zip -9 ../../PokeWilds-Server-win64.zip PokeWilds.exe PokeWilds.console.exe PokeWilds.pck \
+            README_SERVER.md start_server.bat server_launcher.ps1 server.cfg.example
+          ls -la ../../PokeWilds-Server-win64.zip
+
+      - name: Add the server to the draft release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" PokeWilds-Server-win64.zip
+
+  publish:
+    needs: [ios, server]
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Publish the release as Latest
+        run: |
+          gh release edit "$TAG" --draft=false --latest
+          # Keep the ten newest builds.
+          gh release list --limit 100 --exclude-drafts --json tagName --jq '.[].tagName' | grep '^build-' | tail -n +11 \
+            | while read -r old; do gh release delete "$old" --cleanup-tag --yes; done
+
+  # A build that failed or was cancelled leaves no half release behind.
+  discard:
+    needs: [draft, smoke, ios, server]
+    if: ${{ always() && needs.draft.result == 'success' && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Delete the draft release
+        run: gh release delete "$TAG" --yes
