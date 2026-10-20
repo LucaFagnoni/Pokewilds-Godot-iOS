@@ -32,11 +32,39 @@ var last_source_id := -1
 ## its TileMapLayer cell. Tiles are drawn with their corners snapped to
 ## screen pixels (snap_2d_vertices_to_pixel); the shader snaps each cell the
 ## same way, so the result matches the TileMapLayer pixel for pixel.
-const GPU_SHADER := "shader_type canvas_item; uniform sampler2D cells : filter_nearest; uniform sampler2D table : filter_nearest; uniform sampler2D page0 : filter_nearest; uniform sampler2D page1 : filter_nearest; uniform sampler2D page2 : filter_nearest; uniform sampler2D page3 : filter_nearest; uniform highp vec2 cells_origin; uniform highp vec2 cells_size; uniform highp vec2 page_size; varying highp vec2 spos; varying highp vec4 xf; varying vec4 tint; void vertex(){highp mat4 m=CANVAS_MATRIX*MODEL_MATRIX; spos=floor((m*vec4(VERTEX,0.0,1.0)).xy+0.5); xf=vec4(m[0][0],m[1][1],m[3][0],m[3][1]); tint=COLOR;} void fragment(){highp vec2 scl=xf.xy; highp vec2 off=xf.zw; highp vec2 cell=floor((spos-off)/scl/16.0); highp vec2 e0=floor(cell*16.0*scl+off+0.5); highp vec2 e1=floor((cell+1.0)*16.0*scl+off+0.5); cell+=step(e1,spos)-(1.0-step(e0,spos)); e0=floor(cell*16.0*scl+off+0.5); e1=floor((cell+1.0)*16.0*scl+off+0.5); highp vec2 at=cell-cells_origin; if(at.x<0.0||at.y<0.0||at.x>=cells_size.x||at.y>=cells_size.y) discard; vec4 c=texelFetch(cells,ivec2(at),0); int id=int(c.r*255.0+0.5)+int(c.g*255.0+0.5)*256; if(id==0) discard; highp vec4 row=texelFetch(table,ivec2(id%256,id/256),0); highp vec2 pos=row.xy; highp vec2 uv=clamp((pos+(spos-e0)/(e1-e0)*16.0)/page_size+1e-5,(pos+0.5)/page_size,(pos+15.5)/page_size); int page=int(row.z+0.5); vec4 col; if(page==0) col=textureLod(page0,uv,0.0); else if(page==1) col=textureLod(page1,uv,0.0); else if(page==2) col=textureLod(page2,uv,0.0); else col=textureLod(page3,uv,0.0); COLOR=tint*col;}"
+##
+## The upper layer works the same way (UpperView) for sprites that are a plain
+## 16x16 tile, and draws the shoreline (ShoreView, TidalShoreView) from a
+## per-cell pair of shore ids. The ground's beach tide overlay (TideView)
+## reads a flag kept in the ground cells. Each view is a child placed where
+## the TileMapLayer it replaces is drawn, so the order of layers is kept.
+## Within the sprite layer, a TileMapLayer draws 16-cell blocks by rows
+## (top first, right block first) and cells in a block by columns: a GPU cell
+## is drawn before every sprite on the layer, so a cell that a sprite drawn
+## earlier overlaps stays on the TileMapLayer (pins), unless it draws nothing.
+## Cells: id in R and the low 4 bits of G; G's top bit is the tide flag.
+const GPU_SHADER := "shader_type canvas_item; uniform sampler2D cells : filter_nearest; uniform sampler2D table : filter_nearest; uniform sampler2D page0 : filter_nearest; uniform sampler2D page1 : filter_nearest; uniform sampler2D page2 : filter_nearest; uniform sampler2D page3 : filter_nearest; uniform highp vec2 cells_origin; uniform highp vec2 cells_size; uniform highp vec2 page_size; varying highp vec2 spos; varying flat highp vec4 m0; varying flat highp vec4 m1; varying flat highp vec4 m3; varying vec4 tint; highp vec2 snapped(highp vec2 w){return floor((mat4(m0,m1,vec4(0.0,0.0,1.0,0.0),m3)*vec4(w,0.0,1.0)).xy+0.5);} void vertex(){highp mat4 m=CANVAS_MATRIX*MODEL_MATRIX; spos=floor((m*vec4(VERTEX,0.0,1.0)).xy+0.5); m0=m[0]; m1=m[1]; m3=m[3]; tint=COLOR;} void fragment(){highp vec2 p=floor(spos)+0.5; highp vec2 scl=vec2(m0.x,m1.y); highp vec2 off=m3.xy; highp vec2 cell=floor((p-off)/scl/16.0); highp vec2 e0=snapped(cell*16.0); highp vec2 e1=snapped((cell+1.0)*16.0); cell+=step(e1,p)-(1.0-step(e0,p)); e0=snapped(cell*16.0); e1=snapped((cell+1.0)*16.0); highp vec2 at=cell-cells_origin; if(at.x<0.0||at.y<0.0||at.x>=cells_size.x||at.y>=cells_size.y) discard; vec4 c=texelFetch(cells,ivec2(at),0); int id=int(c.r*255.0+0.5)+(int(c.g*255.0+0.5)&15)*256; if(id==0) discard; highp vec4 row=texelFetch(table,ivec2(id%256,id/256),0); highp vec2 pos=row.xy; highp vec2 uv=clamp((pos+(p-e0)/(e1-e0)*16.0)/page_size+1e-5,(pos+0.5)/page_size,(pos+15.5)/page_size); int page=int(row.z+0.5); vec4 col; if(page==0) col=textureLod(page0,uv,0.0); else if(page==1) col=textureLod(page1,uv,0.0); else if(page==2) col=textureLod(page2,uv,0.0); else col=textureLod(page3,uv,0.0); COLOR=tint*col;}"
 const GPU_TABLE_WIDTH := 256
 const GPU_MAX_IDS := 4096
 const GPU_PAGES := 4
+## Shoreline: 8x8 pieces snapped like 8x8 tiles. Per cell, an ocean (R) and a
+## tidal (G) shore id; per id and quadrant (table), the piece's frame-0 place
+## on its sheet (B: 1 outer, 2 inner, 0 none). Frames are a fixed stride apart.
+## Like the animated tiles' shader it replaces (which reads UV before Godot
+## adds its 1e-5 snap offset), a pixel exactly on a texel edge takes the
+## texel before it.
+const SHORE_SHADER := "shader_type canvas_item; uniform sampler2D cells : filter_nearest; uniform sampler2D table : filter_nearest; uniform sampler2D outer : filter_nearest; uniform sampler2D inner : filter_nearest; uniform highp vec2 cells_origin; uniform highp vec2 cells_size; uniform highp vec2 outer_size; uniform highp vec2 inner_size; uniform int channel; uniform int frame; varying highp vec2 spos; varying flat highp vec4 m0; varying flat highp vec4 m1; varying flat highp vec4 m3; varying vec4 tint; highp vec2 snapped(highp vec2 w){return floor((mat4(m0,m1,vec4(0.0,0.0,1.0,0.0),m3)*vec4(w,0.0,1.0)).xy+0.5);} void vertex(){highp mat4 m=CANVAS_MATRIX*MODEL_MATRIX; spos=floor((m*vec4(VERTEX,0.0,1.0)).xy+0.5); m0=m[0]; m1=m[1]; m3=m[3]; tint=COLOR;} void fragment(){highp vec2 p=floor(spos)+0.5; highp vec2 scl=vec2(m0.x,m1.y); highp vec2 off=m3.xy; highp vec2 q=floor((p-off)/scl/8.0); highp vec2 e0=snapped(q*8.0); highp vec2 e1=snapped((q+1.0)*8.0); q+=step(e1,p)-(1.0-step(e0,p)); e0=snapped(q*8.0); e1=snapped((q+1.0)*8.0); highp vec2 cell=floor(q*0.5); highp vec2 at=cell-cells_origin; if(at.x<0.0||at.y<0.0||at.x>=cells_size.x||at.y>=cells_size.y) discard; vec4 c=texelFetch(cells,ivec2(at),0); int id=int((channel==0?c.r:c.g)*255.0+0.5); if(id==0) discard; ivec2 sub=ivec2(q-cell*2.0); vec4 row=texelFetch(table,ivec2(id,sub.x+sub.y*2),0); int sheet=int(row.b*255.0+0.5); if(sheet==0) discard; highp vec2 size=sheet==1?outer_size:inner_size; highp vec2 pos=floor(row.rg*255.0+0.5); pos.x+=float(frame)*floor(size.x/7.0); highp vec2 uv=clamp((pos+(p-e0)/(e1-e0)*8.0)/size-1e-5,(pos+0.5)/size,(pos+7.5)/size); vec4 col; if(sheet==1) col=textureLod(outer,uv,0.0); else col=textureLod(inner,uv,0.0); COLOR=tint*col;}"
+const SHORE_MAX_IDS := 256
+## Beach tide: water2 at half alpha over the cells flagged in the ground
+## cells (texel edges as in the shoreline shader).
+const TIDE_SHADER := "shader_type canvas_item; uniform sampler2D cells : filter_nearest; uniform sampler2D water : filter_nearest; uniform highp vec2 cells_origin; uniform highp vec2 cells_size; uniform highp vec2 water_size; uniform int frame; varying highp vec2 spos; varying flat highp vec4 m0; varying flat highp vec4 m1; varying flat highp vec4 m3; varying vec4 tint; highp vec2 snapped(highp vec2 w){return floor((mat4(m0,m1,vec4(0.0,0.0,1.0,0.0),m3)*vec4(w,0.0,1.0)).xy+0.5);} void vertex(){highp mat4 m=CANVAS_MATRIX*MODEL_MATRIX; spos=floor((m*vec4(VERTEX,0.0,1.0)).xy+0.5); m0=m[0]; m1=m[1]; m3=m[3]; tint=COLOR;} void fragment(){highp vec2 p=floor(spos)+0.5; highp vec2 scl=vec2(m0.x,m1.y); highp vec2 off=m3.xy; highp vec2 cell=floor((p-off)/scl/16.0); highp vec2 e0=snapped(cell*16.0); highp vec2 e1=snapped((cell+1.0)*16.0); cell+=step(e1,p)-(1.0-step(e0,p)); e0=snapped(cell*16.0); e1=snapped((cell+1.0)*16.0); highp vec2 at=cell-cells_origin; if(at.x<0.0||at.y<0.0||at.x>=cells_size.x||at.y>=cells_size.y) discard; vec4 c=texelFetch(cells,ivec2(at),0); if((int(c.g*255.0+0.5)&128)==0) discard; highp vec2 pos=vec2(float(frame)*16.0,0.0); highp vec2 uv=clamp((pos+(p-e0)/(e1-e0)*16.0)/water_size-1e-5,(pos+0.5)/water_size,(pos+15.5)/water_size); COLOR=tint*textureLod(water,uv,0.0);}"
+const GPU_TIDE := 0x8000
 var gpu_cells: Image
+## The cells' bytes (R, G per cell), copied into gpu_cells when sent: writing
+## bytes costs far less than set_pixel on 400k cells.
+var gpu_bytes := PackedByteArray()
+var gpu_width := 0
+var gpu_height := 0
 var gpu_cells_texture: ImageTexture
 var gpu_cells_dirty := false
 var gpu_table: Image
@@ -52,6 +80,34 @@ var gpu_animated: Array[int] = []
 ## Ground with no upper name: [color][name] -> id, so most cells skip the spec work.
 var gpu_fast: Array = [{}, {}]
 var upper_spec_empty := {}
+## Map blocks holding UpperView cells: it covers only those.
+var gpu_blocks := {}
+var tide_view: Node2D
+var tide_blocks := {}
+## Cells a sprite drawn before them overlaps: cell -> number of such sprites.
+var pins := {}
+## Sprite cell -> the cells it pins.
+var pinned_by := {}
+var shore_cells: Image
+var shore_bytes := PackedByteArray()
+var shore_cells_texture: ImageTexture
+var shore_cells_dirty := false
+var shore_table: Image
+var shore_table_texture: ImageTexture
+var shore_table_dirty := false
+## [ocean view, tidal view] and the map blocks each covers.
+var shore_views: Array = []
+var shore_blocks: Array = [{}, {}]
+## The shore sheets as shoreline_quads returns them, and the pictures they show.
+var shore_sources: Array = []
+var shore_textures: Array = []
+## Shore string -> id (-1: drawn by the TileMapLayers); per id (0 is none),
+## four [sheet, frame-0 position]; quads (as text) -> id.
+var shore_ids := {}
+var shore_rows: Array = []
+var shore_keys := {}
+## Some shoreline ran out of ids and is on the TileMapLayers.
+var shore_fallback := false
 
 func queue_tide_refresh(cells: Array):
     var center = Vector2i(tracked_player.global_position/float(tile_size))
@@ -158,7 +214,7 @@ func configure(tiles, player_node, upper_layer, source_tile_size = 16, pixel_key
         layer.rendering_quadrant_size = TILE_BLOCK
         add_child(layer)
         resident_layers.append(layer)
-    if not draw_upper and tile_size == 16: _prepare_gpu()
+    if tile_size == 16: _prepare_gpu()
     _prepare_tide_sources()
     if draw_upper:
         var names: Array = preload("res://scripts/field_move_data.gd").CRACKED_LOOT.keys()
@@ -187,7 +243,7 @@ func build_resident_async():
     for index in store.indices():
         var key := store.key_of(index)
         var cell = Vector2i(key / tile_size) if source_keys_are_pixels else key
-        resident_fingerprints.fp_put(key, store.revision_at(index))
+        resident_fingerprints.fp_put(key, store.revision_at(index) + 1)
         if tidal.has(index) and _is_beach_high_tide(store.cursor(index)): frame_tidal_cells[cell] = true
         batch[cell] = true
         if batch.size() >= 64 or Time.get_ticks_usec() >= deadline:
@@ -272,7 +328,11 @@ func _process(delta):
     if clock == resident_animation_clock: return
     resident_animation_clock = clock
     _update_gpu_animations()
+    for view in shore_views: (view.material as ShaderMaterial).set_shader_parameter("frame", shore_animation_frame)
+    if tide_view != null: (tide_view.material as ShaderMaterial).set_shader_parameter("frame", clock[3])
     for animation in resident_animations:
+        # Shore pieces are on the GPU unless some ran out of ids.
+        if animation[0] == "shore_region" and shore_cells != null and not shore_fallback: continue
         var region: Rect2
         if animation[0] == "tile":
             region = _cached_render_spec(animation[1]).get("region", animation[3])
@@ -309,7 +369,8 @@ func _install(layer_index, cell, spec, tint = Color.WHITE, animation = []):
         animation_key = animation
         region.position = base
     if not animation.is_empty() and animation[0] == "tile":
-        animation_key = ["tile", _field(animation[1], "name", ""), _field(animation[1], "name_upper", ""), _field(animation[1], "color", false)]
+        # Cells pass a {base, upper, color} key, dig previews a SourceTile.
+        animation_key = ["tile", _field(animation[1], "base", _field(animation[1], "name", "")), _field(animation[1], "upper", _field(animation[1], "name_upper", "")), _field(animation[1], "color", false)]
     var parts = [texture.get_instance_id(), region if animation.is_empty() else region.size, offset, tint, animation_key]
     if last_source_id >= 0 and parts == last_source_parts:
         if layer_index >= 0:
@@ -401,28 +462,46 @@ func _redraw_cells(affected: Dictionary, erase_absent: bool = true):
     var cell_names := store.name_ids
     var cell_uppers := store.upper_ids
     var cell_oceans := store.shore_ocean_ids
+    # Cells whose pinned state these cells change: cell -> pinned before.
+    var pin_flips := {}
+    var origin := resident_fingerprints.origin
     for cell in affected:
+        if pinned_by.has(cell): _unpin(cell, pin_flips)
         var key = cell * tile_size if source_keys_are_pixels else cell
         var index: int = store.index_of(key)
         if index < 0:
-            if gpu_cells != null: _set_gpu_cell(cell, 0)
+            if erase_absent: _clear_gpu_cell(cell)
             continue
         # Two thirds of the map is open sea: settle those cells by ids alone.
         if cell_uppers[index] == 0:
             var color_slot := 1 if cell_flags[index] & WorldTileStore.COLOR else 0
             if draw_upper:
-                if cell_flags[index] & WorldTileStore.WATER and cell_oceans[index] == 0                         and _upper_spec_is_empty(cell_names[index], color_slot): continue
+                if cell_flags[index] & WorldTileStore.WATER and cell_oceans[index] == 0                         and _upper_spec_is_empty(cell_names[index], color_slot):
+                    # The first build starts from empty cells.
+                    if erase_absent: _clear_gpu_cell(cell)
+                    continue
             elif gpu_cells != null:
                 var fast: int = gpu_fast[color_slot].get(cell_names[index], 0)
-                if fast > 0:
-                    _set_gpu_cell(cell, fast)
+                if fast > 0 and (not pins.has(cell) or gpu_rows[fast].get("clear", false)):
+                    # _set_gpu_cell, inline: this runs for most of the map.
+                    var at: int = ((cell.y - origin.y) * gpu_width + cell.x - origin.x) * 2
+                    if gpu_bytes[at] != fast & 255 or gpu_bytes[at + 1] != fast >> 8:
+                        gpu_bytes[at] = fast & 255
+                        gpu_bytes[at + 1] = fast >> 8
+                        gpu_cells_dirty = true
                     continue
         # The fields drawing reads, as a small Dictionary (every helper here
         # takes one): loading a SourceTile proxy per cell cost ~17 us.
         var tile := _tile_view(store, index)
         if draw_upper:
             var shores = [String(tile.shore_ocean), _active_beach_tidal_shore(cell, tile)]
-            for kind in range(2):
+            var shore_on_gpu := [0, 0] if shores[0].is_empty() and shores[1].is_empty() else _shore_ids(shores)
+            if shore_cells != null and (erase_absent or shore_on_gpu != [0, 0]): _set_shore_cell(cell, shore_on_gpu)
+            # Both kinds of a cell are drawn by the same layers: they overlap.
+            if shore_on_gpu.is_empty() and not shore_fallback:
+                shore_fallback = true
+                resident_animation_clock.clear()
+            for kind in range(2 if shore_on_gpu.is_empty() else 0):
                 if shores[kind].is_empty(): continue
                 var quads = _world_data().shoreline_quads(shores[kind], shore_animation_frame)
                 for quadrant in range(quads.size()):
@@ -432,32 +511,40 @@ func _redraw_cells(affected: Dictionary, erase_absent: bool = true):
                     if erase_absent: desired[layer_index][cell] = true
         var spec = _cached_render_spec(tile)
         var identity = String(tile.name_upper if draw_upper else tile.name).to_lower()
-        if gpu_cells != null:
-            var gpu_id := _gpu_id(tile, spec, identity)
-            _set_gpu_cell(cell, gpu_id)
-            if gpu_id > 0: continue
-        if "gate" in identity and open_gate_cells.has(cell): continue
         if draw_upper and identity.begins_with("hole1") and not str(_field(tile,"has_item","")).is_empty():
             spec = _reward_composite(spec)
-        if not spec.is_empty():
-            var animation = []
-            if identity.begins_with("water") or identity.begins_with("lava") or identity.begins_with("flower") or identity in ["campfire1", "torch1"]:
-                animation = ["tile", {"base": tile.name, "upper": tile.name_upper, "color": tile.color}, 0]  # a name key: views are not kept
-            _install(8, cell, spec, Color.WHITE, animation)
-            if erase_absent: desired[8][cell] = true
-            if not draw_upper and _is_beach_high_tide(tile):
-                _install(9, cell, {"texture":_world_data().texture_for("water2"),"region":Rect2(0,0,16,16)}, Color(1,1,1,0.5), ["tide","",0])
-                if erase_absent: desired[9][cell] = true
-            if draw_upper and _mountain_tree_needs_front_redraw(cell,tile,spec):
-                _install(11, cell, spec)
-                if erase_absent: desired[11][cell] = true
+        var hidden: bool = spec.is_empty() or ("gate" in identity and open_gate_cells.has(cell))
+        var tide: bool = not draw_upper and not hidden and _is_beach_high_tide(tile)
+        if gpu_cells != null:
+            var gpu_id := 0 if hidden else _gpu_id(tile, spec, identity)
+            if gpu_id > 0 and not _gpu_allowed(cell, gpu_id): gpu_id = 0
+            _set_gpu_cell(cell, gpu_id, tide)
+            if gpu_id > 0: continue
+        if hidden: continue
+        var animation = []
+        if identity.begins_with("water") or identity.begins_with("lava") or identity.begins_with("flower") or identity in ["campfire1", "torch1"]:
+            animation = ["tile", {"base": tile.name, "upper": tile.name_upper, "color": tile.color}, 0]  # a name key: views are not kept
+        _install(8, cell, spec, Color.WHITE, animation)
+        if erase_absent: desired[8][cell] = true
+        if gpu_cells != null: _pin(cell, spec, pin_flips)
+        if tide and tide_view == null:
+            _install(9, cell, {"texture":_world_data().texture_for("water2"),"region":Rect2(0,0,16,16)}, Color(1,1,1,0.5), ["tide","",0])
+            if erase_absent: desired[9][cell] = true
+        if draw_upper and _mountain_tree_needs_front_redraw(cell,tile,spec):
+            _install(11, cell, spec)
+            if erase_absent: desired[11][cell] = true
     drawing_tidal_shores = false
-    if not erase_absent: return
-    for index in range(12):
-        var layer: TileMapLayer = resident_layers[index]
-        for cell in affected:
-            if not desired[index].has(cell) and layer.get_cell_source_id(cell) >= 0: layer.erase_cell(cell)
-        # Godot applies changed cells together at the end of this frame.
+    if erase_absent:
+        for index in range(12):
+            var layer: TileMapLayer = resident_layers[index]
+            for cell in affected:
+                if not desired[index].has(cell) and layer.get_cell_source_id(cell) >= 0: layer.erase_cell(cell)
+            # Godot applies changed cells together at the end of this frame.
+    # A cell that became pinned leaves the GPU, one no longer pinned may join it.
+    var redo := {}
+    for cell in pin_flips:
+        if pins.has(cell) != pin_flips[cell]: redo[cell] = true
+    if not redo.is_empty(): _redraw_cells(redo)
 
 var resident_open_gates: Dictionary = {}
 
@@ -513,15 +600,20 @@ func _source_bounds() -> Rect2i:
     var store := source_tiles as WorldTileStore
     return Rect2i(store.origin, Vector2i(store.width, store.height))
 
-## A cell's revision in the store: it changes whenever the cell does.
+## A cell's revision in the store, plus one: it changes whenever the cell
+## does. (The fingerprints store 0 as 1, so a cell's first edit, revision 0
+## to 1, went unseen and the cell was not redrawn.)
 func _fingerprint(key: Vector2i) -> int:
     var index: int = source_tiles.index_of(key)
-    return -1 if index < 0 else source_tiles.revision_at(index)
+    return -1 if index < 0 else source_tiles.revision_at(index) + 1
 
 func _prepare_gpu() -> void:
     if source_tiles.is_empty(): return
     var bounds := Rect2i(resident_fingerprints.origin, Vector2i(resident_fingerprints.width, resident_fingerprints.height))
-    gpu_cells = Image.create(bounds.size.x, bounds.size.y, false, Image.FORMAT_RG8)
+    gpu_width = bounds.size.x
+    gpu_height = bounds.size.y
+    gpu_bytes.resize(gpu_width * gpu_height * 2)
+    gpu_cells = Image.create_from_data(gpu_width, gpu_height, false, Image.FORMAT_RG8, gpu_bytes)
     gpu_cells_texture = ImageTexture.create_from_image(gpu_cells)
     # Half floats, not RGBAF: where float textures cannot be filtered (every iPhone),
     # Godot converts an RGBAF image to half floats in place when it uploads it, and
@@ -530,26 +622,199 @@ func _prepare_gpu() -> void:
     # pages are exact in half floats.
     gpu_table = Image.create(GPU_TABLE_WIDTH, GPU_MAX_IDS / GPU_TABLE_WIDTH, false, Image.FORMAT_RGBAH)
     gpu_table_texture = ImageTexture.create_from_image(gpu_table)
-    gpu_view = Node2D.new()
-    gpu_view.name = "TerrainView"
-    var material := ShaderMaterial.new()
-    material.shader = Shader.new()
-    material.shader.code = GPU_SHADER
+    if draw_upper:
+        # Shoreline, then plain sprites: where layers 0-7 end and 8 begins.
+        shore_bytes.resize(gpu_width * gpu_height * 2)
+        shore_cells = Image.create_from_data(gpu_width, gpu_height, false, Image.FORMAT_RG8, shore_bytes)
+        shore_cells_texture = ImageTexture.create_from_image(shore_cells)
+        shore_table = Image.create(SHORE_MAX_IDS, 4, false, Image.FORMAT_RGBA8)
+        shore_table_texture = ImageTexture.create_from_image(shore_table)
+        for kind in range(2):
+            var view := _gpu_pass(["ShoreView", "TidalShoreView"][kind], SHORE_SHADER, bounds, shore_blocks[kind], Color.WHITE if kind == 0 else Color(1, 1, 1, 0.5), resident_layers[8])
+            (view.material as ShaderMaterial).set_shader_parameter("cells", shore_cells_texture)
+            (view.material as ShaderMaterial).set_shader_parameter("table", shore_table_texture)
+            (view.material as ShaderMaterial).set_shader_parameter("channel", kind)
+            shore_views.append(view)
+        _reset_shores()
+        gpu_view = _gpu_pass("UpperView", GPU_SHADER, bounds, gpu_blocks, Color.WHITE, resident_layers[8])
+    else:
+        # The whole map, under everything.
+        gpu_view = _gpu_pass("TerrainView", GPU_SHADER, bounds, null, Color.WHITE, resident_layers[0])
+        tide_view = _gpu_pass("TideView", TIDE_SHADER, bounds, tide_blocks, Color(1, 1, 1, 0.5), resident_layers[9])
+        (tide_view.material as ShaderMaterial).set_shader_parameter("cells", gpu_cells_texture)
+        _bind_tide_water()
+    var material := gpu_view.material as ShaderMaterial
     material.set_shader_parameter("cells", gpu_cells_texture)
     material.set_shader_parameter("table", gpu_table_texture)
+    material.set_shader_parameter("page_size", Vector2(TileSheet.SIZE, TileSheet.SIZE))
+
+## A view drawn by a shader over the map blocks listed in blocks (the whole
+## map when null), placed just before the layer it is drawn under.
+func _gpu_pass(pass_name: String, code: String, bounds: Rect2i, blocks, tint: Color, under: Node) -> Node2D:
+    var view := Node2D.new()
+    view.name = pass_name
+    var material := ShaderMaterial.new()
+    material.shader = Shader.new()
+    material.shader.code = code
     material.set_shader_parameter("cells_origin", Vector2(bounds.position))
     material.set_shader_parameter("cells_size", Vector2(bounds.size))
-    material.set_shader_parameter("page_size", Vector2(TileSheet.SIZE, TileSheet.SIZE))
-    gpu_view.material = material
-    var area := Rect2(Vector2(bounds.position * tile_size), Vector2(bounds.size * tile_size))
-    gpu_view.draw.connect(func(): gpu_view.draw_rect(area, Color.WHITE))
-    add_child(gpu_view)
-    move_child(gpu_view, 0)
+    view.material = material
+    if blocks == null:
+        var area := Rect2(Vector2(bounds.position * tile_size), Vector2(bounds.size * tile_size))
+        view.draw.connect(func(): view.draw_rect(area, tint))
+    else:
+        view.draw.connect(func(): _draw_blocks(view, blocks, tint))
+    add_child(view)
+    move_child(view, under.get_index())
+    return view
 
-## The id drawing this ground cell on the GPU, or 0 to keep it a TileMapLayer
-## cell (tide overlays, gates, sprites that are not a plain 16x16 tile).
+## One rectangle per run of neighbouring blocks in a row.
+func _draw_blocks(view: Node2D, blocks: Dictionary, tint: Color) -> void:
+    var rows := {}
+    for block in blocks:
+        if not rows.has(block.y): rows[block.y] = []
+        rows[block.y].append(block.x)
+    var span := float(tile_size * TILE_BLOCK)
+    for y in rows:
+        var xs: Array = rows[y]
+        xs.sort()
+        var start: int = xs[0]
+        for i in range(1, xs.size() + 1):
+            if i < xs.size() and xs[i] == xs[i - 1] + 1: continue
+            view.draw_rect(Rect2(Vector2(start, y) * span, Vector2(xs[i - 1] - start + 1, 1) * span), tint)
+            if i < xs.size(): start = xs[i]
+
+func _mark_block(view: Node2D, blocks: Dictionary, cell: Vector2i) -> void:
+    var block := Vector2i(floori(cell.x / float(TILE_BLOCK)), floori(cell.y / float(TILE_BLOCK)))
+    if blocks.has(block): return
+    blocks[block] = true
+    view.queue_redraw()
+
+func _bind_tide_water() -> void:
+    var water: Texture2D = _picture(_world_data().texture_for("water2"))
+    (tide_view.material as ShaderMaterial).set_shader_parameter("water", water)
+    (tide_view.material as ShaderMaterial).set_shader_parameter("water_size", water.get_size())
+
+## The picture a tile image shows (the Gen 3 pack wraps most of them).
+func _picture(texture: Texture2D) -> Texture2D:
+    if texture != null and texture.has_method("use") and texture.get("current") is Texture2D: return texture.get("current")
+    return texture
+
+## Forgets every shore id and binds the shore sheets' current pictures.
+func _reset_shores() -> void:
+    shore_bytes.fill(0)
+    shore_cells_dirty = true
+    shore_ids = {"": 0}
+    shore_rows = [null]
+    shore_keys = {}
+    shore_sources = [_world_data().texture_for("shore_sheet4"), _world_data().texture_for("shore1inner_sheet2")]
+    shore_textures = shore_sources.map(_picture)
+    for view in shore_views:
+        var material := view.material as ShaderMaterial
+        for sheet in range(2):
+            material.set_shader_parameter(["outer", "inner"][sheet], shore_textures[sheet])
+            material.set_shader_parameter(["outer_size", "inner_size"][sheet], shore_textures[sheet].get_size() if shore_textures[sheet] != null else Vector2.ONE)
+
+## A cell's [ocean, tidal] shore ids, or [] when its shoreline stays on the
+## TileMapLayers (no GPU, or out of ids).
+func _shore_ids(shores: Array) -> Array:
+    if shore_cells == null: return []
+    var ids := []
+    for shore in shores:
+        if not shore_ids.has(shore): shore_ids[shore] = _new_shore_id(shore)
+        var id: int = shore_ids[shore]
+        if id < 0: return []
+        ids.append(id)
+    return ids
+
+func _new_shore_id(shore: String) -> int:
+    var quads: Array = _world_data().shoreline_quads(shore, 0)
+    if quads.is_empty(): return 0
+    var row := []
+    for quadrant in range(4):
+        var quad: Dictionary = quads[quadrant]
+        var sheet := shore_sources.find(quad.texture)
+        var place: Vector2 = quad.source.position
+        if sheet < 0 or quad.source.size != Vector2(8, 8) or quad.offset != Vector2((quadrant % 2) * 8, (quadrant / 2) * 8): return -1
+        if place.x < 0 or place.y < 0 or place.x > 255 or place.y > 255 or place != place.floor(): return -1
+        row.append([sheet, place])
+    var key := str(row)
+    if shore_keys.has(key): return shore_keys[key]
+    if shore_rows.size() >= SHORE_MAX_IDS: return -1
+    var id := shore_rows.size()
+    shore_rows.append(row)
+    shore_keys[key] = id
+    for quadrant in range(4):
+        var place: Vector2 = row[quadrant][1]
+        shore_table.set_pixel(id, quadrant, Color(place.x / 255.0, place.y / 255.0, (row[quadrant][0] + 1) / 255.0, 1.0))
+    shore_table_dirty = true
+    return id
+
+func _set_shore_cell(cell: Vector2i, ids: Array) -> void:
+    var at := _cell_at(cell)
+    if at < 0: return
+    var ocean: int = 0 if ids.is_empty() else ids[0]
+    var tidal: int = 0 if ids.is_empty() else ids[1]
+    if ocean > 0: _mark_block(shore_views[0], shore_blocks[0], cell)
+    if tidal > 0: _mark_block(shore_views[1], shore_blocks[1], cell)
+    if shore_bytes[at] == ocean and shore_bytes[at + 1] == tidal: return
+    shore_bytes[at] = ocean
+    shore_bytes[at + 1] = tidal
+    shore_cells_dirty = true
+
+## Where a cell's two bytes are in gpu_bytes and shore_bytes (-1: off the map).
+func _cell_at(cell: Vector2i) -> int:
+    var at := cell - resident_fingerprints.origin
+    if at.x < 0 or at.y < 0 or at.x >= gpu_width or at.y >= gpu_height: return -1
+    return (at.y * gpu_width + at.x) * 2
+
+## Nothing of this cell is drawn by the GPU.
+func _clear_gpu_cell(cell: Vector2i) -> void:
+    if gpu_cells != null: _set_gpu_cell(cell, 0)
+    if shore_cells != null: _set_shore_cell(cell, [])
+
+## Whether a cell may be drawn by the GPU with this id: not when a sprite
+## drawn before it overlaps it, unless the tile is see-through.
+func _gpu_allowed(cell: Vector2i, id: int) -> bool:
+    return pins.is_empty() or not pins.has(cell) or gpu_rows[id].get("clear", false)
+
+## Whether the sprite layer draws cell a before cell b (TileMapLayer order).
+func _drawn_before(a: Vector2i, b: Vector2i) -> bool:
+    var block_a := Vector2i(floori(a.x / float(TILE_BLOCK)), floori(a.y / float(TILE_BLOCK)))
+    var block_b := Vector2i(floori(b.x / float(TILE_BLOCK)), floori(b.y / float(TILE_BLOCK)))
+    if block_a.y != block_b.y: return block_a.y < block_b.y
+    if block_a.x != block_b.x: return block_a.x > block_b.x
+    if a.x != b.x: return a.x < b.x
+    return a.y < b.y
+
+## A sprite reaching past its cell pins the cells it overlaps that are drawn
+## after it.
+func _pin(cell: Vector2i, spec: Dictionary, flips: Dictionary) -> void:
+    var size: Vector2 = spec["region"].size
+    var origin := Vector2i((Vector2(tile_size, tile_size) - size) / 2.0 - Vector2(spec.get("offset", Vector2.ZERO)))
+    var rect := Rect2(Vector2(cell * tile_size) + Vector2(tile_size, tile_size) / 2.0 - size / 2.0 - Vector2(origin), size)
+    if Rect2(Vector2(cell * tile_size), Vector2(tile_size, tile_size)).encloses(rect): return
+    var pinned: Array[Vector2i] = []
+    for y in range(floori(rect.position.y / tile_size), ceili(rect.end.y / tile_size)):
+        for x in range(floori(rect.position.x / tile_size), ceili(rect.end.x / tile_size)):
+            var other := Vector2i(x, y)
+            if other == cell or not _drawn_before(cell, other): continue
+            if not flips.has(other): flips[other] = pins.has(other)
+            pins[other] = pins.get(other, 0) + 1
+            pinned.append(other)
+    if not pinned.is_empty(): pinned_by[cell] = pinned
+
+func _unpin(cell: Vector2i, flips: Dictionary) -> void:
+    for other in pinned_by[cell]:
+        if not flips.has(other): flips[other] = true
+        if pins[other] > 1: pins[other] -= 1
+        else: pins.erase(other)
+    pinned_by.erase(cell)
+
+## The id drawing this cell on the GPU, or 0 to keep it a TileMapLayer cell
+## (gates, sprites that are not a plain 16x16 tile).
 func _gpu_id(tile, spec: Dictionary, identity: String) -> int:
-    if spec.is_empty() or spec.get("texture") == null or "_tidal" in identity or "gate" in identity: return 0
+    if spec.is_empty() or spec.get("texture") == null or "gate" in identity: return 0
     var region: Rect2 = spec.get("region", Rect2())
     if region.size != Vector2(tile_size, tile_size) or Vector2(spec.get("offset", Vector2.ZERO)) != Vector2.ZERO: return 0
     var texture: Texture2D = spec["texture"]
@@ -567,6 +832,8 @@ func _gpu_id(tile, spec: Dictionary, identity: String) -> int:
         if page < 0: return 0
         id = gpu_rows.size()
         var row := {"pos": placed[1].position, "page": page}
+        # A see-through tile may be drawn in any order.
+        if not animated: row["clear"] = (TileSheet.pages[page].image as Image).get_region(Rect2i(placed[1])).is_invisible()
         if animated:
             var spec_key := {"base": name, "upper": upper, "color": color}
             if not _gpu_place_frames(spec_key): return 0
@@ -576,10 +843,11 @@ func _gpu_id(tile, spec: Dictionary, identity: String) -> int:
         gpu_rows.append(row)
         gpu_ids[key] = id
         _write_gpu_row(id)
-    if upper.is_empty(): gpu_fast[1 if color else 0][(source_tiles as WorldTileStore).sid(name)] = id
+    # Beach tide depends on more than the name: those cells take the long way.
+    if not draw_upper and upper.is_empty() and not "_tidal" in name: gpu_fast[1 if color else 0][(source_tiles as WorldTileStore).sid(name)] = id
     return id
 
-## Puts every frame of an animated ground kind on the sheet up front, so the
+## Puts every frame of an animated kind on the sheet up front, so the
 ## animation never adds to (and re-uploads) a sheet page during play.
 func _gpu_place_frames(spec_key: Dictionary) -> bool:
     var seen := {}
@@ -588,7 +856,7 @@ func _gpu_place_frames(spec_key: Dictionary) -> bool:
         for flower in [0, 1]:
             if seen.has([signature, flower]): continue
             seen[[signature, flower]] = true
-            var spec: Dictionary = _world_data().render_spec(spec_key, false, flower, tick)
+            var spec: Dictionary = _world_data().render_spec(spec_key, draw_upper, flower, tick)
             if spec.is_empty() or spec.get("texture") == null: return false
             var region: Rect2 = spec.get("region", Rect2())
             if region.size != Vector2(tile_size, tile_size): return false
@@ -606,13 +874,15 @@ func _write_gpu_row(id: int) -> void:
     gpu_table.set_pixel(id % GPU_TABLE_WIDTH, id / GPU_TABLE_WIDTH, Color(row.pos.x, row.pos.y, row.page, 0.0))
     gpu_table_dirty = true
 
-func _set_gpu_cell(cell: Vector2i, id: int) -> void:
-    var at := cell - resident_fingerprints.origin
-    if at.x < 0 or at.y < 0 or at.x >= gpu_cells.get_width() or at.y >= gpu_cells.get_height():
-        return
-    var value := Color((id & 255) / 255.0, (id >> 8) / 255.0, 0.0)
-    if gpu_cells.get_pixelv(at) == value: return
-    gpu_cells.set_pixelv(at, value)
+func _set_gpu_cell(cell: Vector2i, id: int, tide := false) -> void:
+    var at := _cell_at(cell)
+    if at < 0: return
+    if id > 0 and draw_upper: _mark_block(gpu_view, gpu_blocks, cell)
+    if tide: _mark_block(tide_view, tide_blocks, cell)
+    var bits := id | (GPU_TIDE if tide else 0)
+    if gpu_bytes[at] == bits & 255 and gpu_bytes[at + 1] == bits >> 8: return
+    gpu_bytes[at] = bits & 255
+    gpu_bytes[at + 1] = bits >> 8
     gpu_cells_dirty = true
 
 ## Animated kinds move their table row to the current frame's place.
@@ -642,18 +912,28 @@ func _flush_gpu() -> void:
         gpu_table_texture.update(gpu_table)
     if gpu_cells_dirty:
         gpu_cells_dirty = false
+        gpu_cells.set_data(gpu_width, gpu_height, false, Image.FORMAT_RG8, gpu_bytes)
         gpu_cells_texture.update(gpu_cells)
+    if shore_table_dirty:
+        shore_table_dirty = false
+        shore_table_texture.update(shore_table)
+    if shore_cells_dirty:
+        shore_cells_dirty = false
+        shore_cells.set_data(gpu_width, gpu_height, false, Image.FORMAT_RG8, shore_bytes)
+        shore_cells_texture.update(shore_cells)
 
 ## Tile art was swapped: forget every id; the full redraw that follows
 ## assigns them again.
 func _reset_gpu() -> void:
     if gpu_cells == null: return
-    gpu_cells.fill(Color(0, 0, 0))
+    gpu_bytes.fill(0)
     gpu_cells_dirty = true
     gpu_ids.clear()
     gpu_rows = [{}]
     gpu_animated.clear()
     gpu_fast = [{}, {}]
+    if shore_cells != null: _reset_shores()
+    if tide_view != null: _bind_tide_water()
 
 ## Whether a tile with no upper name draws nothing on the upper layer. Such
 ## specs never animate, so the answer per name and color is fixed.
