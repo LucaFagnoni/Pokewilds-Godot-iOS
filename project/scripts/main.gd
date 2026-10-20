@@ -13193,6 +13193,36 @@ func _draw_world_view() -> void:
     for path in ["GroundLayer/ExactBaseTileStream", "DecorLayer/ExactUpperTileStream"]:
         var stream := world.get_node_or_null(path)
         if stream != null and stream.has_method("draw_view_async"): await stream.draw_view_async()
+    await _warm_world_shaders()
+
+## A canvas shader is compiled when it is first drawn: tens of ms each on a
+## phone, so the first frame showing a coast, the tide, a night light or a
+## swimming Pokemon stalled. Each one in the world is drawn once here, as a
+## pixel under the loading screen.
+func _warm_world_shaders() -> void:
+    if DisplayServer.get_name() == "headless": return
+    var materials := {}
+    for node in world.find_children("*", "CanvasItem", true, false):
+        var material: Material = (node as CanvasItem).material
+        if material != null: materials[material.shader if material is ShaderMaterial else material] = material
+    for path in ["GroundLayer/ExactBaseTileStream", "DecorLayer/ExactUpperTileStream"]:
+        # Animated tiles' shader: on TileSet tiles, not nodes.
+        var stream := world.get_node_or_null(path)
+        var shader = null if stream == null else stream.get("resident_shader")
+        if shader is Shader:
+            var material := ShaderMaterial.new()
+            material.shader = shader
+            materials[shader] = material
+    var warm := Node2D.new()
+    warm.position = world.player.position
+    for material in materials.values():
+        var dot := Node2D.new()
+        dot.material = material
+        dot.draw.connect(func(): dot.draw_rect(Rect2(0, 0, 1, 1), Color.WHITE))
+        warm.add_child(dot)
+    world.add_child(warm)
+    await get_tree().process_frame
+    warm.queue_free()
 
 func _warm_map_cache() -> void:
     if not is_instance_valid(waypoint_ui):

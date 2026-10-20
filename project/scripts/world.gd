@@ -1580,7 +1580,7 @@ func _pokemon_can_enter(species: String, cell: Vector2i) -> bool:
     return super._pokemon_can_enter(species, cell)
 
 func _ensure_overworld_pokemon_population() -> void:
-    super._ensure_overworld_pokemon_population()
+    await super._ensure_overworld_pokemon_population()
     if not exact_world_mode or exact_world == null:
         return
     # Older saves persisted the roaming population before these source aliases
