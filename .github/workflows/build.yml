@@ -17,7 +17,6 @@ env:
   GODOT_VERSION: 4.7.2
   # Stripped engine profile shared by the iOS template and the Linux smoke test.
   ENGINE_PROFILE: ${{ github.workspace }}/.github/engine/custom.py
-  TAG: build-${{ github.run_number }}
 
 # Releases hold the files: they do not count against the Actions storage quota
 # that artifacts fill up.
@@ -30,13 +29,27 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
+    outputs:
+      tag: ${{ steps.names.outputs.tag }}
+      bundle: ${{ steps.names.outputs.bundle }}
     steps:
       - uses: actions/checkout@v4
-      - name: Create the draft release
+      # Zero-padded: GitHub lists releases by tag name, so build-0010 must come
+      # after build-0009. The IPA's internal version (CFBundleVersion) goes up
+      # with every build; 100 + n stays above the 93 the preset started at.
+      - id: names
         run: |
+          echo "tag=build-$(printf '%04d' "$GITHUB_RUN_NUMBER")" >> "$GITHUB_OUTPUT"
+          echo "bundle=$((100 + GITHUB_RUN_NUMBER))" >> "$GITHUB_OUTPUT"
+      - name: Create the draft release
+        env:
+          TAG: ${{ steps.names.outputs.tag }}
+          BUNDLE: ${{ steps.names.outputs.bundle }}
+        run: |
+          version=$(sed -n 's/^application\/short_version="\(.*\)"/\1/p' project/export_presets.cfg)
           git log -1 --pretty=%B > notes.md
           echo "" >> notes.md
-          echo "IPA and server built from ${GITHUB_SHA::8}: they play together (a host refuses players of another build)." >> notes.md
+          echo "IPA version $version ($BUNDLE). IPA and server built from ${GITHUB_SHA::8}: they play together (a host refuses players of another build)." >> notes.md
           echo "- **Pokewilds-unsigned.ipa**: sign it with Feather (or similar) before installing." >> notes.md
           echo "- **PokeWilds-Server-win64.zip**: unzip it and run start_server.bat. Guide: README_SERVER.md." >> notes.md
           gh release create "$TAG" --draft --target "$GITHUB_SHA" \
@@ -99,6 +112,8 @@ jobs:
     # Only a pack that passed the smoke test goes into the release.
     needs: [draft, smoke]
     runs-on: macos-26
+    env:
+      TAG: ${{ needs.draft.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
@@ -149,8 +164,12 @@ jobs:
         run: python3 .github/engine/minify_json.py project
 
       # The commit this build comes from: hosts refuse players of another build.
-      - name: Stamp build id
-        run: echo "$GITHUB_SHA" > project/build_id.txt
+      # The IPA's internal version goes up with every build.
+      - name: Stamp build id and IPA build number
+        run: |
+          echo "$GITHUB_SHA" > project/build_id.txt
+          sed -i '' 's/^application\/version=.*/application\/version="${{ needs.draft.outputs.bundle }}"/' project/export_presets.cfg
+          grep -n '^application/version=' project/export_presets.cfg
 
       - name: Export Xcode project
         working-directory: project
@@ -185,6 +204,8 @@ jobs:
     # On pull requests there is no draft: build and test only.
     if: ${{ !cancelled() && (needs.draft.result == 'success' || github.event_name == 'pull_request') }}
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.draft.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
@@ -237,11 +258,12 @@ jobs:
         run: gh release upload "$TAG" PokeWilds-Server-win64.zip
 
   publish:
-    needs: [ios, server]
+    needs: [draft, ios, server]
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
+      TAG: ${{ needs.draft.outputs.tag }}
     steps:
       - name: Publish the release as Latest
         run: |
@@ -258,6 +280,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
+      TAG: ${{ needs.draft.outputs.tag }}
     steps:
       - name: Delete the draft release
         run: gh release delete "$TAG" --yes
