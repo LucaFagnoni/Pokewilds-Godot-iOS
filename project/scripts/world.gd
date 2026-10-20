@@ -1146,15 +1146,15 @@ func _update_wild_pokemon(delta: float) -> void:
                     break
     for raw_id in _watched_wild_ids.duplicate():
         var wild_id = int(raw_id)
-        if not wild_pokemon.has(wild_id):
+        var data = wild_pokemon.get(wild_id)
+        if data == null:
             continue
-        var data = wild_pokemon[wild_id]
         if bool(data.get("ball_reserved", false)): continue
         if bool(data.get("burrowed", false)):
             continue
         var old_cell = data.get("cell", Vector2i.ZERO)
         var local_target=true
-        var target_player:Dictionary={}
+        var target_player = null
         if online:
             target_player=coordinator.wild.target_for(data,old_cell)
             if target_player.is_empty():continue
@@ -1170,7 +1170,6 @@ func _update_wild_pokemon(delta: float) -> void:
             var depth := _depth_z(old_cell)
             if active_sprite.z_index != depth: active_sprite.z_index = depth
         _update_pokemon_water_visual(data)
-        if local_target:_update_friendly_passby(data, old_cell, false)
         var was_charmed = bool(data.get("charmed", false))
         var is_charmed = _charm_suppresses(data) if local_target else coordinator.wild.remote_charm(data,target_player)
         data["charmed"] = is_charmed
@@ -1182,15 +1181,15 @@ func _update_wild_pokemon(delta: float) -> void:
             if float(data["source_aggro_emote_seconds"]) <= 0.0:
                 _show_ecology_emote(data.get("sprite") as Sprite2D, "skull")
                 data["source_aggro_emote_seconds"] = 241.0 / 60.0
-        data["move_timer"] = float(data.get("move_timer", 0.0)) - delta
+        var move_timer := float(data.get("move_timer", 0.0)) - delta
+        data["move_timer"] = move_timer
         # One that has just broken out of a ball bolts at once; it does not
         # first wait out whatever pause its wandering had left.
-        var flee_until = float(data.get("ball_flee_until", 0.0))
-        var bolting = world_elapsed_seconds < flee_until and float(_flee_started.get(wild_id, -1.0)) != flee_until
-        if bolting:
+        var flee_until := float(data.get("ball_flee_until", 0.0))
+        if world_elapsed_seconds < flee_until and float(_flee_started.get(wild_id, -1.0)) != flee_until:
             _flee_started[wild_id] = flee_until
-        elif float(data["move_timer"]) > 0.0:
-            wild_pokemon[wild_id] = data
+        elif move_timer > 0.0:
+            # data is wild_pokemon's own record: nothing to store back.
             continue
         data["move_timer"] = _wild_move_delay(String(data.get("species", "")), data)
         data = _try_create_parent_egg(data, old_cell, wild_id)

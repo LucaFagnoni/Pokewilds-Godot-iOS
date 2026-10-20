@@ -6783,16 +6783,14 @@ func _refresh_record_habitat(
     # Build the seven-by-seven habitat window once. The old implementation
     # rebuilt the same strings once per required type and then again for
     # shelter, multiplying work across hundreds of exact-world Pokemon.
-    var nearby_names: Array[String] = []
+    var nearby_names := PackedStringArray()
     var fence_count := 0
     var roof_count := 0
     for y in range(cell.y - PokemonEcology.HABITAT_RADIUS, cell.y + PokemonEcology.HABITAT_RADIUS + 1):
         for x in range(cell.x - PokemonEcology.HABITAT_RADIUS, cell.x + PokemonEcology.HABITAT_RADIUS + 1):
             var habitat_cell := Vector2i(x, y)
-            var names := ""
-            if ecology_name_cache.has(habitat_cell):
-                names = String(ecology_name_cache[habitat_cell])
-            else:
+            var names = ecology_name_cache.get(habitat_cell)
+            if names == null:
                 names = _ecology_names_at(habitat_cell)
                 ecology_name_cache[habitat_cell] = names
             nearby_names.append(names)
@@ -6800,20 +6798,27 @@ func _refresh_record_habitat(
                 fence_count += 1
             elif "roof" in names:
                 roof_count += 1
+    # No habitat option holds a space, so one is in the joined window exactly
+    # when it is in one of the cells' names. The species' groups (decoded
+    # from the packed species data) are kept in the same cache by name.
+    var window := " ".join(nearby_names)
+    var habitat = ecology_name_cache.get(species)
+    if habitat == null:
+        var groups := []
+        for raw_group in PokemonEcology.habitat_groups(species):
+            groups.append([String(raw_group), String(raw_group).to_lower().split("|")])
+        habitat = [groups, PokemonEcology.requires_night(species)]
+        ecology_name_cache[species] = habitat
     var missing: Array[String] = []
-    for raw_group in PokemonEcology.habitat_groups(species):
-        var group := String(raw_group)
+    for group in habitat[0]:
         var satisfied := false
-        for names in nearby_names:
-            for raw_option in group.to_lower().split("|"):
-                if String(raw_option) in names:
-                    satisfied = true
-                    break
-            if satisfied:
+        for option in group[1]:
+            if option in window:
+                satisfied = true
                 break
         if not satisfied:
-            missing.append(group)
-    if PokemonEcology.requires_night(species) and not _is_night_time():
+            missing.append(group[0])
+    if habitat[1] and not _is_night_time():
         missing.append("night")
     data["missing_habitats"] = missing
     data["in_habitat"] = missing.is_empty()
@@ -6938,7 +6943,7 @@ func _ecology_names_at(cell: Vector2i) -> String:
             names.append("gravestone")
     if landmarks.has(cell):
         names.append(String((landmarks[cell] as Dictionary).get("type", "")).to_lower())
-    if bool(terrain_changes.get("ice:%s" % _cell_key(cell), false)):
+    if not terrain_changes.is_empty() and bool(terrain_changes.get("ice:%d,%d" % [cell.x, cell.y], false)):
         names.append("snow")
     return " ".join(names)
 
@@ -6950,7 +6955,7 @@ func _update_ecology(delta: float) -> void:
     ecology_accumulator = fmod(
         ecology_accumulator, PokemonEcology.HABITAT_CHECK_SECONDS
     )
-    _refresh_ecology_relationships()
+    var active_wild := _refresh_ecology_relationships()
     _release_old_eggs()
 
     for raw_cell in deployed_pokemon.keys():
@@ -6972,18 +6977,12 @@ func _update_ecology(delta: float) -> void:
         data = _advance_breeding_clock(data, ecology_delta)
         deployed_pokemon[cell] = data
 
-    var active_center := _player_cell()
-    for raw_id in wild_pokemon.keys():
-        if not wild_pokemon.has(raw_id):
-            continue
-        var data: Dictionary = wild_pokemon[raw_id]
-        var wild_cell: Vector2i = data.get("cell", Vector2i.ZERO)
-        if (
-                not bool(data.get("burrowed", false))
-                and _wild_ecology_is_active(wild_cell, active_center)
-            ):
-            data = _advance_breeding_clock(data, ecology_delta, true)
-        wild_pokemon[raw_id] = data
+    # The wild Pokemon in play are the ones the relationship pass just took
+    # (not burrowed, near the player or a habitat); nothing since has moved
+    # one, and each clock is its own record's. Scanning every wild Pokemon in
+    # the world again for them was a fifth of this pass.
+    for data in active_wild:
+        _advance_breeding_clock(data, ecology_delta, true)
 
 func _advance_breeding_clock(
         data: Dictionary, delta: float, allow_wild_crowding: bool = false
@@ -7010,8 +7009,10 @@ func _advance_breeding_clock(
         )
     return data
 
-func _refresh_ecology_relationships() -> void:
+## Returns the wild records it covered, in wild_pokemon order.
+func _refresh_ecology_relationships() -> Array[Dictionary]:
     var records: Array[Dictionary] = []
+    var active_wild: Array[Dictionary] = []
     # Habitat windows heavily overlap. Cache each cell's ecology string for this
     # refresh so the 1.6-second relationship pass does not repeatedly resolve
     # the same tile/biome dozens of times and hitch while the player is running.
@@ -7023,13 +7024,22 @@ func _refresh_ecology_relationships() -> void:
             "data": deployed_pokemon[cell]
         })
     var active_center := _player_cell()
-    for raw_id in wild_pokemon.keys():
+    # With no habitats out, only the player's square counts: most of the
+    # world's wild Pokemon are settled by these two comparisons.
+    var player_only := deployed_pokemon.is_empty()
+    for raw_id in wild_pokemon:
         var wild_data: Dictionary = wild_pokemon[raw_id]
         if bool(wild_data.get("burrowed", false)):
             continue
         var wild_cell: Vector2i = wild_data.get("cell", Vector2i.ZERO)
+        if player_only and (
+                absi(wild_cell.x - active_center.x) > ECOLOGY_ACTIVE_RADIUS
+                or absi(wild_cell.y - active_center.y) > ECOLOGY_ACTIVE_RADIUS
+            ):
+            continue
         if not _wild_ecology_is_active(wild_cell, active_center):
             continue
+        active_wild.append(wild_data)
         records.append({
             "kind": "wild", "key": raw_id,
             "cell": wild_cell,
@@ -7198,6 +7208,7 @@ func _refresh_ecology_relationships() -> void:
         descriptor["data"] = data
         records[index] = descriptor
         _store_ecology_descriptor(descriptor)
+    return active_wild
 
 func _wild_ecology_is_active(
         cell: Vector2i, active_center: Vector2i
@@ -7210,7 +7221,7 @@ func _wild_ecology_is_active(
     # Player-owned habitat populations keep their nearby wild interactions
     # even while the player is elsewhere; unrelated offscreen wild Pokemon do
     # not need per-frame behavior or relationship scans.
-    for raw_cell in deployed_pokemon.keys():
+    for raw_cell in deployed_pokemon:
         var deployed_cell := Vector2i(raw_cell)
         if (
                 absi(cell.x - deployed_cell.x) <= PokemonEcology.HABITAT_RADIUS
@@ -7456,21 +7467,31 @@ func _ecology_record_by_id(ecology_id: String) -> Dictionary:
     for data in deployed_pokemon.values():
         if String((data as Dictionary).get("ecology_id", "")) == ecology_id:
             return data as Dictionary
-    for data in wild_pokemon.values():
-        if String((data as Dictionary).get("ecology_id", "")) == ecology_id:
-            return data as Dictionary
-    return {}
+    return _wild_ecology_record(ecology_id)
 
 func _ecology_cell_by_id(ecology_id: String) -> Vector2i:
     for raw_cell in deployed_pokemon.keys():
         var data: Dictionary = deployed_pokemon[raw_cell]
         if String(data.get("ecology_id", "")) == ecology_id:
             return Vector2i(raw_cell)
-    for data in wild_pokemon.values():
-        var record := data as Dictionary
-        if String(record.get("ecology_id", "")) == ecology_id:
-            return Vector2i(record.get("cell", Vector2i.ZERO))
+    var record := _wild_ecology_record(ecology_id)
+    if not record.is_empty():
+        return Vector2i(record.get("cell", Vector2i.ZERO))
     return Vector2i(-2147483648, -2147483648)
+
+## The wild record with this ecology id, {} if none. _add_wild_pokemon names
+## each one "wild:<its key>" (one per key), so that key is looked at first:
+## scanning every wild Pokemon in the world for a mate was most of the time a
+## wandering step took.
+func _wild_ecology_record(ecology_id: String) -> Dictionary:
+    if ecology_id.begins_with("wild:"):
+        var record = wild_pokemon.get(int(ecology_id.substr(5)))
+        if record != null and String(record.get("ecology_id", "")) == ecology_id:
+            return record
+    for data in wild_pokemon.values():
+        if String((data as Dictionary).get("ecology_id", "")) == ecology_id:
+            return data as Dictionary
+    return {}
 
 func _paired_wander_direction(
         data: Dictionary, origin: Vector2i, fallback: Vector2i
