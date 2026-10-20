@@ -8063,8 +8063,7 @@ func restore_crafting_save_state(state: Dictionary) -> void:
             source_plant_farms.erase(_cell_key(cell))
         if not repaired_roof_cells.is_empty():
             _refresh_exact_streams()
-    if not has_meta("gen3_art_refresh"):
-        await _refresh_daily_events(true)
+    await _refresh_daily_events(true)
     SourceForestBoss.install(self)
     await preload("res://scripts/biome_megas.gd").prepare_load(self)
     preload("res://scripts/biome_megas.gd").install(self)

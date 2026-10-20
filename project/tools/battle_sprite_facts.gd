@@ -1,6 +1,6 @@
 extends SceneTree
 ## Rebuilds res://data/battle_sprite_facts.json after battle sprites change.
-## Run windowed (it reads the sprites back), without data/gen3_overhaul.pwmod:
+## Run windowed (it reads the sprites back):
 ##   godot --path project -s res://tools/battle_sprite_facts.gd
 ## What main.gd would otherwise find by reading each imported battle sheet back
 ## from the GPU (a stall on iPhone): "listed" maps "path:WxH" to [idle frames,

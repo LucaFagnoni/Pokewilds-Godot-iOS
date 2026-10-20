@@ -60,9 +60,6 @@ func generate(main:Node,job_path:String)->void:
     var job=JSON.parse_string(FileAccess.get_file_as_string(job_path))
     if not job is Dictionary:main.get_tree().quit(1);return
     GameOptions.restore_game_options(job.get("options",{}),String(job.get("world","")))
-    var gen3:=load("res://scripts/gen3_overhaul.gd")
-    if GameOptions.enabled("gen3_overhaul")!=gen3.enabled and not await gen3.apply(GameOptions.enabled("gen3_overhaul"),main.get_tree()):
-        main.get_tree().quit(1);return
     main.world.visible=true;main.generating=true
     await main.world.generate_world(int(job.seed),int(job.size),false)
     if not main.world.generation_error.is_empty():

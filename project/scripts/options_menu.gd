@@ -27,7 +27,6 @@ const ROWS := [
     ["dark_mode","DARK MODE","Use dark menus with the selected frame."],
     ["lofi_music","LOFI MUSIC","Use the alternate music pack."],
     ["hd_emotes","HD EMOTES","Use alternate emotes and a green item check."],
-    ["gen3_overhaul","GEN3 OVERHAUL","Switch the world artwork without restarting."],
     ["circle_lights","CIRCLE LIGHTS","Use circular light shapes."],
     ["game_speed","GAME SPEED","Speed up gameplay, music and effects together."],
     ["text_speed","TEXT SPEED","Choose how quickly dialogue appears."],
@@ -45,7 +44,7 @@ const TOUCH_ONLY := ["touch_size", "touch_opacity", "touch_theme", "touch_autohi
 const CATEGORIES := [
     ["AUDIO", "Music, effects, cries and footsteps.", ["music","sound","world_sound","cries","footsteps","lofi_music"]],
     ["GAMEPLAY", "Speed, running, movement, wheels and throwing.", ["game_speed","text_speed","auto_run","diagonal","radial","ball_mechanics","zoom","weather_events"]],
-    ["DISPLAY", "Frame, dark mode, minimap and visual extras.", ["frame","dark_mode","minimap","fps_counter","battery_saver","battle_animations","held_emotes","shiny_sparkles","hd_emotes","circle_lights","map_waypoint","gen3_overhaul"]],
+    ["DISPLAY", "Frame, dark mode, minimap and visual extras.", ["frame","dark_mode","minimap","fps_counter","battery_saver","battle_animations","held_emotes","shiny_sparkles","hd_emotes","circle_lights","map_waypoint"]],
     ["CONTROLS", "On-screen buttons, vibration and button mapping.", ["touch_size","touch_opacity","touch_theme","touch_autohide","haptics","touch_move","touch_reset","button_layout","controls"]],
     ["ONLINE", "Settings for the world you host.", ["horde_mode","raids_mode","players","autosave"]],
 ]
@@ -172,12 +171,6 @@ func open() -> void:
         menu_rows=menu_rows.filter(func(row): return row[0]!="lofi_music")
     if not TouchUI.touch_runtime():
         menu_rows=menu_rows.filter(func(row): return row[0] not in TOUCH_ONLY)
-    if not FileAccess.file_exists("res://data/gen3_overhaul.pwmod"):
-        menu_rows=menu_rows.filter(func(row): return row[0]!="gen3_overhaul")
-    # Online the art changes on the next load, not at once, for host and guests alike.
-    if is_instance_valid(main.coop_game) and main.coop_game.active:
-        for row in menu_rows:
-            if row[0]=="gen3_overhaul":row[2]="To see Gen 3 world, please turn on and then restart game."
     if is_instance_valid(main.coop_game) and main.coop_game.active and main.coop_game.hosting:
         menu_rows.append(["horde_mode","HORDE MODE","Rare cooperative night hordes. Host sets this world option."])
         menu_rows.append(["raids_mode","RAIDS","ALL: each fighter catches. LAST: finishing player catches."])
@@ -315,10 +308,6 @@ func handle(event: InputEvent) -> void:
     elif key=="frame":value=wrapi(int(value)+direction,0,124)
     elif key=="button_layout":value=1-int(value)
     else:value=not bool(value)
-    if key == "gen3_overhaul":
-        await main.switch_gen3_overhaul(bool(value))
-        refresh()
-        return
     var saved:=Settings.change(key,value)
     main._apply_game_options()
     refresh()
