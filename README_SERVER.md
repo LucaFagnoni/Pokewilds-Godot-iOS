@@ -20,13 +20,16 @@ quando escono tutti.
    SERVER    Router port opened automatically (UPnP).
    ```
 
-3. **Sul telefono**: PokeWilds > **MULTIPLAYER** > **JOIN BY IP**, scrivi
-   l'indirizzo (oppure il codice di 8 caratteri) e premi A:
-   - in casa, sulla stessa Wi-Fi: quello di **Same Wi-Fi**;
+3. **Sul telefono**: PokeWilds > **MULTIPLAYER** > **SERVERS** > **ADD SERVER**.
+   Scrivi un nome a piacere, l'indirizzo (oppure il codice di 8 caratteri),
+   il tuo **ID** e una **password**, e salva:
+   - in casa, sulla stessa Wi-Fi: l'indirizzo di **Same Wi-Fi**;
    - fuori casa (rete mobile, casa di un amico): quello di **From outside**.
 
-   Scegli il personaggio e premi **JOIN!**. Il gioco ricorda l'ultimo
-   indirizzo (e la password, se c'è): la volta dopo basta premere A.
+   Tocca il server nella lista, scegli il personaggio e premi **JOIN!**. La
+   lista resta salvata nel telefono: la volta dopo basta un tocco. La prima
+   volta che entri con un ID nuovo, il server lo crea con quella password
+   (vedi "Giocatori: ID e password").
 
 Il server apre da solo la porta sul router (UPnP) e la richiude quando si
 spegne, apre da solo il firewall di Windows e tiene sveglio il PC finché è
@@ -74,6 +77,40 @@ non vengono controllate.
   scrivere anche un nome, per esempio `casa.duckdns.org:54555`.
 - Il **codice** di 8 caratteri funziona solo con la porta predefinita 54555.
 
+## Giocatori: ID e password
+
+Sul server ogni giocatore entra con un **ID** (da 3 a 16 caratteri tra
+lettere, numeri, `_` e `-`; maiuscole e minuscole sono uguali) e una
+**password**.
+
+- **Il personaggio segue l'ID**: con lo stesso ID e la stessa password da un
+  altro telefono ritrovi il tuo personaggio, con squadra e zaino, dove
+  l'avevi lasciato.
+- **Chi giocava già prima degli ID** tiene il suo personaggio: la prima volta
+  che entra con un ID nuovo dallo stesso telefono, quell'ID prende il
+  personaggio che quel telefono aveva su questo server.
+- **Chi può creare un ID** lo decide `accounts` in `server.cfg` (o
+  `--accounts`):
+  - `open` (predefinito): il primo accesso con un ID nuovo lo crea, con la
+    password usata quella volta;
+  - `closed`: entrano solo gli ID che crei tu dalla finestra del server con
+    `account add ID PASSWORD`; chi prova un ID che non esiste viene rifiutato
+    ("UNKNOWN PLAYER ID");
+  - `off`: niente ID, come prima: ogni telefono è un giocatore, e vale la
+    `password` condivisa del server (se c'è). Con gli ID attivi quella
+    password non serve e viene ignorata.
+- **Password dimenticata**: `account password ID NUOVA` dalla finestra del
+  server; il giocatore poi la cambia nella lista dei server sul telefono.
+- Il server non conserva le password: in `server_data\accounts.json` c'è solo
+  un hash con sale per ciascun ID. Al login il telefono dimostra di conoscere
+  la password senza mandarla; solo la prima volta, quando l'ID viene creato,
+  viaggia (una volta sola) il suo hash.
+
+Messaggi che il telefono può mostrare: "WRONG PLAYER ID OR PASSWORD",
+"UNKNOWN PLAYER ID" (server `closed`), "THIS SERVER NEEDS A PLAYER ID AND
+PASSWORD" (manca l'ID nella scheda del server), "THIS PLAYER IS ALREADY
+CONNECTED" (lo stesso ID è già in gioco da un altro telefono).
+
 ## Fermare il server e comandi
 
 Per fermarlo: **Ctrl+C**, oppure chiudi la finestra, oppure scrivi `stop` e
@@ -92,6 +129,10 @@ Comandi che puoi scrivere nella finestra:
 | `ban NOME` | lo butta fuori e non lo fa più entrare in questo mondo |
 | `bans` | elenca i giocatori bannati |
 | `unban NOME` | toglie il ban |
+| `accounts` | elenca gli ID dei giocatori |
+| `account add ID PASSWORD` | crea un ID (serve con `accounts=closed`) |
+| `account password ID PASSWORD` | dà una nuova password a un ID |
+| `account remove ID` | cancella un ID (il suo personaggio resta nel mondo) |
 
 Il server salva anche da solo ogni 5 minuti, e ogni azione dei giocatori
 (costruzioni, scambi, catture...) viene scritta subito nel diario del mondo:
@@ -108,19 +149,20 @@ Si possono dare a `start_server.bat` (per esempio
 | `--port N` | porta TCP | `54555` |
 | `--world NOME` | nome del mondo: lo carica se esiste, altrimenti lo crea | `PokeWilds` |
 | `--size S` | taglia di un mondo nuovo: `S`, `M`, `L`, `XL`, `XXL` | `M` |
-| `--password P` | password per entrare (max 16 caratteri) | nessuna |
+| `--accounts M` | ID dei giocatori: `open`, `closed` o `off` (vedi sopra) | `open` |
+| `--password P` | password condivisa, solo con `--accounts off` (max 16 caratteri) | nessuna |
 | `--no-upnp` | non aprire la porta sul router da solo | (la apre) |
 | `--data CARTELLA` | dove tenere i mondi | `server_data` accanto all'exe |
 | `--config FILE` | file di impostazioni | `server.cfg` accanto all'exe |
 
 Per usare il file copia `server.cfg.example` in `server.cfg` e modificalo
-(porta, mondo, taglia, password, giocatori massimi da 1 a 4, minuti tra un
-salvataggio automatico e l'altro, apertura automatica della porta). Le opzioni
-da riga di comando vincono sul file.
+(porta, mondo, taglia, ID dei giocatori, password, giocatori massimi da 1 a
+4, minuti tra un salvataggio automatico e l'altro, apertura automatica della
+porta). Le opzioni da riga di comando vincono sul file.
 
-Se il server è raggiungibile da Internet, **metti una password**: chi conosce
-l'indirizzo può provare a entrare. Il telefono la chiede una volta sola e poi
-la ricorda.
+Se il server è raggiungibile da Internet e vuoi scegliere tu chi gioca, usa
+`accounts=closed` e crea gli ID con `account add`: con `open` chiunque conosca
+l'indirizzo può crearsi un ID ed entrare.
 
 `PokeWilds.console.exe --headless --server` avvia il server senza il
 lanciatore: lì però Ctrl+C e la chiusura della finestra lo spengono **senza**
@@ -147,8 +189,9 @@ a server spento. Il server tiene anche da sé le ultime 5 copie in
 ## Limiti
 
 - Fino a 4 giocatori insieme (il limite del co-op del gioco).
-- La password protegge l'ingresso (non viaggia mai in chiaro), ma il resto del
-  traffico non è cifrato: non usare una password che usi altrove.
+- Le password non viaggiano mai in chiaro, ma il resto del traffico non è
+  cifrato, e il server non blocca chi prova tante password di fila: usa
+  password non banali e che non usi altrove.
 - Firewall fatto a mano: se hai rifiutato la richiesta di Windows, apri
   PowerShell **come amministratore** e scrivi (cambia il percorso):
   `New-NetFirewallRule -DisplayName "PokeWilds server" -Direction Inbound -Program "C:\PokeWilds-Server\PokeWilds.exe" -Action Allow -Profile Any`

@@ -1,6 +1,6 @@
 ; PokeWilds dedicated server settings. Copy this file to server.cfg next to
 ; PokeWilds.exe and change what you need. Command-line options
-; (--port, --world, --size, --password) win over this file.
+; (--port, --world, --size, --accounts, --password) win over this file.
 [server]
 ; TCP port players connect to. Open it on the firewall and the router.
 port=54555
@@ -8,7 +8,10 @@ port=54555
 world="PokeWilds"
 ; Size of a new world: S, M, L, XL or XXL.
 size="M"
-; Empty = anyone who knows the address can join.
+; Player IDs: "open" (a first login makes the ID), "closed" (only IDs made
+; with `account add` in the server window) or "off" (no IDs, as before).
+accounts="open"
+; Shared password, only used with accounts="off". Empty = anyone can join.
 password=""
 ; Players at once (1-4).
 max_players=4

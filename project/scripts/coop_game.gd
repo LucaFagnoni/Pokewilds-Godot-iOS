@@ -264,6 +264,7 @@ func configure(game:Node)->void:
     lobby=Lobby.new();add_child(lobby)
     session=Session.new();add_child(session)
     session.admitted.connect(_admitted)
+    session.has_character=func(actor):return state.records.has("player/"+String(actor))
     session.blocked=func(actor,device):return hosting and (state.records.has("blocked/"+String(actor)) or (String(device)!=session.NO_DEVICE and state.records.has("blocked_device/"+String(device))))
     session.rejected.connect(_failure)
     session.session_ready.connect(_ready_session)
@@ -793,7 +794,8 @@ func _lobby_record()->Dictionary:
     # A dedicated server's own player is not one of the players.
     var players:int=session.players.size()-(1 if Server.active else 0)
     return {"name":lobby_name,"host":String(session.profile.get("name","PLAYER")),"private":lobby_private,
-        "players":players,"max":max_players,"salt":lobby_salt,"protocol":Session.PROTOCOL,"mods":session.mod_digest,"port":host_port}
+        "players":players,"max":max_players,"salt":lobby_salt,"protocol":Session.PROTOCOL,"mods":session.mod_digest,"port":host_port,
+        "accounts":session.accounts!=null}
 
 func choose(action:String,value:String)->void:
     # Starting or joining a world takes time; a second press must not start
@@ -868,6 +870,9 @@ func _choose(action:String,value:String)->void:
         if endpoint.is_empty():_failure("COULD NOT OPEN A CONNECTION");return
         session.access_proof=Lobby.proof(String(join_lobby.get("salt","")),join_password) if bool(join_lobby.get("private",false)) else ""
         session.access_password=join_password if direct else ""
+        # A saved server with a player ID logs in as that ID (see coop_accounts.gd).
+        session.account_id=String(join_lobby.get("account_id","")).strip_edges()
+        session.account_password=String(join_lobby.get("account_password",""))
         _host_answered=false
         var error:Error=session.join_address(String(endpoint.address),int(endpoint.port))
         if error!=OK:_failure(error_string(error))

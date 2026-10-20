@@ -28,6 +28,16 @@ var access_password := ""
 ## proof comes back hashed with it, so one overheard on the way cannot be
 ## replayed. The bare proof of older builds is still accepted.
 var _nonces: Dictionary = {}
+## Host: player accounts (coop_accounts.gd) on a dedicated server, or null when
+## players are known by the identity their device made. Guest: the ID and
+## password to log in with ("" = no account), and what the challenge said.
+var accounts = null
+var has_character := Callable()
+var account_id := ""
+var account_password := ""
+var _account_salts: Dictionary = {}
+var _account_challenge: Dictionary = {}
+const Accounts = preload("res://scripts/coop_accounts.gd")
 ## The commit an official build was made from: CI writes build_id.txt before
 ## exporting. Builds from different commits can share the protocol and still
 ## disagree on the world (a world from one, tiles drawn by the other), so a
@@ -111,6 +121,12 @@ func _hello(peer: int, world: String, nonce: String = "") -> void:
     if world.is_empty() and not access_password.is_empty():access = ""
     var hello := {"kind":"hello","protocol":PROTOCOL,"mods":mod_digest,
         "identity":identity,"profile":profile,"access":access,"build":build_id()}
+    if not account_id.is_empty():
+        hello["account"] = account_id
+        if not world.is_empty() and _account_challenge.get("salt") is String:
+            var account_verifier := Accounts.verifier(String(_account_challenge.salt), account_id, account_password)
+            hello["account_proof"] = (nonce + "|" + account_verifier).sha256_text()
+            if bool(_account_challenge.get("new", false)): hello["account_verifier"] = account_verifier
     if not world.is_empty(): hello["device"] = device_print(world)
     transport.send(peer, hello)
 
@@ -152,23 +168,40 @@ func _received(peer: int, payload: Dictionary) -> void:
             var token:=String(payload.get("identity",""))
             if token.length()!=64 or not token.is_valid_hex_number():_reject(peer,"Invalid player identity.");return
             var id:=token.sha256_text()
-            for player in players.values():
-                if player.actor==id:_reject(peer,"This player is already connected.");return
+            var account:=String(payload.get("account","")).strip_edges().to_lower()
+            if accounts!=null:
+                if account.is_empty():_reject(peer,"This server needs a player ID and password.");return
+                if not Accounts.valid_id(account):_reject(peer,"Invalid player ID.");return
+                if not accounts.exists(account) and not accounts.open:_reject(peer,"Unknown player ID.");return
+            else:
+                for player in players.values():
+                    if player.actor==id:_reject(peer,"This player is already connected.");return
             var device:=String(payload.get("device",""))
             # The salt rides on the challenge so a player who typed the address
             # (and so never saw the lobby entry) can still prove the password.
             if device.length()!=64 or not device.is_valid_hex_number():
                 _nonces[peer]=preload("res://scripts/coop_random.gd").hex(16)
-                transport.send(peer,{"kind":"challenge","world":world_id,"salt":access_salt,"nonce":_nonces[peer]});return
+                var challenge:={"kind":"challenge","world":world_id,"salt":access_salt,"nonce":_nonces[peer]}
+                if accounts!=null:
+                    var known:bool=accounts.exists(account)
+                    if not known:_account_salts[peer]=preload("res://scripts/coop_random.gd").hex(16)
+                    challenge["account_salt"]=accounts.salt(account) if known else _account_salts[peer]
+                    challenge["account_new"]=not known
+                transport.send(peer,challenge);return
             var access:=String(payload.get("access",""))
             if not access_proof.is_empty() and access!=access_proof and access!=(String(_nonces.get(peer,""))+"|"+access_proof).sha256_text():_reject(peer,"Wrong password.");return
-            _nonces.erase(peer)
+            if accounts!=null:
+                id=_log_in(peer,account,payload,id)
+                if id.is_empty():return
+                for player in players.values():
+                    if player.actor==id:_reject(peer,"This player is already connected.");return
+            _nonces.erase(peer);_account_salts.erase(peer)
             if blocked.is_valid() and blocked.call(id,device):_reject(peer,BANNED);return
             var details=payload.get("profile",{})
             if not details is Dictionary:_reject(peer,"Invalid player profile.");return
             var clean:Dictionary={"name":String(details.get("name","PLAYER")).strip_edges().substr(0,24),
                 "model":int(details.get("model",0)),"color":int(details.get("color",0))}
-            players[peer]={"actor":id,"profile":clean,"device":device}
+            players[peer]={"actor":id,"profile":clean,"device":device,"account":account if accounts!=null else ""}
             transport.send(peer,{"kind":"welcome","world":world_id,"actor":id,"peer":peer,"protocol":PROTOCOL})
             admitted.emit(peer,id,clean)
             return
@@ -181,17 +214,38 @@ func _received(peer: int, payload: Dictionary) -> void:
             transport.stop();trusted=false
             return
         if kind=="challenge" and not trusted:
+            _account_challenge={"salt":payload.get("account_salt"),"new":payload.get("account_new",false)}
             if not access_password.is_empty() and payload.get("salt") is String:
                 access_proof=preload("res://scripts/coop_lobby.gd").proof(String(payload.salt),access_password)
             if payload.get("world") is String and String(payload.world).length()<=64:_hello(peer,String(payload.world),String(payload.get("nonce","")).left(64))
             return
         if kind=="welcome" and not trusted:
+            # Logged in with an ID, this player plays the ID's character, not the device's.
+            var assigned:=String(payload.get("actor",""))
+            if not account_id.is_empty() and assigned.length()==64 and assigned.is_valid_hex_number():actor=assigned
             if payload.get("protocol")!=PROTOCOL or payload.get("actor")!=actor:
                 transport.stop();rejected.emit("Invalid host handshake.");return
             world_id=String(payload.get("world",""));trusted=true
             session_ready.emit(world_id,actor)
             return
         if trusted:message.emit(1,"host",payload)
+
+## Host with accounts: the actor an ID plays, after checking the proof of its
+## password, or creating the ID on its first login. "" after refusing.
+func _log_in(peer: int, account: String, payload: Dictionary, device_actor: String) -> String:
+    var nonce := String(_nonces.get(peer, ""))
+    var proof := String(payload.get("account_proof", ""))
+    if accounts.exists(account):
+        if not accounts.check(account, nonce, proof): _reject(peer, "Wrong player ID or password."); return ""
+        return accounts.actor(account)
+    var account_verifier := String(payload.get("account_verifier", ""))
+    if not accounts.open or not _account_salts.has(peer) or account_verifier.length() != 64 or not account_verifier.is_valid_hex_number() \
+            or nonce.is_empty() or proof != (nonce + "|" + account_verifier).sha256_text():
+        _reject(peer, "Wrong player ID or password."); return ""
+    var value: String = accounts.register(account, String(_account_salts[peer]), account_verifier, device_actor, has_character)
+    if value.is_empty(): _reject(peer, "The server could not save the new player ID."); return ""
+    print("SERVER new player ID: ", account)
+    return value
 
 func send_host(payload: Dictionary) -> Error:
     if hosting or not trusted:return ERR_UNAVAILABLE
@@ -220,7 +274,7 @@ func _send_reliable(peer:int,payload:Dictionary)->Error:
 
 func _disconnected(peer: int) -> void:
     messages.drop(peer)
-    _nonces.erase(peer)
+    _nonces.erase(peer);_account_salts.erase(peer)
     if not hosting:
         trusted=false
         connection_lost.emit()
@@ -230,4 +284,4 @@ func _disconnected(peer: int) -> void:
         departed.emit(peer,id)
 
 func stop() -> void:
-    transport.stop();messages.clear();players.clear();_reject_pending.clear();trusted=false;hosting=false;loading=false;access_proof="";access_salt="";access_password="";_nonces.clear()
+    transport.stop();messages.clear();players.clear();_reject_pending.clear();trusted=false;hosting=false;loading=false;access_proof="";access_salt="";access_password="";_nonces.clear();_account_salts.clear();_account_challenge={}
