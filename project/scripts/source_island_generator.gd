@@ -767,7 +767,7 @@ func _postprocess_source_shores() -> void:
                         or next_tile.route_belongs_to.name != "wooded_lake_water1")):
                     tile.set_names("sand3_tidalwater", tile.name_upper)
             continue
-        if (tile.name in ["water2", "water2_edge1"] or "mountain4" in tile.name
+        if (tile.name == "water2" or tile.name == "water2_edge1" or "mountain4" in tile.name
                 or "ice" in tile.name or "waterfall" in tile.name):
             continue
         for offset in positions:
@@ -3141,6 +3141,10 @@ func apply_blotch(
     elif blotch_type == "wooded_lake1":
         put_sixteenths = 12
     var put_limit := put_sixteenths * maximum_distance / 16
+    var leaf_blotch := blotch_type in [
+            "grass", "grass_sand", "grass_desert1", "sand_pit1",
+            "ruins1_upper2", "pond1", "desert_cacti1", "desert_cacti2",
+            "desert_cacti3", "desert_cacti4"] or blotch_type.begins_with("grass_")
     var origin_vector := Vector2(origin_tile.position)
     var previous_distance := Vector2(previous_tile.position).distance_to(origin_vector)
     while not edge_tiles.is_empty():
@@ -3168,9 +3172,13 @@ func apply_blotch(
                 var put_tile := random.next_int(maximum_distance) + int(distance)
                 if put_tile >= maximum_distance and int(distance) >= put_limit:
                     continue
-                var new_tile := _make_blotch_tile(
-                    blotch_type, tile, edge, distance, maximum_distance,
-                    origin_tile, current_route, tiles_to_add, state)
+                var new_tile: SourceTile
+                if leaf_blotch:
+                    new_tile = _leaf_blotch_tile(blotch_type, edge, distance, maximum_distance, origin_tile, current_route)
+                else:
+                    new_tile = _make_blotch_tile(
+                        blotch_type, tile, edge, distance, maximum_distance,
+                        origin_tile, current_route, tiles_to_add, state)
                 if new_tile == null:
                     continue
                 tiles_to_add[new_tile.position] = new_tile
@@ -3212,11 +3220,7 @@ func _make_blotch_tile(
         tiles_to_add: Dictionary,
         state: Dictionary
     ) -> SourceTile:
-    if blotch_type in [
-            "grass", "grass_sand", "grass_desert1", "sand_pit1",
-            "ruins1_upper2", "pond1", "desert_cacti1", "desert_cacti2",
-            "desert_cacti3", "desert_cacti4"] or blotch_type.begins_with("grass_"):
-        return _leaf_blotch_tile(blotch_type, edge, distance, maximum_distance, origin_tile, current_route)
+    # Leaf blotch types are dispatched by apply_blotch directly.
     match blotch_type:
         "desert":
             return _make_desert_tile(edge, distance, maximum_distance, current_route, state)
@@ -3579,10 +3583,11 @@ func _source_scaled_level(
 func _diagonal_pattern(position: Vector2i, scale: float) -> Vector2i:
     var rotated := SourceLibGDXMath.rotate_deg(Vector2(position), 45.0)
     var source_scale := SourceLibGDXMath.float32(scale)
-    var scaled_y := SourceLibGDXMath.float32(
-        SourceLibGDXMath.float32(rotated.y) / source_scale)
-    var scaled_x := SourceLibGDXMath.float32(
-        SourceLibGDXMath.float32(rotated.x) / source_scale)
+    # Vector2 components are floats: built from these quotients they are the
+    # float-rounded values the source computes.
+    var scaled := Vector2(rotated.x / source_scale, rotated.y / source_scale)
+    var scaled_y := scaled.y
+    var scaled_x := scaled.x
     var diagonal := SourceLibGDXMath.float32(scaled_x - scaled_y)
     var offset_y := int(absf(scaled_y)) % 14 - 7
     var offset_x := int(absf(diagonal)) % 14 - 7
@@ -3621,7 +3626,6 @@ func _make_beach_tile(
         elif offset_2 < 7:
             upper = "stalagmite1"
         tile_route = state["beach_route"] if offset_3 >= 30 else state["beach_plateau_route"]
-    rotated = SourceLibGDXMath.rotate_deg(Vector2(edge), 45.0)
     offset_y = int(absf(rotated.y / 16.0)) % 14 - 7
     offset_x = int(absf(rotated.x / 16.0)) % 14 - 7
     offset_1 = absi(offset_x) + absi(offset_y)

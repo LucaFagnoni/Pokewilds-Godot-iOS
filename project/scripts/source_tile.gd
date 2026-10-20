@@ -21,8 +21,10 @@ func _mark_resident_change() -> void:
     if _loading: return
     resident_revision += 1
     if _store != null: _store.bump(_index)
-    if OS.get_thread_caller_id() == OS.get_main_thread_id():
+    if OS.get_thread_caller_id() == _MAIN_THREAD_ID:
         resident_changed_cells[position] = true
+
+static var _MAIN_THREAD_ID := OS.get_main_thread_id()
 
 static func bound_to(store: WorldTileStore, index: int) -> SourceTile:
     var tile := SourceTile.new(_BIND, Vector2i.ZERO)
@@ -286,13 +288,12 @@ func _apply_constructor_name_rewrites(
         name = "green1"
         if color:
             name_upper = "bush2_color"
-    elif tile_name.begins_with("cactus") and tile_name not in [
-            "cactus7", "cactus8", "cactus9", "cactus10"]:
+    elif tile_name.begins_with("cactus") and not (tile_name == "cactus7"
+            or tile_name == "cactus8" or tile_name == "cactus9" or tile_name == "cactus10"):
         name = "desert6"
         name_upper = tile_name
-    elif tile_name in [
-            "pedistal1", "building1_fossilreviver1",
-            "interiorwall1"] or "gravestone" in tile_name or "sign_" in tile_name:
+    elif (tile_name == "pedistal1" or tile_name == "building1_fossilreviver1"
+            or tile_name == "interiorwall1") or "gravestone" in tile_name or "sign_" in tile_name:
         name_upper = tile_name
 
 func _refresh_flags(source_base_name: String = "") -> void:
@@ -316,13 +317,15 @@ func _refresh_flags(source_base_name: String = "") -> void:
     is_lava = traits[6]
     var ledge: Vector2i = traits[7]
     is_ledge = ledge != Vector2i.ZERO or "ledges3" in name_upper
-    if name_upper in ["fence1", "fence2"]:
+    var fence := name_upper == "fence1" or name_upper == "fence2"
+    var fence_ns := name_upper == "fence1_NS" or name_upper == "fence2_NS"
+    if fence:
         is_ledge = true
         ledge_dir = "down"
-    elif name_upper in ["fence1_NS", "fence2_NS"]:
+    elif fence_ns:
         is_ledge = true
         ledge_dir = "left"
-    if name_upper in ["fence1", "fence2", "fence1_NS", "fence2_NS"]:
+    if fence or fence_ns:
         pass
     elif ledge == Vector2i.UP:
         ledge_dir = "up"
