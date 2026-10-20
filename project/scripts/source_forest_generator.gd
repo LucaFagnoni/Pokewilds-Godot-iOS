@@ -55,23 +55,41 @@ static func gen_tiles(
         random: SourceJavaRandom,
         color := false
     ) -> Array[SourceTile]:
-    var tiles: Array[SourceTile] = []
+    return tiles_from_specs(gen_specs(format, offset_x, offset_y, random), color)
+
+## gen_tiles without making the tiles: [names, positions]. Callers that keep
+## only some cells make just those.
+static func gen_specs(format: Array, offset_x: int, offset_y: int, random: SourceJavaRandom) -> Array:
+    var names := PackedStringArray()
+    var positions := PackedVector2Array()
     var i := 5
     for sub: Array in format:
         var j := 0
         for raw_name: String in sub:
             var tile_name := raw_name
             if tile_name == "either":
-                tile_name = ["solid", ""][random.next_int(2)]
+                tile_name = "solid" if random.next_int(2) == 0 else ""
             if tile_name != "":
-                tiles.append(SourceTile.new(tile_name, Vector2i(j * 16 + offset_x, i * 16 + offset_y), "", color))
+                names.append(tile_name)
+                positions.append(Vector2(j * 16 + offset_x, i * 16 + offset_y))
             j += 1
         i -= 1
+    return [names, positions]
+
+static func tiles_from_specs(specs: Array, color := false) -> Array[SourceTile]:
+    var names: PackedStringArray = specs[0]
+    var positions: PackedVector2Array = specs[1]
+    var tiles: Array[SourceTile] = []
+    for index in names.size():
+        tiles.append(SourceTile.new(names[index], Vector2i(positions[index]), "", color))
     return tiles
 
 # Direct port of GenForest2.getTileSquare. The two alternative templates and
 # every random draw are preserved in Java order.
 static func get_tile_square(node: Dictionary, start_location: Vector2i, random: SourceJavaRandom, color := false) -> Array[SourceTile]:
+    return tiles_from_specs(get_tile_square_specs(node, start_location, random), color)
+
+static func get_tile_square_specs(node: Dictionary, start_location: Vector2i, random: SourceJavaRandom) -> Array:
     var offset_x := int(node["square_size"]) * int(node["x"]) + start_location.x
     var offset_y := int(node["square_size"]) * int(node["y"]) + start_location.y
     var squares: Array = []
@@ -90,7 +108,7 @@ static func get_tile_square(node: Dictionary, start_location: Vector2i, random: 
             ["solid", "solid", "solid", "solid", "solid", "solid"],
             ["solid", "solid", "solid", "solid", "solid", "solid"]
         ]
-        squares.append(gen_tiles(format, offset_x, offset_y, random, color))
+        squares.append(gen_specs(format, offset_x, offset_y, random))
         format = [
             ["solid", "solid", "", "", "solid", "solid"],
             ["solid", "solid", "", "", "solid", "solid"],
@@ -99,7 +117,7 @@ static func get_tile_square(node: Dictionary, start_location: Vector2i, random: 
             ["solid", "solid", "solid", "solid", "solid", "solid"],
             ["solid", "solid", "solid", "solid", "solid", "solid"]
         ]
-        squares.append(gen_tiles(format, offset_x, offset_y, random, color))
+        squares.append(gen_specs(format, offset_x, offset_y, random))
     elif left_open != down_open:
         format = [
             ["either", "either", "", "", "either", "either"],
@@ -111,7 +129,7 @@ static func get_tile_square(node: Dictionary, start_location: Vector2i, random: 
         if down_open:
             flip_format(format)
             _maybe_add_ledge(format, random, true)
-        squares.append(gen_tiles(format, offset_x, offset_y, random, color))
+        squares.append(gen_specs(format, offset_x, offset_y, random))
         format = [
             ["", "", "", "", "solid", "solid"],
             ["", "", "", "solid", "solid", "solid"],
@@ -122,7 +140,7 @@ static func get_tile_square(node: Dictionary, start_location: Vector2i, random: 
         if down_open:
             flip_format(format)
             _maybe_add_ledge(format, random, false)
-        squares.append(gen_tiles(format, offset_x, offset_y, random, color))
+        squares.append(gen_specs(format, offset_x, offset_y, random))
     else:
         format = [
             ["", "", "", "", "solid", "solid"],
@@ -132,14 +150,14 @@ static func get_tile_square(node: Dictionary, start_location: Vector2i, random: 
             ["solid", "solid", "either", "", "", ""],
             ["solid", "solid", "", "", "", ""]
         ]
-        squares.append(gen_tiles(format, offset_x, offset_y, random, color))
+        squares.append(gen_specs(format, offset_x, offset_y, random))
         format = [
             ["", "", "", "", "", ""], ["", "", "", "", "", ""],
             ["", "", "", "", "", ""], ["", "", "", "", "", ""],
             ["solid", "solid", "", "", "", ""],
             ["solid", "solid", "", "", "", ""]
         ]
-        squares.append(gen_tiles(format, offset_x, offset_y, random, color))
+        squares.append(gen_specs(format, offset_x, offset_y, random))
     return squares[random.next_int(squares.size())]
 
 static func _maybe_add_ledge(format: Array, random: SourceJavaRandom, clear_vertical: bool) -> void:
@@ -168,6 +186,9 @@ static func _maybe_add_ledge(format: Array, random: SourceJavaRandom, clear_vert
 # by platform nodes and remain available even though ordinary maze nodes start
 # with an empty type.
 static func get_tile_square_platform(node: Dictionary, start_location: Vector2i, random: SourceJavaRandom) -> Array[SourceTile]:
+    return tiles_from_specs(get_tile_square_platform_specs(node, start_location, random))
+
+static func get_tile_square_platform_specs(node: Dictionary, start_location: Vector2i, random: SourceJavaRandom) -> Array:
     var offset_x := int(node["square_size"]) * int(node["x"]) + start_location.x
     var offset_y := int(node["square_size"]) * int(node["y"]) + start_location.y
     var temp := ["bush1", "tree_small1"]
@@ -219,7 +240,7 @@ static func get_tile_square_platform(node: Dictionary, start_location: Vector2i,
         format = [["", "", "", "ledge_grass_right", "", ""], ["", "", "", "ledge_grass_right", "", ""], ["", "ledge_grass_inside_tl", "ledge_grass_ramp", "ledge1_corner_br", "", ""], ["", "ledge_grass_right", "", "", "", ""], ["", "ledge_grass_right", "", "", "tree_large1_noSprite", "tree_large1_noSprite"], ["ledge_grass_down", "ledge1_corner_br", "", "", "tree_large1", "tree_large1_noSprite"]]
         if down_open:
             flip_format(format)
-    var squares := [gen_tiles(format, offset_x, offset_y, random)]
+    var squares := [gen_specs(format, offset_x, offset_y, random)]
     return squares[random.next_int(squares.size())]
 
 static func _six(value: String) -> Array:

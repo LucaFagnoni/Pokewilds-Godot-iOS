@@ -2768,61 +2768,15 @@ func ledgify(
     var ledge_type := "ledges3volcano" if "volcano" in tile_type else "ledges3"
     # A missing neighbour reads as a fresh tile of null_type.
     var null_name := SourceTile.new(null_type, Vector2i.ZERO).name
-    # The sweeps repeat until one replaces nothing. A tile's verdict depends
-    # only on its own and its 8 neighbours' names, so after the first sweep
-    # only tiles next to a replacement (dirty) can change their verdict.
-    var dirty: Dictionary = {}
-    var first_sweep := true
-    var done := false
-    while not done:
-        done = true
-        for raw_tile in next_island_tiles.values():
-            var tile := raw_tile as SourceTile
-            if tile.name != tile_type:
-                continue
-            var position := tile.position
-            if not first_sweep:
-                if not dirty.has(position):
-                    continue
-                dirty.erase(position)
-            var current := tiles.get(position) as SourceTile
-            if current != null and current.name != tile_type:
-                continue
-            var names := _neighbour_names(tiles, position, null_name)
-            var left_same := names[0] == tile_type
-            var right_same := names[1] == tile_type
-            var up_same := names[2] == tile_type
-            var down_same := names[3] == tile_type
-            var top_left_same := names[4] == tile_type
-            var top_right_same := names[5] == tile_type
-            var bottom_left_same := names[6] == tile_type
-            var bottom_right_same := names[7] == tile_type
-            var replace := (
-                (not left_same and not right_same)
-                or (not up_same and not down_same)
-                or not (up_same or left_same or bottom_right_same)
-                or not (up_same or right_same or bottom_left_same)
-                or not (down_same or right_same or top_left_same)
-                or not (down_same or left_same or top_right_same)
-                or (down_same and not left_same and not bottom_right_same)
-                or (down_same and not right_same and not bottom_left_same)
-                or (up_same and not left_same and not top_right_same)
-                or (up_same and not right_same and not top_left_same)
-                or (right_same and not up_same and not bottom_right_same)
-                or (right_same and not down_same and not top_right_same)
-                or (left_same and not down_same and not top_left_same)
-                or (left_same and not up_same and not bottom_left_same)
-            )
-            if replace:
-                var replacement := SourceTile.new(replace_with, position)
-                replacement.biome = biome_name
-                tiles[position] = replacement
-                next_island_tiles[position] = replacement
-                done = false
-                dirty[position] = true
-                for offset in NEIGHBOURS_8:
-                    dirty[position + offset] = true
-        first_sweep = false
+    # First of the source's sweeps; it repeats them until one replaces nothing.
+    var changed: Array[Vector2i] = []
+    for raw_tile in next_island_tiles.values():
+        var tile := raw_tile as SourceTile
+        if tile.name == tile_type and _ledgify_replaces(tiles, tile.position, tile_type, null_name):
+            _ledgify_replace(tiles, next_island_tiles, tile.position, replace_with, biome_name)
+            changed.append(tile.position)
+    if not changed.is_empty():
+        _ledgify_later_sweeps(tiles, next_island_tiles, changed, tile_type, replace_with, biome_name, null_name)
     for raw_tile in next_island_tiles.values():
         var candidate := raw_tile as SourceTile
         var tile := tiles.get(candidate.position) as SourceTile
@@ -2854,6 +2808,135 @@ func ledgify(
             var ledge := SourceTile.new(tile_type, tile.position, ledge_type + suffix)
             ledge.biome = biome_name
             tiles[tile.position] = ledge
+
+## The source's verdict for the tile at `position` in one ledgify sweep.
+func _ledgify_replaces(tiles: Dictionary, position: Vector2i, tile_type: String, null_name: String) -> bool:
+    var current := tiles.get(position) as SourceTile
+    if current != null and current.name != tile_type:
+        return false
+    var names := _neighbour_names(tiles, position, null_name)
+    var left_same := names[0] == tile_type
+    var right_same := names[1] == tile_type
+    var up_same := names[2] == tile_type
+    var down_same := names[3] == tile_type
+    var top_left_same := names[4] == tile_type
+    var top_right_same := names[5] == tile_type
+    var bottom_left_same := names[6] == tile_type
+    var bottom_right_same := names[7] == tile_type
+    return (
+        (not left_same and not right_same)
+        or (not up_same and not down_same)
+        or not (up_same or left_same or bottom_right_same)
+        or not (up_same or right_same or bottom_left_same)
+        or not (down_same or right_same or top_left_same)
+        or not (down_same or left_same or top_right_same)
+        or (down_same and not left_same and not bottom_right_same)
+        or (down_same and not right_same and not bottom_left_same)
+        or (up_same and not left_same and not top_right_same)
+        or (up_same and not right_same and not top_left_same)
+        or (right_same and not up_same and not bottom_right_same)
+        or (right_same and not down_same and not top_right_same)
+        or (left_same and not down_same and not top_left_same)
+        or (left_same and not up_same and not bottom_left_same)
+    )
+
+func _ledgify_replace(tiles: Dictionary, next_island_tiles: Dictionary, position: Vector2i,
+        replace_with: String, biome_name: String) -> void:
+    var replacement := SourceTile.new(replace_with, position)
+    replacement.biome = biome_name
+    tiles[position] = replacement
+    next_island_tiles[position] = replacement
+
+## The source's later full sweeps, visiting only what can change. A verdict
+## depends only on the names around a tile, so a tile whose 3x3 block did not
+## change since its last visit keeps its "no" and is skipped. Each sweep still
+## visits tiles in entry order, so the order-dependent result is the same.
+func _ledgify_later_sweeps(tiles: Dictionary, next_island_tiles: Dictionary, changed: Array[Vector2i],
+        tile_type: String, replace_with: String, biome_name: String, null_name: String) -> void:
+    var keys := next_island_tiles.keys()
+    var index_of: Dictionary = {}
+    for index in keys.size():
+        var key: Variant = keys[index]
+        if not key is Vector2i or (next_island_tiles[key] as SourceTile).position != key:
+            # Entries away from their own key: run the plain full sweeps.
+            var done := false
+            while not done:
+                done = true
+                for raw_tile in next_island_tiles.values():
+                    var tile := raw_tile as SourceTile
+                    if tile.name == tile_type and _ledgify_replaces(tiles, tile.position, tile_type, null_name):
+                        _ledgify_replace(tiles, next_island_tiles, tile.position, replace_with, biome_name)
+                        done = false
+            return
+        index_of[key] = index
+    var queued := PackedByteArray()
+    queued.resize(keys.size())
+    var heap: Array[int] = []
+    for position in changed:
+        for offset in BLOCK_OFFSETS_9:
+            var index: int = index_of.get(position + offset, -1)
+            if index >= 0 and queued[index] == 0:
+                queued[index] = 1
+                _heap_push(heap, index)
+    while not heap.is_empty():
+        var next_sweep: Array[int] = []
+        while not heap.is_empty():
+            var index := _heap_pop(heap)
+            queued[index] = 0
+            var position: Vector2i = keys[index]
+            var tile := next_island_tiles[position] as SourceTile
+            if tile.name != tile_type or not _ledgify_replaces(tiles, position, tile_type, null_name):
+                continue
+            _ledgify_replace(tiles, next_island_tiles, position, replace_with, biome_name)
+            for offset in BLOCK_OFFSETS_9:
+                var other: int = index_of.get(position + offset, -1)
+                if other < 0:
+                    continue
+                if other > index:
+                    if queued[other] == 0:
+                        queued[other] = 1
+                        _heap_push(heap, other)
+                else:
+                    next_sweep.append(other)
+        for index in next_sweep:
+            if queued[index] == 0:
+                queued[index] = 1
+                _heap_push(heap, index)
+
+const BLOCK_OFFSETS_9: Array[Vector2i] = [
+    Vector2i(0, 0), Vector2i(16, 0), Vector2i(-16, 0), Vector2i(0, 16), Vector2i(0, -16),
+    Vector2i(16, 16), Vector2i(-16, 16), Vector2i(-16, -16), Vector2i(16, -16)]
+
+static func _heap_push(heap: Array[int], value: int) -> void:
+    heap.append(value)
+    var child := heap.size() - 1
+    while child > 0:
+        var parent := (child - 1) >> 1
+        if heap[parent] <= value:
+            break
+        heap[child] = heap[parent]
+        child = parent
+    heap[child] = value
+
+static func _heap_pop(heap: Array[int]) -> int:
+    var top := heap[0]
+    var last: int = heap.pop_back()
+    var count := heap.size()
+    if count == 0:
+        return top
+    var parent := 0
+    while true:
+        var child := parent * 2 + 1
+        if child >= count:
+            break
+        if child + 1 < count and heap[child + 1] < heap[child]:
+            child += 1
+        if heap[child] >= last:
+            break
+        heap[parent] = heap[child]
+        parent = child
+    heap[parent] = last
+    return top
 
 ## Names of the 8 neighbours: left, right, up, down, top-left, top-right,
 ## bottom-left, bottom-right (up is +y); null_name where there is no tile.
@@ -3338,7 +3421,8 @@ func _make_island_tile(
         state: Dictionary
     ) -> SourceTile:
     var beach_route := state["beach_route"] as SourceRoute
-    var new_tile := SourceTile.new("sand1", edge, "", true, beach_route)
+    # The default sand tile is usually replaced: made only when read.
+    var new_tile: SourceTile = null
     var is_rock := random.next_int(maximum_distance) + int(distance)
     if is_rock > maximum_distance + maximum_distance / 2:
         var rock_route: SourceRoute = null
@@ -3372,6 +3456,8 @@ func _make_island_tile(
                 if random.next_int(6) == 0:
                     tree_route = SourceRoute.new("", 22)
                     _append_stored(tree_route, ["sudowoodo"], 20, 4)
+            if new_tile == null:
+                new_tile = SourceTile.new("sand1", edge, "", true, beach_route)
             new_tile = SourceTile.new(new_tile.name, edge, upper, true, tree_route)
     elif is_rock <= maximum_distance + maximum_distance / 2 and is_grass < maximum_distance - maximum_distance / 4 and random.next_int(40) == 0:
         var tree_route := SourceRoute.new("", 11)
@@ -3385,6 +3471,8 @@ func _make_island_tile(
                 "Exeggcute", 10 + random.next_int(4),
                 {"generation": "CRYSTAL"}))
         if random.next_int(2) == 0:
+            if new_tile == null:
+                new_tile = SourceTile.new("sand1", edge, "", true, beach_route)
             apply_blotch("grass_sand", new_tile, 35, state["grass_tiles"], 0, false, SourceRoute.new("beach1", 3))
         if random.next_int(10) == 0:
             var is_unown := unown_counter % 64 == 0
@@ -3394,6 +3482,8 @@ func _make_island_tile(
         else:
             new_tile = SourceTile.new("tree5", edge, "", true, tree_route)
     elif is_rock <= maximum_distance + maximum_distance / 2 and is_grass < maximum_distance - maximum_distance / 4 and random.next_int(200) == 0:
+        if new_tile == null:
+            new_tile = SourceTile.new("sand1", edge, "", true, beach_route)
         new_tile = SourceTile.new(new_tile.name, edge, "pokeball1", true, current_route)
     elif is_rock <= maximum_distance + maximum_distance / 2 and is_grass < maximum_distance - maximum_distance / 4 and random.next_int(450) == 0:
         var level := _source_scaled_level(
@@ -3425,6 +3515,8 @@ func _make_island_tile(
                 if random.next_int(6) == 0:
                     tree_route = SourceRoute.new("", 22)
                     _append_stored(tree_route, ["sudowoodo"], 20, 4)
+            if new_tile == null:
+                new_tile = SourceTile.new("sand1", edge, "", true, beach_route)
             new_tile = SourceTile.new(new_tile.name, edge, upper, true, tree_route)
     if distance < float(maximum_distance / 4) and maximum_distance > 300 and random.next_int(750) == 0:
         var level := _source_scaled_level(
@@ -3436,10 +3528,14 @@ func _make_island_tile(
         _spawn(edge + Vector2i(16, 0), String(SourceForestGenerator.MATES[parent_name]), level)
     if int(state["is_maze"]) == 0:
         var is_tree := random.next_int(int(maximum_distance / 4)) + int(distance)
-        if is_tree < maximum_distance / 3 and new_tile.position.y % 32 == 0:
+        if is_tree < maximum_distance / 3 and edge.y % 32 == 0:
             new_tile = SourceTile.new("tree2", edge)
     elif int(distance) + random.next_int(int(maximum_distance / 14) + 1) < 8 * maximum_distance / 16:
+        if new_tile == null:
+            new_tile = SourceTile.new("sand1", edge, "", true, beach_route)
         (state["forest_maze_tiles"] as Dictionary)[new_tile.position] = new_tile
+    if new_tile == null:
+        new_tile = SourceTile.new("sand1", edge, "", true, beach_route)
     var grass_here := random.next_int(int(maximum_distance / 4)) + int(distance)
     var grass_here_2 := random.next_int(maximum_distance)
     var grass_here_3 := random.next_int(maximum_distance)
@@ -3939,13 +4035,20 @@ func _apply_forest_maze(
         int((top_right.y - bottom_left.y) * 2 / 96),
         0.1, 0.9, 96, random)
     for node in SourceJavaHashOrder.values(nodes):
-        var square: Array[SourceTile]
+        # Only the maze cells inside the blotch become tiles.
+        var square: Array
+        var color := false
         if String(node.get("type", "")) == "platform1":
-            square = SourceForestGenerator.get_tile_square_platform(node, bottom_left, random)
+            square = SourceForestGenerator.get_tile_square_platform_specs(node, bottom_left, random)
         else:
-            square = SourceForestGenerator.get_tile_square(node, bottom_left, random, true)
-        for tile in square:
-            if forest_maze_tiles.has(tile.position):
+            square = SourceForestGenerator.get_tile_square_specs(node, bottom_left, random)
+            color = true
+        var names: PackedStringArray = square[0]
+        var positions: PackedVector2Array = square[1]
+        for index in names.size():
+            var position := Vector2i(positions[index])
+            if forest_maze_tiles.has(position):
+                var tile := SourceTile.new(names[index], position, "", color)
                 tiles_to_add[tile.position] = tile
     if not tiles_to_add.is_empty():
         # GenForest2.ApplyForestBiome constructs a new java.util.Random for
@@ -3965,7 +4068,8 @@ func _apply_forest_maze(
         deep_forest_set[position] = true
     for raw_tile in SourceJavaHashOrder.values(tiles_to_add):
         var tile := raw_tile as SourceTile
-        if tile.name in ["ledge_grass_down", "ledge_ramp_down"]:
+        var tile_name := tile.name
+        if tile_name == "ledge_grass_down" or tile_name == "ledge_ramp_down":
             _repair_maze_ledge(tiles_to_add, tile, 16)
             _repair_maze_ledge(tiles_to_add, tile, -16)
         if deep_forest_set.has(tile.position):
