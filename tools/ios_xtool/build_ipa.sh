@@ -194,4 +194,4 @@ llvm-objdump --macho --private-headers "$bin" | grep -E "^ +(sdk|minos|path) "
 du -sh "$work/Payload/Pokewilds.app"/*
 rm -f "$out" && (cd "$work" && zip -qry -9 "$out" Payload)
 echo "Built $out"
-command -v wslpath >/dev/null && echo "Windows path: $(wslpath -w "$out")"
+if command -v wslpath >/dev/null; then echo "Windows path: $(wslpath -w "$out")"; fi
