@@ -318,6 +318,18 @@ func _update_overworld_idle_sprites(delta: float) -> void:
                 sprite.frame = next_frame
 
 func _apply_tidal_puddle_surface(splash: AnimatedSprite2D) -> void:
+    splash.material = _tidal_puddle_material()
+    tidal_puddle_splashes.append(splash)
+
+## One material of each shader the world makes while playing (the wading
+## splash, swimming Pokemon), for main to draw once behind the loading screen:
+## a canvas shader compiles when it is first drawn.
+func warm_up_materials() -> Array[Material]:
+    var swimmer := ShaderMaterial.new()
+    swimmer.shader = _water_pokemon_shader()
+    return [_tidal_puddle_material(), swimmer]
+
+func _tidal_puddle_material() -> ShaderMaterial:
     if tidal_puddle_shader == null:
         tidal_puddle_shader = Shader.new()
         tidal_puddle_shader.code = """
@@ -336,8 +348,7 @@ void fragment() {
     var material := ShaderMaterial.new()
     material.shader = tidal_puddle_shader
     material.set_shader_parameter("water_texture", SOURCE_TIDAL_WATER)
-    splash.material = material
-    tidal_puddle_splashes.append(splash)
+    return material
 
 func _setup_normal_grass_front_overlay() -> void:
     # One live foreground sprite mirrors the exact source tile already rendered

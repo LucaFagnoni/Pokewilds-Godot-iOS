@@ -13185,7 +13185,9 @@ func _draw_world_view() -> void:
 ## A canvas shader is compiled when it is first drawn: tens of ms each on a
 ## phone, so the first frame showing a coast, the tide, a night light or a
 ## swimming Pokemon stalled. Each one in the world is drawn once here, as a
-## pixel under the loading screen.
+## pixel under the loading screen: one in the first frame, then twice as many
+## in each next one while the frames draw quickly (the shaders were compiled
+## before), and one a frame after a frame that took long to draw (it compiled).
 func _warm_world_shaders() -> void:
     if DisplayServer.get_name() == "headless": return
     var materials := {}
@@ -13200,16 +13202,33 @@ func _warm_world_shaders() -> void:
             var material := ShaderMaterial.new()
             material.shader = shader
             materials[shader] = material
+    for material in world.warm_up_materials(): materials[material.shader] = material
+    # A Pokemon coming out of its ball is drawn as a silhouette first.
+    var silhouette: ShaderMaterial = preload("res://scripts/ball_mechanics.gd").silhouette(Color.WHITE)
+    materials[silhouette.shader] = silhouette
+    var timing := {"pre": 0, "draw": 0.0}
+    var on_pre := func(): timing.pre = Time.get_ticks_usec()
+    var on_post := func(): timing.draw = (Time.get_ticks_usec() - int(timing.pre)) / 1000.0
+    RenderingServer.frame_pre_draw.connect(on_pre)
+    RenderingServer.frame_post_draw.connect(on_post)
     var warm := Node2D.new()
     warm.position = world.player.position
-    for material in materials.values():
-        var dot := Node2D.new()
-        dot.material = material
-        dot.draw.connect(func(): dot.draw_rect(Rect2(0, 0, 1, 1), Color.WHITE))
-        warm.add_child(dot)
     world.add_child(warm)
-    await get_tree().process_frame
+    var pending: Array = materials.values()
+    var batch := 1
+    while not pending.is_empty():
+        for dot in warm.get_children(): dot.queue_free()
+        for material in pending.slice(0, batch):
+            var dot := Node2D.new()
+            dot.material = material
+            dot.draw.connect(func(): dot.draw_rect(Rect2(0, 0, 1, 1), Color.WHITE))
+            warm.add_child(dot)
+        pending = pending.slice(batch)
+        await get_tree().process_frame
+        batch = 1 if float(timing.draw) > 6.0 else batch * 2
     warm.queue_free()
+    RenderingServer.frame_pre_draw.disconnect(on_pre)
+    RenderingServer.frame_post_draw.disconnect(on_post)
 
 func _warm_map_cache() -> void:
     if not is_instance_valid(waypoint_ui):

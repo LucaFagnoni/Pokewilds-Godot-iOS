@@ -65,21 +65,45 @@ const GENERATED_BIOME_MATCHES := {
     "OCEAN": ["OCEAN", "OCEAN_FISHING", "TIDAL_BEACH_WATER"]
 }
 
+static var _loader: Thread
+static var _loader_lock := Mutex.new()
+
 static func _ensure_loaded() -> void:
     if not _database.is_empty():
         return
+    _loader_lock.lock()
+    if _database.is_empty():
+        _database = _loader.wait_to_finish() if _loader != null else _read_database()
+        _loader = null
+    _loader_lock.unlock()
+
+## Reads the database on a worker thread. Parsing it takes ~60 ms and packing
+## its species another ~25 ms (several times that on a phone): one frame of the
+## loading screen at the first species lookup. _ensure_loaded takes the result,
+## and waits for it only if it is not ready yet.
+static func load_in_background() -> void:
+    _loader_lock.lock()
+    if _database.is_empty() and _loader == null:
+        var thread := Thread.new()
+        if thread.start(_read_database) == OK: _loader = thread
+    _loader_lock.unlock()
+
+## True while that thread is still reading.
+static func loading_in_background() -> bool:
+    return _database.is_empty() and _loader != null and _loader.is_alive()
+
+static func _read_database() -> Dictionary:
     if not FileAccess.file_exists(DATABASE_PATH):
-        _database = {"species": {}}
-        return
+        return {"species": {}}
     var file := FileAccess.open(DATABASE_PATH, FileAccess.READ)
     var parsed = JSON.parse_string(file.get_as_text()) if file != null else null
-    _database = parsed if typeof(parsed) == TYPE_DICTIONARY else {"species": {}}
-    (_database["species"] as Dictionary).merge(JSON.parse_string(FileAccess.get_file_as_string("res://data/mega_species.json")), true)
-    (_database["species"] as Dictionary).merge(JSON.parse_string(FileAccess.get_file_as_string("res://data/unown_king.json")), true)
-    OriginalMods.apply_data(_database)
+    var database: Dictionary = parsed if typeof(parsed) == TYPE_DICTIONARY else {"species": {}}
+    (database["species"] as Dictionary).merge(JSON.parse_string(FileAccess.get_file_as_string("res://data/mega_species.json")), true)
+    (database["species"] as Dictionary).merge(JSON.parse_string(FileAccess.get_file_as_string("res://data/unown_king.json")), true)
+    OriginalMods.apply_data(database)
     # Specie.java excludes moves outside attacksImplemented before assignment.
-    var implemented: Dictionary = _database.get("moves", {})
-    for entry in (_database.get("species", {}) as Dictionary).values():
+    var implemented: Dictionary = database.get("moves", {})
+    for entry in (database.get("species", {}) as Dictionary).values():
         var supported: Array = []
         for learned in entry.get("learnset", []):
             if implemented.has(String(learned.get("move", ""))):
@@ -87,8 +111,9 @@ static func _ensure_loaded() -> void:
         entry["learnset"] = supported
     # Species are only read through info(), which hands out a fresh copy. Kept
     # packed, the ~1000 species take about 3.5 MB instead of about 28 MB.
-    var species: Dictionary = _database.get("species", {})
+    var species: Dictionary = database.get("species", {})
     for key in species.keys(): species[key] = var_to_bytes(species[key])
+    return database
 
 static func all_species() -> Array[String]:
     _ensure_loaded()

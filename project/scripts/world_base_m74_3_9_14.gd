@@ -471,6 +471,7 @@ func generate_world(
         seed_value: int, size_index: int = 1, prefer_saved_cache: bool = false
     ) -> void:
     generation_error = ""
+    PokemonData.load_in_background()
     var previous_gameplay_enabled := gameplay_enabled
     gameplay_enabled = false
     if exact_world_mode:
@@ -945,6 +946,8 @@ func _generate_exact_live_world(
     # Prepare the coast topology before gameplay: the first full-world scan
     # must not block movement or the first focus return after loading.
     await _update_tide_state(false, 0.0, true)
+    # A frame of its own: the restore that follows starts in the next one.
+    await get_tree().process_frame
     generated = true
     gameplay_enabled = true
     generation_progress.emit(1.0, "Exact source world ready!")
@@ -2132,6 +2135,7 @@ func _update_savanna_tree_front_overlay(cell: Vector2i) -> void:
     savanna_tree_front_sprite.visible = true
 
 func _build_source_interiors(_collision_body: CollisionBody) -> void:
+    while PokemonData.loading_in_background(): await get_tree().process_frame
     var layer := Node2D.new()
     layer.name = "InteriorLayer"
     layer.z_index = -5
@@ -7553,6 +7557,27 @@ func _paired_wander_direction(
 
 const WATER_FLOAT_OFFSETS := {"lapras": 5.0, "anorith": 2.0, "araichu": 7.0, "raichu_alolan": 7.0, "mantine": 4.0, "sharpedo": 2.0}
 var water_pokemon_materials: Dictionary = {}
+var water_pokemon_shader: Shader
+
+## The shader of every swimming Pokemon: a size is only the `extra` and
+## `frame_height` of its material. A canvas shader compiles when it is first
+## drawn, and each new size used to make a shader of its own.
+func _water_pokemon_shader() -> Shader:
+    if water_pokemon_shader == null:
+        water_pokemon_shader = Shader.new()
+        water_pokemon_shader.code = """shader_type canvas_item;
+uniform float extra = 0.0;
+uniform float frame_height = 16.0;
+void vertex() {
+    float bob = step(40.0, mod(TIME * 60.0, 80.0));
+    VERTEX.y += 4.0 - extra - bob;
+}
+void fragment() {
+    float bob = step(40.0, mod(TIME * 60.0, 80.0));
+    if (UV.y * frame_height >= frame_height - 8.0 + extra + bob) { discard; }
+}
+"""
+    return water_pokemon_shader
 
 func _source_pokemon_in_water(cell: Vector2i) -> bool:
     if exact_world_mode and exact_world != null:
@@ -7580,21 +7605,8 @@ func _update_pokemon_water_visual(data: Dictionary) -> void:
     if species == "mega_gyarados": extra = 8.0 - roundf(height * 0.28)
     var key := Vector2(extra, height)
     if not water_pokemon_materials.has(key):
-        var shader := Shader.new()
-        shader.code = """shader_type canvas_item;
-uniform float extra = 0.0;
-uniform float frame_height = 16.0;
-void vertex() {
-    float bob = step(40.0, mod(TIME * 60.0, 80.0));
-    VERTEX.y += 4.0 - extra - bob;
-}
-void fragment() {
-    float bob = step(40.0, mod(TIME * 60.0, 80.0));
-    if (UV.y * frame_height >= frame_height - 8.0 + extra + bob) { discard; }
-}
-"""
         var material := ShaderMaterial.new()
-        material.shader = shader
+        material.shader = _water_pokemon_shader()
         material.set_shader_parameter("extra", extra)
         material.set_shader_parameter("frame_height", height)
         water_pokemon_materials[key] = material
@@ -7788,6 +7800,10 @@ func restore_crafting_save_state(state: Dictionary) -> void:
     var restore_deadline := Time.get_ticks_usec() + 13000
     restoring_saved_tiles = true
     restored_tiles_need_refresh = false
+    # Main's own part of the restore (textures, options, party) ran in this
+    # frame: the first slice of this one is the next.
+    await get_tree().process_frame
+    restore_deadline = Time.get_ticks_usec() + 13000
     dropped_items().clear_actors()
     world_elapsed_seconds = float(state.get("world_elapsed_seconds", world_elapsed_seconds))
     last_event_day = _world_day_index()
@@ -8067,6 +8083,7 @@ func restore_crafting_save_state(state: Dictionary) -> void:
     await _refresh_daily_events(true)
     SourceForestBoss.install(self)
     await preload("res://scripts/biome_megas.gd").prepare_load(self)
+    await get_tree().process_frame
     preload("res://scripts/biome_megas.gd").install(self)
 
     dropped_items().restore(state.get("dropped_items", {}))
@@ -8075,6 +8092,8 @@ func restore_crafting_save_state(state: Dictionary) -> void:
     if restored_tiles_need_refresh:
         restored_tiles_need_refresh = false
         _refresh_exact_streams()
+    # What main does next (map, view) is the next frame.
+    await get_tree().process_frame
     gameplay_enabled = prior_gameplay
 
 func _clear_wild_pokemon() -> void:
