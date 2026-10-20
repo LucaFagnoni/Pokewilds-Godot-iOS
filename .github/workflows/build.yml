@@ -288,10 +288,12 @@ jobs:
           gh release list --limit 100 --exclude-drafts --json tagName --jq '.[].tagName' | grep '^build-' | tail -n +11 \
             | while read -r old; do gh release delete "$old" --cleanup-tag --yes; done
 
-  # A build that failed or was cancelled leaves no half release behind.
+  # A build that was not published (a job failed, was cancelled or never got a
+  # runner) leaves no half release behind. To retry it, use "Re-run all jobs":
+  # the draft is made again.
   discard:
-    needs: [draft, smoke, ios, server]
-    if: ${{ always() && needs.draft.result == 'success' && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
+    needs: [draft, publish]
+    if: ${{ always() && needs.draft.result == 'success' && needs.publish.result != 'success' }}
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
