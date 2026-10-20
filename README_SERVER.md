@@ -20,14 +20,18 @@ quando escono tutti.
    SERVER    Router port opened automatically (UPnP).
    ```
 
-3. **Sul telefono**: PokeWilds > **MULTIPLAYER** > **SERVERS** > **ADD SERVER**.
+3. **Sul telefono**: PokeWilds > **MULTIPLAYER** > **MY SERVERS** > **ADD SERVER**.
    Scrivi un nome a piacere, l'indirizzo (oppure il codice di 8 caratteri),
    il tuo **ID** e una **password**, e salva:
    - in casa, sulla stessa Wi-Fi: l'indirizzo di **Same Wi-Fi**;
    - fuori casa (rete mobile, casa di un amico): quello di **From outside**.
 
    Tocca il server nella lista, scegli il personaggio e premi **JOIN!**. La
-   lista resta salvata nel telefono: la volta dopo basta un tocco. La prima
+   lista resta salvata nel telefono anche dopo un aggiornamento del gioco:
+   la volta dopo basta un tocco. **EDIT** accanto a ogni server cambia nome,
+   indirizzo, ID o password, o lo cancella. Se il server è sulla stessa Wi-Fi
+   compare anche in **JOIN GAME**: toccandolo si apre la scheda già pronta e
+   basta scrivere ID e password. La prima
    volta che entri con un ID nuovo, il server lo crea con quella password
    (vedi "Giocatori: ID e password").
 
