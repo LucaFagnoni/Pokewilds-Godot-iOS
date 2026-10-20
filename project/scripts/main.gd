@@ -1043,9 +1043,9 @@ var item_pocket_context := ""
 var bag_action_ui: Control
 var safari_ui: Control
 var map_build_serial := 0
-var map_art_cache_key := ""
+var map_art_cache_key := []
 ## The cache key of map_art_cache without the discovered ground (fog).
-var map_art_cache_art_key := ""
+var map_art_cache_art_key := []
 var map_art_cache: Texture2D
 var map_building := false
 var planting_bag_target: Variant = null
@@ -13144,7 +13144,7 @@ func _travel_adjacent_world(direction: Vector2i) -> void:
 
 func _invalidate_travel_maps() -> void:
     map_art_cache = null
-    map_art_cache_key = ""
+    map_art_cache_key = []
     m257_minimap_raster_key.clear()
     m3924_minimap_source_cache.clear()
     m3924_minimap_cache_world_id = 0
@@ -13348,7 +13348,7 @@ func switch_gen3_overhaul(next: bool) -> bool:
         m3924_minimap_texture_images.clear()
         m3924_minimap_source_cache.clear()
         built_map_art_cache.clear()
-        map_art_cache_key = ""
+        map_art_cache_key = []
         map_art_cache_context = ""
         map_art_cache = null
         rebuilt = true

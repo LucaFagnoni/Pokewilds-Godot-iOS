@@ -101,13 +101,14 @@ static func build(main: Node, bounds: Rect2i, serial: int) -> Texture2D:
     main.map_art_cache=texture
     return texture
 
-## with_fog false: everything but the discovered ground.
-static func cache_key(main: Node, bounds: Rect2i, with_fog := true) -> String:
+## with_fog false: everything but the discovered ground. Compared as it is
+## (main checks it twice a second): turning it into a string cost more.
+static func cache_key(main: Node, bounds: Rect2i, with_fog := true) -> Array:
     var world = main.world
     var exact = world.exact_world
-    return str([exact.get_instance_id() if exact != null else 0,
+    return [exact.get_instance_id() if exact != null else 0,
         bounds, world.active_area_id, world.active_built_house_door,
-        world.map_art_revision, world.discovered_cells.size() if with_fog else -1, world.built_structures.size()])
+        world.map_art_revision, world.discovered_cells.size() if with_fog else -1, world.built_structures.size()]
 
 static func context_key(main: Node, bounds: Rect2i) -> String:
     var exact = main.world.exact_world

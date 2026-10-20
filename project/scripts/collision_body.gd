@@ -67,7 +67,11 @@ func _exit_tree() -> void:
 
 func _notification(what: int) -> void:
     if what == NOTIFICATION_PREDELETE:
-        for box: CollisionBox in _boxes:
+        # Over a copy of the keys: walking the Dictionary finds each next key
+        # by looking up the current one, which is freed by then, and freed
+        # objects all compare equal. An earlier box with the same hash (its
+        # address) matched instead and the walk went back over freed boxes.
+        for box: CollisionBox in _boxes.keys():
             box.body = null
             box.free()
         _boxes.clear()
