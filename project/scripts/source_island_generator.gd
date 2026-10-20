@@ -65,6 +65,9 @@ var done_desert_ruins := false
 var graveyard_fence_bounds: Array[Rect2i] = []
 var already_used_dungeons: Array[String] = []
 var _qa_pokemon_sequence := 0
+var _qa_trace_frontier := OS.get_environment("POKEWILDS_QA_TRACE_FRONTIER") == "1"
+const BLOTCH_EDGE_OFFSETS: Array[Vector2i] = [
+    Vector2i(-16, 0), Vector2i(16, 0), Vector2i(0, 16), Vector2i(0, -16)]
 
 func _init(
         world_origin: Vector2i,
@@ -764,7 +767,7 @@ func _postprocess_source_shores() -> void:
                         or next_tile.route_belongs_to.name != "wooded_lake_water1")):
                     tile.set_names("sand3_tidalwater", tile.name_upper)
             continue
-        if (tile.name in ["water2", "water2_edge1"] or "mountain4" in tile.name
+        if (tile.name == "water2" or tile.name == "water2_edge1" or "mountain4" in tile.name
                 or "ice" in tile.name or "waterfall" in tile.name):
             continue
         for offset in positions:
@@ -844,24 +847,25 @@ func _waterfallify(tile: SourceTile) -> void:
         var name := "lavafall" if "lava" in tile.name else "waterfall1"
         tile.set_names(name + "_" + String(tokens[1]), tile.name_upper)
 
+const COAST_DIRECTIONS: Array[String] = ["W", "E", "S", "N", "SW", "NE", "SE", "NW"]
+const COAST_OFFSETS: Array[Vector2i] = [
+    Vector2i(-16, 0), Vector2i(16, 0), Vector2i(0, -16), Vector2i(0, 16),
+    Vector2i(-16, -16), Vector2i(16, 16), Vector2i(16, -16), Vector2i(-16, 16)
+]
+
 func _coastify(tile: SourceTile) -> bool:
     tile.shore_ocean = ""
     tile.shore_tidal = ""
     if (tile.is_water or "ledges" in tile.name_upper or tile.name == "ice2"
             or "bridge" in tile.name or "waterfall" in tile.name):
         return false
-    var directions := ["W", "E", "S", "N", "SW", "NE", "SE", "NW"]
-    var positions: Array[Vector2i] = [
-        Vector2i(-16, 0), Vector2i(16, 0), Vector2i(0, -16), Vector2i(0, 16),
-        Vector2i(-16, -16), Vector2i(16, 16), Vector2i(16, -16), Vector2i(-16, 16)
-    ]
     var ocean_direction := ""
     var tidal_direction := ""
-    for index in range(positions.size()):
-        var next_tile := tiles_to_add.get(tile.position + positions[index]) as SourceTile
+    for index in 8:
+        var next_tile := tiles_to_add.get(tile.position + COAST_OFFSETS[index]) as SourceTile
         if next_tile == null or next_tile.name == "water6":
             continue
-        var direction := String(directions[index])
+        var direction: String = COAST_DIRECTIONS[index]
         if not tile.is_tidal and next_tile.is_tidal:
             if not _diagonal_direction_already_present(tidal_direction, direction):
                 tidal_direction += "[" + direction + "]"
@@ -2557,97 +2561,148 @@ func apply_blotch_mountain(origin_tile: SourceTile, maximum_distance: int, tiles
     tiles_to_add.merge(all_mountain_tiles, true)
     return endpoints
 
-func _level_of(tile_levels: Dictionary, tile: SourceTile) -> int:
-    return int(tile_levels[tile]) if tile != null and tile_levels.has(tile) else 2147483647
-
 func _smooth_mountain_levels(all_tiles: Dictionary, tile_levels: Dictionary) -> void:
+    # Same Gauss-Seidel sweeps as the source, on packed data: every tile's
+    # level lives in one slot per tile object (a tile object can sit under
+    # several keys) and its 8 neighbours are resolved once, not per sweep.
+    var graph := _mountain_level_graph(all_tiles, tile_levels)
+    var order: PackedInt32Array = graph[0]
+    var neighbours: PackedInt32Array = graph[1]
+    var levels: PackedInt64Array = graph[2]
+    var tiles: Array = graph[3]
+    var changed := PackedByteArray()
+    changed.resize(levels.size())
+    var count := order.size()
     var done := false
     while not done:
         done = true
-        for raw_tile in SourceJavaHashOrder.values(all_tiles):
-            var tile := raw_tile as SourceTile
-            var level := int(tile_levels[tile])
-            var left := all_tiles.get(tile.position + Vector2i(-16, 0)) as SourceTile
-            var right := all_tiles.get(tile.position + Vector2i(16, 0)) as SourceTile
-            var bottom := all_tiles.get(tile.position + Vector2i(0, -16)) as SourceTile
-            var top := all_tiles.get(tile.position + Vector2i(0, 16)) as SourceTile
-            var top_left := all_tiles.get(tile.position + Vector2i(-16, 16)) as SourceTile
-            var top_right := all_tiles.get(tile.position + Vector2i(16, 16)) as SourceTile
-            var bottom_left := all_tiles.get(tile.position + Vector2i(-16, -16)) as SourceTile
-            var bottom_right := all_tiles.get(tile.position + Vector2i(16, -16)) as SourceTile
-            var lower := false
-            for neighbour in [left, right, bottom, top, top_right, top_left, bottom_left, bottom_right]:
-                if neighbour != null and _level_of(tile_levels, neighbour) < level - 1:
-                    lower = true
-                    break
+        for index in count:
+            var slot := order[index]
+            var level := levels[slot]
+            var base := index * 8
+            var s_left := neighbours[base]
+            var s_right := neighbours[base + 1]
+            var s_bottom := neighbours[base + 2]
+            var s_top := neighbours[base + 3]
+            var s_top_left := neighbours[base + 4]
+            var s_top_right := neighbours[base + 5]
+            var s_bottom_left := neighbours[base + 6]
+            var s_bottom_right := neighbours[base + 7]
+            var left: int = INFINITE_LEVEL if s_left < 0 else levels[s_left]
+            var right: int = INFINITE_LEVEL if s_right < 0 else levels[s_right]
+            var bottom: int = INFINITE_LEVEL if s_bottom < 0 else levels[s_bottom]
+            var top: int = INFINITE_LEVEL if s_top < 0 else levels[s_top]
+            var top_left: int = INFINITE_LEVEL if s_top_left < 0 else levels[s_top_left]
+            var top_right: int = INFINITE_LEVEL if s_top_right < 0 else levels[s_top_right]
+            var bottom_left: int = INFINITE_LEVEL if s_bottom_left < 0 else levels[s_bottom_left]
+            var bottom_right: int = INFINITE_LEVEL if s_bottom_right < 0 else levels[s_bottom_right]
+            var below := level - 1
+            var lower := (left < below or right < below or bottom < below or top < below
+                or top_right < below or top_left < below or bottom_left < below or bottom_right < below)
             if not lower:
-                lower = (_level_of(tile_levels, left) <= level - 1 and _level_of(tile_levels, right) <= level - 1)
-            if not lower:
-                lower = (_level_of(tile_levels, top) <= level - 1 and _level_of(tile_levels, bottom) <= level - 1)
-            if not lower:
-                lower = (_level_of(tile_levels, top) <= level - 1 and _level_of(tile_levels, left) <= level - 1 and _level_of(tile_levels, bottom_right) <= level - 1)
-            if not lower:
-                lower = (_level_of(tile_levels, top) <= level - 1 and _level_of(tile_levels, right) <= level - 1 and _level_of(tile_levels, bottom_left) <= level - 1)
-            if not lower:
-                lower = (_level_of(tile_levels, bottom) <= level - 1 and _level_of(tile_levels, right) <= level - 1 and _level_of(tile_levels, top_left) <= level - 1)
-            if not lower:
-                lower = (_level_of(tile_levels, bottom) <= level - 1 and _level_of(tile_levels, left) <= level - 1 and _level_of(tile_levels, top_right) <= level - 1)
-            if not lower:
-                lower = (_level_of(tile_levels, bottom) == level and _level_of(tile_levels, left) <= level - 1 and _level_of(tile_levels, bottom_right) <= level - 1)
-            if not lower:
-                lower = (_level_of(tile_levels, bottom) == level and _level_of(tile_levels, right) <= level - 1 and _level_of(tile_levels, bottom_left) <= level - 1)
-            if not lower:
-                lower = (_level_of(tile_levels, top) == level and _level_of(tile_levels, left) <= level - 1 and _level_of(tile_levels, top_right) <= level - 1)
-            if not lower:
-                lower = (_level_of(tile_levels, top) == level and _level_of(tile_levels, right) <= level - 1 and _level_of(tile_levels, top_left) <= level - 1)
-            if not lower:
-                lower = (_level_of(tile_levels, right) == level and _level_of(tile_levels, top) <= level - 1 and _level_of(tile_levels, bottom_right) <= level - 1)
-            if not lower:
-                lower = (_level_of(tile_levels, right) == level and _level_of(tile_levels, bottom) <= level - 1 and _level_of(tile_levels, top_right) <= level - 1)
-            if not lower:
-                lower = (_level_of(tile_levels, left) == level and _level_of(tile_levels, bottom) <= level - 1 and _level_of(tile_levels, top_left) <= level - 1)
-            if not lower:
-                lower = (_level_of(tile_levels, left) == level and _level_of(tile_levels, top) <= level - 1 and _level_of(tile_levels, bottom_left) <= level - 1)
+                lower = (
+                    (left <= below and right <= below)
+                    or (top <= below and bottom <= below)
+                    or (top <= below and left <= below and bottom_right <= below)
+                    or (top <= below and right <= below and bottom_left <= below)
+                    or (bottom <= below and right <= below and top_left <= below)
+                    or (bottom <= below and left <= below and top_right <= below)
+                    or (bottom == level and left <= below and bottom_right <= below)
+                    or (bottom == level and right <= below and bottom_left <= below)
+                    or (top == level and left <= below and top_right <= below)
+                    or (top == level and right <= below and top_left <= below)
+                    or (right == level and top <= below and bottom_right <= below)
+                    or (right == level and bottom <= below and top_right <= below)
+                    or (left == level and bottom <= below and top_left <= below)
+                    or (left == level and top <= below and bottom_left <= below)
+                )
             if lower:
-                tile_levels[tile] = level - 1
+                levels[slot] = below
+                changed[slot] = 1
                 done = false
+    for slot in levels.size():
+        if changed[slot] != 0:
+            tile_levels[tiles[slot]] = levels[slot]
+
+const INFINITE_LEVEL := 2147483647
+
+## [order, neighbours, levels, tiles]: order[i] is the level slot of the i-th
+## value of all_tiles; neighbours[i * 8 + k] the slot of its k-th neighbour
+## (left, right, bottom, top, top-left, top-right, bottom-left, bottom-right;
+## -1 when absent); levels[slot] its level (INFINITE_LEVEL when unset);
+## tiles[slot] the tile object.
+func _mountain_level_graph(all_tiles: Dictionary, tile_levels: Dictionary) -> Array:
+    var values := all_tiles.values()
+    var count := values.size()
+    var slot_by_id: Dictionary = {}
+    var tiles: Array = []
+    var levels := PackedInt64Array()
+    var order := PackedInt32Array()
+    order.resize(count)
+    for index in count:
+        var tile := values[index] as SourceTile
+        var id := tile.get_instance_id()
+        var slot: int = slot_by_id.get(id, -1)
+        if slot < 0:
+            slot = tiles.size()
+            slot_by_id[id] = slot
+            tiles.append(tile)
+            levels.append(int(tile_levels[tile]) if tile_levels.has(tile) else INFINITE_LEVEL)
+        order[index] = slot
+    var offsets: Array[Vector2i] = [
+        Vector2i(-16, 0), Vector2i(16, 0), Vector2i(0, -16), Vector2i(0, 16),
+        Vector2i(-16, 16), Vector2i(16, 16), Vector2i(-16, -16), Vector2i(16, -16)]
+    var neighbours := PackedInt32Array()
+    neighbours.resize(count * 8)
+    for index in count:
+        var position := (values[index] as SourceTile).position
+        for k in 8:
+            var neighbour := all_tiles.get(position + offsets[k]) as SourceTile
+            neighbours[index * 8 + k] = -1 if neighbour == null else int(slot_by_id[neighbour.get_instance_id()])
+    return [order, neighbours, levels, tiles]
 
 func _assign_mountain_ledges(all_tiles: Dictionary, tile_levels: Dictionary) -> void:
-    for raw_tile in SourceJavaHashOrder.values(all_tiles):
-        var tile := raw_tile as SourceTile
+    var graph := _mountain_level_graph(all_tiles, tile_levels)
+    var order: PackedInt32Array = graph[0]
+    var neighbours: PackedInt32Array = graph[1]
+    var levels: PackedInt64Array = graph[2]
+    var tiles: Array = graph[3]
+    for index in order.size():
+        var tile := tiles[order[index]] as SourceTile
         var level := int(tile_levels[tile])
-        var left := all_tiles.get(tile.position + Vector2i(-16, 0)) as SourceTile
-        var right := all_tiles.get(tile.position + Vector2i(16, 0)) as SourceTile
-        var bottom := all_tiles.get(tile.position + Vector2i(0, -16)) as SourceTile
-        var top := all_tiles.get(tile.position + Vector2i(0, 16)) as SourceTile
-        var top_left := all_tiles.get(tile.position + Vector2i(-16, 16)) as SourceTile
-        var top_right := all_tiles.get(tile.position + Vector2i(16, 16)) as SourceTile
-        var bottom_left := all_tiles.get(tile.position + Vector2i(-16, -16)) as SourceTile
-        var bottom_right := all_tiles.get(tile.position + Vector2i(16, -16)) as SourceTile
+        var base := index * 8
+        var left: int = INFINITE_LEVEL if neighbours[base] < 0 else levels[neighbours[base]]
+        var right: int = INFINITE_LEVEL if neighbours[base + 1] < 0 else levels[neighbours[base + 1]]
+        var bottom: int = INFINITE_LEVEL if neighbours[base + 2] < 0 else levels[neighbours[base + 2]]
+        var top: int = INFINITE_LEVEL if neighbours[base + 3] < 0 else levels[neighbours[base + 3]]
+        var top_left: int = INFINITE_LEVEL if neighbours[base + 4] < 0 else levels[neighbours[base + 4]]
+        var top_right: int = INFINITE_LEVEL if neighbours[base + 5] < 0 else levels[neighbours[base + 5]]
+        var bottom_left: int = INFINITE_LEVEL if neighbours[base + 6] < 0 else levels[neighbours[base + 6]]
+        var bottom_right: int = INFINITE_LEVEL if neighbours[base + 7] < 0 else levels[neighbours[base + 7]]
         var suffix := ""
-        if _level_of(tile_levels, left) == level and _level_of(tile_levels, bottom) == level - 1 and _level_of(tile_levels, right) == level:
+        if left == level and bottom == level - 1 and right == level:
             suffix = "N"
-        elif _level_of(tile_levels, top) == level and _level_of(tile_levels, right) == level and _level_of(tile_levels, bottom) == level - 1 and _level_of(tile_levels, left) == level - 1:
+        elif top == level and right == level and bottom == level - 1 and left == level - 1:
             suffix = "NE"
-        elif _level_of(tile_levels, top) == level and _level_of(tile_levels, left) == level - 1 and _level_of(tile_levels, bottom) == level:
+        elif top == level and left == level - 1 and bottom == level:
             suffix = "E"
-        elif _level_of(tile_levels, top) == level - 1 and _level_of(tile_levels, left) == level - 1 and _level_of(tile_levels, right) == level and _level_of(tile_levels, bottom) == level:
+        elif top == level - 1 and left == level - 1 and right == level and bottom == level:
             suffix = "SE"
-        elif _level_of(tile_levels, top) == level - 1 and _level_of(tile_levels, left) == level and _level_of(tile_levels, right) == level:
+        elif top == level - 1 and left == level and right == level:
             suffix = "S"
-        elif _level_of(tile_levels, top) == level - 1 and _level_of(tile_levels, bottom) == level and _level_of(tile_levels, left) == level and _level_of(tile_levels, right) == level - 1:
+        elif top == level - 1 and bottom == level and left == level and right == level - 1:
             suffix = "SW"
-        elif _level_of(tile_levels, top) == level and _level_of(tile_levels, bottom) == level and _level_of(tile_levels, right) == level - 1:
+        elif top == level and bottom == level and right == level - 1:
             suffix = "W"
-        elif _level_of(tile_levels, top) == level and _level_of(tile_levels, left) == level and _level_of(tile_levels, bottom) == level - 1 and _level_of(tile_levels, right) == level - 1:
+        elif top == level and left == level and bottom == level - 1 and right == level - 1:
             suffix = "NW"
-        elif _level_of(tile_levels, bottom_right) == level - 1 and _level_of(tile_levels, bottom) == level and _level_of(tile_levels, right) == level:
+        elif bottom_right == level - 1 and bottom == level and right == level:
             suffix = "NW_inner"
-        elif _level_of(tile_levels, bottom_left) == level - 1 and _level_of(tile_levels, bottom) == level and _level_of(tile_levels, left) == level:
+        elif bottom_left == level - 1 and bottom == level and left == level:
             suffix = "NE_inner"
-        elif _level_of(tile_levels, top_right) == level - 1 and _level_of(tile_levels, top) == level and _level_of(tile_levels, right) == level:
+        elif top_right == level - 1 and top == level and right == level:
             suffix = "SW_inner"
-        elif _level_of(tile_levels, top_left) == level - 1 and _level_of(tile_levels, top) == level and _level_of(tile_levels, left) == level:
+        elif top_left == level - 1 and top == level and left == level:
             suffix = "SE_inner"
         if suffix != "":
             tile.set_names(tile.name, "ledges3_" + suffix)
@@ -2711,95 +2766,191 @@ func ledgify(
         null_type := "black1"
     ) -> void:
     var ledge_type := "ledges3volcano" if "volcano" in tile_type else "ledges3"
-    var done := false
-    while not done:
-        done = true
-        for raw_tile in SourceJavaHashOrder.values(next_island_tiles):
-            var tile := raw_tile as SourceTile
-            if tile.name != tile_type:
-                continue
-            var neighbours := _named_neighbours(tiles, tile.position, null_type)
-            var left: SourceTile = neighbours["left"]
-            var right: SourceTile = neighbours["right"]
-            var up: SourceTile = neighbours["up"]
-            var down: SourceTile = neighbours["down"]
-            var top_left: SourceTile = neighbours["top_left"]
-            var top_right: SourceTile = neighbours["top_right"]
-            var bottom_left: SourceTile = neighbours["bottom_left"]
-            var bottom_right: SourceTile = neighbours["bottom_right"]
-            var current := tiles.get(tile.position) as SourceTile
-            if current != null and current.name != tile_type:
-                continue
-            var left_same := left.name == tile_type
-            var right_same := right.name == tile_type
-            var up_same := up.name == tile_type
-            var down_same := down.name == tile_type
-            var replace := (
-                (not left_same and not right_same)
-                or (not up_same and not down_same)
-                or not (up_same or left_same or bottom_right.name == tile_type)
-                or not (up_same or right_same or bottom_left.name == tile_type)
-                or not (down_same or right_same or top_left.name == tile_type)
-                or not (down_same or left_same or top_right.name == tile_type)
-                or (down_same and not left_same and bottom_right.name != tile_type)
-                or (down_same and not right_same and bottom_left.name != tile_type)
-                or (up_same and not left_same and top_right.name != tile_type)
-                or (up_same and not right_same and top_left.name != tile_type)
-                or (right_same and not up_same and bottom_right.name != tile_type)
-                or (right_same and not down_same and top_right.name != tile_type)
-                or (left_same and not down_same and top_left.name != tile_type)
-                or (left_same and not up_same and bottom_left.name != tile_type)
-            )
-            if replace:
-                var replacement := SourceTile.new(replace_with, tile.position)
-                replacement.biome = biome_name
-                tiles[tile.position] = replacement
-                next_island_tiles[tile.position] = replacement
-                done = false
-    for raw_tile in SourceJavaHashOrder.values(next_island_tiles):
+    # A missing neighbour reads as a fresh tile of null_type.
+    var null_name := SourceTile.new(null_type, Vector2i.ZERO).name
+    # First of the source's sweeps; it repeats them until one replaces nothing.
+    var changed: Array[Vector2i] = []
+    for raw_tile in next_island_tiles.values():
+        var tile := raw_tile as SourceTile
+        if tile.name == tile_type and _ledgify_replaces(tiles, tile.position, tile_type, null_name):
+            _ledgify_replace(tiles, next_island_tiles, tile.position, replace_with, biome_name)
+            changed.append(tile.position)
+    if not changed.is_empty():
+        _ledgify_later_sweeps(tiles, next_island_tiles, changed, tile_type, replace_with, biome_name, null_name)
+    for raw_tile in next_island_tiles.values():
         var candidate := raw_tile as SourceTile
         var tile := tiles.get(candidate.position) as SourceTile
         if tile == null or tile.name != tile_type:
             continue
-        var neighbours := _named_neighbours(tiles, tile.position, null_type)
-        var left: SourceTile = neighbours["left"]
-        var right: SourceTile = neighbours["right"]
-        var up: SourceTile = neighbours["up"]
-        var down: SourceTile = neighbours["down"]
-        var top_left: SourceTile = neighbours["top_left"]
-        var top_right: SourceTile = neighbours["top_right"]
-        var bottom_left: SourceTile = neighbours["bottom_left"]
-        var bottom_right: SourceTile = neighbours["bottom_right"]
+        var names := _neighbour_names(tiles, tile.position, null_name)
+        var left := names[0] == tile_type
+        var right := names[1] == tile_type
+        var up := names[2] == tile_type
+        var down := names[3] == tile_type
+        var top_left := names[4] == tile_type
+        var top_right := names[5] == tile_type
+        var bottom_left := names[6] == tile_type
+        var bottom_right := names[7] == tile_type
         var suffix := ""
-        if left.name == tile_type and down.name != tile_type and right.name == tile_type: suffix = "_N"
-        elif up.name == tile_type and right.name == tile_type and down.name != tile_type and left.name != tile_type: suffix = "_NE"
-        elif up.name == tile_type and left.name != tile_type and down.name == tile_type: suffix = "_E"
-        elif up.name != tile_type and left.name != tile_type and right.name == tile_type and down.name == tile_type: suffix = "_SE"
-        elif up.name != tile_type and left.name == tile_type and right.name == tile_type: suffix = "_S"
-        elif up.name != tile_type and down.name == tile_type and left.name == tile_type and right.name != tile_type: suffix = "_SW"
-        elif up.name == tile_type and down.name == tile_type and right.name != tile_type: suffix = "_W"
-        elif up.name == tile_type and left.name == tile_type and down.name != tile_type and right.name != tile_type: suffix = "_NW"
-        elif bottom_right.name != tile_type and down.name == tile_type and right.name == tile_type: suffix = "_NW_inner"
-        elif bottom_left.name != tile_type and down.name == tile_type and left.name == tile_type: suffix = "_NE_inner"
-        elif top_right.name != tile_type and up.name == tile_type and right.name == tile_type: suffix = "_SW_inner"
-        elif top_left.name != tile_type and up.name == tile_type and left.name == tile_type: suffix = "_SE_inner"
+        if left and not down and right: suffix = "_N"
+        elif up and right and not down and not left: suffix = "_NE"
+        elif up and not left and down: suffix = "_E"
+        elif not up and not left and right and down: suffix = "_SE"
+        elif not up and left and right: suffix = "_S"
+        elif not up and down and left and not right: suffix = "_SW"
+        elif up and down and not right: suffix = "_W"
+        elif up and left and not down and not right: suffix = "_NW"
+        elif not bottom_right and down and right: suffix = "_NW_inner"
+        elif not bottom_left and down and left: suffix = "_NE_inner"
+        elif not top_right and up and right: suffix = "_SW_inner"
+        elif not top_left and up and left: suffix = "_SE_inner"
         if suffix != "":
             var ledge := SourceTile.new(tile_type, tile.position, ledge_type + suffix)
             ledge.biome = biome_name
             tiles[tile.position] = ledge
 
-func _named_neighbours(tiles: Dictionary, position: Vector2i, null_type: String) -> Dictionary:
-    var result := {}
-    var offsets := {
-        "bottom_left": Vector2i(-16, -16), "down": Vector2i(0, -16),
-        "bottom_right": Vector2i(16, -16), "left": Vector2i(-16, 0),
-        "top_left": Vector2i(-16, 16), "up": Vector2i(0, 16),
-        "top_right": Vector2i(16, 16), "right": Vector2i(16, 0)
-    }
-    for key in offsets:
-        var tile := tiles.get(position + Vector2i(offsets[key])) as SourceTile
-        result[key] = tile if tile != null else SourceTile.new(null_type, position)
-    return result
+## The source's verdict for the tile at `position` in one ledgify sweep.
+func _ledgify_replaces(tiles: Dictionary, position: Vector2i, tile_type: String, null_name: String) -> bool:
+    var current := tiles.get(position) as SourceTile
+    if current != null and current.name != tile_type:
+        return false
+    var names := _neighbour_names(tiles, position, null_name)
+    var left_same := names[0] == tile_type
+    var right_same := names[1] == tile_type
+    var up_same := names[2] == tile_type
+    var down_same := names[3] == tile_type
+    var top_left_same := names[4] == tile_type
+    var top_right_same := names[5] == tile_type
+    var bottom_left_same := names[6] == tile_type
+    var bottom_right_same := names[7] == tile_type
+    return (
+        (not left_same and not right_same)
+        or (not up_same and not down_same)
+        or not (up_same or left_same or bottom_right_same)
+        or not (up_same or right_same or bottom_left_same)
+        or not (down_same or right_same or top_left_same)
+        or not (down_same or left_same or top_right_same)
+        or (down_same and not left_same and not bottom_right_same)
+        or (down_same and not right_same and not bottom_left_same)
+        or (up_same and not left_same and not top_right_same)
+        or (up_same and not right_same and not top_left_same)
+        or (right_same and not up_same and not bottom_right_same)
+        or (right_same and not down_same and not top_right_same)
+        or (left_same and not down_same and not top_left_same)
+        or (left_same and not up_same and not bottom_left_same)
+    )
+
+func _ledgify_replace(tiles: Dictionary, next_island_tiles: Dictionary, position: Vector2i,
+        replace_with: String, biome_name: String) -> void:
+    var replacement := SourceTile.new(replace_with, position)
+    replacement.biome = biome_name
+    tiles[position] = replacement
+    next_island_tiles[position] = replacement
+
+## The source's later full sweeps, visiting only what can change. A verdict
+## depends only on the names around a tile, so a tile whose 3x3 block did not
+## change since its last visit keeps its "no" and is skipped. Each sweep still
+## visits tiles in entry order, so the order-dependent result is the same.
+func _ledgify_later_sweeps(tiles: Dictionary, next_island_tiles: Dictionary, changed: Array[Vector2i],
+        tile_type: String, replace_with: String, biome_name: String, null_name: String) -> void:
+    var keys := next_island_tiles.keys()
+    var index_of: Dictionary = {}
+    for index in keys.size():
+        var key: Variant = keys[index]
+        if not key is Vector2i or (next_island_tiles[key] as SourceTile).position != key:
+            # Entries away from their own key: run the plain full sweeps.
+            var done := false
+            while not done:
+                done = true
+                for raw_tile in next_island_tiles.values():
+                    var tile := raw_tile as SourceTile
+                    if tile.name == tile_type and _ledgify_replaces(tiles, tile.position, tile_type, null_name):
+                        _ledgify_replace(tiles, next_island_tiles, tile.position, replace_with, biome_name)
+                        done = false
+            return
+        index_of[key] = index
+    var queued := PackedByteArray()
+    queued.resize(keys.size())
+    var heap: Array[int] = []
+    for position in changed:
+        for offset in BLOCK_OFFSETS_9:
+            var index: int = index_of.get(position + offset, -1)
+            if index >= 0 and queued[index] == 0:
+                queued[index] = 1
+                _heap_push(heap, index)
+    while not heap.is_empty():
+        var next_sweep: Array[int] = []
+        while not heap.is_empty():
+            var index := _heap_pop(heap)
+            queued[index] = 0
+            var position: Vector2i = keys[index]
+            var tile := next_island_tiles[position] as SourceTile
+            if tile.name != tile_type or not _ledgify_replaces(tiles, position, tile_type, null_name):
+                continue
+            _ledgify_replace(tiles, next_island_tiles, position, replace_with, biome_name)
+            for offset in BLOCK_OFFSETS_9:
+                var other: int = index_of.get(position + offset, -1)
+                if other < 0:
+                    continue
+                if other > index:
+                    if queued[other] == 0:
+                        queued[other] = 1
+                        _heap_push(heap, other)
+                else:
+                    next_sweep.append(other)
+        for index in next_sweep:
+            if queued[index] == 0:
+                queued[index] = 1
+                _heap_push(heap, index)
+
+const BLOCK_OFFSETS_9: Array[Vector2i] = [
+    Vector2i(0, 0), Vector2i(16, 0), Vector2i(-16, 0), Vector2i(0, 16), Vector2i(0, -16),
+    Vector2i(16, 16), Vector2i(-16, 16), Vector2i(-16, -16), Vector2i(16, -16)]
+
+static func _heap_push(heap: Array[int], value: int) -> void:
+    heap.append(value)
+    var child := heap.size() - 1
+    while child > 0:
+        var parent := (child - 1) >> 1
+        if heap[parent] <= value:
+            break
+        heap[child] = heap[parent]
+        child = parent
+    heap[child] = value
+
+static func _heap_pop(heap: Array[int]) -> int:
+    var top := heap[0]
+    var last: int = heap.pop_back()
+    var count := heap.size()
+    if count == 0:
+        return top
+    var parent := 0
+    while true:
+        var child := parent * 2 + 1
+        if child >= count:
+            break
+        if child + 1 < count and heap[child + 1] < heap[child]:
+            child += 1
+        if heap[child] >= last:
+            break
+        heap[parent] = heap[child]
+        parent = child
+    heap[parent] = last
+    return top
+
+## Names of the 8 neighbours: left, right, up, down, top-left, top-right,
+## bottom-left, bottom-right (up is +y); null_name where there is no tile.
+func _neighbour_names(tiles: Dictionary, position: Vector2i, null_name: String) -> PackedStringArray:
+    var names := PackedStringArray()
+    names.resize(8)
+    for index in 8:
+        var tile := tiles.get(position + LEDGIFY_OFFSETS[index]) as SourceTile
+        names[index] = tile.name if tile != null else null_name
+    return names
+
+const LEDGIFY_OFFSETS: Array[Vector2i] = [
+    Vector2i(-16, 0), Vector2i(16, 0), Vector2i(0, 16), Vector2i(0, -16),
+    Vector2i(-16, 16), Vector2i(16, 16), Vector2i(-16, -16), Vector2i(16, -16)]
 
 # Exact recursive-growth dispatcher for the leaf blotch types. Keeping these
 # in the same four-neighbour loop preserves the source random-call order.
@@ -2977,18 +3128,35 @@ func apply_blotch(
     elif blotch_type == "wooded_lake1":
         state["beach_route"] = SourceRoute.new("wooded_lake_water1", 30)
 
+    # Same thresholds as the source's per-edge chain, decided once per blotch.
+    var put_sixteenths := 7
+    if blotch_type in ["desert", "sand_pit1", "graveyard1"]:
+        put_sixteenths = 10
+    elif blotch_type == "beach1":
+        put_sixteenths = 12
+    elif "volcano" in blotch_type:
+        put_sixteenths = 10
+    elif "island" in blotch_type:
+        put_sixteenths = 8
+    elif blotch_type == "wooded_lake1":
+        put_sixteenths = 12
+    var put_limit := put_sixteenths * maximum_distance / 16
+    var leaf_blotch := blotch_type in [
+            "grass", "grass_sand", "grass_desert1", "sand_pit1",
+            "ruins1_upper2", "pond1", "desert_cacti1", "desert_cacti2",
+            "desert_cacti3", "desert_cacti4"] or blotch_type.begins_with("grass_")
+    var origin_vector := Vector2(origin_tile.position)
+    var previous_distance := Vector2(previous_tile.position).distance_to(origin_vector)
     while not edge_tiles.is_empty():
-        for raw_tile in SourceJavaHashOrder.values(
-                edge_tiles, edge_capacity_high_water):
+        for raw_tile in edge_tiles.values():
             var tile := raw_tile as SourceTile
-            for edge in [
-                    tile.position + Vector2i(-16, 0), tile.position + Vector2i(16, 0),
-                    tile.position + Vector2i(0, 16), tile.position + Vector2i(0, -16)]:
+            var tile_position := tile.position
+            for edge_offset in BLOTCH_EDGE_OFFSETS:
+                var edge := tile_position + edge_offset
                 if tiles_to_add.has(edge):
                     continue
-                var distance := SourceLibGDXMath.distance(
-                    Vector2(edge), Vector2(origin_tile.position))
-                if (OS.get_environment("POKEWILDS_QA_TRACE_FRONTIER") == "1"
+                var distance := SourceLibGDXMath.distance(Vector2(edge), origin_vector)
+                if (_qa_trace_frontier
                         and random.trace_count() >= 3118
                         and random.trace_count() <= 3140):
                     var frontier_positions: Array[String] = []
@@ -3002,22 +3170,15 @@ func apply_blotch(
                         ";".join(frontier_positions)
                     ])
                 var put_tile := random.next_int(maximum_distance) + int(distance)
-                var should_put := int(distance) < 7 * maximum_distance / 16
-                if blotch_type in ["desert", "sand_pit1", "graveyard1"]:
-                    should_put = int(distance) < 10 * maximum_distance / 16
-                elif blotch_type == "beach1":
-                    should_put = int(distance) < 12 * maximum_distance / 16
-                elif "volcano" in blotch_type:
-                    should_put = int(distance) < 10 * maximum_distance / 16
-                elif "island" in blotch_type:
-                    should_put = int(distance) < 8 * maximum_distance / 16
-                elif blotch_type == "wooded_lake1":
-                    should_put = int(distance) < 12 * maximum_distance / 16
-                if put_tile >= maximum_distance and not should_put:
+                if put_tile >= maximum_distance and int(distance) >= put_limit:
                     continue
-                var new_tile := _make_blotch_tile(
-                    blotch_type, tile, edge, distance, maximum_distance,
-                    origin_tile, current_route, tiles_to_add, state)
+                var new_tile: SourceTile
+                if leaf_blotch:
+                    new_tile = _leaf_blotch_tile(blotch_type, edge, distance, maximum_distance, origin_tile, current_route)
+                else:
+                    new_tile = _make_blotch_tile(
+                        blotch_type, tile, edge, distance, maximum_distance,
+                        origin_tile, current_route, tiles_to_add, state)
                 if new_tile == null:
                     continue
                 tiles_to_add[new_tile.position] = new_tile
@@ -3025,12 +3186,15 @@ func apply_blotch(
                 edge_capacity_high_water = maxi(
                     edge_capacity_high_water, edge_tiles.size()
                 )
-            if (Vector2(tile.position).distance_to(Vector2(origin_tile.position))
-                    > Vector2(previous_tile.position).distance_to(Vector2(origin_tile.position))
+            var tile_distance := Vector2(tile_position).distance_to(origin_vector)
+            if (tile_distance > previous_distance
                     and tile.name not in ["sand1", "rock1", "tree5"]):
                 previous_tile = tile
-                previous_tiles.push_front(tile)
-            edge_tiles.erase(tile.position)
+                previous_distance = tile_distance
+                # Newest first, as the source's push_front (reversed below).
+                previous_tiles.append(tile)
+            edge_tiles.erase(tile_position)
+    previous_tiles.reverse()
 
     for raw_grass in SourceJavaHashOrder.values(grass_tiles):
         var grass := raw_grass as SourceTile
@@ -3056,11 +3220,7 @@ func _make_blotch_tile(
         tiles_to_add: Dictionary,
         state: Dictionary
     ) -> SourceTile:
-    if blotch_type in [
-            "grass", "grass_sand", "grass_desert1", "sand_pit1",
-            "ruins1_upper2", "pond1", "desert_cacti1", "desert_cacti2",
-            "desert_cacti3", "desert_cacti4"] or blotch_type.begins_with("grass_"):
-        return _leaf_blotch_tile(blotch_type, edge, distance, maximum_distance, origin_tile, current_route)
+    # Leaf blotch types are dispatched by apply_blotch directly.
     match blotch_type:
         "desert":
             return _make_desert_tile(edge, distance, maximum_distance, current_route, state)
@@ -3265,7 +3425,8 @@ func _make_island_tile(
         state: Dictionary
     ) -> SourceTile:
     var beach_route := state["beach_route"] as SourceRoute
-    var new_tile := SourceTile.new("sand1", edge, "", true, beach_route)
+    # The default sand tile is usually replaced: made only when read.
+    var new_tile: SourceTile = null
     var is_rock := random.next_int(maximum_distance) + int(distance)
     if is_rock > maximum_distance + maximum_distance / 2:
         var rock_route: SourceRoute = null
@@ -3299,6 +3460,8 @@ func _make_island_tile(
                 if random.next_int(6) == 0:
                     tree_route = SourceRoute.new("", 22)
                     _append_stored(tree_route, ["sudowoodo"], 20, 4)
+            if new_tile == null:
+                new_tile = SourceTile.new("sand1", edge, "", true, beach_route)
             new_tile = SourceTile.new(new_tile.name, edge, upper, true, tree_route)
     elif is_rock <= maximum_distance + maximum_distance / 2 and is_grass < maximum_distance - maximum_distance / 4 and random.next_int(40) == 0:
         var tree_route := SourceRoute.new("", 11)
@@ -3312,6 +3475,8 @@ func _make_island_tile(
                 "Exeggcute", 10 + random.next_int(4),
                 {"generation": "CRYSTAL"}))
         if random.next_int(2) == 0:
+            if new_tile == null:
+                new_tile = SourceTile.new("sand1", edge, "", true, beach_route)
             apply_blotch("grass_sand", new_tile, 35, state["grass_tiles"], 0, false, SourceRoute.new("beach1", 3))
         if random.next_int(10) == 0:
             var is_unown := unown_counter % 64 == 0
@@ -3321,6 +3486,8 @@ func _make_island_tile(
         else:
             new_tile = SourceTile.new("tree5", edge, "", true, tree_route)
     elif is_rock <= maximum_distance + maximum_distance / 2 and is_grass < maximum_distance - maximum_distance / 4 and random.next_int(200) == 0:
+        if new_tile == null:
+            new_tile = SourceTile.new("sand1", edge, "", true, beach_route)
         new_tile = SourceTile.new(new_tile.name, edge, "pokeball1", true, current_route)
     elif is_rock <= maximum_distance + maximum_distance / 2 and is_grass < maximum_distance - maximum_distance / 4 and random.next_int(450) == 0:
         var level := _source_scaled_level(
@@ -3352,6 +3519,8 @@ func _make_island_tile(
                 if random.next_int(6) == 0:
                     tree_route = SourceRoute.new("", 22)
                     _append_stored(tree_route, ["sudowoodo"], 20, 4)
+            if new_tile == null:
+                new_tile = SourceTile.new("sand1", edge, "", true, beach_route)
             new_tile = SourceTile.new(new_tile.name, edge, upper, true, tree_route)
     if distance < float(maximum_distance / 4) and maximum_distance > 300 and random.next_int(750) == 0:
         var level := _source_scaled_level(
@@ -3363,10 +3532,14 @@ func _make_island_tile(
         _spawn(edge + Vector2i(16, 0), String(SourceForestGenerator.MATES[parent_name]), level)
     if int(state["is_maze"]) == 0:
         var is_tree := random.next_int(int(maximum_distance / 4)) + int(distance)
-        if is_tree < maximum_distance / 3 and new_tile.position.y % 32 == 0:
+        if is_tree < maximum_distance / 3 and edge.y % 32 == 0:
             new_tile = SourceTile.new("tree2", edge)
     elif int(distance) + random.next_int(int(maximum_distance / 14) + 1) < 8 * maximum_distance / 16:
+        if new_tile == null:
+            new_tile = SourceTile.new("sand1", edge, "", true, beach_route)
         (state["forest_maze_tiles"] as Dictionary)[new_tile.position] = new_tile
+    if new_tile == null:
+        new_tile = SourceTile.new("sand1", edge, "", true, beach_route)
     var grass_here := random.next_int(int(maximum_distance / 4)) + int(distance)
     var grass_here_2 := random.next_int(maximum_distance)
     var grass_here_3 := random.next_int(maximum_distance)
@@ -3410,10 +3583,11 @@ func _source_scaled_level(
 func _diagonal_pattern(position: Vector2i, scale: float) -> Vector2i:
     var rotated := SourceLibGDXMath.rotate_deg(Vector2(position), 45.0)
     var source_scale := SourceLibGDXMath.float32(scale)
-    var scaled_y := SourceLibGDXMath.float32(
-        SourceLibGDXMath.float32(rotated.y) / source_scale)
-    var scaled_x := SourceLibGDXMath.float32(
-        SourceLibGDXMath.float32(rotated.x) / source_scale)
+    # Vector2 components are floats: built from these quotients they are the
+    # float-rounded values the source computes.
+    var scaled := Vector2(rotated.x / source_scale, rotated.y / source_scale)
+    var scaled_y := scaled.y
+    var scaled_x := scaled.x
     var diagonal := SourceLibGDXMath.float32(scaled_x - scaled_y)
     var offset_y := int(absf(scaled_y)) % 14 - 7
     var offset_x := int(absf(diagonal)) % 14 - 7
@@ -3452,7 +3626,6 @@ func _make_beach_tile(
         elif offset_2 < 7:
             upper = "stalagmite1"
         tile_route = state["beach_route"] if offset_3 >= 30 else state["beach_plateau_route"]
-    rotated = SourceLibGDXMath.rotate_deg(Vector2(edge), 45.0)
     offset_y = int(absf(rotated.y / 16.0)) % 14 - 7
     offset_x = int(absf(rotated.x / 16.0)) % 14 - 7
     offset_1 = absi(offset_x) + absi(offset_y)
@@ -3866,13 +4039,20 @@ func _apply_forest_maze(
         int((top_right.y - bottom_left.y) * 2 / 96),
         0.1, 0.9, 96, random)
     for node in SourceJavaHashOrder.values(nodes):
-        var square: Array[SourceTile]
+        # Only the maze cells inside the blotch become tiles.
+        var square: Array
+        var color := false
         if String(node.get("type", "")) == "platform1":
-            square = SourceForestGenerator.get_tile_square_platform(node, bottom_left, random)
+            square = SourceForestGenerator.get_tile_square_platform_specs(node, bottom_left, random)
         else:
-            square = SourceForestGenerator.get_tile_square(node, bottom_left, random, true)
-        for tile in square:
-            if forest_maze_tiles.has(tile.position):
+            square = SourceForestGenerator.get_tile_square_specs(node, bottom_left, random)
+            color = true
+        var names: PackedStringArray = square[0]
+        var positions: PackedVector2Array = square[1]
+        for index in names.size():
+            var position := Vector2i(positions[index])
+            if forest_maze_tiles.has(position):
+                var tile := SourceTile.new(names[index], position, "", color)
                 tiles_to_add[tile.position] = tile
     if not tiles_to_add.is_empty():
         # GenForest2.ApplyForestBiome constructs a new java.util.Random for
@@ -3887,12 +4067,16 @@ func _apply_forest_maze(
         # that collection is reserved for actual overworld PokÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©mon entities.
         SourceForestGenerator.apply_forest_biome(
             tiles_to_add, bottom_left, top_right, forest_pass_random, true)
+    var deep_forest_set: Dictionary = {}
+    for position in deep_forest_positions:
+        deep_forest_set[position] = true
     for raw_tile in SourceJavaHashOrder.values(tiles_to_add):
         var tile := raw_tile as SourceTile
-        if tile.name in ["ledge_grass_down", "ledge_ramp_down"]:
+        var tile_name := tile.name
+        if tile_name == "ledge_grass_down" or tile_name == "ledge_ramp_down":
             _repair_maze_ledge(tiles_to_add, tile, 16)
             _repair_maze_ledge(tiles_to_add, tile, -16)
-        if deep_forest_positions.has(tile.position):
+        if deep_forest_set.has(tile.position):
             tile.route_belongs_to = state["deep_forest_route"] as SourceRoute
             tile.biome = "deep_forest"
             if tile.name == "grass2":

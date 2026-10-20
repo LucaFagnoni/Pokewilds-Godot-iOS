@@ -21,8 +21,10 @@ func _mark_resident_change() -> void:
     if _loading: return
     resident_revision += 1
     if _store != null: _store.bump(_index)
-    if OS.get_thread_caller_id() == OS.get_main_thread_id():
+    if OS.get_thread_caller_id() == _main_thread_id:
         resident_changed_cells[position] = true
+
+static var _main_thread_id := OS.get_main_thread_id()
 
 static func bound_to(store: WorldTileStore, index: int) -> SourceTile:
     var tile := SourceTile.new(_BIND, Vector2i.ZERO)
@@ -286,13 +288,12 @@ func _apply_constructor_name_rewrites(
         name = "green1"
         if color:
             name_upper = "bush2_color"
-    elif tile_name.begins_with("cactus") and tile_name not in [
-            "cactus7", "cactus8", "cactus9", "cactus10"]:
+    elif tile_name.begins_with("cactus") and not (tile_name == "cactus7"
+            or tile_name == "cactus8" or tile_name == "cactus9" or tile_name == "cactus10"):
         name = "desert6"
         name_upper = tile_name
-    elif tile_name in [
-            "pedistal1", "building1_fossilreviver1",
-            "interiorwall1"] or "gravestone" in tile_name or "sign_" in tile_name:
+    elif (tile_name == "pedistal1" or tile_name == "building1_fossilreviver1"
+            or tile_name == "interiorwall1") or "gravestone" in tile_name or "sign_" in tile_name:
         name_upper = tile_name
 
 func _refresh_flags(source_base_name: String = "") -> void:
@@ -304,32 +305,27 @@ func _refresh_flags(source_base_name: String = "") -> void:
     if source_base_name == "bush1" and name == "green1" and \
             name_upper.is_empty():
         source_base_name = name
-    is_water = SourceWorldData.is_water(name) or SourceWorldData.is_water(name_upper)
-    is_solid = (
-        SourceWorldData.is_base_solid(source_base_name)
-        or SourceWorldData.is_upper_solid(name_upper)
-    )
+    var traits := _name_traits(source_base_name, name, name_upper)
+    is_water = traits[0]
+    is_solid = traits[1]
     # Savanna and several authored habitat grasses live in name_upper rather
     # than the base tile. Encounter habitat must follow either visible layer.
-    is_grass = (
-        SourceWorldData.is_grass(source_base_name)
-        or SourceWorldData.is_grass(name_upper)
-    )
-    is_cuttable = SourceWorldData.is_cuttable(source_base_name, name_upper)
-    is_headbuttable = SourceWorldData.is_headbuttable(source_base_name, name_upper)
-    is_tidal = "_tidalwater" in source_base_name
-    is_lava = source_base_name.begins_with("lava")
-    var ledge := SourceWorldData.ledge_direction(source_base_name)
-    if ledge == Vector2i.ZERO:
-        ledge = SourceWorldData.ledge_direction(name_upper)
+    is_grass = traits[2]
+    is_cuttable = traits[3]
+    is_headbuttable = traits[4]
+    is_tidal = traits[5]
+    is_lava = traits[6]
+    var ledge: Vector2i = traits[7]
     is_ledge = ledge != Vector2i.ZERO or "ledges3" in name_upper
-    if name_upper in ["fence1", "fence2"]:
+    var fence := name_upper == "fence1" or name_upper == "fence2"
+    var fence_ns := name_upper == "fence1_NS" or name_upper == "fence2_NS"
+    if fence:
         is_ledge = true
         ledge_dir = "down"
-    elif name_upper in ["fence1_NS", "fence2_NS"]:
+    elif fence_ns:
         is_ledge = true
         ledge_dir = "left"
-    if name_upper in ["fence1", "fence2", "fence1_NS", "fence2_NS"]:
+    if fence or fence_ns:
         pass
     elif ledge == Vector2i.UP:
         ledge_dir = "up"
@@ -350,3 +346,35 @@ func _refresh_flags(source_base_name: String = "") -> void:
     elif name_upper == "pokemon_mansion_key" and has_item.is_empty():
         has_item = "secret key"
         has_item_amount = 1
+
+## The flags above depend only on the three names: classify each distinct
+## triple once (world generation builds ~1M tiles from a few hundred names).
+## Locked: generation runs on a worker thread while the game makes tiles too.
+static var _traits_cache: Dictionary = {}
+static var _traits_lock := Mutex.new()
+
+static func _name_traits(source_base_name: String, base_name: String, upper_name: String) -> Array:
+    var key := source_base_name + "\n" + base_name + "\n" + upper_name
+    _traits_lock.lock()
+    var traits: Variant = _traits_cache.get(key)
+    _traits_lock.unlock()
+    if traits != null:
+        return traits
+    var ledge := SourceWorldData.ledge_direction(source_base_name)
+    if ledge == Vector2i.ZERO:
+        ledge = SourceWorldData.ledge_direction(upper_name)
+    var computed: Array = [
+        SourceWorldData.is_water(base_name) or SourceWorldData.is_water(upper_name),
+        SourceWorldData.is_base_solid(source_base_name) or SourceWorldData.is_upper_solid(upper_name),
+        SourceWorldData.is_grass(source_base_name) or SourceWorldData.is_grass(upper_name),
+        SourceWorldData.is_cuttable(source_base_name, upper_name),
+        SourceWorldData.is_headbuttable(source_base_name, upper_name),
+        "_tidalwater" in source_base_name,
+        source_base_name.begins_with("lava"),
+        ledge,
+    ]
+    computed.make_read_only()
+    _traits_lock.lock()
+    _traits_cache[key] = computed
+    _traits_lock.unlock()
+    return computed

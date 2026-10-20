@@ -1,6 +1,10 @@
 extends Node
 ## Dedicated co-op server: `PokeWilds.console.exe --headless --server [--port N]
-## [--world NAME] [--size S|M|L|XL|XXL] [--password P] [--data DIR]`.
+## [--world NAME] [--size S|M|L|XL|XXL] [--accounts open|closed|off] [--password P]
+## [--data DIR]`. Players log in with an ID and a password (coop_accounts.gd):
+## "open" makes an ID on its first login, "closed" only lets in IDs made here
+## with `account add`, "off" goes back to device identities and the optional
+## shared --password.
 ## The server is the ordinary online host (see coop_game.gd) whose own player
 ## never shows: it stands still at the spawn, sends no presence, is not counted
 ## in the lobby, cannot be met or chased, and never plays. Everything else
@@ -9,14 +13,15 @@ extends Node
 ## (server_area_maker.gd), and the router port is opened by UPnP when it can be.
 ## Settings come from server.cfg beside the exe (or --config PATH), then the
 ## command line. Without --server this node does nothing.
-## `--join HOST[:PORT] [--password P] [--data DIR] [--quit-after-join]
+## `--join HOST[:PORT] [--id ID] [--password P] [--data DIR] [--quit-after-join]
 ## [--travel]` instead joins a game at startup, for PCs and for the smoke test.
 const Paths=preload("res://scripts/game_data_paths.gd")
 const Identity=preload("res://scripts/coop_identity.gd")
 const JoinCode=preload("res://scripts/coop_join_code.gd")
 const AreaMaker=preload("res://scripts/server_area_maker.gd")
 const SIZES:=["S","M","L","XL","XXL"]
-const COMMANDS:="stop, save, players, address, kick NAME, ban NAME, bans, unban NAME"
+const COMMANDS:="stop, save, players, address, kick NAME, ban NAME, bans, unban NAME, accounts, account add|password|remove ID [PASSWORD]"
+const Accounts=preload("res://scripts/coop_accounts.gd")
 static var active:=false
 var joining:=""
 var _quit_after_join:=false
@@ -26,6 +31,8 @@ var port:=JoinCode.PORT
 var world_name:="PokeWilds"
 var size:=1
 var password:=""
+var accounts_mode:="open"
+var account_id:=""
 var max_players:=4
 var autosave_minutes:=5.0
 var open_router_port:=true
@@ -47,7 +54,8 @@ func _init()->void:
     var base:=OS.get_executable_path().get_base_dir() if not OS.has_feature("editor") else ProjectSettings.globalize_path("user://")
     var data:=_arg(args,"--data",base.path_join("server_data") if active else "")
     if data.is_relative_path():data=base.path_join(data)
-    password=_arg(args,"--password","").strip_edges().left(16)
+    password=_arg(args,"--password","").strip_edges().left(32)
+    account_id=_arg(args,"--id","").strip_edges()
     if not active:
         if not data.is_empty():_use_data(data)
         return
@@ -59,6 +67,8 @@ func _init()->void:
     var size_text:=_arg(args,"--size",str(config.get_value("server","size",SIZES[size]))).to_upper()
     size=SIZES.find(size_text) if size_text in SIZES else clampi(int(size_text),0,SIZES.size()-1)
     if password.is_empty():password=String(config.get_value("server","password","")).strip_edges().left(16)
+    accounts_mode=_arg(args,"--accounts",String(config.get_value("server","accounts",accounts_mode))).strip_edges().to_lower()
+    if not accounts_mode in ["open","closed","off"]:accounts_mode="open"
     max_players=clampi(int(config.get_value("server","max_players",max_players)),1,4)
     autosave_minutes=maxf(1.0,float(config.get_value("server","autosave_minutes",autosave_minutes)))
     open_router_port=bool(config.get_value("server","open_router_port",true)) and not "--no-upnp" in args
@@ -99,7 +109,13 @@ func _ready()->void:
     if not active:_join();return
     var coop:Node=main.coop_game
     coop.host_port=port;coop.max_players=max_players
-    coop.lobby_private=not password.is_empty();coop.lobby_password=password
+    if accounts_mode!="off":
+        # Before the world starts: no one may get in without an ID meanwhile.
+        coop.session.accounts=Accounts.new()
+        if coop.session.accounts.load_file(Paths.path("accounts.json"))!=OK:_fail("accounts.json is damaged");return
+        coop.session.accounts.open=accounts_mode=="open"
+        if not password.is_empty():print("SERVER note: with player IDs the shared password is not used (use accounts=closed to choose who plays)")
+    else:coop.lobby_private=not password.is_empty();coop.lobby_password=password
     main.world_edit.text=world_name;main.selected_world_size=size
     main.player_model_name.text="SERVER"
     var token:=Identity.token()
@@ -119,9 +135,10 @@ func _ready()->void:
     coop.commands.presence.erase(coop.session.actor)
     coop.generate_area=func(actor,area,area_token):return await maker.make(main,actor,area,area_token)
     coop.session.transport.max_peers=max_players
-    coop.session.admitted.connect(func(peer,_actor,profile):print("SERVER join: ",profile.get("name","PLAYER")," from ",_address(peer)," (",coop.session.players.size()-1,"/",max_players,")"))
+    coop.session.admitted.connect(func(peer,_actor,profile):print("SERVER join: ",profile.get("name","PLAYER"),_account(peer)," from ",_address(peer)," (",coop.session.players.size()-1,"/",max_players,")"))
     coop.session.departed.connect(func(_peer,_actor):print("SERVER leave (",coop.session.players.size()-1,"/",max_players,")"))
-    print("SERVER world ready, listening on TCP port ",port,(" with a password" if coop.lobby_private else ""))
+    print("SERVER world ready, listening on TCP port ",port,(" with a password" if coop.lobby_private else ""),
+        {"open":", player IDs: a new ID is made on its first login","closed":", player IDs: only those made with `account add`","off":""}[accounts_mode])
     print("SERVER commands: ",COMMANDS)
     _next_save=Time.get_ticks_msec()+int(autosave_minutes*60000)
     _stdin=Thread.new();_stdin.start(_read_stdin)
@@ -239,7 +256,13 @@ func _command(line:String)->void:
         "players":
             var listed:Array=coop.kick_candidates()
             print("SERVER ",listed.size(),"/",max_players," players")
-            for player in listed:print("SERVER   ",player.order,"  ",player.name,"  from ",_address(int(player.peer)))
+            for player in listed:print("SERVER   ",player.order,"  ",player.name,_account(int(player.peer)),"  from ",_address(int(player.peer)))
+        "accounts":
+            if coop.session.accounts==null:print("SERVER player IDs are off (accounts=off)");return
+            print("SERVER ",coop.session.accounts.records.size()," player IDs (",accounts_mode,")")
+            for record in coop.session.accounts.records.values():print("SERVER   ",record.get("id",""),"  since ",String(record.get("created","")).left(10))
+        "account":
+            _account_command(rest)
         "kick","ban":
             var peer:=_player(rest)
             if peer<0:print("SERVER no player \"",rest,"\" (see: players)");return
@@ -256,6 +279,26 @@ func _command(line:String)->void:
             print("SERVER unbanned ",rest if result.get("ok",false) else "failed: "+String(result.get("reason","")))
         "":pass
         _:print("SERVER unknown command \"",word,"\" (",COMMANDS,")")
+
+## account add ID PASSWORD | account password ID PASSWORD | account remove ID
+func _account_command(text:String)->void:
+    var accounts=main.coop_game.session.accounts
+    var parts:=text.split(" ",false)
+    if accounts==null:print("SERVER player IDs are off (accounts=off)");return
+    if parts.size()<2 or not parts[0].to_lower() in ["add","password","remove"]:print("SERVER usage: account add|password|remove ID [PASSWORD]");return
+    var id:=parts[1].to_lower()
+    if not Accounts.valid_id(id):print("SERVER an ID is 3-16 letters, digits, _ or -");return
+    match parts[0].to_lower():
+        "remove":print("SERVER removed ",id," (the character stays in the world)" if accounts.remove(id)==OK else "SERVER no ID "+id)
+        _:
+            if parts.size()<3 or parts[2].length()<4 or parts[2].length()>32:print("SERVER the password needs 4-32 characters");return
+            if parts[0].to_lower()=="add" and accounts.exists(id):print("SERVER ",id," already exists (account password ",id," NEW to change it)");return
+            if parts[0].to_lower()=="password" and not accounts.exists(id):print("SERVER no ID ",id);return
+            print("SERVER ",id,(" can now log in" if parts[0].to_lower()=="add" else " has a new password") if accounts.set_password(id,parts[2])==OK else " could not be saved")
+
+func _account(peer:int)->String:
+    var account:=String(main.coop_game.session.players.get(peer,{}).get("account",""))
+    return "" if account.is_empty() else " (ID "+account+")"
 
 ## A player by name or by their place in the `players` list (1ST, 2, ...).
 func _player(text:String)->int:
@@ -303,8 +346,8 @@ func _join()->void:
     var target:Dictionary=preload("res://scripts/coop_menu.gd").parse_address(joining)
     if target.is_empty():_fail("bad address "+joining);return
     var coop:Node=main.coop_game
-    coop.join_lobby={"name":joining,"address":target.address,"port":target.port,"direct":true,"private":false,"salt":""}
-    coop.join_password=password
+    coop.join_lobby={"name":joining,"address":target.address,"port":target.port,"direct":true,"private":false,"salt":"","account_id":account_id,"account_password":password if not account_id.is_empty() else ""}
+    coop.join_password=password if account_id.is_empty() else ""
     print("CLIENT joining ",target.address,":",target.port)
     await coop.choose("JOIN_SETUP",String(target.address))
     main._start_game()
@@ -314,7 +357,7 @@ func _join()->void:
         if not is_instance_valid(main):_fail(String(preload("res://scripts/coop_game.gd").ended_reason));return
         if Time.get_ticks_msec()>deadline or (not coop.active and not coop._choosing):_fail(String(main.menu_status.text));return
         await get_tree().process_frame
-    print("CLIENT joined world ",coop.world_id," in area ",coop._area()," with ",main.caught_pokemon.size()," pokemon")
+    print("CLIENT joined world ",coop.world_id," in area ",coop._area()," with ",main.caught_pokemon.size()," pokemon as ",coop.session.actor.left(12))
     if _travel:
         # Walk off the east edge into an area nobody has been to yet.
         main.edge_travel_busy=true

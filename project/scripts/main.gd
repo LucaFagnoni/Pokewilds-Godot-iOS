@@ -47,42 +47,42 @@ const FIELD_MOVE_REPRESENTATIVES := {
 }
 
 const PLAYER_TEXTURES := [
-    preload("res://assets/player_green.png"),
-    preload("res://assets/player_blue.png"),
-    preload("res://assets/player_red.png"),
-    preload("res://assets/player_gold.png"),
-    preload("res://assets/player_orange.png"),
-    preload("res://assets/player_indigo.png"),
-    preload("res://assets/player_cyan.png"),
-    preload("res://assets/player_lime.png"),
-    preload("res://assets/player_magenta.png"),
-    preload("res://assets/player_wine.png"),
-    preload("res://assets/player_yellow.png"),
-    preload("res://assets/player_brown.png"),
-    preload("res://assets/player_olive.png"),
-    preload("res://assets/player_teal.png"),
-    preload("res://assets/player_bright_red.png"),
-    preload("res://assets/player_purple.png"),
-    preload("res://assets/player_pink.png")
+    "res://assets/player_green.png",
+    "res://assets/player_blue.png",
+    "res://assets/player_red.png",
+    "res://assets/player_gold.png",
+    "res://assets/player_orange.png",
+    "res://assets/player_indigo.png",
+    "res://assets/player_cyan.png",
+    "res://assets/player_lime.png",
+    "res://assets/player_magenta.png",
+    "res://assets/player_wine.png",
+    "res://assets/player_yellow.png",
+    "res://assets/player_brown.png",
+    "res://assets/player_olive.png",
+    "res://assets/player_teal.png",
+    "res://assets/player_bright_red.png",
+    "res://assets/player_purple.png",
+    "res://assets/player_pink.png"
 ]
 const PLAYER_RUN_TEXTURES := [
-    preload("res://assets/player_run_green.png"),
-    preload("res://assets/player_run_blue.png"),
-    preload("res://assets/player_run_red.png"),
-    preload("res://assets/player_run_gold.png"),
-    preload("res://assets/player_run_orange.png"),
-    preload("res://assets/player_run_indigo.png"),
-    preload("res://assets/player_run_cyan.png"),
-    preload("res://assets/player_run_lime.png"),
-    preload("res://assets/player_run_magenta.png"),
-    preload("res://assets/player_run_wine.png"),
-    preload("res://assets/player_run_yellow.png"),
-    preload("res://assets/player_run_brown.png"),
-    preload("res://assets/player_run_olive.png"),
-    preload("res://assets/player_run_teal.png"),
-    preload("res://assets/player_run_bright_red.png"),
-    preload("res://assets/player_run_purple.png"),
-    preload("res://assets/player_run_pink.png")
+    "res://assets/player_run_green.png",
+    "res://assets/player_run_blue.png",
+    "res://assets/player_run_red.png",
+    "res://assets/player_run_gold.png",
+    "res://assets/player_run_orange.png",
+    "res://assets/player_run_indigo.png",
+    "res://assets/player_run_cyan.png",
+    "res://assets/player_run_lime.png",
+    "res://assets/player_run_magenta.png",
+    "res://assets/player_run_wine.png",
+    "res://assets/player_run_yellow.png",
+    "res://assets/player_run_brown.png",
+    "res://assets/player_run_olive.png",
+    "res://assets/player_run_teal.png",
+    "res://assets/player_run_bright_red.png",
+    "res://assets/player_run_purple.png",
+    "res://assets/player_run_pink.png"
 ]
 const PLAYER_COLOR_NAMES := [
     "GREEN", "BLUE", "RED", "GOLD", "ORANGE", "INDIGO", "CYAN",
@@ -153,304 +153,304 @@ const PLAYER_MODEL_NAMES := [
     "starbutterfarts"
 ]
 const PLAYER_MODEL_WALK_TEXTURES := [
-    preload("res://assets/source_exact/player/red/walking.png"),
-    preload("res://assets/source_exact/player/leaf-walking.png"),
-    preload("res://assets/source_exact/player/gold-walking.png"),
-    preload("res://assets/source_exact/player/kris-walking.png"),
-    preload("res://assets/source_exact/player/brendan-walking.png"),
-    preload("res://assets/source_exact/player/may-walking.png"),
-    preload("res://assets/source_exact/player/hilbert-walking.png"),
-    preload("res://assets/source_exact/player/hilda-walking.png"),
-    preload("res://assets/source_exact/player/rosa-walking.png"),
-    preload("res://assets/source_exact/player/calem-walking.png"),
-    preload("res://assets/source_exact/player/serena-walking.png"),
-    preload("res://assets/source_exact/player/chase-walking.png"),
-    preload("res://assets/source_exact/player/elaine-walking.png"),
-    preload("res://assets/source_exact/player/gloria-walking.png"),
-    preload("res://assets/source_exact/player/mark-walking.png"),
-    preload("res://assets/source_exact/player/mint-walking.png"),
-    preload("res://assets/source_exact/player/lunick-walking.png"),
-    preload("res://assets/source_exact/player/summer-walking.png"),
-    preload("res://assets/source_exact/player/kellyn-walking.png"),
-    preload("res://assets/source_exact/player/agatha-walking.png"),
-    preload("res://assets/source_exact/player/blaine1-walking.png"),
-    preload("res://assets/source_exact/player/blaine2-walking.png"),
-    preload("res://assets/source_exact/player/blue-walking.png"),
-    preload("res://assets/source_exact/player/brock-walking.png"),
-    preload("res://assets/source_exact/player/bruno-walking.png"),
-    preload("res://assets/source_exact/player/bugsy-walking.png"),
-    preload("res://assets/source_exact/player/chuck-walking.png"),
-    preload("res://assets/source_exact/player/clair-walking.png"),
-    preload("res://assets/source_exact/player/erika-walking.png"),
-    preload("res://assets/source_exact/player/falkner-walking.png"),
-    preload("res://assets/source_exact/player/giovanni1-walking.png"),
-    preload("res://assets/source_exact/player/giovanni2-walking.png"),
-    preload("res://assets/source_exact/player/janine-walking.png"),
-    preload("res://assets/source_exact/player/jasmine-walking.png"),
-    preload("res://assets/source_exact/player/karen1-walking.png"),
-    preload("res://assets/source_exact/player/karen2-walking.png"),
-    preload("res://assets/source_exact/player/koga-walking.png"),
-    preload("res://assets/source_exact/player/lance-walking.png"),
-    preload("res://assets/source_exact/player/lorelei-walking.png"),
-    preload("res://assets/source_exact/player/lt. surge-walking.png"),
-    preload("res://assets/source_exact/player/misty1-walking.png"),
-    preload("res://assets/source_exact/player/misty2-walking.png"),
-    preload("res://assets/source_exact/player/morty-walking.png"),
-    preload("res://assets/source_exact/player/pryce1-walking.png"),
-    preload("res://assets/source_exact/player/pryce2-walking.png"),
-    preload("res://assets/source_exact/player/sabrina1-walking.png"),
-    preload("res://assets/source_exact/player/sabrina2-walking.png"),
-    preload("res://assets/source_exact/player/whitney-walking.png"),
-    preload("res://assets/source_exact/player/will1-walking.png"),
-    preload("res://assets/source_exact/player/will2-walking.png"),
-    preload("res://assets/source_exact/player/ash-walking.png"),
-    preload("res://assets/source_exact/player/wes-walking.png"),
-    preload("res://assets/source_exact/player/rocket_M-walking.png"),
-    preload("res://assets/source_exact/player/rocket_F-walking.png"),
-    preload("res://assets/source_exact/player/gardenia-walking.png"),
-    preload("res://assets/source_exact/player/plushbanshee-walking.png"),
-    preload("res://assets/source_exact/player/sapphire-walking.png"),
-    preload("res://assets/source_exact/player/starbutterfarts-walking.png")
+    "res://assets/source_exact/player/red/walking.png",
+    "res://assets/source_exact/player/leaf-walking.png",
+    "res://assets/source_exact/player/gold-walking.png",
+    "res://assets/source_exact/player/kris-walking.png",
+    "res://assets/source_exact/player/brendan-walking.png",
+    "res://assets/source_exact/player/may-walking.png",
+    "res://assets/source_exact/player/hilbert-walking.png",
+    "res://assets/source_exact/player/hilda-walking.png",
+    "res://assets/source_exact/player/rosa-walking.png",
+    "res://assets/source_exact/player/calem-walking.png",
+    "res://assets/source_exact/player/serena-walking.png",
+    "res://assets/source_exact/player/chase-walking.png",
+    "res://assets/source_exact/player/elaine-walking.png",
+    "res://assets/source_exact/player/gloria-walking.png",
+    "res://assets/source_exact/player/mark-walking.png",
+    "res://assets/source_exact/player/mint-walking.png",
+    "res://assets/source_exact/player/lunick-walking.png",
+    "res://assets/source_exact/player/summer-walking.png",
+    "res://assets/source_exact/player/kellyn-walking.png",
+    "res://assets/source_exact/player/agatha-walking.png",
+    "res://assets/source_exact/player/blaine1-walking.png",
+    "res://assets/source_exact/player/blaine2-walking.png",
+    "res://assets/source_exact/player/blue-walking.png",
+    "res://assets/source_exact/player/brock-walking.png",
+    "res://assets/source_exact/player/bruno-walking.png",
+    "res://assets/source_exact/player/bugsy-walking.png",
+    "res://assets/source_exact/player/chuck-walking.png",
+    "res://assets/source_exact/player/clair-walking.png",
+    "res://assets/source_exact/player/erika-walking.png",
+    "res://assets/source_exact/player/falkner-walking.png",
+    "res://assets/source_exact/player/giovanni1-walking.png",
+    "res://assets/source_exact/player/giovanni2-walking.png",
+    "res://assets/source_exact/player/janine-walking.png",
+    "res://assets/source_exact/player/jasmine-walking.png",
+    "res://assets/source_exact/player/karen1-walking.png",
+    "res://assets/source_exact/player/karen2-walking.png",
+    "res://assets/source_exact/player/koga-walking.png",
+    "res://assets/source_exact/player/lance-walking.png",
+    "res://assets/source_exact/player/lorelei-walking.png",
+    "res://assets/source_exact/player/lt. surge-walking.png",
+    "res://assets/source_exact/player/misty1-walking.png",
+    "res://assets/source_exact/player/misty2-walking.png",
+    "res://assets/source_exact/player/morty-walking.png",
+    "res://assets/source_exact/player/pryce1-walking.png",
+    "res://assets/source_exact/player/pryce2-walking.png",
+    "res://assets/source_exact/player/sabrina1-walking.png",
+    "res://assets/source_exact/player/sabrina2-walking.png",
+    "res://assets/source_exact/player/whitney-walking.png",
+    "res://assets/source_exact/player/will1-walking.png",
+    "res://assets/source_exact/player/will2-walking.png",
+    "res://assets/source_exact/player/ash-walking.png",
+    "res://assets/source_exact/player/wes-walking.png",
+    "res://assets/source_exact/player/rocket_M-walking.png",
+    "res://assets/source_exact/player/rocket_F-walking.png",
+    "res://assets/source_exact/player/gardenia-walking.png",
+    "res://assets/source_exact/player/plushbanshee-walking.png",
+    "res://assets/source_exact/player/sapphire-walking.png",
+    "res://assets/source_exact/player/starbutterfarts-walking.png"
 ]
 const PLAYER_MODEL_RUN_TEXTURES := [
-    preload("res://assets/source_exact/player/red/running.png"),
-    preload("res://assets/source_exact/player/leaf-running.png"),
-    preload("res://assets/source_exact/player/gold-running.png"),
-    preload("res://assets/source_exact/player/kris-running.png"),
-    preload("res://assets/source_exact/player/brendan-running.png"),
-    preload("res://assets/source_exact/player/may-running.png"),
-    preload("res://assets/source_exact/player/hilbert-running.png"),
-    preload("res://assets/source_exact/player/hilda-running.png"),
-    preload("res://assets/source_exact/player/rosa-running.png"),
-    preload("res://assets/source_exact/player/calem-running.png"),
-    preload("res://assets/source_exact/player/serena-running.png"),
-    preload("res://assets/source_exact/player/chase-running.png"),
-    preload("res://assets/source_exact/player/elaine-running.png"),
-    preload("res://assets/source_exact/player/gloria-running.png"),
-    preload("res://assets/source_exact/player/mark-running.png"),
-    preload("res://assets/source_exact/player/mint-running.png"),
-    preload("res://assets/source_exact/player/lunick-running.png"),
-    preload("res://assets/source_exact/player/summer-running.png"),
-    preload("res://assets/source_exact/player/kellyn-running.png"),
-    preload("res://assets/source_exact/player/agatha-running.png"),
-    preload("res://assets/source_exact/player/blaine1-running.png"),
-    preload("res://assets/source_exact/player/blaine2-running.png"),
-    preload("res://assets/source_exact/player/blue-running.png"),
-    preload("res://assets/source_exact/player/brock-running.png"),
-    preload("res://assets/source_exact/player/bruno-running.png"),
-    preload("res://assets/source_exact/player/bugsy-running.png"),
-    preload("res://assets/source_exact/player/chuck-running.png"),
-    preload("res://assets/source_exact/player/clair-running.png"),
-    preload("res://assets/source_exact/player/erika-running.png"),
-    preload("res://assets/source_exact/player/falkner-running.png"),
-    preload("res://assets/source_exact/player/giovanni1-running.png"),
-    preload("res://assets/source_exact/player/giovanni2-running.png"),
-    preload("res://assets/source_exact/player/janine-running.png"),
-    preload("res://assets/source_exact/player/jasmine-running.png"),
-    preload("res://assets/source_exact/player/karen1-running.png"),
-    preload("res://assets/source_exact/player/karen2-running.png"),
-    preload("res://assets/source_exact/player/koga-running.png"),
-    preload("res://assets/source_exact/player/lance-running.png"),
-    preload("res://assets/source_exact/player/lorelei-running.png"),
-    preload("res://assets/source_exact/player/lt. surge-running.png"),
-    preload("res://assets/source_exact/player/misty1-running.png"),
-    preload("res://assets/source_exact/player/misty2-running.png"),
-    preload("res://assets/source_exact/player/morty-running.png"),
-    preload("res://assets/source_exact/player/pryce1-running.png"),
-    preload("res://assets/source_exact/player/pryce2-running.png"),
-    preload("res://assets/source_exact/player/sabrina1-running.png"),
-    preload("res://assets/source_exact/player/sabrina2-running.png"),
-    preload("res://assets/source_exact/player/whitney-running.png"),
-    preload("res://assets/source_exact/player/will1-running.png"),
-    preload("res://assets/source_exact/player/will2-running.png"),
-    preload("res://assets/source_exact/player/ash-running.png"),
-    preload("res://assets/source_exact/player/wes-running.png"),
-    preload("res://assets/source_exact/player/rocket_M-running.png"),
-    preload("res://assets/source_exact/player/rocket_F-running.png"),
-    preload("res://assets/source_exact/player/gardenia-running.png"),
-    preload("res://assets/source_exact/player/plushbanshee-running.png"),
-    preload("res://assets/source_exact/player/sapphire-running.png"),
-    preload("res://assets/source_exact/player/starbutterfarts-running.png")
+    "res://assets/source_exact/player/red/running.png",
+    "res://assets/source_exact/player/leaf-running.png",
+    "res://assets/source_exact/player/gold-running.png",
+    "res://assets/source_exact/player/kris-running.png",
+    "res://assets/source_exact/player/brendan-running.png",
+    "res://assets/source_exact/player/may-running.png",
+    "res://assets/source_exact/player/hilbert-running.png",
+    "res://assets/source_exact/player/hilda-running.png",
+    "res://assets/source_exact/player/rosa-running.png",
+    "res://assets/source_exact/player/calem-running.png",
+    "res://assets/source_exact/player/serena-running.png",
+    "res://assets/source_exact/player/chase-running.png",
+    "res://assets/source_exact/player/elaine-running.png",
+    "res://assets/source_exact/player/gloria-running.png",
+    "res://assets/source_exact/player/mark-running.png",
+    "res://assets/source_exact/player/mint-running.png",
+    "res://assets/source_exact/player/lunick-running.png",
+    "res://assets/source_exact/player/summer-running.png",
+    "res://assets/source_exact/player/kellyn-running.png",
+    "res://assets/source_exact/player/agatha-running.png",
+    "res://assets/source_exact/player/blaine1-running.png",
+    "res://assets/source_exact/player/blaine2-running.png",
+    "res://assets/source_exact/player/blue-running.png",
+    "res://assets/source_exact/player/brock-running.png",
+    "res://assets/source_exact/player/bruno-running.png",
+    "res://assets/source_exact/player/bugsy-running.png",
+    "res://assets/source_exact/player/chuck-running.png",
+    "res://assets/source_exact/player/clair-running.png",
+    "res://assets/source_exact/player/erika-running.png",
+    "res://assets/source_exact/player/falkner-running.png",
+    "res://assets/source_exact/player/giovanni1-running.png",
+    "res://assets/source_exact/player/giovanni2-running.png",
+    "res://assets/source_exact/player/janine-running.png",
+    "res://assets/source_exact/player/jasmine-running.png",
+    "res://assets/source_exact/player/karen1-running.png",
+    "res://assets/source_exact/player/karen2-running.png",
+    "res://assets/source_exact/player/koga-running.png",
+    "res://assets/source_exact/player/lance-running.png",
+    "res://assets/source_exact/player/lorelei-running.png",
+    "res://assets/source_exact/player/lt. surge-running.png",
+    "res://assets/source_exact/player/misty1-running.png",
+    "res://assets/source_exact/player/misty2-running.png",
+    "res://assets/source_exact/player/morty-running.png",
+    "res://assets/source_exact/player/pryce1-running.png",
+    "res://assets/source_exact/player/pryce2-running.png",
+    "res://assets/source_exact/player/sabrina1-running.png",
+    "res://assets/source_exact/player/sabrina2-running.png",
+    "res://assets/source_exact/player/whitney-running.png",
+    "res://assets/source_exact/player/will1-running.png",
+    "res://assets/source_exact/player/will2-running.png",
+    "res://assets/source_exact/player/ash-running.png",
+    "res://assets/source_exact/player/wes-running.png",
+    "res://assets/source_exact/player/rocket_M-running.png",
+    "res://assets/source_exact/player/rocket_F-running.png",
+    "res://assets/source_exact/player/gardenia-running.png",
+    "res://assets/source_exact/player/plushbanshee-running.png",
+    "res://assets/source_exact/player/sapphire-running.png",
+    "res://assets/source_exact/player/starbutterfarts-running.png"
 ]
 const PLAYER_MODEL_SLEEP_TEXTURES := [
-    preload("res://assets/source_exact/player/red/sleepingbag.png"),
-    preload("res://assets/source_exact/player/leaf-sleepingbag.png"),
-    preload("res://assets/source_exact/player/gold-sleepingbag.png"),
-    preload("res://assets/source_exact/player/kris-sleepingbag.png"),
-    preload("res://assets/source_exact/player/brendan-sleepingbag.png"),
-    preload("res://assets/source_exact/player/may-sleepingbag.png"),
-    preload("res://assets/source_exact/player/hilbert-sleepingbag.png"),
-    preload("res://assets/source_exact/player/hilda-sleepingbag.png"),
-    preload("res://assets/source_exact/player/rosa-sleepingbag.png"),
-    preload("res://assets/source_exact/player/calem-sleepingbag.png"),
-    preload("res://assets/source_exact/player/serena-sleepingbag.png"),
-    preload("res://assets/source_exact/player/chase-sleepingbag.png"),
-    preload("res://assets/source_exact/player/elaine-sleepingbag.png"),
-    preload("res://assets/source_exact/player/gloria-sleepingbag.png"),
-    preload("res://assets/source_exact/player/mark-sleepingbag.png"),
-    preload("res://assets/source_exact/player/mint-sleepingbag.png"),
-    preload("res://assets/source_exact/player/lunick-sleepingbag.png"),
-    preload("res://assets/source_exact/player/summer-sleepingbag.png"),
-    preload("res://assets/source_exact/player/kellyn-sleepingbag.png"),
-    preload("res://assets/source_exact/player/agatha-sleepingbag.png"),
-    preload("res://assets/source_exact/player/blaine1-sleepingbag.png"),
-    preload("res://assets/source_exact/player/blaine2-sleepingbag.png"),
-    preload("res://assets/source_exact/player/blue-sleepingbag.png"),
-    preload("res://assets/source_exact/player/brock-sleepingbag.png"),
-    preload("res://assets/source_exact/player/bruno-sleepingbag.png"),
-    preload("res://assets/source_exact/player/bugsy-sleepingbag.png"),
-    preload("res://assets/source_exact/player/chuck-sleepingbag.png"),
-    preload("res://assets/source_exact/player/clair-sleepingbag.png"),
-    preload("res://assets/source_exact/player/erika-sleepingbag.png"),
-    preload("res://assets/source_exact/player/falkner-sleepingbag.png"),
-    preload("res://assets/source_exact/player/giovanni1-sleepingbag.png"),
-    preload("res://assets/source_exact/player/giovanni2-sleepingbag.png"),
-    preload("res://assets/source_exact/player/janine-sleepingbag.png"),
-    preload("res://assets/source_exact/player/jasmine-sleepingbag.png"),
-    preload("res://assets/source_exact/player/karen1-sleepingbag.png"),
-    preload("res://assets/source_exact/player/karen2-sleepingbag.png"),
-    preload("res://assets/source_exact/player/koga-sleepingbag.png"),
-    preload("res://assets/source_exact/player/lance-sleepingbag.png"),
-    preload("res://assets/source_exact/player/lorelei-sleepingbag.png"),
-    preload("res://assets/source_exact/player/lt. surge-sleepingbag.png"),
-    preload("res://assets/source_exact/player/misty1-sleepingbag.png"),
-    preload("res://assets/source_exact/player/misty2-sleepingbag.png"),
-    preload("res://assets/source_exact/player/morty-sleepingbag.png"),
-    preload("res://assets/source_exact/player/pryce1-sleepingbag.png"),
-    preload("res://assets/source_exact/player/pryce2-sleepingbag.png"),
-    preload("res://assets/source_exact/player/sabrina1-sleepingbag.png"),
-    preload("res://assets/source_exact/player/sabrina2-sleepingbag.png"),
-    preload("res://assets/source_exact/player/whitney-sleepingbag.png"),
-    preload("res://assets/source_exact/player/will1-sleepingbag.png"),
-    preload("res://assets/source_exact/player/will2-sleepingbag.png"),
-    preload("res://assets/source_exact/player/ash-sleepingbag.png"),
-    preload("res://assets/source_exact/player/wes-sleepingbag.png"),
-    preload("res://assets/source_exact/player/rocket_M-sleepingbag.png"),
-    preload("res://assets/source_exact/player/rocket_F-sleepingbag.png"),
-    preload("res://assets/source_exact/player/gardenia-sleepingbag.png"),
-    preload("res://assets/source_exact/player/plushbanshee-sleepingbag.png"),
-    preload("res://assets/source_exact/player/sapphire-sleepingbag.png"),
-    preload("res://assets/source_exact/player/starbutterfarts-sleepingbag.png")
+    "res://assets/source_exact/player/red/sleepingbag.png",
+    "res://assets/source_exact/player/leaf-sleepingbag.png",
+    "res://assets/source_exact/player/gold-sleepingbag.png",
+    "res://assets/source_exact/player/kris-sleepingbag.png",
+    "res://assets/source_exact/player/brendan-sleepingbag.png",
+    "res://assets/source_exact/player/may-sleepingbag.png",
+    "res://assets/source_exact/player/hilbert-sleepingbag.png",
+    "res://assets/source_exact/player/hilda-sleepingbag.png",
+    "res://assets/source_exact/player/rosa-sleepingbag.png",
+    "res://assets/source_exact/player/calem-sleepingbag.png",
+    "res://assets/source_exact/player/serena-sleepingbag.png",
+    "res://assets/source_exact/player/chase-sleepingbag.png",
+    "res://assets/source_exact/player/elaine-sleepingbag.png",
+    "res://assets/source_exact/player/gloria-sleepingbag.png",
+    "res://assets/source_exact/player/mark-sleepingbag.png",
+    "res://assets/source_exact/player/mint-sleepingbag.png",
+    "res://assets/source_exact/player/lunick-sleepingbag.png",
+    "res://assets/source_exact/player/summer-sleepingbag.png",
+    "res://assets/source_exact/player/kellyn-sleepingbag.png",
+    "res://assets/source_exact/player/agatha-sleepingbag.png",
+    "res://assets/source_exact/player/blaine1-sleepingbag.png",
+    "res://assets/source_exact/player/blaine2-sleepingbag.png",
+    "res://assets/source_exact/player/blue-sleepingbag.png",
+    "res://assets/source_exact/player/brock-sleepingbag.png",
+    "res://assets/source_exact/player/bruno-sleepingbag.png",
+    "res://assets/source_exact/player/bugsy-sleepingbag.png",
+    "res://assets/source_exact/player/chuck-sleepingbag.png",
+    "res://assets/source_exact/player/clair-sleepingbag.png",
+    "res://assets/source_exact/player/erika-sleepingbag.png",
+    "res://assets/source_exact/player/falkner-sleepingbag.png",
+    "res://assets/source_exact/player/giovanni1-sleepingbag.png",
+    "res://assets/source_exact/player/giovanni2-sleepingbag.png",
+    "res://assets/source_exact/player/janine-sleepingbag.png",
+    "res://assets/source_exact/player/jasmine-sleepingbag.png",
+    "res://assets/source_exact/player/karen1-sleepingbag.png",
+    "res://assets/source_exact/player/karen2-sleepingbag.png",
+    "res://assets/source_exact/player/koga-sleepingbag.png",
+    "res://assets/source_exact/player/lance-sleepingbag.png",
+    "res://assets/source_exact/player/lorelei-sleepingbag.png",
+    "res://assets/source_exact/player/lt. surge-sleepingbag.png",
+    "res://assets/source_exact/player/misty1-sleepingbag.png",
+    "res://assets/source_exact/player/misty2-sleepingbag.png",
+    "res://assets/source_exact/player/morty-sleepingbag.png",
+    "res://assets/source_exact/player/pryce1-sleepingbag.png",
+    "res://assets/source_exact/player/pryce2-sleepingbag.png",
+    "res://assets/source_exact/player/sabrina1-sleepingbag.png",
+    "res://assets/source_exact/player/sabrina2-sleepingbag.png",
+    "res://assets/source_exact/player/whitney-sleepingbag.png",
+    "res://assets/source_exact/player/will1-sleepingbag.png",
+    "res://assets/source_exact/player/will2-sleepingbag.png",
+    "res://assets/source_exact/player/ash-sleepingbag.png",
+    "res://assets/source_exact/player/wes-sleepingbag.png",
+    "res://assets/source_exact/player/rocket_M-sleepingbag.png",
+    "res://assets/source_exact/player/rocket_F-sleepingbag.png",
+    "res://assets/source_exact/player/gardenia-sleepingbag.png",
+    "res://assets/source_exact/player/plushbanshee-sleepingbag.png",
+    "res://assets/source_exact/player/sapphire-sleepingbag.png",
+    "res://assets/source_exact/player/starbutterfarts-sleepingbag.png"
 ]
 const PLAYER_MODEL_SITTING_TEXTURES := [
-    preload("res://assets/source_exact/player/red/sitting.png"),
-    preload("res://assets/source_exact/player/leaf-sitting.png"),
-    preload("res://assets/source_exact/player/gold-sitting.png"),
-    preload("res://assets/source_exact/player/kris-sitting.png"),
-    preload("res://assets/source_exact/player/brendan-sitting.png"),
-    preload("res://assets/source_exact/player/may-sitting.png"),
-    preload("res://assets/source_exact/player/hilbert-sitting.png"),
-    preload("res://assets/source_exact/player/hilda-sitting.png"),
-    preload("res://assets/source_exact/player/rosa-sitting.png"),
-    preload("res://assets/source_exact/player/calem-sitting.png"),
-    preload("res://assets/source_exact/player/serena-sitting.png"),
-    preload("res://assets/source_exact/player/chase-sitting.png"),
-    preload("res://assets/source_exact/player/elaine-sitting.png"),
-    preload("res://assets/source_exact/player/gloria-sitting.png"),
-    preload("res://assets/source_exact/player/mark-sitting.png"),
-    preload("res://assets/source_exact/player/mint-sitting.png"),
-    preload("res://assets/source_exact/player/lunick-sitting.png"),
-    preload("res://assets/source_exact/player/summer-sitting.png"),
-    preload("res://assets/source_exact/player/kellyn-sitting.png"),
-    preload("res://assets/source_exact/player/agatha-sitting.png"),
-    preload("res://assets/source_exact/player/blaine1-sitting.png"),
-    preload("res://assets/source_exact/player/blaine2-sitting.png"),
-    preload("res://assets/source_exact/player/blue-sitting.png"),
-    preload("res://assets/source_exact/player/brock-sitting.png"),
-    preload("res://assets/source_exact/player/bruno-sitting.png"),
-    preload("res://assets/source_exact/player/bugsy-sitting.png"),
-    preload("res://assets/source_exact/player/chuck-sitting.png"),
-    preload("res://assets/source_exact/player/clair-sitting.png"),
-    preload("res://assets/source_exact/player/erika-sitting.png"),
-    preload("res://assets/source_exact/player/falkner-sitting.png"),
-    preload("res://assets/source_exact/player/giovanni1-sitting.png"),
-    preload("res://assets/source_exact/player/giovanni2-sitting.png"),
-    preload("res://assets/source_exact/player/janine-sitting.png"),
-    preload("res://assets/source_exact/player/jasmine-sitting.png"),
-    preload("res://assets/source_exact/player/karen1-sitting.png"),
-    preload("res://assets/source_exact/player/karen2-sitting.png"),
-    preload("res://assets/source_exact/player/koga-sitting.png"),
-    preload("res://assets/source_exact/player/lance-sitting.png"),
-    preload("res://assets/source_exact/player/lorelei-sitting.png"),
-    preload("res://assets/source_exact/player/lt. surge-sitting.png"),
-    preload("res://assets/source_exact/player/misty1-sitting.png"),
-    preload("res://assets/source_exact/player/misty2-sitting.png"),
-    preload("res://assets/source_exact/player/morty-sitting.png"),
-    preload("res://assets/source_exact/player/pryce1-sitting.png"),
-    preload("res://assets/source_exact/player/pryce2-sitting.png"),
-    preload("res://assets/source_exact/player/sabrina1-sitting.png"),
-    preload("res://assets/source_exact/player/sabrina2-sitting.png"),
-    preload("res://assets/source_exact/player/whitney-sitting.png"),
-    preload("res://assets/source_exact/player/will1-sitting.png"),
-    preload("res://assets/source_exact/player/will2-sitting.png"),
-    preload("res://assets/source_exact/player/ash-sitting.png"),
-    preload("res://assets/source_exact/player/wes-sitting.png"),
-    preload("res://assets/source_exact/player/rocket_M-sitting.png"),
-    preload("res://assets/source_exact/player/rocket_F-sitting.png"),
-    preload("res://assets/source_exact/player/gardenia-sitting.png"),
-    preload("res://assets/source_exact/player/plushbanshee-sitting.png"),
-    preload("res://assets/source_exact/player/sapphire-sitting.png"),
-    preload("res://assets/source_exact/player/starbutterfarts-sitting.png")
+    "res://assets/source_exact/player/red/sitting.png",
+    "res://assets/source_exact/player/leaf-sitting.png",
+    "res://assets/source_exact/player/gold-sitting.png",
+    "res://assets/source_exact/player/kris-sitting.png",
+    "res://assets/source_exact/player/brendan-sitting.png",
+    "res://assets/source_exact/player/may-sitting.png",
+    "res://assets/source_exact/player/hilbert-sitting.png",
+    "res://assets/source_exact/player/hilda-sitting.png",
+    "res://assets/source_exact/player/rosa-sitting.png",
+    "res://assets/source_exact/player/calem-sitting.png",
+    "res://assets/source_exact/player/serena-sitting.png",
+    "res://assets/source_exact/player/chase-sitting.png",
+    "res://assets/source_exact/player/elaine-sitting.png",
+    "res://assets/source_exact/player/gloria-sitting.png",
+    "res://assets/source_exact/player/mark-sitting.png",
+    "res://assets/source_exact/player/mint-sitting.png",
+    "res://assets/source_exact/player/lunick-sitting.png",
+    "res://assets/source_exact/player/summer-sitting.png",
+    "res://assets/source_exact/player/kellyn-sitting.png",
+    "res://assets/source_exact/player/agatha-sitting.png",
+    "res://assets/source_exact/player/blaine1-sitting.png",
+    "res://assets/source_exact/player/blaine2-sitting.png",
+    "res://assets/source_exact/player/blue-sitting.png",
+    "res://assets/source_exact/player/brock-sitting.png",
+    "res://assets/source_exact/player/bruno-sitting.png",
+    "res://assets/source_exact/player/bugsy-sitting.png",
+    "res://assets/source_exact/player/chuck-sitting.png",
+    "res://assets/source_exact/player/clair-sitting.png",
+    "res://assets/source_exact/player/erika-sitting.png",
+    "res://assets/source_exact/player/falkner-sitting.png",
+    "res://assets/source_exact/player/giovanni1-sitting.png",
+    "res://assets/source_exact/player/giovanni2-sitting.png",
+    "res://assets/source_exact/player/janine-sitting.png",
+    "res://assets/source_exact/player/jasmine-sitting.png",
+    "res://assets/source_exact/player/karen1-sitting.png",
+    "res://assets/source_exact/player/karen2-sitting.png",
+    "res://assets/source_exact/player/koga-sitting.png",
+    "res://assets/source_exact/player/lance-sitting.png",
+    "res://assets/source_exact/player/lorelei-sitting.png",
+    "res://assets/source_exact/player/lt. surge-sitting.png",
+    "res://assets/source_exact/player/misty1-sitting.png",
+    "res://assets/source_exact/player/misty2-sitting.png",
+    "res://assets/source_exact/player/morty-sitting.png",
+    "res://assets/source_exact/player/pryce1-sitting.png",
+    "res://assets/source_exact/player/pryce2-sitting.png",
+    "res://assets/source_exact/player/sabrina1-sitting.png",
+    "res://assets/source_exact/player/sabrina2-sitting.png",
+    "res://assets/source_exact/player/whitney-sitting.png",
+    "res://assets/source_exact/player/will1-sitting.png",
+    "res://assets/source_exact/player/will2-sitting.png",
+    "res://assets/source_exact/player/ash-sitting.png",
+    "res://assets/source_exact/player/wes-sitting.png",
+    "res://assets/source_exact/player/rocket_M-sitting.png",
+    "res://assets/source_exact/player/rocket_F-sitting.png",
+    "res://assets/source_exact/player/gardenia-sitting.png",
+    "res://assets/source_exact/player/plushbanshee-sitting.png",
+    "res://assets/source_exact/player/sapphire-sitting.png",
+    "res://assets/source_exact/player/starbutterfarts-sitting.png"
 ]
 const PLAYER_MODEL_BATTLE_BACK_TEXTURES := [
-    preload("res://assets/source_exact/player/red/back.png"),
-    preload("res://assets/source_exact/player/leaf-back.png"),
-    preload("res://assets/source_exact/player/gold-back.png"),
-    preload("res://assets/source_exact/player/kris-back.png"),
-    preload("res://assets/source_exact/player/brendan-back.png"),
-    preload("res://assets/source_exact/player/may-back.png"),
-    preload("res://assets/source_exact/player/hilbert-back.png"),
-    preload("res://assets/source_exact/player/hilda-back.png"),
-    preload("res://assets/source_exact/player/rosa-back.png"),
-    preload("res://assets/source_exact/player/calem-back.png"),
-    preload("res://assets/source_exact/player/serena-back.png"),
-    preload("res://assets/source_exact/player/chase-back.png"),
-    preload("res://assets/source_exact/player/elaine-back.png"),
-    preload("res://assets/source_exact/player/gloria-back.png"),
-    preload("res://assets/source_exact/player/mark-back.png"),
-    preload("res://assets/source_exact/player/mint-back.png"),
-    preload("res://assets/source_exact/player/lunick-back.png"),
-    preload("res://assets/source_exact/player/summer-back.png"),
-    preload("res://assets/source_exact/player/kellyn-back.png"),
-    preload("res://assets/source_exact/player/agatha-back.png"),
-    preload("res://assets/source_exact/player/blaine1-back.png"),
-    preload("res://assets/source_exact/player/blaine2-back.png"),
-    preload("res://assets/source_exact/player/blue-back.png"),
-    preload("res://assets/source_exact/player/brock-back.png"),
-    preload("res://assets/source_exact/player/bruno-back.png"),
-    preload("res://assets/source_exact/player/bugsy-back.png"),
-    preload("res://assets/source_exact/player/chuck-back.png"),
-    preload("res://assets/source_exact/player/clair-back.png"),
-    preload("res://assets/source_exact/player/erika-back.png"),
-    preload("res://assets/source_exact/player/falkner-back.png"),
-    preload("res://assets/source_exact/player/giovanni1-back.png"),
-    preload("res://assets/source_exact/player/giovanni2-back.png"),
-    preload("res://assets/source_exact/player/janine-back.png"),
-    preload("res://assets/source_exact/player/jasmine-back.png"),
-    preload("res://assets/source_exact/player/karen1-back.png"),
-    preload("res://assets/source_exact/player/karen2-back.png"),
-    preload("res://assets/source_exact/player/koga-back.png"),
-    preload("res://assets/source_exact/player/lance-back.png"),
-    preload("res://assets/source_exact/player/lorelei-back.png"),
-    preload("res://assets/source_exact/player/lt. surge-back.png"),
-    preload("res://assets/source_exact/player/misty1-back.png"),
-    preload("res://assets/source_exact/player/misty2-back.png"),
-    preload("res://assets/source_exact/player/morty-back.png"),
-    preload("res://assets/source_exact/player/pryce1-back.png"),
-    preload("res://assets/source_exact/player/pryce2-back.png"),
-    preload("res://assets/source_exact/player/sabrina1-back.png"),
-    preload("res://assets/source_exact/player/sabrina2-back.png"),
-    preload("res://assets/source_exact/player/whitney-back.png"),
-    preload("res://assets/source_exact/player/will1-back.png"),
-    preload("res://assets/source_exact/player/will2-back.png"),
-    preload("res://assets/source_exact/player/ash-back.png"),
-    preload("res://assets/source_exact/player/wes-back.png"),
-    preload("res://assets/source_exact/player/rocket_M-back.png"),
-    preload("res://assets/source_exact/player/rocket_F-back.png"),
-    preload("res://assets/source_exact/player/gardenia-back.png"),
-    preload("res://assets/source_exact/player/plushbanshee-back.png"),
-    preload("res://assets/source_exact/player/sapphire-back.png"),
-    preload("res://assets/source_exact/player/starbutterfarts-back.png")
+    "res://assets/source_exact/player/red/back.png",
+    "res://assets/source_exact/player/leaf-back.png",
+    "res://assets/source_exact/player/gold-back.png",
+    "res://assets/source_exact/player/kris-back.png",
+    "res://assets/source_exact/player/brendan-back.png",
+    "res://assets/source_exact/player/may-back.png",
+    "res://assets/source_exact/player/hilbert-back.png",
+    "res://assets/source_exact/player/hilda-back.png",
+    "res://assets/source_exact/player/rosa-back.png",
+    "res://assets/source_exact/player/calem-back.png",
+    "res://assets/source_exact/player/serena-back.png",
+    "res://assets/source_exact/player/chase-back.png",
+    "res://assets/source_exact/player/elaine-back.png",
+    "res://assets/source_exact/player/gloria-back.png",
+    "res://assets/source_exact/player/mark-back.png",
+    "res://assets/source_exact/player/mint-back.png",
+    "res://assets/source_exact/player/lunick-back.png",
+    "res://assets/source_exact/player/summer-back.png",
+    "res://assets/source_exact/player/kellyn-back.png",
+    "res://assets/source_exact/player/agatha-back.png",
+    "res://assets/source_exact/player/blaine1-back.png",
+    "res://assets/source_exact/player/blaine2-back.png",
+    "res://assets/source_exact/player/blue-back.png",
+    "res://assets/source_exact/player/brock-back.png",
+    "res://assets/source_exact/player/bruno-back.png",
+    "res://assets/source_exact/player/bugsy-back.png",
+    "res://assets/source_exact/player/chuck-back.png",
+    "res://assets/source_exact/player/clair-back.png",
+    "res://assets/source_exact/player/erika-back.png",
+    "res://assets/source_exact/player/falkner-back.png",
+    "res://assets/source_exact/player/giovanni1-back.png",
+    "res://assets/source_exact/player/giovanni2-back.png",
+    "res://assets/source_exact/player/janine-back.png",
+    "res://assets/source_exact/player/jasmine-back.png",
+    "res://assets/source_exact/player/karen1-back.png",
+    "res://assets/source_exact/player/karen2-back.png",
+    "res://assets/source_exact/player/koga-back.png",
+    "res://assets/source_exact/player/lance-back.png",
+    "res://assets/source_exact/player/lorelei-back.png",
+    "res://assets/source_exact/player/lt. surge-back.png",
+    "res://assets/source_exact/player/misty1-back.png",
+    "res://assets/source_exact/player/misty2-back.png",
+    "res://assets/source_exact/player/morty-back.png",
+    "res://assets/source_exact/player/pryce1-back.png",
+    "res://assets/source_exact/player/pryce2-back.png",
+    "res://assets/source_exact/player/sabrina1-back.png",
+    "res://assets/source_exact/player/sabrina2-back.png",
+    "res://assets/source_exact/player/whitney-back.png",
+    "res://assets/source_exact/player/will1-back.png",
+    "res://assets/source_exact/player/will2-back.png",
+    "res://assets/source_exact/player/ash-back.png",
+    "res://assets/source_exact/player/wes-back.png",
+    "res://assets/source_exact/player/rocket_M-back.png",
+    "res://assets/source_exact/player/rocket_F-back.png",
+    "res://assets/source_exact/player/gardenia-back.png",
+    "res://assets/source_exact/player/plushbanshee-back.png",
+    "res://assets/source_exact/player/sapphire-back.png",
+    "res://assets/source_exact/player/starbutterfarts-back.png"
 ]
 const PLAYER_MODEL_REPLACE_COLORS := [
     Color(0.972549, 0.219608, 0.031373, 1.0), # red mod
@@ -574,11 +574,9 @@ const PLAYER_MODEL_BATTLE_REPLACE_COLORS := [
 ]
 const GENERATION_TIP_SECONDS := 5.0
 const POKEMON_EGG_TEXTURE := preload("res://assets/pokemon_egg.png")
-const TRAINER_BATTLE_TEXTURE := preload("res://assets/trainer_battle_reference.png")
 const GHOST_BATTLE_SHEET := preload("res://assets/events/ghost_battle_front.png")
 const ITEM_BAG_POCKET_TEXTURE := preload("res://assets/item_bag_pockets.png")
-const SOURCE_BATTLE_INTRO_TEXTURE := preload(
-    "res://assets/source_exact/battle/battle_intro_anim1_sheet1.png")
+const SOURCE_BATTLE_INTRO_PATH := "res://assets/source_exact/battle/battle_intro_anim1_sheet1.png"
 const SOURCE_POKEBALL_TEXTURE := preload(
     "res://assets/source_exact/global/pokeball1_color.png")
 const SOURCE_CAPTURE_POOF: Texture2D = preload(
@@ -876,8 +874,18 @@ var source_mewtwo: Control
 var source_mewtwo_intro_seen := false
 var battle_animation_manifest: Dictionary = {}
 var battle_animation_cache: Dictionary = {}
+var battle_directive_cache: Dictionary = {}
 
-## Each move sheet decodes to ~21 MB: keep only the current move's (at most two).
+## Textures only some looks/screens need load on first use and stay cached.
+var lazy_textures: Dictionary = {}
+func lazy_texture(path: String) -> Texture2D:
+    var texture = lazy_textures.get(path)
+    if texture == null:
+        texture = load(path)
+        lazy_textures[path] = texture
+    return texture
+
+## A move's atlas page is 0.1-8 MB decoded: keep only the current move's (at most two).
 func _cache_battle_sheet(path: String, sheet: Texture2D) -> void:
     if battle_animation_cache.size() >= 2: battle_animation_cache.clear()
     battle_animation_cache[path] = sheet
@@ -1054,7 +1062,7 @@ const DEFAULT_MAP_ZOOM := 3.0 / SOURCE_MAP_TILE_PIXELS
 const MAP_MARKER_DISPLAY_SIZE := Vector2(13.0, 9.0)
 const MAP_SLEEPING_BAG_DISPLAY_SIZE := Vector2(12.0, 8.0)
 const MAP_SLEEPING_BAG_TEXTURE := preload("res://assets/source_ui/sleeping_bag1.png")
-const M3924_MINIMAP_BORDER := preload("res://assets/source_ui/minimap_dialogue_circle.png")
+const M3924_MINIMAP_BORDER := "res://assets/source_ui/minimap_dialogue_circle.png"
 const M3924_MINIMAP_SIZE := Vector2(64.0, 64.0)
 const M3924_MINIMAP_MAP_SIZE := Vector2i(64, 64)
 const M3924_MINIMAP_MAP_OFFSET := Vector2.ZERO
@@ -1729,7 +1737,7 @@ func _build_m3924_dig_minimap_ui() -> void:
     m3924_minimap_respawn.visible = false
 
 func _m3924_minimap_border_layers() -> Dictionary:
-    var inner: Image = M3924_MINIMAP_BORDER.get_image().duplicate()
+    var inner: Image = (load(M3924_MINIMAP_BORDER) as Texture2D).get_image().duplicate()
     _m3924_fit_minimap_ornaments(inner)
     var outer := Image.create(inner.get_width(), inner.get_height(),
         false, Image.FORMAT_RGBA8)
@@ -2225,7 +2233,7 @@ func _coop_marker_texture(visual: Dictionary) -> AtlasTexture:
     var model := clampi(int(visual.get("model", 0)), 0, PLAYER_MODEL_WALK_TEXTURES.size() - 1)
     var color := clampi(int(visual.get("color", 0)), 0, PLAYER_COLOR_VALUES.size() - 1)
     var marker_frame := AtlasTexture.new()
-    marker_frame.atlas = _recolor_texture(PLAYER_MODEL_WALK_TEXTURES[model],
+    marker_frame.atlas = _recolor_texture(lazy_texture(PLAYER_MODEL_WALK_TEXTURES[model]),
         PLAYER_MODEL_REPLACE_COLORS[model], PLAYER_COLOR_VALUES[color],
         "coop:%d:%d:%s:%s" % [model, color, false, "walk"])
     marker_frame.region = Rect2(0.0, 0.0, 16.0, 11.0)
@@ -3593,60 +3601,62 @@ func _source_texture_region(texture: Texture2D, region: Rect2) -> Texture2D:
     atlas.region = region
     return atlas
 
+## Per-frame data of an animation (decoded at load): 8 uint16 per frame, see tools/battle_atlas.py.
+func _battle_frame_table(source_key: String) -> PackedByteArray:
+    var animation: Dictionary = battle_animation_manifest.get("animations", {}).get(source_key, {})
+    return animation.get("frame_table", PackedByteArray())
+
+## One frame of a battle animation. A frame stores only the crop of its
+## non-transparent pixels (tools/battle_atlas.py); the AtlasTexture margin puts
+## the crop back at its offset, so it draws like the full frame. Null when the
+## frame is empty. `clip` limits the frame to a part of it.
 func _source_animation_frame_texture(source_key: String,
-        frame_index: int) -> Texture2D:
-    var animations: Dictionary = battle_animation_manifest.get("animations", {})
-    var animation: Dictionary = animations.get(source_key, {})
+        frame_index: int, clip: Rect2 = Rect2()) -> Texture2D:
+    var animation: Dictionary = battle_animation_manifest.get("animations", {}).get(source_key, {})
     if animation.is_empty():
         return null
-    var raw_sheets = animation.get("sheets", [])
-    var sheets: Array = raw_sheets if typeof(raw_sheets) == TYPE_ARRAY else []
-    if sheets.is_empty():
-        sheets.append({
-            "path": String(animation.get("path", "")),
-            "start_frame": 0,
-            "frames": int(animation.get("frames", 0))
-        })
-    var sheet_entry: Dictionary = {}
-    for raw_sheet in sheets:
-        if typeof(raw_sheet) != TYPE_DICTIONARY:
-            continue
-        var candidate := raw_sheet as Dictionary
-        var start := int(candidate.get("start_frame", 0))
-        var length := int(candidate.get("frames", 0))
-        if frame_index >= start and frame_index < start + length:
-            sheet_entry = candidate
-            break
-    if sheet_entry.is_empty():
+    var table := _battle_frame_table(source_key)
+    var at := frame_index * 16
+    if at < 0 or at + 16 > table.size():
         return null
-    var sheet_path := String(sheet_entry.get("path", ""))
-    var sheet := battle_animation_cache.get(sheet_path) as Texture2D
-    if sheet == null and ResourceLoader.exists(sheet_path):
-        sheet = load(sheet_path) as Texture2D
+    var shown := Rect2(table.decode_u16(at + 10), table.decode_u16(at + 12),
+        table.decode_u16(at + 6), table.decode_u16(at + 8))
+    var view := clip if clip.has_area() else Rect2(0.0, 0.0,
+        float(animation.get("frame_width", 160)), float(animation.get("frame_height", 144)))
+    var part := shown.intersection(view)
+    if not part.has_area():
+        return null
+    var page_path := String((animation.get("pages", []) as Array)[table.decode_u16(at)])
+    var sheet := battle_animation_cache.get(page_path) as Texture2D
+    if sheet == null and ResourceLoader.exists(page_path):
+        sheet = load(page_path) as Texture2D
         if sheet != null:
-            _cache_battle_sheet(sheet_path, sheet)
+            _cache_battle_sheet(page_path, sheet)
     if sheet == null:
         return null
-    var columns := maxi(1, int(animation.get("columns", 15)))
-    var frame_width := int(animation.get("frame_width", 160))
-    var frame_height := int(animation.get("frame_height", 144))
-    var local_frame := frame_index - int(sheet_entry.get("start_frame", 0))
-    return _source_texture_region(sheet, Rect2(
-        float((local_frame % columns) * frame_width),
-        float(int(local_frame / columns) * frame_height),
-        float(frame_width), float(frame_height)))
+    var atlas := AtlasTexture.new()
+    atlas.atlas = sheet
+    atlas.region = Rect2(Vector2(table.decode_u16(at + 2), table.decode_u16(at + 4))
+        + part.position - shown.position, part.size)
+    atlas.margin = Rect2(part.position - view.position, view.size - part.size)
+    return atlas
 
 func _source_animation_directive(source_key: String,
         frame_index: int) -> Dictionary:
-    var animations: Dictionary = battle_animation_manifest.get("animations", {})
-    var animation: Dictionary = animations.get(source_key, {})
-    return _battle_directive(animation, frame_index + 1)
+    return _battle_directive(source_key, frame_index + 1)
 
 ## Frames store an index into the manifest's shared directive table.
-func _battle_directive(animation: Dictionary, frame_number: int) -> Dictionary:
-    var index = (animation.get("directives", {}) as Dictionary).get(str(frame_number))
-    if index == null: return {}
-    return battle_animation_manifest.get("directive_table", [])[int(index)]
+func _battle_directive(source_key: String, frame_number: int) -> Dictionary:
+    var table := _battle_frame_table(source_key)
+    var at := (frame_number - 1) * 16 + 14
+    if frame_number < 1 or at + 2 > table.size(): return {}
+    var index := table.decode_u16(at)
+    if index == 0xFFFF: return {}
+    var directive = battle_directive_cache.get(index)
+    if directive == null:
+        directive = JSON.parse_string(battle_animation_manifest.get("directive_table", [])[index])
+        battle_directive_cache[index] = directive
+    return directive
 
 func _show_level_up_stats(pokemon: Dictionary) -> void:
     _reset_progression_overlay()
@@ -4230,9 +4240,8 @@ func _run_evolution_sequence(pokemon: Dictionary, new_species: String,
     for frame_index in range(frame_count):
         if frame_index >= SOURCE_EVOLUTION_CANCEL_END_FRAME:
             progression_mode = "EVOLUTION_FINISHING"
-        progression_animation.texture = _source_texture_region(
-            _source_animation_frame_texture("evolve_gsc", frame_index),
-            Rect2(0, 0, 160, 96))
+        progression_animation.texture = _source_animation_frame_texture(
+            "evolve_gsc", frame_index, Rect2(0, 0, 160, 96))
         var directive := _source_animation_directive("evolve_gsc", frame_index)
         _set_evolution_sprite_halves(
             old_texture, new_texture, directive, frame_index >= 33)
@@ -5534,9 +5543,9 @@ func _apply_player_appearance() -> void:
 
 func _player_appearance_texture(running: bool) -> Texture2D:
     var base: Texture2D = (
-        PLAYER_MODEL_RUN_TEXTURES[player_model_index]
+        lazy_texture(PLAYER_MODEL_RUN_TEXTURES[player_model_index])
         if running
-        else PLAYER_MODEL_WALK_TEXTURES[player_model_index]
+        else lazy_texture(PLAYER_MODEL_WALK_TEXTURES[player_model_index])
     )
     return _recolor_texture(
         base,
@@ -5548,7 +5557,7 @@ func _player_appearance_texture(running: bool) -> Texture2D:
 
 func _player_sitting_texture(frame: int = 0) -> Texture2D:
     var texture := _recolor_texture(
-        PLAYER_MODEL_SITTING_TEXTURES[player_model_index],
+        lazy_texture(PLAYER_MODEL_SITTING_TEXTURES[player_model_index]),
         PLAYER_MODEL_REPLACE_COLORS[player_model_index],
         PLAYER_COLOR_VALUES[player_color_index],
         "sitting:%d:%d" % [player_model_index, player_color_index])
@@ -5557,7 +5566,7 @@ func _player_sitting_texture(frame: int = 0) -> Texture2D:
 
 func _player_sleeping_texture() -> Texture2D:
     var recolored := _recolor_texture(
-        PLAYER_MODEL_SLEEP_TEXTURES[player_model_index],
+        lazy_texture(PLAYER_MODEL_SLEEP_TEXTURES[player_model_index]),
         PLAYER_MODEL_REPLACE_COLORS[player_model_index],
         PLAYER_COLOR_VALUES[player_color_index],
         "sleep:%d:%d" % [player_model_index, player_color_index]
@@ -6151,11 +6160,12 @@ func _play_battle_transition(source_frames: int = 28) -> void:
     overlay.size = get_viewport().get_visible_rect().size
     overlay.z_index = 1000
     $UI.add_child(overlay)
+    var intro_sheet: Texture2D = load(SOURCE_BATTLE_INTRO_PATH)
     var transition_deadline := preload("res://scripts/game_clock.gd").ticks_usec()
     for tick in range(source_frames):
         var frame_index := mini(27, tick)
         var frame := AtlasTexture.new()
-        frame.atlas = SOURCE_BATTLE_INTRO_TEXTURE
+        frame.atlas = intro_sheet
         frame.region = Rect2(float(frame_index * 160), 0.0, 160.0, 144.0)
         overlay.texture = frame
         transition_deadline += 16667
@@ -6215,7 +6225,7 @@ func _trainer_battle_texture() -> Texture2D:
         player_color_index, 0, PLAYER_COLOR_VALUES.size() - 1
     )
     return _recolor_texture(
-        PLAYER_MODEL_BATTLE_BACK_TEXTURES[player_model_index],
+        lazy_texture(PLAYER_MODEL_BATTLE_BACK_TEXTURES[player_model_index]),
         PLAYER_MODEL_BATTLE_REPLACE_COLORS[player_model_index],
         PLAYER_COLOR_VALUES[player_color_index],
         "battle_back:%d:%d" % [player_model_index, player_color_index]
@@ -8547,6 +8557,9 @@ func _load_battle_animation_manifest() -> void:
     var parsed = JSON.parse_string(file.get_as_text())
     if typeof(parsed) == TYPE_DICTIONARY:
         battle_animation_manifest = parsed
+        # The base64 text costs 4 bytes per character as a String, the bytes 1.
+        for animation in (parsed.get("animations", {}) as Dictionary).values():
+            animation["frame_table"] = Marshalls.base64_to_raw(String(animation.get("frame_table", "")))
 
 func _play_status_on_pokemon(animation: String, pokemon: Dictionary, player_side: bool) -> void:
     # Source LoadAndPlayAnimation selects enemy_gsc for the player's Pokemon:
@@ -8670,22 +8683,9 @@ func _play_source_battle_feedback(move_name: String, player_attacks: bool,
     # lunge/pulse. Only the source animation library is rendered here.
     if animation.is_empty():
         return
-    var raw_sheets = animation.get("sheets", [])
-    var sheets: Array = raw_sheets if typeof(raw_sheets) == TYPE_ARRAY else []
-    if sheets.is_empty():
-        var compatibility_path := String(animation.get("path", ""))
-        if not compatibility_path.is_empty():
-            sheets.append({
-                "path": compatibility_path,
-                "start_frame": 0,
-                "frames": int(animation.get("frames", 0))
-            })
     var frames := int(animation.get("frames", 0))
     var visual_end_frame := int(animation.get("visual_end_frame", frames - 1))
     frames = mini(frames, visual_end_frame + 1)
-    var columns := maxi(1, int(animation.get("columns", 4)))
-    var frame_width := int(animation.get("frame_width", 160))
-    var frame_height := int(animation.get("frame_height", 144))
     var frame_time := float(animation.get("frame_time", 1.0 / 60.0))
     var player_origin := player_battle_sprite.position
     var enemy_origin := enemy_sprite.position
@@ -8699,47 +8699,16 @@ func _play_source_battle_feedback(move_name: String, player_attacks: bool,
     var player_hud_visible := player_hud.visible
     var enemy_hud_visible := enemy_hud.visible
     var source_hud_visible := source_single_hud.visible
-    var active_sheet_path := ""
-    var active_sheet: Texture2D = null
     var effects = preload("res://scripts/source_battle_effects.gd").new()
     effects.begin(self, source_key)
     source_effect_playing = true
     var animation_deadline := preload("res://scripts/game_clock.gd").ticks_usec()
     for frame_index in range(frames):
-        var sheet_entry: Dictionary = {}
-        for raw_sheet in sheets:
-            if typeof(raw_sheet) != TYPE_DICTIONARY:
-                continue
-            var candidate := raw_sheet as Dictionary
-            var start := int(candidate.get("start_frame", 0))
-            var length := int(candidate.get("frames", 0))
-            if frame_index >= start and frame_index < start + length:
-                sheet_entry = candidate
-                break
-        if sheet_entry.is_empty():
-            continue
-        var sheet_path := String(sheet_entry.get("path", ""))
-        if sheet_path != active_sheet_path:
-            active_sheet_path = sheet_path
-            active_sheet = battle_animation_cache.get(sheet_path) as Texture2D
-            if active_sheet == null and ResourceLoader.exists(sheet_path):
-                active_sheet = load(sheet_path) as Texture2D
-                if active_sheet != null:
-                    _cache_battle_sheet(sheet_path, active_sheet)
-        if active_sheet == null:
-            continue
-        var local_frame := frame_index - int(sheet_entry.get("start_frame", 0))
-        var atlas := AtlasTexture.new()
-        atlas.atlas = active_sheet
-        atlas.region = Rect2(
-            float((local_frame % columns) * frame_width),
-            float(int(local_frame / columns) * frame_height),
-            float(frame_width), float(frame_height))
-        battle_move_animation.texture = atlas
+        battle_move_animation.texture = _source_animation_frame_texture(source_key, frame_index)
+        var directive := _battle_directive(source_key, frame_index + 1)
         _apply_source_battle_frame(
-            _battle_directive(animation, frame_index + 1),
-            source_key, player_origin, enemy_origin, animation_origin)
-        await effects.apply(_battle_directive(animation, frame_index + 1), frame_index + 1)
+            directive, source_key, player_origin, enemy_origin, animation_origin)
+        await effects.apply(directive, frame_index + 1)
         animation_deadline += roundi(frame_time * 1000000.0)
         while preload("res://scripts/game_clock.gd").ticks_usec() < animation_deadline:
             await get_tree().process_frame

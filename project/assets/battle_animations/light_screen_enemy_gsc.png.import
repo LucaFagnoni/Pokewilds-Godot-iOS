@@ -2,7 +2,7 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cx6y7y0jmr8jx"
+uid="uid://bxufr0fipwhxj"
 path="res://.godot/imported/light_screen_enemy_gsc.png-6f1863307f7fd56a3d8d0fd2ab68cd27.ctex"
 metadata={
 "vram_texture": false
@@ -31,7 +31,7 @@ process/channel_remap/red=0
 process/channel_remap/green=1
 process/channel_remap/blue=2
 process/channel_remap/alpha=3
-process/fix_alpha_border=true
+process/fix_alpha_border=false
 process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false

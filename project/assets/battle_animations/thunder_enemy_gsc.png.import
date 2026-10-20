@@ -2,7 +2,7 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://6r50msy7yudt"
+uid="uid://c0hbuv27rsyck"
 path="res://.godot/imported/thunder_enemy_gsc.png-c7bcb7ab717fb793c3987f9a1dc5d520.ctex"
 metadata={
 "vram_texture": false
@@ -31,7 +31,7 @@ process/channel_remap/red=0
 process/channel_remap/green=1
 process/channel_remap/blue=2
 process/channel_remap/alpha=3
-process/fix_alpha_border=true
+process/fix_alpha_border=false
 process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false

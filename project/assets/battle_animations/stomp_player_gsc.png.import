@@ -2,7 +2,7 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://clv7g71pvqrg"
+uid="uid://c8ciqib5yfr16"
 path="res://.godot/imported/stomp_player_gsc.png-ef5594a414953ac43269757f81e7d53d.ctex"
 metadata={
 "vram_texture": false
@@ -31,7 +31,7 @@ process/channel_remap/red=0
 process/channel_remap/green=1
 process/channel_remap/blue=2
 process/channel_remap/alpha=3
-process/fix_alpha_border=true
+process/fix_alpha_border=false
 process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false

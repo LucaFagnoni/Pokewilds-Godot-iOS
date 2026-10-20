@@ -83,10 +83,10 @@ func render_at(time_ms:int)->void:
         if not sprite.visible:continue
         if key=="player":
             var running=bool(data.get("running",false))
-            var base:Texture2D=(_main.PLAYER_MODEL_RUN_TEXTURES if running else _main.PLAYER_MODEL_WALK_TEXTURES)[model]
+            var base:Texture2D=_main.lazy_texture((_main.PLAYER_MODEL_RUN_TEXTURES if running else _main.PLAYER_MODEL_WALK_TEXTURES)[model])
             var pose=String(data.get("pose","walk"))
-            if pose=="sit":base=_main.PLAYER_MODEL_SITTING_TEXTURES[model]
-            elif pose=="sleep":base=_main.PLAYER_MODEL_SLEEP_TEXTURES[model]
+            if pose=="sit":base=_main.lazy_texture(_main.PLAYER_MODEL_SITTING_TEXTURES[model])
+            elif pose=="sleep":base=_main.lazy_texture(_main.PLAYER_MODEL_SLEEP_TEXTURES[model])
             var pose_key="coop:%d:%d:%s:%s"%[model,color,running,pose]
             sprite.texture=_main._recolor_texture(base,_main.PLAYER_MODEL_REPLACE_COLORS[model],_main.PLAYER_COLOR_VALUES[color],pose_key)
             if pose=="sit":

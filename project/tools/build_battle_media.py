@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
-"""Pack every upstream PokeWilds GSC attack frame into Godot-safe sheets."""
+"""Pack every upstream PokeWilds GSC attack frame into cropped atlas pages
+(see battle_atlas.py for the manifest format)."""
 
 from __future__ import annotations
 
 import argparse
 import json
-import math
 import re
 import shutil
 from pathlib import Path
 
 from PIL import Image
 
+import battle_atlas
 
-# Keep generated textures comfortably below common Android 4096px limits.
-FRAMES_PER_SHEET = 240
-COLUMNS = 15
+
 FRAME_TIME = 1.0 / 60.0
 
 
@@ -69,8 +68,9 @@ def share_directives(manifest: dict) -> None:
                 index[key] = len(table)
                 table.append(directive)
             directives[frame] = index[key]
-    manifest["directive_table"] = table
-    manifest["version"] = 3
+        battle_atlas.embed_directives(animation)
+    manifest["directive_table"] = battle_atlas.stringify_directive_table(table)
+    manifest["version"] = 4
 
 
 def build(source_root: Path, project_root: Path) -> dict[str, object]:
@@ -84,7 +84,7 @@ def build(source_root: Path, project_root: Path) -> dict[str, object]:
         generated.unlink()
 
     manifest: dict[str, object] = {
-        "version": 3,
+        "version": 4,
         "source": "PokeWilds 0.8.11 GSC attack exports",
         "frame_time": FRAME_TIME,
         "animations": {},
@@ -100,46 +100,24 @@ def build(source_root: Path, project_root: Path) -> dict[str, object]:
             with Image.open(frames[0]) as opened:
                 first = opened.convert("RGBA")
             frame_width, frame_height = first.size
-            sheets: list[dict[str, object]] = []
-            for sheet_index, start in enumerate(range(0, len(frames), FRAMES_PER_SHEET)):
-                chosen = frames[start:start + FRAMES_PER_SHEET]
-                rows = math.ceil(len(chosen) / COLUMNS)
-                sheet = Image.new(
-                    "RGBA",
-                    (frame_width * COLUMNS, frame_height * rows),
-                    (0, 0, 0, 0),
-                )
-                for index, frame_path in enumerate(chosen):
-                    with Image.open(frame_path) as opened:
-                        frame = opened.convert("RGBA")
-                    if frame.size != (frame_width, frame_height):
-                        frame = frame.resize(
-                            (frame_width, frame_height), Image.Resampling.NEAREST
-                        )
-                    sheet.alpha_composite(
-                        frame,
-                        ((index % COLUMNS) * frame_width,
-                         (index // COLUMNS) * frame_height),
+            packed = []
+            for frame_path in frames:
+                with Image.open(frame_path) as opened:
+                    frame = opened.convert("RGBA")
+                if frame.size != (frame_width, frame_height):
+                    frame = frame.resize(
+                        (frame_width, frame_height), Image.Resampling.NEAREST
                     )
-                suffix = "" if len(frames) <= FRAMES_PER_SHEET else f"_{sheet_index + 1:02d}"
-                output_path = animation_root / f"{key}{suffix}.png"
-                sheet.save(output_path, compress_level=6)
-                sheets.append({
-                    "path": f"res://assets/battle_animations/{output_path.name}",
-                    "start_frame": start,
-                    "frames": len(chosen),
-                })
+                packed.append(frame)
             animations[key] = {
-                "path": str(sheets[0]["path"]),
-                "sheets": sheets,
                 "frames": len(frames),
-                "columns": COLUMNS,
                 "frame_width": frame_width,
                 "frame_height": frame_height,
                 "frame_time": FRAME_TIME,
                 "source_frame_count": len(frames),
                 "directives": parse_metadata(attack_dir / "metadata.out"),
             }
+            battle_atlas.write(animations[key], key, packed, animation_root)
 
         sound_path = attack_dir / "sound.ogg"
         if sound_path.is_file():

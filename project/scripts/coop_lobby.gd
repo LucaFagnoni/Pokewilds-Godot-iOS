@@ -188,4 +188,5 @@ static func _clean(address:String,source:Dictionary,now:int)->Dictionary:
         "salt":String(source.get("salt","")).left(64),
         "protocol":String(source.get("protocol","")).left(48),
         "mods":String(source.get("mods","")).left(64),
-        "port":clampi(int(source.get("port",Network.GAME_PORT)),1,65535)}
+        "port":clampi(int(source.get("port",Network.GAME_PORT)),1,65535),
+        "accounts":bool(source.get("accounts",false))}

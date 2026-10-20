@@ -2,7 +2,7 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://0fidvuw4c8je"
+uid="uid://bbcefekumuejt"
 path="res://.godot/imported/twineedle_enemy_gsc.png-a3e1cb1301f3316d2b5fb9ede26fad8a.ctex"
 metadata={
 "vram_texture": false
@@ -31,7 +31,7 @@ process/channel_remap/red=0
 process/channel_remap/green=1
 process/channel_remap/blue=2
 process/channel_remap/alpha=3
-process/fix_alpha_border=true
+process/fix_alpha_border=false
 process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false

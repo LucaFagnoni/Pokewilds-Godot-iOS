@@ -2,7 +2,7 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://d1shxfcwlde3m"
+uid="uid://cf3xpplov0464"
 path="res://.godot/imported/ice_punch_player_gsc.png-53acb28560ff6588e0b4688d09cbe202.ctex"
 metadata={
 "vram_texture": false
@@ -31,7 +31,7 @@ process/channel_remap/red=0
 process/channel_remap/green=1
 process/channel_remap/blue=2
 process/channel_remap/alpha=3
-process/fix_alpha_border=true
+process/fix_alpha_border=false
 process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false
