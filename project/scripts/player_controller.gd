@@ -1,4 +1,4 @@
-extends CharacterBody2D
+extends Node2D
 class_name PlayerController
 
 @onready var input_router: InputRouter = get_node("/root/InputRouterSingleton")
@@ -29,6 +29,18 @@ var field_visual_offset := Vector2.ZERO
 var field_rider_visual_lock := false
 const LEDGE_JUMP_DURATION := 0.30
 const LEDGE_JUMP_ARC_HEIGHT := 5.0
+## The player's solid box: 10x10, centred 3 px below the position (the feet).
+const BODY_OFFSET := Vector2(0, 3)
+const BODY_HALF := Vector2(5, 5)
+
+var velocity := Vector2.ZERO
+## Layer 1 is the ground and every object, layer 2 the water next to land
+## (off while surfing). 0 while flying: nothing is solid.
+var collision_mask := 1
+## Normals of what the last move ran into, as get_slide_collision gave them.
+var slide_normals: Array[Vector2] = []
+var motion := PlayerMotion.new()
+var _ground: Node
 
 func _ready() -> void:
     if frame_locked:
@@ -309,3 +321,62 @@ func set_field_rider_visual_lock(enabled: bool) -> void:
 ## Movement runs once per drawn frame, before the world's own frame step.
 func _process(delta: float) -> void:
     _move(delta)
+
+# --- Collision ---------------------------------------------------------------
+# What a CharacterBody2D did for the player, without the physics engine: the
+# solids round the player come from the ground's tile store and the
+# CollisionBody objects, and PlayerMotion moves the box through them.
+
+func set_collision_mask_value(layer_number: int, value: bool) -> void:
+    var bit := 1 << (layer_number - 1)
+    collision_mask = (collision_mask | bit) if value else (collision_mask & ~bit)
+
+func get_collision_mask_value(layer_number: int) -> bool:
+    return collision_mask & (1 << (layer_number - 1)) != 0
+
+func is_on_floor() -> bool:
+    return motion.on_floor
+
+func is_on_wall() -> bool:
+    return motion.on_wall
+
+func is_on_ceiling() -> bool:
+    return motion.on_ceiling
+
+## Every solid that a box moving from `from` by `step` can touch.
+func _solids(from: Vector2, step: Vector2) -> Array:
+    var found := []
+    if collision_mask == 0: return found
+    var box := Rect2(from + BODY_OFFSET - BODY_HALF, BODY_HALF * 2.0)
+    # The margin, the 1 px floor snap and a recovery's push fit in 4 px.
+    var area := box.merge(Rect2(box.position + step, box.size)).grow(4.0)
+    if not is_instance_valid(_ground):
+        _ground = get_parent().get_node_or_null("ExactCollisionStream")
+    if _ground != null: _ground.collect(area, collision_mask, found)
+    for body in CollisionBody.live:
+        body.collect(area, collision_mask, found)
+    return found
+
+## PhysicsBody2D.test_move: would moving the box from `from` by `step` run
+## into something?
+func test_move(from: Transform2D, step: Vector2) -> bool:
+    return motion.test_move(from.origin, step, _solids(from.origin, step))
+
+func move_and_slide() -> bool:
+    slide_normals.clear()
+    var delta := get_process_delta_time()
+    var step := velocity * delta
+    if collision_mask == 0:
+        # Nothing to run into: CharacterBody2D's move without a single hit.
+        motion.on_floor = false
+        motion.on_wall = false
+        motion.on_ceiling = false
+        motion.motion_results.clear()
+        position += step
+        return false
+    var moved: Array = motion.move_and_slide(position, velocity, delta, _solids(position, step))
+    position = moved[0]
+    velocity = moved[1]
+    for result in motion.motion_results:
+        slide_normals.append(result.normal)
+    return not slide_normals.is_empty()

@@ -24,7 +24,7 @@ sdl = "no"
 # Only what scripts and imported resources actually need at runtime.
 modules_enabled_by_default = "no"
 module_gdscript_enabled = "yes"
-module_godot_physics_2d_enabled = "yes"  # CharacterBody2D, CollisionShape2D
+module_godot_physics_2d_enabled = "no"   # player_motion.gd moves the player; dummy server
 module_freetype_enabled = "yes"          # TTF fonts
 module_text_server_fb_enabled = "yes"    # Latin text only: autowrap/trim
 module_webp_enabled = "yes"              # every imported texture is lossless WebP

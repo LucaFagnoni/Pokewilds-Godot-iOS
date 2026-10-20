@@ -396,7 +396,7 @@ const CAMERA_ZOOM_MAX := 1.60
 const CAMERA_ZOOM_STEP := 0.10
 var camera_zoom_level := 1.0
 
-@onready var player: CharacterBody2D = $Player
+@onready var player: PlayerController = $Player
 
 func _ready() -> void:
     # Generation is intentionally started by main.gd so the normal generation
@@ -683,10 +683,8 @@ func generate_world(
     egg_layer.z_index = 0
     add_child(egg_layer)
 
-    var collision_body := StaticBody2D.new()
+    var collision_body := CollisionBody.new()
     collision_body.name = "WorldCollision"
-    collision_body.collision_layer = 1
-    collision_body.collision_mask = 1
     add_child(collision_body)
 
     if exact_world_mode:
@@ -851,7 +849,7 @@ func _generate_exact_live_world(
         size_index: int,
         ground_layer: Node2D,
         decor_layer: Node2D,
-        collision_body: StaticBody2D,
+        collision_body: CollisionBody,
         prefer_saved_cache: bool
     ) -> void:
     var exact_result := _accepted_exact_result
@@ -917,8 +915,7 @@ func _generate_exact_live_world(
     var collision_stream := SourceChunkCollisionStreamer.new()
     collision_stream.name = "ExactCollisionStream"
     add_child(collision_stream)
-    collision_stream.configure(exact_world.tiles, player, TILE, true, true)
-    await collision_stream.build_initial_async()
+    collision_stream.configure(exact_world.tiles, player, TILE, true)
     SourceTile.resident_changed_cells.clear()
     await _build_source_interiors(collision_body)
     _register_exact_exterior_interactables()
@@ -1031,7 +1028,7 @@ func _spawn_location_npcs() -> void:
     if not exact_world_mode or exact_world == null:
         return
     var layer := get_node_or_null("LandmarkLayer") as Node2D
-    var collision_body := get_node_or_null("WorldCollision") as StaticBody2D
+    var collision_body := get_node_or_null("WorldCollision") as CollisionBody
     if layer == null or collision_body == null:
         return
     var wanted := ["FOREST", "SAVANNA", "MOUNTAIN", "DESERT", "SNOW", "WOODED_LAKE"]
@@ -1317,7 +1314,7 @@ func _add_ground_tile(
 
 func _decorate_source_cell(
         parent: Node2D,
-        collision_body: StaticBody2D,
+        collision_body: CollisionBody,
         cell: Vector2i
     ) -> void:
     var source_tile: Dictionary = source_tiles.get(cell, {})
@@ -1371,7 +1368,7 @@ func _ground_texture_for_biome(biome: String) -> Texture2D:
 
 func _decorate_biome_cell(
         parent: Node2D,
-        collision_body: StaticBody2D,
+        collision_body: CollisionBody,
         cell: Vector2i
     ) -> void:
     var biome := biome_at(cell)
@@ -1439,7 +1436,7 @@ func _decorate_biome_cell(
 
 func _add_rock(
         parent: Node2D,
-        collision_body: StaticBody2D,
+        collision_body: CollisionBody,
         cell: Vector2i
     ) -> void:
     _add_object(
@@ -1450,7 +1447,7 @@ func _add_rock(
 
 func _add_flower_if_clear(
         parent: Node2D,
-        collision_body: StaticBody2D,
+        collision_body: CollisionBody,
         cell: Vector2i
     ) -> void:
     for yy in range(cell.y - 1, cell.y + 2):
@@ -1466,7 +1463,7 @@ func _add_flower_if_clear(
 
 func _add_savanna_tree(
         parent: Node2D,
-        collision_body: StaticBody2D,
+        collision_body: CollisionBody,
         cell: Vector2i
     ) -> void:
     if blocked.has(cell):
@@ -1488,7 +1485,7 @@ func _add_savanna_tree(
 
 func _add_bush(
         parent: Node2D,
-        collision_body: StaticBody2D,
+        collision_body: CollisionBody,
         cell: Vector2i
     ) -> void:
     if blocked.has(cell):
@@ -1514,7 +1511,7 @@ func _add_bush(
 
 func _add_object(
         parent: Node2D,
-        collision_body: StaticBody2D,
+        collision_body: CollisionBody,
         x: int,
         y: int,
         texture: Texture2D,
@@ -1550,11 +1547,11 @@ func _add_object(
         animated_flowers.append(sprite)
 
     var object_cell := Vector2i(x, y)
-    var object_collision: CollisionShape2D = null
+    var object_collision: CollisionBox = null
     if solid:
         grass_exclusion[object_cell] = true
         if blocked.has(object_cell):
-            object_collision = ground_collisions.get(object_cell) as CollisionShape2D
+            object_collision = ground_collisions.get(object_cell) as CollisionBox
         else:
             blocked[object_cell] = true
             object_collision = _add_block_collision(collision_body, x, y)
@@ -1644,7 +1641,7 @@ func _tree_has_safe_ground(cell: Vector2i) -> bool:
 
 func _add_large_tree(
         parent: Node2D,
-        collision_body: StaticBody2D,
+        collision_body: CollisionBody,
         cell: Vector2i
     ) -> void:
     if blocked.has(cell):
@@ -1675,7 +1672,7 @@ func _add_large_tree(
         "large": true
     }
 
-func _place_landmarks(parent: Node2D, collision_body: StaticBody2D) -> void:
+func _place_landmarks(parent: Node2D, collision_body: CollisionBody) -> void:
     var candidates := [
         {"offset": Vector2i(8, -5), "type": "sign", "texture": LANDMARK_SIGN},
         {"offset": Vector2i(-10, 6), "type": "campfire", "texture": LANDMARK_CAMP},
@@ -1781,7 +1778,7 @@ func _render_routes(parent: Node2D) -> void:
 
 func _place_source_landmarks(
         parent: Node2D,
-        collision_body: StaticBody2D
+        collision_body: CollisionBody
     ) -> void:
     _place_generated_source_landmarks(parent, collision_body)
     if source_landmarks.has("house_anchor"):
@@ -1839,7 +1836,7 @@ func _place_source_landmarks(
 
 func _place_generated_source_landmarks(
         parent: Node2D,
-        collision_body: StaticBody2D
+        collision_body: CollisionBody
     ) -> void:
     # SourceWorldGenerator has already merged the real Java-generated exterior
     # layouts into source_tiles.  Only register their entrances here.  The old
@@ -1857,7 +1854,7 @@ func _place_generated_source_landmarks(
         )
         if not _in_bounds(entry):
             continue
-        var collision := ground_collisions.get(entry) as CollisionShape2D
+        var collision := ground_collisions.get(entry) as CollisionBox
         if not is_instance_valid(collision):
             collision = _add_landmark_collision(
                 collision_body, entry.x, entry.y
@@ -1883,7 +1880,7 @@ func _place_generated_source_landmarks(
                 if not _in_bounds(cave_cell):
                     continue
                 blocked[cave_cell] = true
-                var cave_collision := ground_collisions.get(cave_cell) as CollisionShape2D
+                var cave_collision := ground_collisions.get(cave_cell) as CollisionBox
                 if not is_instance_valid(cave_collision):
                     cave_collision = _add_landmark_collision(
                         collision_body, cave_cell.x, cave_cell.y
@@ -2096,7 +2093,7 @@ func _update_savanna_tree_front_overlay(cell: Vector2i) -> void:
     savanna_tree_front_sprite.z_index = 106
     savanna_tree_front_sprite.visible = true
 
-func _build_source_interiors(_collision_body: StaticBody2D) -> void:
+func _build_source_interiors(_collision_body: CollisionBody) -> void:
     var layer := Node2D.new()
     layer.name = "InteriorLayer"
     layer.z_index = -5
@@ -2104,14 +2101,14 @@ func _build_source_interiors(_collision_body: StaticBody2D) -> void:
     # Player houses share the legacy off-world coordinate range with dungeon
     # planes. Keep generated dungeon collision separate so hidden dungeon walls
     # cannot block movement inside a house (or house walls inside a dungeon).
-    var collision_body := StaticBody2D.new()
+    var collision_body := CollisionBody.new()
     collision_body.name = "SourceInteriorCollision"
     layer.add_child(collision_body)
     await _build_generated_source_interiors(layer, collision_body, true)
 
 func _build_generated_source_interiors(
         parent: Node2D,
-        collision_body: StaticBody2D,
+        collision_body: CollisionBody,
         cooperative: bool = false
     ) -> void:
     var slice_started := Time.get_ticks_usec()
@@ -2260,7 +2257,7 @@ func _find_route_entry(plan: Dictionary, route_name: String) -> Vector2i:
             return cell
     return fallback
 
-func _build_house_interior(parent: Node2D, collision_body: StaticBody2D) -> void:
+func _build_house_interior(parent: Node2D, collision_body: CollisionBody) -> void:
     # Legacy helper retained for compatibility; built houses are generated
     # from their connected exterior footprint by _prepare_built_house_interior.
     var origin := Vector2i(map_w + 8, 4)
@@ -2336,7 +2333,7 @@ func _add_built_house_floor_cell(
     if layer != null:
         _add_source_sprite(layer, _structure_display_texture("FLOOR"), global_cell, -5)
     if built_house_void_collisions.has(global_cell):
-        var collision: CollisionShape2D = built_house_void_collisions[global_cell] as CollisionShape2D
+        var collision: CollisionBox = built_house_void_collisions[global_cell] as CollisionBox
         if is_instance_valid(collision):
             collision.queue_free()
         built_house_void_collisions.erase(global_cell)
@@ -2371,7 +2368,7 @@ func _place_built_house_floor(cell: Vector2i) -> bool:
     return true
 
 func _draw_built_house_upper_floor(
-        parent: Node2D, collision_body: StaticBody2D,
+        parent: Node2D, collision_body: CollisionBody,
         floor_index: int, origin: Vector2i, size: Vector2i
     ) -> void:
     # Source house upper floors start as black void. Stairs carve a clipped
@@ -2432,7 +2429,7 @@ func _remove_generated_house_stair_pairs() -> void:
         var sprite: Sprite2D = data.get("sprite") as Sprite2D
         if is_instance_valid(sprite):
             sprite.queue_free()
-        var collision: CollisionShape2D = data.get("collision") as CollisionShape2D
+        var collision: CollisionBox = data.get("collision") as CollisionBox
         if is_instance_valid(collision):
             collision.queue_free()
         remove_cells.append(cell)
@@ -2526,7 +2523,7 @@ func _set_active_built_house_floor(floor_index: int) -> void:
     _configure_camera()
 
 func _draw_built_house_interior(
-        parent: Node2D, collision_body: StaticBody2D, origin: Vector2i,
+        parent: Node2D, collision_body: CollisionBody, origin: Vector2i,
         size: Vector2i, exit_local: Vector2i, exterior_doors: Dictionary = {},
         footprint_only: bool = false
     ) -> void:
@@ -2688,7 +2685,7 @@ func _prepare_built_house_interior(door_cell: Vector2i, house_state: Dictionary)
     layer.name = "BuiltHouseInterior"
     layer.visible = false
     add_child(layer)
-    var collision := StaticBody2D.new()
+    var collision := CollisionBody.new()
     collision.name = "BuiltHouseCollision"
     add_child(collision)
     source_area_layers["HOUSE"] = layer
@@ -2797,7 +2794,7 @@ func apply_paint(picture_index: int, cell: Vector2i) -> bool:
     return true
 
 
-func _build_cave_interior(parent: Node2D, collision_body: StaticBody2D) -> void:
+func _build_cave_interior(parent: Node2D, collision_body: CollisionBody) -> void:
     var origin := Vector2i(map_w + 8, 20)
     var size := Vector2i(20, 12)
     var exit_cell := origin + Vector2i(10, 10)
@@ -3696,8 +3693,7 @@ func _cut_helper_target_cell() -> Vector2i:
     # its center changes cells. Resolve only cells touched by its forward edge.
     var facing := Vector2(_facing_cell())
     var tangent := Vector2(-facing.y, facing.x)
-    var body_shape := player.get_node("CollisionShape2D") as CollisionShape2D
-    var body_center: Vector2 = player.position + body_shape.position
+    var body_center: Vector2 = player.position + PlayerController.BODY_OFFSET
     for offset in [0.0, -4.9, 4.9]:
         var point: Vector2 = body_center + facing * 6.0 + tangent * float(offset)
         var contact := Vector2i(floori(point.x / TILE), floori(point.y / TILE))
@@ -3839,7 +3835,7 @@ func _set_water_collision_enabled(enabled: bool) -> void:
         var cell: Vector2i = key
         if not _in_bounds(cell) or terrain[cell.y][cell.x] != 0:
             continue
-        var collision: CollisionShape2D = ground_collisions.get(cell) as CollisionShape2D
+        var collision: CollisionBox = ground_collisions.get(cell) as CollisionBox
         if is_instance_valid(collision):
             collision.set_deferred("disabled", not enabled)
 
@@ -4008,7 +4004,7 @@ func _interact_in_front() -> void:
             var key_sprite: Sprite2D = data.get("sprite") as Sprite2D
             if is_instance_valid(key_sprite):
                 key_sprite.visible = false
-            var key_collision: CollisionShape2D = data.get("collision") as CollisionShape2D
+            var key_collision: CollisionBox = data.get("collision") as CollisionBox
             if is_instance_valid(key_collision):
                 key_collision.queue_free()
             blocked.erase(target)
@@ -4025,7 +4021,7 @@ func _interact_in_front() -> void:
             var sprite: Sprite2D = data.get("sprite") as Sprite2D
             if is_instance_valid(sprite):
                 sprite.visible = false
-            var collision: CollisionShape2D = data.get("collision") as CollisionShape2D
+            var collision: CollisionBox = data.get("collision") as CollisionBox
             if is_instance_valid(collision):
                 collision.queue_free()
             blocked.erase(target)
@@ -5354,7 +5350,7 @@ func _remove_resource(cell: Vector2i, remember: bool) -> void:
     if resource_objects.has(cell):
         var data: Dictionary = resource_objects[cell]
         var sprite: Sprite2D = data.get("sprite") as Sprite2D
-        var collision: CollisionShape2D = data.get("collision") as CollisionShape2D
+        var collision: CollisionBox = data.get("collision") as CollisionBox
         if is_instance_valid(sprite):
             sprite.queue_free()
         if is_instance_valid(collision):
@@ -5696,7 +5692,7 @@ func place_structure(build_name: String, cell: Vector2i, restoring: bool = false
         return false
     layer.add_child(sprite)
 
-    var collision: CollisionShape2D = null
+    var collision: CollisionBox = null
     var solid := bool(recipe.get("solid", false))
     var bridged_water := false
 
@@ -5706,13 +5702,13 @@ func place_structure(build_name: String, cell: Vector2i, restoring: bool = false
             var exact_collision := get_node_or_null("ExactCollisionStream") as SourceChunkCollisionStreamer
             if exact_collision != null:
                 exact_collision.set_cell_passable(cell, true)
-        var water_collision: CollisionShape2D = ground_collisions.get(cell) as CollisionShape2D
+        var water_collision: CollisionBox = ground_collisions.get(cell) as CollisionBox
         if is_instance_valid(water_collision):
             water_collision.queue_free()
         ground_collisions.erase(cell)
         blocked.erase(cell)
     elif solid:
-        var body := get_node_or_null("WorldCollision") as StaticBody2D
+        var body := get_node_or_null("WorldCollision") as CollisionBody
         if body != null:
             collision = _add_block_collision(body, cell.x, cell.y)
             blocked[cell] = true
@@ -5746,8 +5742,7 @@ func place_structure(build_name: String, cell: Vector2i, restoring: bool = false
         if is_instance_valid(collision):
             var width := 32 if requested_name == "COUCH" else 16
             var height := 16 if requested_name in ["COUCH", "COUCH 3", "COUCH 5"] else 32
-            (collision.shape as RectangleShape2D).size = Vector2(width,height)
-            collision.position = Vector2(cell * TILE) + Vector2(width/2, TILE-height/2)
+            collision.rect = Rect2(Vector2(cell * TILE) + Vector2(0, TILE-height), Vector2(width,height))
     if structure_name == "INTERIOR WALL" and _is_house_wall_cell(cell):
         built_house_paintable_walls[cell] = true
 
@@ -6013,9 +6008,9 @@ func _set_structure_solid(cell: Vector2i, solid: bool) -> void:
     if not built_structures.has(cell):
         return
     var data: Dictionary = built_structures[cell]
-    var collision := data.get("collision") as CollisionShape2D
+    var collision := data.get("collision") as CollisionBox
     if solid and not is_instance_valid(collision):
-        var body := get_node_or_null("WorldCollision") as StaticBody2D
+        var body := get_node_or_null("WorldCollision") as CollisionBody
         if body != null:
             collision = _add_block_collision(body, cell.x, cell.y)
             blocked[cell] = true
@@ -6507,7 +6502,7 @@ func _remove_structure(cell: Vector2i, refund: bool) -> void:
             data = built_structures[cell]
             build_name = "STAIRS"
     var sprite: Sprite2D = data.get("sprite") as Sprite2D
-    var collision: CollisionShape2D = data.get("collision") as CollisionShape2D
+    var collision: CollisionBox = data.get("collision") as CollisionBox
     if is_instance_valid(sprite):
         sprite.queue_free()
     if is_instance_valid(collision):
@@ -6523,7 +6518,7 @@ func _remove_structure(cell: Vector2i, refund: bool) -> void:
             var stream := get_node_or_null("ExactCollisionStream") as SourceChunkCollisionStreamer
             if stream != null: stream.set_cell_passable(cell, false)
         else:
-            var body := get_node_or_null("WorldCollision") as StaticBody2D
+            var body := get_node_or_null("WorldCollision") as CollisionBody
             if body != null:
                 blocked[cell] = true
                 ground_collisions[cell] = _add_block_collision(body, cell.x, cell.y)
@@ -9593,7 +9588,7 @@ func _hide_event_cell(cell: Vector2i) -> void:
     if is_instance_valid(sprite):
         sprite.queue_free()
     source_interior_upper_sprites.erase(cell)
-    var collision := source_event_collisions.get(cell) as CollisionShape2D
+    var collision := source_event_collisions.get(cell) as CollisionBox
     if is_instance_valid(collision):
         collision.queue_free()
     source_event_collisions.erase(cell)
@@ -9602,7 +9597,7 @@ func _hide_event_cell(cell: Vector2i) -> void:
 func _restore_regi_pedestal(cell: Vector2i) -> void:
     interior_interactables[cell] = "REGI_FORGE"
     blocked[cell] = true
-    var body := get_node_or_null("InteriorLayer/SourceInteriorCollision") as StaticBody2D
+    var body := get_node_or_null("InteriorLayer/SourceInteriorCollision") as CollisionBody
     if body != null:
         var collision := _add_landmark_collision(body, cell.x, cell.y)
         source_event_collisions[cell] = collision
@@ -9832,7 +9827,7 @@ func _refresh_daily_events(spread: bool = false) -> void:
             source_interior_upper_sprites[cell] = _add_source_sprite(
                 area_layer, texture, cell, 18
             )
-        var body := get_node_or_null("InteriorLayer/SourceInteriorCollision") as StaticBody2D
+        var body := get_node_or_null("InteriorLayer/SourceInteriorCollision") as CollisionBody
         if body != null:
             source_event_collisions[cell] = _add_landmark_collision(
                 body, cell.x, cell.y
@@ -11371,29 +11366,15 @@ func battle_terrain_at(cell: Vector2i) -> String:
         return "SANDY"
     return "GRASSY"
 
-func _add_block_collision(body: StaticBody2D, x: int, y: int) -> CollisionShape2D:
-    var shape := RectangleShape2D.new()
-    shape.size = Vector2(TILE, TILE)
-
-    var node := CollisionShape2D.new()
-    node.shape = shape
-    node.position = _cell_center(Vector2i(x, y))
-    body.add_child(node)
-    return node
+func _add_block_collision(body: CollisionBody, x: int, y: int) -> CollisionBox:
+    return body.add_cell(Vector2i(x, y))
 
 func _add_landmark_collision(
-        body: StaticBody2D,
+        body: CollisionBody,
         x: int,
         y: int
-    ) -> CollisionShape2D:
-    var shape := RectangleShape2D.new()
-    shape.size = Vector2(TILE, TILE)
-
-    var node := CollisionShape2D.new()
-    node.shape = shape
-    node.position = _cell_center(Vector2i(x, y))
-    body.add_child(node)
-    return node
+    ) -> CollisionBox:
+    return body.add_cell(Vector2i(x, y))
 
 func _cell_center(cell: Vector2i) -> Vector2:
     return Vector2(
@@ -11404,10 +11385,10 @@ func _cell_center(cell: Vector2i) -> Vector2:
 func _configure_camera() -> void:
     # Apply on entry, exit, floor changes, load and whiteout without moving any
     # saved house/furniture coordinates or changing the player's collision mask.
-    var dungeon_body := get_node_or_null("InteriorLayer/SourceInteriorCollision") as StaticBody2D
+    var dungeon_body := get_node_or_null("InteriorLayer/SourceInteriorCollision") as CollisionBody
     if dungeon_body != null:
         dungeon_body.collision_layer = 0 if active_area_id == "HOUSE" else 1
-    var house_body := get_node_or_null("BuiltHouseCollision") as StaticBody2D
+    var house_body := get_node_or_null("BuiltHouseCollision") as CollisionBody
     if house_body != null:
         house_body.collision_layer = 1 if active_area_id == "HOUSE" else 0
     var camera := player.get_node_or_null("Camera2D") as Camera2D
