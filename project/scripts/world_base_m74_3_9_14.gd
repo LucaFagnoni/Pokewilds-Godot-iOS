@@ -1,4 +1,5 @@
 extends Node2D
+const TexturePixels = preload("res://scripts/texture_pixels.gd")
 
 const SourceMineRuntime = preload("res://scripts/source_mine_runtime.gd")
 const InteriorTileBatch = preload("res://scripts/interior_tile_batch.gd")
@@ -5822,7 +5823,7 @@ func _structure_display_texture(build_name: String, variant: int = 0) -> Texture
         if active_area_id == "HOUSE":
             return _structure_display_texture("INDOOR WINDOW 1",variant)
         if not window_display_cache.has("normal_exterior"):
-            var pixels := preload("res://assets/source_0_8_11/tiles/buildings/exteriorwindows1.png").get_image()
+            var pixels := TexturePixels.of(preload("res://assets/source_0_8_11/tiles/buildings/exteriorwindows1.png"))
             pixels.convert(Image.FORMAT_RGBA8)
             pixels.fill_rect(Rect2i(0, 8, pixels.get_width(), pixels.get_height() - 8), Color.TRANSPARENT)
             window_display_cache["normal_exterior"] = ImageTexture.create_from_image(pixels)
@@ -5840,7 +5841,7 @@ func _structure_display_texture(build_name: String, variant: int = 0) -> Texture
             # are source wall backing; let the actual supporting wall show.
             var cache_key := build_name + ":" + str(frame.region.position.x)
             if not window_display_cache.has(cache_key):
-                var window_pixels := frame.get_image()
+                var window_pixels := TexturePixels.of(frame)
                 window_pixels.fill_rect(Rect2i(0, 10, 16, 6), Color.TRANSPARENT)
                 window_display_cache[cache_key] = ImageTexture.create_from_image(window_pixels)
             return window_display_cache[cache_key]
@@ -5875,8 +5876,8 @@ func _structure_display_texture(build_name: String, variant: int = 0) -> Texture
 func _colored_bed_texture(carpet_index: int) -> Texture2D:
     # DynamicTextures.cacheColoredHouseBed: carpet at (0,12), then bed frame.
     var image := Image.create(16, 32, false, Image.FORMAT_RGBA8)
-    var carpet := (load("res://assets/source_0_8_11/tiles/buildings/house_carpet%d.png" % clampi(carpet_index,1,8)) as Texture2D).get_image()
-    var frame := preload("res://assets/source_0_8_11/tiles/buildings/house_bed1_colorbase.png").get_image()
+    var carpet := TexturePixels.of((load("res://assets/source_0_8_11/tiles/buildings/house_carpet%d.png" % clampi(carpet_index,1,8)) as Texture2D))
+    var frame := TexturePixels.of(preload("res://assets/source_0_8_11/tiles/buildings/house_bed1_colorbase.png"))
     image.blend_rect(carpet, Rect2i(0,0,16,16), Vector2i(0,12))
     image.blend_rect(frame, Rect2i(0,0,16,32), Vector2i.ZERO)
     return ImageTexture.create_from_image(image)
@@ -8546,11 +8547,11 @@ func _horizontal_visible_center_offset(
     if not cache_key.is_empty() and horizontal_sprite_center_cache.has(resolved_key):
         return horizontal_sprite_center_cache[resolved_key] as Vector2
 
-    var image := texture.get_image()
+    var image := TexturePixels.of(texture)
     if texture is AtlasTexture:
         var atlas_texture := texture as AtlasTexture
         if atlas_texture.atlas != null:
-            var atlas_image := atlas_texture.atlas.get_image()
+            var atlas_image := TexturePixels.of(atlas_texture.atlas)
             var region := Rect2i(atlas_texture.region)
             if atlas_image != null and not atlas_image.is_empty() and region.has_area():
                 image = atlas_image.get_region(region)
@@ -11856,7 +11857,8 @@ func interior_map_image(bounds: Rect2i) -> Image:
             continue
         var preview_key: Array = [sprite.texture, rect, size, sprite.flip_h, sprite.flip_v]
         if not previews.has(preview_key):
-            var preview := sprite.texture.get_image().get_region(Rect2i(rect))
+            if not previews.has(sprite.texture): previews[sprite.texture] = TexturePixels.of(sprite.texture)
+            var preview := (previews[sprite.texture] as Image).get_region(Rect2i(rect))
             if sprite.flip_h: preview.flip_x()
             if sprite.flip_v: preview.flip_y()
             preview.resize(size.x, size.y, Image.INTERPOLATE_NEAREST)
@@ -12013,12 +12015,12 @@ func _refresh_shell_attachment(cell: Vector2i) -> void:
         if kind == "WINDOW":
             var window_recipe := String(data.get("window_recipe", "WINDOW"))
             part.hide()
-            var facade := shell.texture.get_image()
-            var window_pixels := preload("res://assets/source_0_8_11/tiles/buildings/exteriorwindows1.png").get_image()
+            var facade := TexturePixels.of(shell.texture)
+            var window_pixels := TexturePixels.of(preload("res://assets/source_0_8_11/tiles/buildings/exteriorwindows1.png"))
             if window_recipe == "INDOOR WINDOW 1":
-                window_pixels = preload("res://assets/source_0_8_11/tiles/buildings/exteriorwindows1-revertme.png").get_image()
+                window_pixels = TexturePixels.of(preload("res://assets/source_0_8_11/tiles/buildings/exteriorwindows1-revertme.png"))
             elif window_recipe == "INDOOR WINDOW 2":
-                window_pixels = _structure_display_texture(window_recipe, int(data.get("window_variant",0))).get_image()
+                window_pixels = TexturePixels.of(_structure_display_texture(window_recipe, int(data.get("window_variant",0))))
             var wall_neighbors: Array[String] = ["WALL", "INTERIOR WALL", "DOOR", "WINDOW"]
             var east := String(built_structures.get(cell + Vector2i.RIGHT, {}).get("name", "")) in wall_neighbors
             var west := String(built_structures.get(cell + Vector2i.LEFT, {}).get("name", "")) in wall_neighbors
@@ -12030,10 +12032,10 @@ func _refresh_shell_attachment(cell: Vector2i) -> void:
                 for y in range(mini(8, facade.get_height())):
                     if (x < 8 and not east) or (x >= 8 and not west) or (east and west):
                         facade.set_pixel(x, y, window_pixels.get_pixel(x, y))
-            shell.texture = ImageTexture.create_from_image(facade)
+            shell.texture = TexturePixels.texture_from(facade)
         else:
             var colors: Array[Color] = []
-            var roof := shell.texture.get_image()
+            var roof := TexturePixels.of(shell.texture)
             for y in range(roof.get_height()):
                 for x in range(roof.get_width()):
                     var color := roof.get_pixel(x,y)
@@ -12043,7 +12045,7 @@ func _refresh_shell_attachment(cell: Vector2i) -> void:
                 if colors.size() == 2: break
             if colors.size() == 2:
                 colors.sort_custom(func(a: Color,b: Color): return a.r+a.g+a.b > b.r+b.g+b.b)
-                var smoke := (structure_textures["CHIMNEY"] as Texture2D).get_image()
+                var smoke := TexturePixels.of((structure_textures["CHIMNEY"] as Texture2D))
                 for y in range(smoke.get_height()):
                     for x in range(smoke.get_width()):
                         var value := smoke.get_pixel(x,y).to_rgba32()
@@ -12268,7 +12270,7 @@ var coop_private_chest_cache:Dictionary={}
 func _private_chest_texture(source:Texture2D)->Texture2D:
     var key=source.get_instance_id()
     if not coop_private_chest_cache.has(key):
-        var source_image=source.get_image()
+        var source_image=TexturePixels.of(source)
         if source_image.is_compressed():source_image.decompress()
         var image=source_image.get_region(Rect2i(0,16,16,16))
         for y in range(16):

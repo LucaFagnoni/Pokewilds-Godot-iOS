@@ -1,4 +1,5 @@
 extends "res://scripts/source_chunk_tile_layer.gd"
+const TexturePixels = preload("res://scripts/texture_pixels.gd")
 
 # All terrain cells are installed before play. Camera movement only changes
 # engine culling; it never resolves, loads or removes terrain cells.
@@ -214,9 +215,9 @@ func _reward_composite(spec):
     var image := Image.create(int(bounds.size.x),int(bounds.size.y),false,Image.FORMAT_RGBA8)
     image.fill(Color.TRANSPARENT)
     if not spec.is_empty():
-        image.blend_rect(spec.texture.get_image(),Rect2i(spec.region),Vector2i(spec.get("offset",Vector2.ZERO)-bounds.position))
-    image.blend_rect(reward.get_image(),Rect2i(0,0,16,16),Vector2i(-bounds.position))
-    var combined = {"texture":ImageTexture.create_from_image(image),"region":Rect2(Vector2.ZERO,bounds.size),"offset":bounds.position}
+        image.blend_rect(TexturePixels.of(spec.texture),Rect2i(spec.region),Vector2i(spec.get("offset",Vector2.ZERO)-bounds.position))
+    image.blend_rect(TexturePixels.of(reward),Rect2i(0,0,16,16),Vector2i(-bounds.position))
+    var combined = {"texture":TexturePixels.texture_from(image),"region":Rect2(Vector2.ZERO,bounds.size),"offset":bounds.position}
     reward_composites[key] = combined
     return combined
 

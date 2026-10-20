@@ -1,5 +1,6 @@
 class_name PokemonData
 extends RefCounted
+const TexturePixels = preload("res://scripts/texture_pixels.gd")
 
 const DATABASE_PATH := "res://data/pokemon_db.json"
 const SourceJavaHashOrder = preload("res://scripts/source_java_hash_order.gd")
@@ -196,8 +197,9 @@ static func _overworld_layout(texture_value: Texture2D, species: String) -> Text
     # Original source sheets are six 16x16 poses stacked vertically. Preserve
     # their exact order while adapting to the port's horizontal sheet layout.
     var image := Image.create(96, 16, false, Image.FORMAT_RGBA8)
+    var poses := TexturePixels.of(texture_value)
     for index in range(6):
-        image.blit_rect(texture_value.get_image(), Rect2i(0, index*16, 16, 16), Vector2i(index*16, 0))
+        image.blit_rect(poses, Rect2i(0, index*16, 16, 16), Vector2i(index*16, 0))
     var result := ImageTexture.create_from_image(image)
     _overworld_layouts[key] = result
     return result
@@ -216,7 +218,7 @@ static func _shiny_texture(species: String, kind: String) -> Texture2D:
         if not authored_path.is_empty() and ResourceLoader.exists(authored_path):
             var authored := load(authored_path) as Texture2D
             if kind == "overworld": authored = _overworld_layout(authored, species)
-            if authored != null and authored.get_size() == normal.get_size() and authored.get_image().get_data() != normal.get_image().get_data():
+            if authored != null and authored.get_size() == normal.get_size() and TexturePixels.of(authored).get_data() != TexturePixels.of(normal).get_data():
                 _shiny_textures[cache_key] = authored
                 return authored
     if _shiny_palettes.is_empty():
@@ -224,7 +226,7 @@ static func _shiny_texture(species: String, kind: String) -> Texture2D:
         _shiny_palettes.merge(preload("res://scripts/native_mod_pack.gd").palettes,true)
     var palette: Dictionary = _shiny_palettes.get(key, {})
     if palette.is_empty(): return normal
-    var image := normal.get_image().duplicate() as Image
+    var image := TexturePixels.of(normal).duplicate() as Image
     if image == null or image.is_empty(): return normal
     image.convert(Image.FORMAT_RGBA8)
     var normal_colors: Array = palette.get("back_normal" if kind == "back" else "normal", []).duplicate(true)

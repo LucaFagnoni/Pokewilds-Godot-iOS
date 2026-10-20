@@ -4,7 +4,10 @@ extends RefCounted
 ## Each tile's image is still its own file (so mods replace it by path, as
 ## before), but the first time it is used it is copied onto a shared sheet in
 ## memory and drawn from there. The graphics chip can then draw a screen of
-## mixed terrain in a few calls instead of one call per kind of tile.
+## mixed terrain in a few calls instead of one call per kind of tile. A tile's
+## pixels come from its imported file (TexturePixels), never from reading the
+## texture back from the graphics chip.
+const TexturePixels = preload("res://scripts/texture_pixels.gd")
 const SIZE := 2048
 ## Space kept round every tile, filled with a copy of its own edge pixels, so
 ## a neighbour on the sheet never shows through at a tile's border.
@@ -45,7 +48,7 @@ static func place(texture: Texture2D, region: Rect2) -> Array:
     if placed.has(key): return placed[key]
     var id := texture.get_instance_id()
     if not sources.has(id):
-        var image := texture.get_image()
+        var image := TexturePixels.of(texture)
         if image != null:
             if image.is_compressed(): image.decompress()
             image.convert(Image.FORMAT_RGBA8)

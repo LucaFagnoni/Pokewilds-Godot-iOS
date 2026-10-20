@@ -1,4 +1,5 @@
 extends Node2D
+const TexturePixels = preload("res://scripts/texture_pixels.gd")
 ## Water outside the map uses the same texture, tile origin and clock as terrain.
 const WaterData = preload("res://scripts/source_world_data.gd")
 static var frames: Dictionary = {}
@@ -11,7 +12,7 @@ static func water_frame(tick: int) -> Texture2D:
     var region: Rect2 = spec.region
     var key := str(source.get_rid().get_id()) + str(region)
     if not frames.has(key):
-        frames[key] = ImageTexture.create_from_image(source.get_image().get_region(Rect2i(region)))
+        frames[key] = ImageTexture.create_from_image(TexturePixels.of(source).get_region(Rect2i(region)))
     return frames[key]
 
 static func world_tick(source_world: Node) -> int:

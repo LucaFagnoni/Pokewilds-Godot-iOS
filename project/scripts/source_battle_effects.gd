@@ -1,4 +1,5 @@
 extends RefCounted
+const TexturePixels = preload("res://scripts/texture_pixels.gd")
 
 # Battle.LoadAndPlayAnimation and SpriteProxy (0.8.11).
 # Authored frame images remain separate from runtime screenshot/palette effects.
@@ -147,7 +148,7 @@ func begin(owner_node: Node, source_key: String) -> void:
 static func palette(texture: Texture2D) -> Array[Color]:
     var colors: Array[Color] = []
     if texture != null:
-        var image := texture.get_image()
+        var image := TexturePixels.of(texture)
         for y in range(image.get_height()):
             for x in range(image.get_width()):
                 var c := image.get_pixel(x,y)
@@ -237,7 +238,7 @@ func finish() -> void:
 
 static func shrink_texture(texture: Texture2D, progress: int) -> Texture2D:
     # Battle.LoadAndPlayAnimation: rearrange 8x8 tiles, never rescale pixels.
-    var source := texture.get_image()
+    var source := TexturePixels.of(texture)
     var columns := source.get_width()/8
     var rows := source.get_height()/8
     var cells: Array = []

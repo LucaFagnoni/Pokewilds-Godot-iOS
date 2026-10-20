@@ -1,4 +1,5 @@
 extends Node
+const TexturePixels = preload("res://scripts/texture_pixels.gd")
 
 # UI-only palette conversion. Cached once per texture; never affects world art.
 const BACKGROUND := Color8(38,40,45)
@@ -22,7 +23,7 @@ static func frame(texture: Texture2D) -> Texture2D:
     var key := texture.get_rid().get_id()
     if original_frames.has(key): return texture
     if frame_cache.has(key): return frame_cache[key]
-    var pixels: Image = texture.get_image().duplicate()
+    var pixels: Image = TexturePixels.of(texture).duplicate()
     for y in range(pixels.get_height()):
         for x in range(pixels.get_width()):
             var c := pixels.get_pixel(x,y)

@@ -1,4 +1,5 @@
 extends RefCounted
+const TexturePixels = preload("res://scripts/texture_pixels.gd")
 ## Front portraits are separate from the player's existing back/overworld art.
 static var cache:Dictionary={}
 static var entries:Dictionary={}
@@ -14,7 +15,7 @@ static func texture(main:Node,trainer:Dictionary)->Texture2D:
     if entry.is_empty():return null
     var source:Texture2D=load(entry.path)
     if source==null:return null
-    var pixels=Image.new();pixels.copy_from(source.get_image())
+    var pixels=Image.new();pixels.copy_from(TexturePixels.of(source))
     # Bound recoloring work even for the two high-resolution supplied portraits.
     var source_bounds=pixels.get_used_rect()
     if source_bounds.size==Vector2i.ZERO:return null

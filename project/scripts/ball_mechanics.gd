@@ -6,6 +6,7 @@ const Data = preload("res://scripts/pokemon_data.gd")
 const Rules = preload("res://scripts/overworld_ball_rules.gd")
 const Ring = preload("res://scripts/ball_wheel_ring.gd")
 const Clock = preload("res://scripts/game_clock.gd")
+const TexturePixels = preload("res://scripts/texture_pixels.gd")
 var main: Node
 var ring = Ring.new()
 var wheel_kind = 0
@@ -303,7 +304,7 @@ func ball_texture(ball: String) -> Texture2D:
     var key = str(source.get_instance_id())+ball
     if ball_textures.has(key): return ball_textures[key]
     if ball=="POKE BALL": return source
-    var image = preload("res://scripts/ball_shell_colors.gd").recolor(source.get_image(),ball)
+    var image = preload("res://scripts/ball_shell_colors.gd").recolor(TexturePixels.of(source),ball)
     var texture = ImageTexture.create_from_image(image)
     ball_textures[key] = texture
     return texture
@@ -574,7 +575,7 @@ func present_capture(sprite: Sprite2D, center: Vector2, ball: String, outcome: i
     sprite.hide()
     var key = "capture_wiggle:"+ball+str(preload("res://scripts/gen3_overhaul.gd").enabled)
     if not ball_textures.has(key):
-        ball_textures[key] = ImageTexture.create_from_image(preload("res://scripts/ball_shell_colors.gd").recolor(preload("res://assets/source_exact/global/pokeball_wiggleSheet1_color.png").get_image(),ball))
+        ball_textures[key] = ImageTexture.create_from_image(preload("res://scripts/ball_shell_colors.gd").recolor(TexturePixels.of(preload("res://assets/source_exact/global/pokeball_wiggleSheet1_color.png")),ball))
     var sheet: Texture2D = ball_textures[key]
     if not await capture_pause(12,serial): return false
     for shake in range(3 if outcome<0 else outcome):
