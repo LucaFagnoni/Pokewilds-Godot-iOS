@@ -78,6 +78,18 @@ func _initialize() -> void:
     var second = _parsed(save)
     check(float(second.player_x) == player.position.x and float(_parsed(save + ".bak").player_x) == float(first.player_x), "the save before is kept as .bak")
 
+    # SAVE writes on a thread; going to the background meanwhile waits for it
+    # and its own, newer save is the one kept.
+    player.position.x += 16.0
+    main._save_current_game()
+    check(main.save_thread != null, "SAVE writes on a thread")
+    player.position.x += 16.0
+    main._notification(NOTIFICATION_APPLICATION_PAUSED)
+    check(float(_parsed(save).player_x) == player.position.x, "the background save comes after the one in flight")
+    while main.save_thread != null: await process_frame
+    await _frames(2)
+    check(float(_parsed(save).player_x) == player.position.x and main.message_label.text == "GAME SAVED.", "both saves end well")
+
     # A shared storage write that fails is told, not GAME SAVED.
     var blocker := SharedStorage.path() + ".pending"
     DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(blocker))

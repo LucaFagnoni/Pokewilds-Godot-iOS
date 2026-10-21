@@ -1017,6 +1017,8 @@ const SHARED_STORAGE_KEY := "SHARED"
 var shared_storage_serial := 0
 ## How the last write of the shared storage went, told after SAVE.
 var shared_storage_error := OK
+## Writes the world save in the background (see _write_single_player_save).
+var save_thread: Thread
 var storage_menu: Control
 var storage_rows: Array[Dictionary] = []
 var storage_actions: Panel
@@ -8633,6 +8635,8 @@ func _end_battle(outcome: String = "") -> void:
 
 func _exit_tree() -> void:
     var _joined := battle_animation_manifest # a thread must be waited for
+    if save_thread != null:
+        save_thread.wait_to_finish() # the save lands before the game goes
 
 func _load_battle_animation_manifest() -> Dictionary:
     const MANIFEST_PATH = "res://assets/battle_animations/manifest.json"
@@ -10672,7 +10676,7 @@ func _read_save_file(save_path: String) -> Dictionary:
 ## Writes a world's save so that a kill at any moment leaves the old save or
 ## the new one, never a cut one: the text goes to .pending and is read back,
 ## the old save is kept as .bak, then .pending takes its place.
-func _write_world_save(save_path: String, data: Dictionary) -> Error:
+static func _write_world_save(save_path: String, data: Dictionary) -> Error:
     var text := JSON.stringify(data)
     var pending := save_path + ".pending"
     var file := FileAccess.open(pending, FileAccess.WRITE)
@@ -10796,7 +10800,8 @@ func _save_current_game() -> void:
         else: _show_message("SAVE FAILED.")
         return
 
-    if _write_single_player_save(data) != OK:
+    var error: Error = await _write_single_player_save(data)
+    if error != OK:
         _close_save_confirmation()
         _show_message("SAVE FAILED.")
         return
@@ -10810,34 +10815,60 @@ func _save_current_game() -> void:
     else:
         _show_message("GAME SAVED, but the STORAGE BOXES could not be saved.")
 
-## The single-player save and what goes with it, for the SAVE menu, the save
-## before quitting and the save when the app goes to the background.
+## The single-player save and what goes with it, for the SAVE menu and the save
+## before quitting. The save grows with play, so its text is made and written
+## on save_thread from a copy of `data`; one save at a time.
 func _write_single_player_save(data: Dictionary) -> Error:
-    if not _ensure_save_directory():
+    while save_thread != null:
+        await get_tree().process_frame
+    var save_path := _prepare_single_player_save(data)
+    if save_path.is_empty():
         return ERR_CANT_CREATE
-    var world_name := String(data.world_name)
-    var save_path := _save_path_for_world(world_name)
+    save_thread = Thread.new()
+    save_thread.start(_write_world_save.bind(save_path, data.duplicate(true)))
+    while save_thread.is_alive():
+        await get_tree().process_frame
+    var error: Error = save_thread.wait_to_finish()
+    save_thread = null
+    return _finish_single_player_save(data, save_path, error)
+
+## The save's path, once the folder is there and `data` carries the storage serial.
+func _prepare_single_player_save(data: Dictionary) -> String:
+    if not _ensure_save_directory():
+        return ""
     data["storage_shared"] = true
     data["storage_serial"] = shared_storage_serial + 1
-    var error := _write_world_save(save_path, data)
+    return _save_path_for_world(String(data.world_name))
+
+func _finish_single_player_save(data: Dictionary, save_path: String, error: Error) -> Error:
     if error != OK:
         push_error("%s could not be saved (%d)." % [save_path, error])
         return error
     _write_shared_storage()
-    _write_save_index(world_name, save_path)
-    world_edit.text = world_name
+    _write_save_index(String(data.world_name), save_path)
+    world_edit.text = String(data.world_name)
     _save_setup()
     return OK
 
 ## iOS may end a suspended app without warning: save when it goes to the
-## background, whenever the SAVE menu could be opened. Online worlds keep
-## their own journal.
+## background, whenever the SAVE menu could be opened, before returning (no
+## thread). Online worlds keep their own journal.
 func _save_on_pause() -> void:
     if not started or generating or battle_active or edge_travel_busy or coop_game.active or \
             (field_item_busy and not _sleeping_bag_active()):
         return
+    _wait_for_save_thread()
     _sync_pokedex_owned()
-    _write_single_player_save(_capture_game_save())
+    var data := _capture_game_save()
+    var save_path := _prepare_single_player_save(data)
+    if not save_path.is_empty():
+        _finish_single_player_save(data, save_path, _write_world_save(save_path, data))
+
+## A save being written lands before another starts or the game goes away.
+## The coroutine that started it still joins the thread.
+func _wait_for_save_thread() -> void:
+    while save_thread != null and save_thread.is_alive():
+        OS.delay_msec(1)
 
 ## Writes the SHARED chest's contents after the save that goes with them, so
 ## that what is stored always matches a saved party. If this write is lost,
@@ -12538,7 +12569,8 @@ func _save_current_game_for_quit() -> bool:
 
     # Same record as the SAVE menu (the old hand-built one dropped egg/friendship
     # timers and ecology ids).
-    if _write_single_player_save(_capture_game_save()) != OK:
+    var error: Error = await _write_single_player_save(_capture_game_save())
+    if error != OK:
         return false
     world.call("play_source_sound", "save1")
     return true
