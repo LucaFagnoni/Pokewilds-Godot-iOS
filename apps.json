@@ -19,6 +19,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "0.10.196",
+          "buildVersion": "196",
+          "date": "2026-10-21T21:27:28Z",
+          "localizedDescription": "Merge map-zoom-perf: the map opens at once, no dropped frames at minimum zoom",
+          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0033/Pokewilds-unsigned.ipa",
+          "size": 57594779,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.10.191",
           "buildVersion": "191",
           "date": "2026-10-21T18:25:22Z",
@@ -98,15 +107,6 @@
           "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0022/Pokewilds-unsigned.ipa",
           "size": 65586880,
           "minOSVersion": "15.0"
-        },
-        {
-          "version": "0.10.175",
-          "buildVersion": "175",
-          "date": "2026-10-20T23:44:29Z",
-          "localizedDescription": "HUD: phone battery and a clock in the top left, switchable in OPTIONS\n\n- OPTIONS > DISPLAY: BATTERY (on/off, listed only where a battery can be\n  read: the iPhone build) and CLOCK (off / real time / game time), saved in\n  game.ini like the other options. On touch, a tap on the clock switches\n  real time and game time.\n- The HUD sits right of the minimap (or at the safe-area corner without it)\n  and hides with it under menus, battles and top panels. Game time is the\n  CLOCK structure's (world.clock_minutes()), drawn in gold. Texts change at\n  most once a second (game time) or every 10 s / at the minute.\n- iOS: a small Godot iOS plugin (project/ios/plugins/pokewilds_battery)\n  keeps UIDevice's battery in POKEWILDS_BATTERY, read with\n  OS.get_environment; no Godot headers. Its library is built before the\n  export in the ios job (xcrun) and in tools/ios_xtool (Swift's clang),\n  where Package.swift links it. Desktop and server read nothing and show\n  no battery.\n- server/status_hud_test.gd: the HUD, options, game.ini and the clock tap\n  in a real game (headless, throwaway data folder).",
-          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0020/Pokewilds-unsigned.ipa",
-          "size": 65586894,
-          "minOSVersion": "15.0"
         }
       ],
       "appPermissions": {
@@ -117,11 +117,11 @@
           "NSPhotoLibraryUsageDescription": "Not used by the game (Godot's default key)."
         }
       },
-      "version": "0.10.191",
-      "versionDate": "2026-10-21T18:25:22Z",
-      "versionDescription": "Next-throw icon: on touch the throw button shows it; otherwise under the top row\n\nThe small picture of what the next throw sends out was anchored where the\nold HUD put it, and after the HUD cleanup it covered the menu button for its\neleven seconds. On touch the throw button already shows that ball or\nPokemon, so the icon now stays away there; with a controller or keyboard it\nsits at the top right, one row under the HUD's top row, in screen units\n(a FULL_SCREEN holder) like the rest of that row.",
-      "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0032/Pokewilds-unsigned.ipa",
-      "size": 57592086
+      "version": "0.10.196",
+      "versionDate": "2026-10-21T21:27:28Z",
+      "versionDescription": "Merge map-zoom-perf: the map opens at once, no dropped frames at minimum zoom",
+      "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0033/Pokewilds-unsigned.ipa",
+      "size": 57594779
     }
   ],
   "news": []
