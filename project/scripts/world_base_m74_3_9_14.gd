@@ -2040,24 +2040,7 @@ func _depth_z(cell: Vector2i, offset: int = 0) -> int:
     return clampi(100 + (cell.y + 1) * TILE + offset, -4096, 4095)
 
 func _setup_normal_grass_front_overlay() -> void:
-    # Source grass1 is the normal encounter grass.  Its full tile remains in
-    # the normal upper stream, while only the lower blade tips are repeated in
-    # front of the player so walking through it has the classic Gen-2 depth.
-    # Savanna and every other grass asset intentionally bypass this overlay.
-    if normal_grass_front_sprite != null and is_instance_valid(normal_grass_front_sprite):
-        normal_grass_front_sprite.queue_free()
-    var sprite := Sprite2D.new()
-    sprite.name = "NormalEncounterGrassFront"
-    sprite.texture = SOURCE_NORMAL_ENCOUNTER_GRASS
-    sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-    sprite.centered = false
-    sprite.region_enabled = true
-    sprite.region_rect = Rect2(0, 8, TILE, 8)
-    sprite.z_as_relative = false
-    sprite.z_index = 103
-    sprite.visible = false
-    add_child(sprite)
-    normal_grass_front_sprite = sprite
+    pass
 
 ## Base and upper tile names at a cell, read straight from the tile store:
 ## building a SourceTile proxy for a name costs about 10 us, and the per-frame
@@ -2089,14 +2072,7 @@ func _is_normal_encounter_grass(cell: Vector2i) -> bool:
     )
 
 func _update_normal_grass_front_overlay(cell: Vector2i) -> void:
-    if normal_grass_front_sprite == null or not is_instance_valid(normal_grass_front_sprite):
-        return
-    var show := active_area_id == "OVERWORLD" and _is_normal_encounter_grass(cell)
-    normal_grass_front_sprite.visible = show
-    if not show:
-        return
-    normal_grass_front_sprite.position = Vector2(cell.x * TILE, cell.y * TILE + 8)
-    normal_grass_front_sprite.z_index = 103
+    pass
 
 func _setup_savanna_tree_front_overlay() -> void:
     if savanna_tree_front_sprite != null and is_instance_valid(savanna_tree_front_sprite):
@@ -3231,150 +3207,14 @@ func _unhandled_input(event: InputEvent) -> void:
         _interact_in_front()
         get_viewport().set_input_as_handled()
 
-func set_active_field_move(pokemon_data: Dictionary, move: String) -> bool:
-    if int(pokemon_data.get("hp", 1)) <= 0:
-        world_message.emit("A fainted POKEMON cannot use a Field Move.")
-        return false
-    if active_field_move == "FLY" and not _valid_fly_landing(_player_cell()):
-        world_message.emit("Land on safe ground before changing field moves.")
-        return false
-    clear_active_field_move(false)
-    active_field_pokemon = pokemon_data.duplicate(true)
-    active_field_species = String(pokemon_data.get("species", "")).to_lower()
-    active_field_move = move.to_upper()
-    if active_field_move == "FLY" and "FLY" not in FieldMoveData.field_moves_for(active_field_species):
-        world_message.emit("This Pokemon cannot use FLY.")
-        active_field_move = ""
-        active_field_species = ""
-        active_field_pokemon.clear()
-        return false
-    if active_field_move == "PAINT" and active_field_species != "smeargle":
-        world_message.emit("Only SMEARGLE can use PAINT.")
-        active_field_move = ""
-        active_field_species = ""
-        active_field_pokemon.clear()
-        return false
-    if active_field_move == "SURF":
-        var target := _player_cell() + _facing_cell()
-        if active_area_id != "OVERWORLD" or terrain_kind_at(target) != 0:
-            world_message.emit("Face open water to use SURF.")
-            active_field_move = ""
-            active_field_species = ""
-            active_field_pokemon.clear()
-            return false
-    if active_field_move == "FLY" and active_area_id != "OVERWORLD":
-        world_message.emit("FLY cannot be used indoors.")
-        active_field_move = ""
-        active_field_species = ""
-        active_field_pokemon.clear()
-        return false
-    if active_field_move == "TELEPORT" and _travel_destinations(false).is_empty():
-        world_message.emit("Place a BEACON before using TELEPORT.")
-        active_field_move = ""
-        active_field_species = ""
-        active_field_pokemon.clear()
-        return false
-    var placed := set_follower(pokemon_data, false) if active_field_move in ["FOLLOW", "FLASH", "POWER"] \
-        else _set_field_helper(pokemon_data)
-    if not placed:
-        active_field_move = ""
-        active_field_species = ""
-        active_field_pokemon.clear()
-        return false
-    build_mode_active = active_field_move in ["BUILD", "PAINT"]
-    if active_field_move == "RIDE":
-        if player.has_method("set_field_speed_multiplier"):
-            player.call("set_field_speed_multiplier", 1.80)
-        if player.has_method("set_field_visual_offset"):
-            player.call("set_field_visual_offset", Vector2(0, -9))
-        _set_fly_shadow_active(false)
-    if active_field_move == "FLY":
-        field_previous_collision_mask = player.collision_mask
-        player.collision_mask = 0
-        if player.has_method("set_field_speed_multiplier"):
-            player.call("set_field_speed_multiplier", 1.9)
-        if player.has_method("set_field_visual_offset"):
-            player.call("set_field_visual_offset", Vector2(0, -10))
-        _set_fly_shadow_active(true)
-        world_message.emit("FLY is active. Move freely; press B over safe ground to land.")
-    if active_field_move == "SURF":
-        _set_water_collision_enabled(false)
-        if player.has_method("set_field_visual_offset"):
-            player.call("set_field_visual_offset", Vector2(0, -5))
-    if active_field_move == "REPEL":
-        repel_until_elapsed = 0.0
-        world_message.emit("REPEL is active.")
-    elif active_field_move == "BUILD":
-        _position_build_helper()
-        set_build_preview_active(true)
-        _show_current_build_selection()
-    elif active_field_move == "DIG":
-        _show_current_dig_selection()
-    elif active_field_move == "PAINT":
-        _show_current_paint_selection()
-    elif active_field_move == "TELEPORT":
-        travel_selection_index = 0
-        teleport_map_requested.emit(_travel_destinations(false))
-    return true
-
 func clear_active_field_move(show_message: bool = true) -> void:
-    var previous_move := active_field_move
-    if active_field_move == "FLY":
-        player.collision_mask = field_previous_collision_mask
-        _set_fly_shadow_active(false)
-    if active_field_move == "SURF":
-        _set_water_collision_enabled(true)
-    if active_field_move in ["RIDE", "SURF", "FLY"] and \
-            player.has_method("set_field_visual_offset"):
-        player.call("set_field_visual_offset", Vector2.ZERO)
-    if active_field_move == "RIDE":
-        _set_fly_shadow_active(false)
-    if player.has_method("set_field_speed_multiplier"):
-        player.call("set_field_speed_multiplier", 1.0)
-    active_field_move = ""
-    active_field_species = ""
-    active_field_pokemon.clear()
-    repel_until_elapsed = 0.0
-    build_mode_active = false
-    set_build_preview_active(false)
-    clear_field_helper()
-    if previous_move in ["FOLLOW", "FLASH", "POWER"]:
-        clear_follower()
-    # Field moves stop silently.
+    pass
 
 func _set_fly_shadow_active(active: bool) -> void:
-    if active:
-        if not is_instance_valid(fly_shadow):
-            fly_shadow = Polygon2D.new()
-            fly_shadow.name = "FlyShadow"
-            fly_shadow.polygon = PackedVector2Array([
-                Vector2(-6, 0), Vector2(-5, -2), Vector2(-3, -3),
-                Vector2(3, -3), Vector2(5, -2), Vector2(6, 0),
-                Vector2(5, 2), Vector2(3, 3), Vector2(-3, 3),
-                Vector2(-5, 2)
-            ])
-            fly_shadow.color = Color(0.02, 0.02, 0.02, 0.92)
-            fly_shadow.antialiased = false
-            fly_shadow.z_as_relative = false
-            add_child(fly_shadow)
-        fly_shadow.visible = true
-        _update_fly_shadow()
-    elif is_instance_valid(fly_shadow):
-        fly_shadow.visible = false
+    pass
 
 func _update_fly_shadow() -> void:
-    if not is_instance_valid(fly_shadow):
-        return
-    # The CharacterBody remains on the logical map coordinate while only the
-    # displayed player is lifted. This keeps smooth unrestricted FLY movement
-    # and leaves the source-style oval shadow directly beneath the character.
-    var travel_offset := Vector2.ZERO
-    if active_field_move == "RIDE" and player.has_method("ledge_jump_travel_offset"):
-        travel_offset = Vector2(player.call("ledge_jump_travel_offset"))
-    fly_shadow.global_position = (
-        player.global_position + travel_offset
-    ).round() + Vector2(0, 5)
-    fly_shadow.z_index = player.z_index - 2
+    pass
 
 func _repel_blocks(opponent_level: int) -> bool:
     if active_field_move == "REPEL":
@@ -4232,41 +4072,7 @@ func _try_cut_target(cell: Vector2i) -> bool:
     return false
 
 func _interact_wild_pokemon(wild_id: int) -> void:
-    if not wild_pokemon.has(wild_id):
-        return
-    var data: Dictionary = wild_pokemon[wild_id]
-    var species := PokemonData.battle_display_name(String(data.get("species", "POKEMON")))
-    if bool(data.get("burrowed", false)):
-        world_message.emit("The sand shifts slightly, then goes still.")
-        return
-    if active_field_move == "ATTACK":
-        _begin_wild_encounter(wild_id, true)
-        return
-    var behavior: Dictionary = data.get("behavior", {})
-    if active_field_move == "CHARM":
-        if _charm_suppresses(data):
-            data["charmed"] = true
-            wild_pokemon[wild_id] = data
-            _show_ecology_emote(data.get("sprite") as Sprite2D, "heart")
-            world_message.emit("Wild %s is soothed while CHARM is active." % species)
-            return
-        elif int(behavior.get("aggression", 1)) >= 2:
-            world_message.emit("Wild %s is too aggressive for CHARM." % species)
-
-    if int(behavior.get("aggression", 1)) <= 0:
-        _show_ecology_emote(data.get("sprite") as Sprite2D, "happy")
-        wild_pokemon_prompt_requested.emit(wild_id, species, "FRIENDLY")
-        return
-
-    # Source wild behavior is a two-interaction state: the first A only warns.
-    # It must close completely before a second A on that same live Pokemon can
-    # provoke it. `warned` persists on the wild record but does not imply chase.
-    if not bool(data.get("warned", false)):
-        _show_ecology_emote(data.get("sprite") as Sprite2D, "alert")
-        wild_pokemon_prompt_requested.emit(wild_id, species, "PROVOKE_WARNING")
-        return
-    _show_ecology_emote(data.get("sprite") as Sprite2D, "angry")
-    wild_pokemon_prompt_requested.emit(wild_id, species, "PROVOKED")
+    pass
 
 func mark_wild_provocation_warning(wild_id: int) -> void:
     if not wild_pokemon.has(wild_id):
@@ -4765,11 +4571,10 @@ func _harvest_resource_with_move(cell: Vector2i, move: String) -> void:
         _harvest_resource(cell, move)
 
 func _cycle_dig_selection(direction: int) -> void:
-    dig_selection_index = wrapi(dig_selection_index + direction, 0, DIG_CHOICES.size())
-    _show_current_dig_selection()
+    pass
 
 func _show_current_dig_selection() -> void:
-    world_message.emit("DIG: %s" % DIG_CHOICES[dig_selection_index])
+    pass
 
 func _show_current_build_selection() -> void:
     if CraftingData.build_recipes().is_empty():
@@ -4805,154 +4610,10 @@ func apply_dig_choice(cell: Vector2i, choice: String) -> bool:
     return _apply_dig_choice(cell, choice)
 
 func _dig_surface(cell: Vector2i) -> void:
-    var exact_tile: SourceTile = null
-    var diggable_mountain := false
-    if exact_world_mode and exact_world != null:
-        exact_tile = exact_world.tile_at(cell)
-        if exact_tile != null:
-            var mountain_names := (exact_tile.name + " " +
-                exact_tile.name_upper).to_lower()
-            diggable_mountain = "mountain" in mountain_names or \
-                "ledges3" in mountain_names
-    if (blocked.has(cell) and not diggable_mountain) or \
-            built_structures.has(cell) or landmarks.has(cell) or \
-            resource_objects.has(cell):
-        world_message.emit("DIG can't break that tile.")
-        return
-    var material := "GRASS"
-    var loot: Array = []
-    if exact_world_mode and exact_world != null:
-        var tile := exact_tile
-        if tile == null or tile.is_water or \
-                ((tile.is_solid or tile.is_ledge) and not diggable_mountain):
-            world_message.emit("DIG can't break that tile.")
-            return
-        var route_name := "" if tile.route_belongs_to == null else tile.route_belongs_to.name
-        material = FieldMoveData.dig_material(tile.name, tile.name_upper, tile.biome, route_name)
-        var is_dig_site := "_cracked" in tile.name.to_lower() or \
-            "_cracked" in tile.name_upper.to_lower()
-        var low_tide_wash := (
-            low_tide_active
-            and _is_beach_tidal_tile(tile)
-            and "_tidaloff" in tile.name.to_lower()
-        )
-        if is_dig_site or low_tide_wash:
-            loot = FieldMoveData.biome_dig_loot(
-                _source_biome_for_tile(tile), route_name
-            )
-            if loot.is_empty():
-                loot = FieldMoveData.cracked_loot(tile.name)
-            if loot.is_empty():
-                loot = FieldMoveData.cracked_loot(tile.name_upper)
-        if diggable_mountain:
-            material = "HARD STONE"
-        # A volcano floor held between lava and water is PokeWilds' renewable
-        # Ashen Soil generator. DIG harvests it without consuming the contact
-        # tile, so the same source boundary can be harvested again.
-        if _is_renewable_ashen_contact(cell):
-            material_collected.emit("ASHEN SOIL", 1)
-            play_source_sound("dig1")
-            world_message.emit("DIG! You gathered ASHEN SOIL.")
-            return
-        # Low-tide beach digging searches the exposed wash without destroying
-        # its tidal identity; otherwise the next high tide could never cover
-        # that cell again. The authored beach2 route supplies the washed-up
-        # item pool while the exposed sand supplies SOFT SAND.
-        if low_tide_wash:
-            material_collected.emit(material, 1)
-            play_source_sound("dig1")
-            var washed_up := ""
-            if not loot.is_empty():
-                washed_up = String(loot[rng.randi_range(0, loot.size() - 1)])
-                material_collected.emit(washed_up, 1)
-            world_message.emit("DIG! You gathered %s%s." % [
-                material,
-                " and found %s" % washed_up if not washed_up.is_empty() else ""
-            ])
-            return
-        var replacement_ground := tile.name if is_dig_site else \
-            _contextual_ground_name(cell, tile.biome)
-        if replacement_ground.is_empty():
-            var dig_biome := _source_biome_for_tile(tile)
-            match dig_biome:
-                "SNOW":
-                    replacement_ground = "snow1"
-                "BEACH":
-                    replacement_ground = "sand1"
-                "DESERT":
-                    replacement_ground = "desert4"
-                "MOUNTAIN":
-                    replacement_ground = "mountain1"
-                "VOLCANO":
-                    replacement_ground = "volcano1"
-                "GRAVEYARD":
-                    replacement_ground = "green12"
-                "DEEP_FOREST":
-                    replacement_ground = "green_deepforest"
-                "WOODED_LAKE":
-                    replacement_ground = "green_woodedlake"
-                "SAVANNA":
-                    replacement_ground = "green_savanna1"
-                _:
-                    replacement_ground = "green1"
-        _set_exact_tile_names(cell, replacement_ground, "")
-        # Exact-world DIG persists the authored replacement tile itself. Using
-        # the compatibility terrain integer here used to reload every dug cell
-        # as generic green ground and destroyed biome-specific soil.
-        source_interior_mutations[_cell_key(cell)] = {
-            "kind":"TILE_NAMES", "base":replacement_ground, "upper":""
-        }
-        terrain_changes.erase(_cell_key(cell))
-    else:
-        if terrain_kind_at(cell) == 0:
-            world_message.emit("DIG can't break water.")
-            return
-        material = "SOFT SAND" if terrain_kind_at(cell) == 1 else "GRASS"
-        terrain[cell.y][cell.x] = 2
-        terrain_changes[_cell_key(cell)] = 2
-        var sprite := ground_sprites.get(cell) as Sprite2D
-        if is_instance_valid(sprite):
-            sprite.texture = GRASS
-    material_collected.emit(material, 1)
-    play_source_sound("dig1")
-    var found := ""
-    if not loot.is_empty():
-        found = String(loot[rng.randi_range(0, loot.size() - 1)])
-        material_collected.emit(found, 1)
-    world_message.emit("DIG! You gathered %s%s." % [material, " and found %s" % found if not found.is_empty() else ""])
+    pass
 
 func _apply_dig_choice(cell: Vector2i, choice: String) -> bool:
-    if blocked.has(cell) or built_structures.has(cell) or resource_objects.has(cell) or landmarks.has(cell):
-        world_message.emit("DIG can't change that tile.")
-        return false
-    if choice == "HOLE":
-        _dig_surface(cell)
-        return true
-    var info: Dictionary = FieldMoveData.dig_choice_info(choice)
-    if info.is_empty():
-        return false
-    if tall_grass.has(cell):
-        _remove_resource(cell, false)
-    var base_name := String(info.get("base", "green1"))
-    var upper_name := String(info.get("upper", ""))
-    if exact_world_mode:
-        _set_exact_tile_names(cell, base_name, upper_name)
-        source_interior_mutations[_cell_key(cell)] = {
-            "kind":"TILE_NAMES", "base":base_name, "upper":upper_name
-        }
-        terrain_changes.erase(_cell_key(cell))
-        _refresh_exact_streams()
-    else:
-        # Compatibility worlds approximate source surfaces with the closest
-        # existing ground type; the exact world remains authoritative.
-        terrain[cell.y][cell.x] = 1 if "sand" in base_name else 2
-        terrain_changes[_cell_key(cell)] = terrain[cell.y][cell.x]
-        var sprite := ground_sprites.get(cell) as Sprite2D
-        if is_instance_valid(sprite):
-            sprite.texture = SAND if terrain[cell.y][cell.x] == 1 else GRASS
-    play_source_sound("dig1")
-    world_message.emit("DIG changed the ground to %s." % choice)
-    return true
+    return false
 
 func _teleport_to_any_beacon() -> void:
     for key in built_structures.keys():
@@ -5210,11 +4871,6 @@ func _is_built_house_floor_cell(cell: Vector2i) -> bool:
 func _build_snap_piece_name(build_name: String) -> String:
     return _house_piece_name(build_name).to_upper()
 
-func _build_piece_is_grid_snapped(build_name: String) -> bool:
-    return _build_snap_piece_name(build_name) in [
-        "WALL", "ROOF", "DOOR", "INTERIOR WALL"
-    ]
-
 func _build_snap_cell_available(cell: Vector2i) -> bool:
     var in_house: bool = _is_built_house_floor_cell(cell)
     if not _in_bounds(cell) and not in_house:
@@ -5231,28 +4887,6 @@ func _build_snap_cell_available(cell: Vector2i) -> bool:
     if in_house:
         return true
     return terrain_kind_at(cell) != 0 and not blocked.has(cell)
-
-func _build_snap_connection_score(build_name: String, cell: Vector2i) -> int:
-    var piece: String = _build_snap_piece_name(build_name)
-    var desired_style: String = _house_style_for_recipe(build_name)
-    var compatible: Array[String] = ["WALL", "ROOF", "DOOR", "WINDOW", "CHIMNEY", "INTERIOR WALL"]
-    var score: int = 0
-    for direction in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
-        var neighbor: Vector2i = cell + direction
-        if not built_structures.has(neighbor):
-            continue
-        var data: Dictionary = built_structures[neighbor]
-        var neighbor_name: String = String(data.get("name", "")).to_upper()
-        if neighbor_name not in compatible:
-            continue
-        # Styled exterior shells stay with their selected family. Interior
-        # walls can attach to the finished shell of any of the three styles.
-        if piece != "INTERIOR WALL" and desired_style != "DEFAULT":
-            var neighbor_style: String = String(data.get("house_style", "DEFAULT"))
-            if neighbor_style not in [desired_style, "DEFAULT"]:
-                continue
-        score += 1
-    return score
 
 ## An interior wall takes windows, clocks and paint wherever it stands in the
 ## room: on a floor tile, or on the old row just above the room.
@@ -7307,96 +6941,7 @@ func _store_ecology_descriptor(descriptor: Dictionary) -> void:
             wild_pokemon[wild_id] = data
 
 func _update_deployed_pokemon(delta: float) -> void:
-    var directions: Array[Vector2i] = [
-        Vector2i.ZERO, Vector2i.LEFT, Vector2i.RIGHT,
-        Vector2i.UP, Vector2i.DOWN
-    ]
-    for raw_cell in deployed_pokemon.keys():
-        var old_cell: Vector2i = raw_cell
-        if not deployed_pokemon.has(old_cell):
-            continue
-        var data: Dictionary = deployed_pokemon[old_cell]
-        data["move_timer"] = float(data.get("move_timer", 0.0)) - delta
-        if float(data["move_timer"]) > 0.0:
-            deployed_pokemon[old_cell] = data
-            continue
-        data["move_timer"] = _wild_move_delay(String(data.get("species", "")))
-        data = _try_create_parent_egg(data, old_cell)
-        # A wall or roof can land on a Pokemon's tile when two players act at
-        # the same moment. It is then shut inside the piece: hidden for some
-        # players, standing on the roof for others, and out of reach. Step it
-        # out onto the nearest free ground.
-        if not data.has("house_door") and bool(built_structures.get(old_cell, {}).get("solid", false)):
-            var exit_cell := _resolve_egg_ground_cell(old_cell)
-            if exit_cell.x > -2147483648 and exit_cell != old_cell:
-                deployed_pokemon.erase(old_cell)
-                data["cell"] = exit_cell
-                data["x"] = exit_cell.x
-                data["y"] = exit_cell.y
-                var trapped: Sprite2D = data.get("sprite") as Sprite2D
-                if is_instance_valid(trapped):
-                    trapped.position = _cell_center(exit_cell)
-                    trapped.z_index = _depth_z(exit_cell)
-                deployed_pokemon[exit_cell] = data
-                continue
-        var behavior: Dictionary = data.get("behavior", {})
-        if bool(behavior.get("stationary", false)):
-            deployed_pokemon[old_cell] = data
-            continue
-        if not String(data.get("held_item", "")).is_empty():
-            var dance_sprite: Sprite2D = data.get("sprite") as Sprite2D
-            data["anim_phase"] = 1 - int(data.get("anim_phase", 0))
-            if is_instance_valid(dance_sprite):
-                _set_overworld_motion_frame(
-                    dance_sprite, Vector2.DOWN, int(data["anim_phase"])
-                )
-            deployed_pokemon[old_cell] = data
-            continue
-
-        var direction := directions[rng.randi_range(0, directions.size() - 1)]
-        var friend_id := String(data.get("friend_id", ""))
-        var friend_reunion := (
-            not friend_id.is_empty()
-            and float(data.get("friend_seconds", PokemonEcology.FRIEND_SECONDS)) <= 0.0
-        )
-        var companion_id := friend_id
-        if friend_reunion:
-            data["friend_seconds"] = PokemonEcology.FRIEND_SECONDS
-            _show_friend_reunion(data, friend_id)
-        elif companion_id.is_empty() or rng.randf() < 0.18:
-            companion_id = String(data.get("mate_id", companion_id))
-        if not companion_id.is_empty() and (friend_reunion or rng.randf() < 0.20):
-            var companion_cell := _ecology_cell_by_id(companion_id)
-            if companion_cell.x > -2147483648:
-                direction = _cardinal_direction(companion_cell - old_cell, false)
-        direction = _paired_wander_direction(data, old_cell, direction)
-        var target := old_cell + direction
-        if (
-                direction == Vector2i.ZERO
-                or not _pokemon_can_move_between(String(data.get("species", "")), old_cell, target)
-                or target == _player_cell()
-                or target == follower_cell
-                or target == field_helper_cell
-                or deployed_pokemon.has(target)
-                or _wild_id_at_cell(target) >= 0
-                or wild_eggs.has(target)
-            ):
-            deployed_pokemon[old_cell] = data
-            continue
-
-        deployed_pokemon.erase(old_cell)
-        data["cell"] = target
-        data["x"] = target.x
-        data["y"] = target.y
-        data["anim_phase"] = 1 - int(data.get("anim_phase", 0))
-        var sprite: Sprite2D = data.get("sprite") as Sprite2D
-        if is_instance_valid(sprite):
-            _set_overworld_motion_frame(sprite, direction, int(data["anim_phase"]))
-            sprite.z_index = _depth_z(target)
-            create_tween().tween_property(
-                sprite, "position", _cell_center(target), 0.20
-            ).set_trans(Tween.TRANS_LINEAR)
-        deployed_pokemon[target] = data
+    pass
 
 func _egg_ground_cell_is_valid(cell: Vector2i, ignored_wild_id: int = -1) -> bool:
     if not _in_bounds(cell):
@@ -7493,7 +7038,7 @@ func _try_create_parent_egg(
     return data
 
 func _may_release_egg(_egg: Dictionary) -> bool:
-    return true
+    return false
 
 func _release_old_eggs() -> void:
     # A habitat egg left alone is released into the wild: it simply leaves the
@@ -8755,128 +8300,10 @@ func _flash_is_active() -> bool:
     return false
 
 func _charm_suppresses(data: Dictionary) -> bool:
-    if active_field_move != "CHARM":
-        return false
-    var behavior: Dictionary = data.get("behavior", {})
-    # aggression 2 is the source's always-angry behavior and ignores CHARM.
-    if int(behavior.get("aggression", 1)) >= 2:
-        return false
-    return int(active_field_pokemon.get("level", 1)) > _effective_wild_level(
-        int(data.get("level", 1)))
+    return false
 
 func _update_wild_pokemon(delta: float) -> void:
-    var directions: Array[Vector2i] = [
-        Vector2i.ZERO, Vector2i.LEFT, Vector2i.RIGHT,
-        Vector2i.UP, Vector2i.DOWN
-    ]
-    var player_cell := _player_cell()
-    for raw_id in wild_pokemon.keys():
-        var wild_id := int(raw_id)
-        if not wild_pokemon.has(wild_id):
-            continue
-        var data: Dictionary = wild_pokemon[wild_id]
-        if bool(data.get("burrowed", false)):
-            continue
-        var old_cell: Vector2i = data.get("cell", Vector2i.ZERO)
-        if not _wild_ecology_is_active(old_cell, player_cell):
-            continue
-        var active_sprite := data.get("sprite") as Sprite2D
-        if is_instance_valid(active_sprite):
-            active_sprite.visible = true
-            active_sprite.z_index = _depth_z(old_cell)
-        var was_charmed := bool(data.get("charmed", false))
-        var is_charmed := _charm_suppresses(data)
-        data["charmed"] = is_charmed
-        if is_charmed and not was_charmed:
-            _show_ecology_emote(data.get("sprite") as Sprite2D, "heart")
-        data["move_timer"] = float(data.get("move_timer", 0.0)) - delta
-        if float(data["move_timer"]) > 0.0:
-            wild_pokemon[wild_id] = data
-            continue
-        data["move_timer"] = _wild_move_delay(String(data.get("species", "")), data)
-        data = _try_create_parent_egg(data, old_cell, wild_id)
-        var behavior: Dictionary = data.get("behavior", {})
-        if bool(behavior.get("stationary", false)):
-            wild_pokemon[wild_id] = data
-            continue
-
-        var player_delta := player_cell - old_cell
-        var pursuing := bool(data.get("aggro_player", false)) and not is_charmed
-        if world_elapsed_seconds < float(data.get("fed_until", 0.0)):
-            var eating_sprite: Sprite2D = data.get("sprite") as Sprite2D
-            data["anim_phase"] = 1 - int(data.get("anim_phase", 0))
-            if is_instance_valid(eating_sprite):
-                _set_overworld_motion_frame(
-                    eating_sprite, Vector2.DOWN, int(data["anim_phase"])
-                )
-            wild_pokemon[wild_id] = data
-            continue
-        if (
-                pursuing
-                and active_field_move != "SURF"
-                and player_delta.length_squared() <= 1
-                and not encounter_grace_active()
-                and not _repel_blocks(int(data.get("level", 1)))
-            ):
-            _begin_wild_encounter(wild_id)
-            return
-        var direction := directions[rng.randi_range(0, directions.size() - 1)]
-        if bool(behavior.get("flee", false)) and player_delta.length_squared() <= 16:
-            direction = _cardinal_direction(player_delta, true)
-        elif pursuing and player_delta.length_squared() <= 64:
-            direction = _cardinal_direction(player_delta, false)
-        else:
-            var friend_id := String(data.get("friend_id", ""))
-            var friend_reunion := (
-                not friend_id.is_empty()
-                and float(data.get("friend_seconds", PokemonEcology.FRIEND_SECONDS)) <= 0.0
-            )
-            var companion_id := friend_id
-            if friend_reunion:
-                data["friend_seconds"] = PokemonEcology.FRIEND_SECONDS
-                _show_friend_reunion(data, friend_id)
-            elif companion_id.is_empty() or rng.randf() < 0.18:
-                companion_id = String(data.get("mate_id", companion_id))
-            if not companion_id.is_empty() and (friend_reunion or rng.randf() < 0.20):
-                var companion_cell := _ecology_cell_by_id(companion_id)
-                if companion_cell.x > -2147483648:
-                    direction = _cardinal_direction(companion_cell - old_cell, false)
-            elif rng.randf() < 0.12:
-                var same_species_cell := _nearby_same_base_species_cell(data, old_cell)
-                if same_species_cell.x > -2147483648:
-                    direction = _cardinal_direction(same_species_cell - old_cell, false)
-        direction = _paired_wander_direction(data, old_cell, direction)
-        var target := old_cell + direction
-        if (
-                direction == Vector2i.ZERO
-                or not _pokemon_can_move_between(String(data.get("species", "")), old_cell, target)
-                or target == player_cell
-                or target == follower_cell
-                or target == field_helper_cell
-                or _wild_id_at_cell(target, wild_id) >= 0
-                or wild_eggs.has(target)
-                or deployed_pokemon.has(target)
-            ):
-            wild_pokemon[wild_id] = data
-            continue
-
-        var sprite: Sprite2D = data.get("sprite") as Sprite2D
-        var phase := 1 - int(data.get("anim_phase", 0))
-        data["anim_phase"] = phase
-        data["cell"] = target
-        _wild_cell_moved(wild_id, target)
-        if is_instance_valid(sprite):
-            _set_overworld_motion_frame(sprite, direction, phase)
-            sprite.z_index = _depth_z(target)
-            create_tween().tween_property(
-                sprite, "position", _cell_center(target), 0.20
-            ).set_trans(Tween.TRANS_LINEAR)
-        if bool(behavior.get("flee", false)):
-            data["flee_steps"] = int(data.get("flee_steps", 0)) + 1
-            if int(data["flee_steps"]) >= 3 and _is_tall_grass_cell(target):
-                _remove_wild_pokemon(wild_id)
-                continue
-        wild_pokemon[wild_id] = data
+    pass
 
 func _show_friend_reunion(data: Dictionary, friend_id: String) -> void:
     _show_ecology_emote(data.get("sprite") as Sprite2D, "happy")
@@ -9422,30 +8849,6 @@ func _active_source_interior_route() -> Dictionary:
     if tile == null or tile.route_belongs_to == null:
         return {}
     return {"name": tile.route_belongs_to.name, "level": tile.route_belongs_to.level}
-
-func request_fishing_encounter(rod_name: String) -> void:
-    var beside_water := false
-    var player_cell: Vector2i = _player_cell()
-    var directions: Array[Vector2i] = [
-        Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN
-    ]
-    for direction in directions:
-        var target: Vector2i = player_cell + direction
-        if _in_bounds(target) and terrain_kind_at(target) == 0:
-            beside_water = true
-            break
-    if not beside_water:
-        world_message.emit("Use the %s while facing water." % rod_name)
-        return
-    var water_species := ["magikarp", "tentacool", "goldeen"]
-    if rod_name == "GOOD ROD":
-        water_species.append_array(["poliwag", "krabby", "shellder"])
-    elif rod_name == "SUPER ROD":
-        water_species.append_array(["gyarados", "lapras", "dratini"])
-    var species: String = water_species[rng.randi_range(0, water_species.size() - 1)]
-    battle_requested.emit({"id": "wild", "kind": "wild", "can_run": true,
-        "can_catch": true, "source_player_alert": true,
-        "party": [{"species": species, "level": rng.randi_range(3, 18)}]})
 
 var house_transition_active := false
 
@@ -10500,91 +9903,10 @@ func end_sleeping_bag() -> void:
     set_gameplay_enabled(true)
 
 func _spawn_puddle_step_effect(cell: Vector2i) -> void:
-    if active_area_id != "OVERWORLD" or not exact_world_mode or exact_world == null:
-        return
-    var tile: SourceTile = exact_world.tile_at(cell)
-    if tile == null or _source_biome_for_tile(tile) != "BEACH":
-        return
-    var high_tide: bool = "_tidalwater" in tile.name.to_lower()
-    var puddle_name: String = tile.name if "_puddle1" in tile.name else tile.name_upper
-    if not high_tide:
-        if "_puddle1" not in puddle_name or "_tidaloff" not in puddle_name:
-            return
-        # Low-tide puddle physics follows the same authored per-pixel water
-        # mask as the locked reflection system. Stepping on the dry portion of
-        # a puddle tile must not create a water splash.
-        var local_feet: Vector2i = Vector2i(8, 10)
-        if not SourceWorldData.puddle_reflects_at(puddle_name, local_feet):
-            return
-
-    var frames: SpriteFrames = SpriteFrames.new()
-    frames.add_animation("splash")
-    frames.set_animation_loop("splash", false)
-    frames.set_animation_speed("splash", 7.0 if high_tide else 5.0)
-    for frame_index in range(3):
-        var frame: AtlasTexture = AtlasTexture.new()
-        frame.atlas = SOURCE_PUDDLE_SPLASH
-        frame.region = Rect2(frame_index * TILE, 0, TILE, TILE)
-        frames.add_frame("splash", frame)
-
-    var splash: AnimatedSprite2D = AnimatedSprite2D.new()
-    splash.sprite_frames = frames
-    splash.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-    splash.position = _cell_center(cell) + Vector2(0.0, 4.0)
-    splash.z_as_relative = false
-    splash.z_index = _depth_z(cell) + 3
-    add_child(splash)
-    splash.animation_finished.connect(splash.queue_free)
-    splash.play("splash")
+    pass
 
 func _update_tidal_wade_visual() -> void:
-    var show_wade: bool = false
-    var cell: Vector2i = _player_cell()
-    var tile: SourceTile = null
-    if active_area_id == "OVERWORLD" and exact_world_mode and exact_world != null:
-        tile = exact_world.tile_at(cell)
-        if tile != null:
-            show_wade = (
-                active_field_move not in ["FLY", "SURF"]
-                and "_tidalwater" in tile.name.to_lower()
-            )
-    if not show_wade:
-        if is_instance_valid(tide_wade_base):
-            tide_wade_base.visible = false
-        if is_instance_valid(tide_wade_ripple):
-            tide_wade_ripple.visible = false
-        return
-
-    # Source-style wading: the actor itself stays fully visible and only the
-    # shallow-water foreground crosses the feet/lower legs. Repainting the base
-    # beach tile in front of the actor caused the disappearing/covered player.
-    if is_instance_valid(tide_wade_base):
-        tide_wade_base.visible = false
-    if not is_instance_valid(tide_wade_ripple):
-        tide_wade_ripple = Sprite2D.new()
-        tide_wade_ripple.name = "TideWadeWater"
-        tide_wade_ripple.centered = false
-        tide_wade_ripple.region_enabled = true
-        tide_wade_ripple.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-        tide_wade_ripple.z_as_relative = false
-        add_child(tide_wade_ripple)
-
-    var base_stream: Node = get_node_or_null("GroundLayer/ExactBaseTileStream")
-    var animation_tick: int = int(floor(world_elapsed_seconds * 60.0))
-    if base_stream != null:
-        animation_tick = int(base_stream.get("source_animation_tick"))
-    const WADE_FRONT_HEIGHT := 8
-    var wade_source_y := TILE - WADE_FRONT_HEIGHT
-    var tide_frame: int = posmod(int(animation_tick / 19), 2)
-    tide_wade_ripple.texture = SOURCE_TIDAL_WATER
-    tide_wade_ripple.region_rect = Rect2(
-        tide_frame * TILE, wade_source_y, TILE, WADE_FRONT_HEIGHT)
-    tide_wade_ripple.position = Vector2(
-        cell.x * TILE, cell.y * TILE + wade_source_y)
-    tide_wade_ripple.modulate = Color(1, 1, 1, 0.50)
-    tide_wade_ripple.z_index = player.z_index + 5
-    tide_wade_ripple.visible = true
-    player.visible = true
+    pass
 
 func set_gameplay_enabled(enabled: bool) -> void:
     gameplay_enabled = enabled and not is_instance_valid(stool_seated_sprite)
@@ -11252,47 +10574,6 @@ func _permitted_ledge_direction(tile: SourceTile) -> Vector2i:
         "up":Vector2i.DOWN, "down":Vector2i.UP,
         "left":Vector2i.LEFT, "right":Vector2i.RIGHT
     }.get(tile.ledge_dir, Vector2i.ZERO) as Vector2i
-
-func try_pre_move_field_jump(before: Vector2, movement_direction: Vector2):
-    if active_field_move != "RIDE" or not exact_world_mode or \
-            exact_world == null or active_area_id != "OVERWORLD":
-        return null
-    if player.has_method("is_ledge_jump_active") and \
-            bool(player.call("is_ledge_jump_active")):
-        return null
-    var direction := Vector2i.ZERO
-    if absf(movement_direction.x) > absf(movement_direction.y):
-        direction = Vector2i(1 if movement_direction.x > 0.0 else -1, 0)
-    elif absf(movement_direction.y) > 0.01:
-        direction = Vector2i(0, 1 if movement_direction.y > 0.0 else -1)
-    if direction == Vector2i.ZERO:
-        return null
-    var start_cell := Vector2i(
-        floori(before.x / float(TILE)), floori(before.y / float(TILE)))
-    var obstacle_cell := start_cell + direction
-    var obstacle: SourceTile = exact_world.tile_at(obstacle_cell)
-    if obstacle == null or not (obstacle.is_ledge or obstacle.is_bottom_mtn_layer):
-        return null
-    if obstacle.is_ledge:
-        var obstacle_key := (obstacle.name + " " + obstacle.name_upper).to_lower()
-        if "ledge_grass_down" in obstacle_key:
-            var permitted := _permitted_ledge_direction(obstacle)
-            if permitted == Vector2i.ZERO or direction != permitted:
-                return null
-    # Source RIDE hops a low edge as one continuous motion. Mountain rims can be
-    # wider than one source cell, so take the first ordinary clear landing up to
-    # three cells ahead instead of colliding and leaving the mount in front.
-    for distance in range(2, 4):
-        var landing_cell := start_cell + direction * distance
-        if not _ledge_jump_landing_is_clear(landing_cell):
-            continue
-        var landing_position := _cell_center(landing_cell)
-        if player.has_method("begin_ledge_jump_visual"):
-            player.call("begin_ledge_jump_visual", before - landing_position)
-        _set_fly_shadow_active(true)
-        play_source_sound("ledge1")
-        return landing_position
-    return null
 
 func _ledge_jump_landing_is_clear(cell: Vector2i) -> bool:
     if not _is_walkable(cell):
