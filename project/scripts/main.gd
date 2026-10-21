@@ -873,7 +873,15 @@ var source_boss_damage_finished := true
 var source_boss_move_type := "NORMAL"
 var source_mewtwo: Control
 var source_mewtwo_intro_seen := false
-var battle_animation_manifest: Dictionary = {}
+## 1.65 MB of JSON, parsed on a thread from startup; the first use waits for it.
+var battle_animation_manifest: Dictionary:
+    get:
+        if battle_animation_manifest_thread != null:
+            _battle_animation_manifest = battle_animation_manifest_thread.wait_to_finish()
+            battle_animation_manifest_thread = null
+        return _battle_animation_manifest
+var _battle_animation_manifest: Dictionary = {}
+var battle_animation_manifest_thread: Thread
 var battle_animation_cache: Dictionary = {}
 var battle_directive_cache: Dictionary = {}
 
@@ -1007,6 +1015,8 @@ var pokemon_storage: Dictionary = {}
 const SHARED_STORAGE_KEY := "SHARED"
 ## The number the shared storage was last written under.
 var shared_storage_serial := 0
+## How the last write of the shared storage went, told after SAVE.
+var shared_storage_error := OK
 var storage_menu: Control
 var storage_rows: Array[Dictionary] = []
 var storage_actions: Panel
@@ -1363,7 +1373,8 @@ func _ready() -> void:
     $UI.add_child(field_move_wheel)
     touch_controls.set_game_active(true)
     battle_rng.randomize()
-    _load_battle_animation_manifest()
+    battle_animation_manifest_thread = Thread.new()
+    battle_animation_manifest_thread.start(_load_battle_animation_manifest)
 
     world_edit.text = "PokeWilds"
     _load_setup()
@@ -4331,6 +4342,9 @@ func _notification(what: int) -> void:
         if is_node_ready():
             touch_controls._release_all()
         return
+    if what == NOTIFICATION_APPLICATION_PAUSED:
+        _save_on_pause()
+        return
     if what in [NOTIFICATION_APPLICATION_FOCUS_IN, NOTIFICATION_WM_WINDOW_FOCUS_IN]:
         if is_node_ready() and _is_android_touch_runtime():
             touch_controls.refresh_system_theme()
@@ -5416,9 +5430,7 @@ func _load_setup() -> void:
 
     var newest := _find_newest_valid_save()
     if not newest.is_empty():
-        var data := _read_save_file(newest)
-        if not data.is_empty():
-            world_edit.text = String(data.get("world_name", world_edit.text))
+        world_edit.text = String(newest.data.get("world_name", world_edit.text))
 
     _update_classic_menu_labels()
 
@@ -8619,20 +8631,23 @@ func _end_battle(outcome: String = "") -> void:
         world.call("begin_encounter_grace")
     if ending_pvp:coop_game.pvp.restore()
 
-func _load_battle_animation_manifest() -> void:
+func _exit_tree() -> void:
+    var _joined := battle_animation_manifest # a thread must be waited for
+
+func _load_battle_animation_manifest() -> Dictionary:
     const MANIFEST_PATH = "res://assets/battle_animations/manifest.json"
-    battle_animation_manifest = {}
     if not FileAccess.file_exists(MANIFEST_PATH):
-        return
+        return {}
     var file = FileAccess.open(MANIFEST_PATH, FileAccess.READ)
     if file == null:
-        return
+        return {}
     var parsed = JSON.parse_string(file.get_as_text())
-    if typeof(parsed) == TYPE_DICTIONARY:
-        battle_animation_manifest = parsed
-        # The base64 text costs 4 bytes per character as a String, the bytes 1.
-        for animation in (parsed.get("animations", {}) as Dictionary).values():
-            animation["frame_table"] = Marshalls.base64_to_raw(String(animation.get("frame_table", "")))
+    if typeof(parsed) != TYPE_DICTIONARY:
+        return {}
+    # The base64 text costs 4 bytes per character as a String, the bytes 1.
+    for animation in (parsed.get("animations", {}) as Dictionary).values():
+        animation["frame_table"] = Marshalls.base64_to_raw(String(animation.get("frame_table", "")))
+    return parsed
 
 func _play_status_on_pokemon(animation: String, pokemon: Dictionary, player_side: bool) -> void:
     # Source LoadAndPlayAnimation selects enemy_gsc for the player's Pokemon:
@@ -10630,6 +10645,9 @@ func _write_save_index(world_name: String, save_path: String) -> void:
 func _delete_save(world_name: String, save_path: String) -> Error:
     var error := DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path))
     if error != OK: return error
+    # The kept copy would bring the world back (see _read_save_file).
+    for leftover in [save_path + ".bak", save_path + ".pending"]:
+        if FileAccess.file_exists(leftover): DirAccess.remove_absolute(ProjectSettings.globalize_path(leftover))
     var cfg := ConfigFile.new()
     if cfg.load(SAVE_INDEX_PATH) == OK:
         var key = _safe_world_filename(world_name)
@@ -10639,67 +10657,90 @@ func _delete_save(world_name: String, save_path: String) -> Error:
     return OK
 
 func _read_save_file(save_path: String) -> Dictionary:
-    if save_path.is_empty() or not FileAccess.file_exists(save_path):
+    if save_path.is_empty():
         return {}
-    var file := FileAccess.open(save_path, FileAccess.READ)
-    if file == null:
-        return {}
-    var text := file.get_as_text()
-    file.close()
-    var parsed = JSON.parse_string(text)
-    if typeof(parsed) == TYPE_DICTIONARY:
-        return parsed
+    # A save left broken (by a game from before saves were written safely)
+    # falls back to the one before it.
+    for candidate in [save_path, save_path + ".bak"]:
+        if not FileAccess.file_exists(candidate):
+            continue
+        var parsed = JSON.parse_string(FileAccess.get_file_as_string(candidate))
+        if parsed is Dictionary:
+            return parsed
     return {}
 
-func _find_newest_valid_save() -> String:
+## Writes a world's save so that a kill at any moment leaves the old save or
+## the new one, never a cut one: the text goes to .pending and is read back,
+## the old save is kept as .bak, then .pending takes its place.
+func _write_world_save(save_path: String, data: Dictionary) -> Error:
+    var text := JSON.stringify(data)
+    var pending := save_path + ".pending"
+    var file := FileAccess.open(pending, FileAccess.WRITE)
+    if file == null:
+        return FileAccess.get_open_error()
+    file.store_string(text)
+    file.flush()
+    var error := file.get_error()
+    file.close()
+    if error != OK:
+        return error
+    if FileAccess.get_file_as_string(pending) != text:
+        return ERR_FILE_CORRUPT
+    if FileAccess.file_exists(save_path):
+        error = DirAccess.copy_absolute(save_path, save_path + ".bak")
+        if error != OK:
+            return error
+    return DirAccess.rename_absolute(pending, save_path)
+
+## {"path", "data"} of the newest save that can be read, or {}.
+func _find_newest_valid_save() -> Dictionary:
     if not _ensure_save_directory():
-        return ""
+        return {}
 
     var cfg := ConfigFile.new()
     if cfg.load(SAVE_INDEX_PATH) == OK:
         var indexed := _indexed_save_path(String(cfg.get_value("last", "save_path", "")))
-        if not _read_save_file(indexed).is_empty():
-            return indexed
+        var indexed_data := _read_save_file(indexed)
+        if not indexed_data.is_empty():
+            return {"path": indexed, "data": indexed_data}
 
-    var dir := DirAccess.open(SAVE_DIR)
-    if dir == null:
-        return ""
-
-    var newest := ""
-    var newest_time := 0
-    dir.list_dir_begin()
-    var file_name := dir.get_next()
-    while not file_name.is_empty():
-        if not dir.current_is_dir() and file_name.to_lower().ends_with(".json"):
+    # Newest first: only saves that cannot be read are parsed before the answer.
+    var candidates := []
+    for file_name in DirAccess.get_files_at(SAVE_DIR):
+        if file_name.to_lower().ends_with(".json"):
             var candidate := "%s/%s" % [SAVE_DIR, file_name]
-            if not _read_save_file(candidate).is_empty():
-                var modified := int(FileAccess.get_modified_time(candidate))
-                if newest.is_empty() or modified >= newest_time:
-                    newest = candidate
-                    newest_time = modified
-        file_name = dir.get_next()
-    dir.list_dir_end()
-    return newest
+            candidates.append([int(FileAccess.get_modified_time(candidate)), candidate])
+    candidates.sort_custom(func(first: Array, second: Array) -> bool: return first[0] > second[0])
+    for candidate in candidates:
+        var data := _read_save_file(candidate[1])
+        if not data.is_empty():
+            return {"path": candidate[1], "data": data}
+    return {}
 
-func _find_save_path(world_name: String) -> String:
+## {"path", "data"} of the save of `world_name`, or {}.
+func _find_save_path(world_name: String) -> Dictionary:
     if not _ensure_save_directory():
-        return ""
+        return {}
 
     var direct_file := _save_path_for_world(world_name)
-    if not _read_save_file(direct_file).is_empty():
-        return direct_file
+    var data := _read_save_file(direct_file)
+    if not data.is_empty():
+        return {"path": direct_file, "data": data}
 
     var cfg := ConfigFile.new()
     if cfg.load(SAVE_INDEX_PATH) == OK:
         var key := _safe_world_filename(world_name)
         var indexed := _indexed_save_path(String(cfg.get_value("worlds", key, "")))
-        if not _read_save_file(indexed).is_empty():
-            return indexed
+        data = _read_save_file(indexed)
+        if not data.is_empty():
+            return {"path": indexed, "data": data}
 
         var last_name := String(cfg.get_value("last", "world_name", ""))
         var last_path := _indexed_save_path(String(cfg.get_value("last", "save_path", "")))
-        if (world_name.strip_edges().is_empty() or last_name == world_name) and not _read_save_file(last_path).is_empty():
-            return last_path
+        if world_name.strip_edges().is_empty() or last_name == world_name:
+            data = _read_save_file(last_path)
+            if not data.is_empty():
+                return {"path": last_path, "data": data}
 
     return _find_newest_valid_save()
 
@@ -10747,7 +10788,6 @@ func _save_current_game() -> void:
         return
 
     var data = _capture_game_save()
-    var world_name = String(data.world_name)
     if coop_game.active:
         var saved_ok: bool = await coop_game.save_game(data)
         _close_save_confirmation()
@@ -10756,34 +10796,48 @@ func _save_current_game() -> void:
         else: _show_message("SAVE FAILED.")
         return
 
-    var save_path = _save_path_for_world(world_name)
-    var file = FileAccess.open(save_path, FileAccess.WRITE)
-    if file == null:
+    if _write_single_player_save(data) != OK:
         _close_save_confirmation()
         _show_message("SAVE FAILED.")
         return
-
-    data["storage_shared"] = true
-    data["storage_serial"] = shared_storage_serial + 1
-    file.store_string(JSON.stringify(data))
-    file.flush()
-    file.close()
-
-    if not FileAccess.file_exists(save_path):
-        _close_save_confirmation()
-        _show_message("SAVE FAILED.")
-        return
-
-    _write_shared_storage()
-    _write_save_index(world_name, save_path)
-    world_edit.text = world_name
-    _save_setup()
 
     await shared_save_folder.export_files(self)
     _close_save_confirmation()
     _close_game_menu()
     world.call("play_source_sound", "save1")
-    _show_message("GAME SAVED.")
+    if shared_storage_error == OK:
+        _show_message("GAME SAVED.")
+    else:
+        _show_message("GAME SAVED, but the STORAGE BOXES could not be saved.")
+
+## The single-player save and what goes with it, for the SAVE menu, the save
+## before quitting and the save when the app goes to the background.
+func _write_single_player_save(data: Dictionary) -> Error:
+    if not _ensure_save_directory():
+        return ERR_CANT_CREATE
+    var world_name := String(data.world_name)
+    var save_path := _save_path_for_world(world_name)
+    data["storage_shared"] = true
+    data["storage_serial"] = shared_storage_serial + 1
+    var error := _write_world_save(save_path, data)
+    if error != OK:
+        push_error("%s could not be saved (%d)." % [save_path, error])
+        return error
+    _write_shared_storage()
+    _write_save_index(world_name, save_path)
+    world_edit.text = world_name
+    _save_setup()
+    return OK
+
+## iOS may end a suspended app without warning: save when it goes to the
+## background, whenever the SAVE menu could be opened. Online worlds keep
+## their own journal.
+func _save_on_pause() -> void:
+    if not started or generating or battle_active or edge_travel_busy or coop_game.active or \
+            (field_item_busy and not _sleeping_bag_active()):
+        return
+    _sync_pokedex_owned()
+    _write_single_player_save(_capture_game_save())
 
 ## Writes the SHARED chest's contents after the save that goes with them, so
 ## that what is stored always matches a saved party. If this write is lost,
@@ -10791,13 +10845,13 @@ func _save_current_game() -> void:
 func _write_shared_storage() -> void:
     shared_storage_serial += 1
     var held = pokemon_storage.get(SHARED_STORAGE_KEY, [])
-    var error: Error = preload("res://scripts/shared_storage.gd").write(
+    shared_storage_error = preload("res://scripts/shared_storage.gd").write(
         {SHARED_STORAGE_KEY: held if held is Array else []}, shared_storage_serial)
-    if error != OK:
-        push_error("Shared storage could not be written (%d)." % error)
+    if shared_storage_error != OK:
+        push_error("Shared storage could not be written (%d)." % shared_storage_error)
 
 func _read_game_save(world_name: String):
-    return _read_save_file(_find_save_path(world_name))
+    return _find_save_path(world_name).get("data", {})
 
 func _restore_game_save(data) -> void:
     GameOptions.restore_game_options(data.get("options", {}),String(data.get("world_name","")))
@@ -12481,31 +12535,11 @@ func _save_current_game_for_quit() -> bool:
         return true
     if coop_game.active:
         return await coop_game.save_game(_capture_game_save(3))
-    if not _ensure_save_directory():
-        return false
 
     # Same record as the SAVE menu (the old hand-built one dropped egg/friendship
     # timers and ecology ids).
-    var data = _capture_game_save()
-    var world_name := String(data.world_name)
-
-    var save_path = _save_path_for_world(world_name)
-    var file = FileAccess.open(save_path, FileAccess.WRITE)
-    if file == null:
+    if _write_single_player_save(_capture_game_save()) != OK:
         return false
-
-    data["storage_shared"] = true
-    data["storage_serial"] = shared_storage_serial + 1
-    file.store_string(JSON.stringify(data))
-    file.flush()
-    file.close()
-
-    if not FileAccess.file_exists(save_path):
-        return false
-
-    _write_shared_storage()
-    _write_save_index(world_name, save_path)
-    _save_setup()
     world.call("play_source_sound", "save1")
     return true
 
