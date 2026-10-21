@@ -35,6 +35,12 @@ var surface: Dictionary = {}
 var chrome: Control
 var close_button: Control
 var extra_buttons: Array[Control] = []
+## What each extra button was last dressed as: an unchanged one is left alone.
+var button_text: Array[String] = []
+var button_rect: Array[Rect2] = []
+var button_hud: Array[bool] = []
+var button_dark: Array[bool] = []
+var button_applied: Array[bool] = []
 var points: Dictionary = {}
 var start_points: Dictionary = {}
 var moved := false
@@ -163,8 +169,15 @@ func _draw_hud_button(button: Control) -> void:
         var h := HudStyle.INK_HEIGHT / 2.0
         button.draw_colored_polygon(PackedVector2Array([c + Vector2(h * pointing, 0), c + Vector2(-h * pointing / 2.0, -h), c + Vector2(-h * pointing / 2.0, h)]), HudStyle.INK)
 
+## Measured once per text: the chips redo this every frame otherwise.
+static var _ink_widths := {}
+
 static func _ink_width(text: String) -> float:
-    return HudStyle.FONT.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, HudStyle.FONT_SIZE).x - 1.0
+    if _ink_widths.has(text): return _ink_widths[text]
+    if _ink_widths.size() > 512: _ink_widths.clear()
+    var width := HudStyle.FONT.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, HudStyle.FONT_SIZE).x - 1.0
+    _ink_widths[text] = width
+    return width
 
 ## A button showing the game's own triangle cursor (the font maps < > to PK MN).
 func make_arrow(parent: Node, pointing_left: bool, size: Vector2) -> Control:
@@ -187,15 +200,29 @@ func _process(_delta: float) -> void:
     var hud := bool(surface.get("hud", false))
     while extra_buttons.size() < wanted.size():
         extra_buttons.append(make_arrow(chrome, false, Vector2(10, 10)))
+        button_text.append("")
+        button_rect.append(Rect2())
+        button_hud.append(false)
+        button_dark.append(true)
+        button_applied.append(false)
     for i in extra_buttons.size():
         var button := extra_buttons[i]
         button.visible = i < wanted.size()
-        if not button.visible: continue
+        if not button.visible:
+            button_applied[i] = false
+            continue
         var rect: Rect2 = wanted[i][2]
+        var text := String(wanted[i][0])
+        if surfaces.use_cache and button_applied[i] and button_text[i] == text and button_rect[i] == rect and button_hud[i] == hud and button_dark[i] == HudStyle.dark:
+            continue
+        button_applied[i] = true
+        button_text[i] = text
+        button_rect[i] = rect
+        button_hud[i] = hud
+        button_dark[i] = HudStyle.dark
         button.position = rect.position
         if button.size != rect.size: button.size = rect.size
         # "<" and ">" draw the game's triangle (the font maps them to PK/MN).
-        var text := String(wanted[i][0])
         var arrow := button.get_node("Arrow") as TextureRect
         var pointing := 0 if text not in ["<", ">"] else (-1 if text == "<" else 1)
         arrow.visible = pointing != 0 and not hud

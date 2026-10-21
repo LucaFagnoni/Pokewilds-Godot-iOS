@@ -42,6 +42,10 @@ var delete_armed := -1
 var load_scroll := 0
 var showing_load := false
 var saves_signature := []
+## The surface is rebuilt when its key changes; false in tests that compare it with a fresh one.
+var use_cache := true
+var surface_key := []
+var surface_cache := {}
 
 func configure(owner_main: Node, owner_ui: Node) -> void:
     main = owner_main
@@ -267,8 +271,27 @@ func _edit(target: String) -> void:
         if main.text_entry_target != "": main._finish_text_entry(true)
         main._begin_text_entry(target)
 
+## What the surface is made of: which controls show, and where the screen stands.
+## Positions inside the screen never move, so the rest of the surface is a constant.
+func _surface_key() -> Array:
+    var key := [get_global_transform(), trainer_card.position.x, load_list.visible]
+    for control in [back_button, new_tab, load_tab, world_field, player_field, color_prev, color_next,
+            model_prev, model_next, copy_button, paste_button, start_button]:
+        key.append(control.is_visible_in_tree())
+    for control in size_chips: key.append(control.is_visible_in_tree())
+    for row in load_rows: key.append(row.visible)
+    return key
+
 func surface() -> Dictionary:
     if not visible: return {}
+    if not use_cache: return _build_surface()
+    var key := _surface_key()
+    if key == surface_key: return surface_cache
+    surface_key = key
+    surface_cache = _build_surface()
+    return surface_cache
+
+func _build_surface() -> Dictionary:
     var m := main
     var buttons := []
     var add := func(control: Control, action: Callable):

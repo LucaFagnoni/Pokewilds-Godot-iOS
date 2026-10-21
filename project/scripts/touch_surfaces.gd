@@ -31,10 +31,27 @@ var bag_tab_buttons: Array[Control] = []
 const POCKET_NAMES := ["ITEMS", "BALLS", "MATERIALS", "KEY ITEMS", "MEDICINE"]
 var move_card_nodes: Array[Panel] = []
 
+## The field's surface is rebuilt only when what it is made of moves (see _field);
+## false in tests that compare it with a fresh one.
+var use_cache := true
+var field_surface := {}
+var field_key_valid := false
+var field_minimap_rect := Rect2()
+var field_minimap_shown := false
+var field_clock_rect := Rect2()
+var field_clock_shown := false
+var field_tap: Callable
+var field_clock_tap: Callable
+## Frames refresh_visuals has found the plain field: after two (the backdrop trails the start menu
+## by one) everything is applied and nothing is redone until a screen opens.
+var idle_passes := 0
+
 func _init(owner_main: Node, owner_ui: Node) -> void:
     main = owner_main
     ui = owner_ui
     field_hud = preload("res://scripts/touch_field_hud.gd").new(owner_main, owner_ui)
+    field_tap = func(_i): _open_map_from_minimap()
+    field_clock_tap = func(): main.status_hud.switch_clock()
 
 func press(action: String) -> void:
     ui.press(action)
@@ -88,22 +105,41 @@ func _field() -> Dictionary:
     var m := main
     if not _field_active(): return {}
     var minimap: Control = m.m3924_minimap_root
-    var rows := []
-    if is_instance_valid(minimap) and minimap.is_visible_in_tree(): rows.append(minimap.get_global_rect())
+    var minimap_shown := is_instance_valid(minimap) and minimap.is_visible_in_tree()
+    var minimap_rect := minimap.get_global_rect() if minimap_shown else Rect2()
     var buttons: Array = field_hud.buttons()
     # A tap on the clock switches real time and game time.
-    var hotspots := []
     var clock: Control = m.status_hud.clock_chip
-    if is_instance_valid(clock) and clock.is_visible_in_tree(): hotspots.append(["CLOCK", func(): m.status_hud.switch_clock(), grown(clock, Vector2(3, 6))])
-    if rows.is_empty() and buttons.is_empty() and hotspots.is_empty(): return {}
-    return {
-        "modal": false,
-        "rows": rows,
-        "tap": func(_i): _open_map_from_minimap(),
-        "buttons": buttons,
-        "hotspots": hotspots,
-        "hud": true,
-    }
+    var clock_shown := is_instance_valid(clock) and clock.is_visible_in_tree()
+    var clock_rect := grown(clock, Vector2(3, 6)) if clock_shown else Rect2()
+    # Without a field move the surface is just the minimap and the clock: reuse it
+    # while both stay where they were.
+    if use_cache and buttons.is_empty() and field_key_valid \
+            and minimap_shown == field_minimap_shown and minimap_rect == field_minimap_rect \
+            and clock_shown == field_clock_shown and clock_rect == field_clock_rect:
+        return field_surface
+    var rows := []
+    if minimap_shown: rows.append(minimap_rect)
+    var hotspots := []
+    if clock_shown: hotspots.append(["CLOCK", field_clock_tap, clock_rect])
+    var surface := {}
+    if not (rows.is_empty() and buttons.is_empty() and hotspots.is_empty()):
+        surface = {
+            "modal": false,
+            "rows": rows,
+            "tap": field_tap,
+            "buttons": buttons,
+            "hotspots": hotspots,
+            "hud": true,
+        }
+    if not use_cache: return surface
+    field_key_valid = buttons.is_empty()
+    field_surface = surface
+    field_minimap_shown = minimap_shown
+    field_minimap_rect = minimap_rect
+    field_clock_shown = clock_shown
+    field_clock_rect = clock_rect
+    return surface
 
 func _finish_layout_edit() -> void:
     var m := main
@@ -351,6 +387,12 @@ func _place_map_cursor(point: Vector2) -> void:
 func refresh_visuals(delta: float = 0.0) -> void:
     var m := main
     field_hud.refresh(delta, _field_active())
+    # The plain field: every touch menu is closed, so everything below has been
+    # applied already (setup screen, backdrop, move cards, bag tabs, start menu).
+    var idle: bool = m.started and not m.generating and not m.game_menu_open and not m.battle_active \
+        and not m.battle_entry_pending and not m.quit_prompt_open and not m.save_confirm_open \
+        and not m.item_pocket_menu.visible and not m.game_menu_map_screen.visible
+    if idle and idle_passes >= 2 and use_cache: return
     if not is_instance_valid(start_menu): _build_start_menu()
     if not is_instance_valid(setup_screen):
         setup_screen = preload("res://scripts/touch_setup_screen.gd").new()
@@ -373,6 +415,7 @@ func refresh_visuals(delta: float = 0.0) -> void:
     if m.game_menu_map_screen.visible:
         if map_hint == null: map_hint = m.get_node("UI/GameMenu/MapScreen/Hint")
         map_hint.text = "DRAG: MOVE   PINCH: ZOOM   TAP: CURSOR" if not m.teleport_map_mode else ""
+    idle_passes = idle_passes + 1 if idle else 0
 
 func _build_start_menu() -> void:
     var m := main

@@ -87,9 +87,9 @@ func buttons() -> Array:
         result.append([">", func(): ui.press("shoulder_right"), Rect2(Vector2(left + width + HudStyle.GAP, y), Vector2(HudStyle.ROW, HudStyle.ROW))])
     return result
 
-## A chip's width for this text (PAD each side of the ink).
-static func _width(text: String) -> float:
-    return HudStyle.FONT.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, HudStyle.FONT_SIZE).x - 1.0 + HudStyle.PAD * 2.0
+## A chip's width for this text (PAD each side of the ink); the ink is measured once per text.
+func _width(text: String) -> float:
+    return ui._ink_width(text) + HudStyle.PAD * 2.0
 
 ## What A would do (OPTIONS > A HINT, off by default), as a HUD chip at the
 ## bottom centre of the screen, between the stick and the buttons.
