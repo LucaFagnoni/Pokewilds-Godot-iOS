@@ -19,6 +19,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "0.10.183",
+          "buildVersion": "183",
+          "date": "2026-10-21T16:01:01Z",
+          "localizedDescription": "Merge hud-cleanup: one look and one grid for the field HUD",
+          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0025/Pokewilds-unsigned.ipa",
+          "size": 60057718,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.10.181",
           "buildVersion": "181",
           "date": "2026-10-21T15:45:17Z",
@@ -98,15 +107,6 @@
           "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0004/Pokewilds-unsigned.ipa",
           "size": 65554544,
           "minOSVersion": "15.0"
-        },
-        {
-          "version": "0.10.3",
-          "buildVersion": "103",
-          "date": "2026-10-20T10:34:24Z",
-          "localizedDescription": "CI: the IPA's visible version goes up with every build (0.10.<build>)\n\nThe iOS preset's short_version gives MAJOR.MINOR (now 0.10) and the build\nnumber fills the third part; CFBundleVersion stays 100 + build number. The\nrelease title and notes show the version.",
-          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0003/Pokewilds-unsigned.ipa",
-          "size": 65551196,
-          "minOSVersion": "15.0"
         }
       ],
       "appPermissions": {
@@ -117,11 +117,11 @@
           "NSPhotoLibraryUsageDescription": "Not used by the game (Godot's default key)."
         }
       },
-      "version": "0.10.181",
-      "versionDate": "2026-10-21T15:45:17Z",
-      "versionDescription": "Server: give up on an area before the player does\n\nThe flaky travel step in CI (run 39477428637): the server printed\n\"making new area 1,0...\" and nothing more, the client gave up at\nprepare_travel's 10 minutes (\"travel to the next area failed\"), and\nthe runner killed an orphaned Godot at cleanup: the area maker had hit\nthe snow-on-the-peak hang fixed in the previous commit.\n\nIt also showed why a hung area maker is a failure and not a fallback:\nthe server waited 15 minutes before handing the area to the player's\ndevice, 5 more than the player waits. It now waits 8, so the device\nmakes the area while the player is still waiting (checked with a 5 s\ntimeout: the client made area 1,0 itself and travelled).",
-      "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0024/Pokewilds-unsigned.ipa",
-      "size": 60333585
+      "version": "0.10.183",
+      "versionDate": "2026-10-21T16:01:01Z",
+      "versionDescription": "Merge hud-cleanup: one look and one grid for the field HUD",
+      "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0025/Pokewilds-unsigned.ipa",
+      "size": 60057718
     }
   ],
   "news": []
