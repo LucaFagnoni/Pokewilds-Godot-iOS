@@ -2758,7 +2758,10 @@ func _update_party_sprite_animation(delta: float) -> void:
         pokemon_menu_open and pokemon_menu != null and pokemon_menu.visible)
     var battle_party_visible := (
         battle_party_view != null and battle_party_view.visible)
-    if not overworld_party_visible and not battle_party_visible and not storage_menu_open:
+    # The touch start menu's party strip: its sprites walk and its HP bars follow
+    # healing (a sleeping bag, a bed, a co-op campfire) while it stays open.
+    var start_strip_visible: bool = is_instance_valid(touch_ui) and touch_ui.enabled         and is_instance_valid(touch_ui.surfaces.start_menu) and touch_ui.surfaces.start_menu.visible
+    if not overworld_party_visible and not battle_party_visible and not storage_menu_open and not start_strip_visible:
         party_sprite_animation_elapsed = 0.0
         return
     party_sprite_animation_elapsed += delta
@@ -2772,6 +2775,8 @@ func _update_party_sprite_animation(delta: float) -> void:
         _refresh_party_sprite_frames(battle_party_rows)
     if storage_menu_open:
         _refresh_party_sprite_frames(storage_rows)
+    if start_strip_visible:
+        touch_ui.surfaces._refresh_start_details()
 
 func _build_m66_source_ui() -> void:
     _configure_clean_item_pocket_layout()
@@ -3284,7 +3289,10 @@ func _field_ui_blocks_gameplay(ignore_build_hud: bool = false) -> bool:
         or trainer_tip_open or setup_load_open or pokemon_stats_open
         or touch_config.visible or touch_controls.edit_mode
         or (is_instance_valid(game_files_menu) and game_files_menu.visible)
-        or (is_instance_valid(mod_menu_panel) and mod_menu_panel.visible))
+        or (is_instance_valid(mod_menu_panel) and mod_menu_panel.visible)
+        # OPTIONS can be open without the game menu (back from MOVE BUTTONS):
+        # the field's ball icons and HUD stay away from it too.
+        or (is_instance_valid(options_menu) and options_menu.visible))
 
 func _field_move_wheel_stick() -> Vector2:
     for device in Input.get_connected_joypads():

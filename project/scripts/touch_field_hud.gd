@@ -1,11 +1,12 @@
 extends RefCounted
-## Field helpers for touch: a label over A naming what it will do, a chip for
+## Field helpers for touch: a chip naming what A will do, a chip for
 ## the active field move (tap to stop it), and arrows for the selections that
 ## the controller's LB/RB used to cycle (DIG material, PAINT picture, BUILD, TELEPORT).
 
 const HINT_POLL := 0.2
 const SELECTABLE := ["DIG", "PAINT"]
 const HudStyle = preload("res://scripts/hud_style.gd")
+const GameOptions = preload("res://scripts/game_options.gd")
 
 var main: Node
 var ui: Node
@@ -90,11 +91,15 @@ func buttons() -> Array:
 static func _width(text: String) -> float:
     return HudStyle.FONT.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, HudStyle.FONT_SIZE).x - 1.0 + HudStyle.PAD * 2.0
 
-## What A would do, as a HUD chip on A's line, left of A (and of B when B
-## shares that line), so it covers neither the buttons nor the player.
+## What A would do (OPTIONS > A HINT, off by default), as a HUD chip at the
+## bottom centre of the screen, between the stick and the buttons.
 func refresh(delta: float, in_field: bool) -> void:
     if hint_chip == null:
         hint_chip = HudStyle.chip(ui.chrome, "AHint")
+    if not GameOptions.enabled("a_hint"):
+        hint_chip.visible = false
+        hint_text = ""
+        return
     var pad: Control = main.touch_controls
     var a_button := pad.get_node_or_null("A") as Control
     poll -= delta
@@ -108,12 +113,6 @@ func refresh(delta: float, in_field: bool) -> void:
     if hint_chip.get_meta("dark", true) != HudStyle.dark:
         hint_chip.set_meta("dark", HudStyle.dark)
         hint_chip.queue_redraw()
-    var rect := a_button.get_global_rect()
-    var right := rect.position.x - HudStyle.GAP
-    var b_button := pad.get_node_or_null("B") as Control
-    if b_button != null and b_button.is_visible_in_tree():
-        var b := b_button.get_global_rect()
-        if b.position.y < rect.get_center().y + HudStyle.ROW / 2.0 and b.end.y > rect.get_center().y - HudStyle.ROW / 2.0 and b.position.x < rect.position.x:
-            right = minf(right, b.position.x - HudStyle.GAP)
-    var at := Vector2(right - hint_chip.size.x, roundf(rect.get_center().y - hint_chip.size.y / 2.0))
+    var safe: Rect2 = pad.usable_rect
+    var at := Vector2(roundf(safe.get_center().x - hint_chip.size.x / 2.0), safe.end.y - HudStyle.MARGIN - hint_chip.size.y)
     if hint_chip.position != at: hint_chip.position = at

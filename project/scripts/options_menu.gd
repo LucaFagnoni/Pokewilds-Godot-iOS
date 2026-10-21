@@ -39,15 +39,16 @@ const ROWS := [
     ["touch_theme","BUTTON THEME","Follow the system, or always light or dark buttons."],
     ["touch_autohide","HIDE WITH CONTROLLER","Hide the on-screen buttons while a controller is connected."],
     ["haptics","HAPTICS","Vibrate softly when you tap."],
+    ["a_hint","A HINT","Show what A will do, at the bottom of the screen."],
     ["touch_move","MOVE BUTTONS","Drag the on-screen buttons where you like, then tap DONE."],
     ["touch_reset","RESET BUTTONS","Put the on-screen buttons back in their places."]]
-const TOUCH_ONLY := ["touch_size", "touch_opacity", "touch_theme", "touch_autohide", "haptics", "touch_move", "touch_reset"]
+const TOUCH_ONLY := ["touch_size", "touch_opacity", "touch_theme", "touch_autohide", "haptics", "a_hint", "touch_move", "touch_reset"]
 ## Options are grouped; the first page lists the groups.
 const CATEGORIES := [
     ["AUDIO", "Music, effects, cries and footsteps.", ["music","sound","world_sound","cries","footsteps","lofi_music"]],
     ["GAMEPLAY", "Speed, running, movement, wheels and throwing.", ["game_speed","text_speed","auto_run","diagonal","radial","ball_mechanics","zoom","weather_events"]],
     ["DISPLAY", "Frame, dark mode, minimap and visual extras.", ["frame","dark_mode","minimap","fps_counter","battery_hud","clock","battery_saver","battle_animations","held_emotes","shiny_sparkles","hd_emotes","circle_lights","map_waypoint"]],
-    ["CONTROLS", "On-screen buttons, vibration and button mapping.", ["touch_size","touch_opacity","touch_theme","touch_autohide","haptics","touch_move","touch_reset","button_layout","controls"]],
+    ["CONTROLS", "On-screen buttons, vibration and button mapping.", ["touch_size","touch_opacity","touch_theme","touch_autohide","haptics","a_hint","touch_move","touch_reset","button_layout","controls"]],
     ["ONLINE", "Settings for the world you host.", ["horde_mode","raids_mode","players","autosave"]],
 ]
 const THEME_NAMES := ["SYSTEM","LIGHT","DARK"]
@@ -531,7 +532,7 @@ func _category_row(index: int) -> int:
 
 ## The on-screen button settings (they used to be a separate panel).
 func _touch_row(key: String, event: InputEvent) -> bool:
-    if key not in TOUCH_ONLY or key=="haptics": return false
+    if key not in TOUCH_ONLY or key in ["haptics","a_hint"]: return false  # plain switches
     var pad=main.touch_controls
     var direction:=-1 if event.is_action_pressed("move_left") else 1 if event.is_action_pressed("move_right") or event.is_action_pressed("confirm") else 0
     if direction==0: return true

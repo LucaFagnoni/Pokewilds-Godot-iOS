@@ -679,7 +679,7 @@ func _refresh_start_details() -> void:
     for item in m.inventory: bag += int(m.inventory[item])
     start_subtitles[2].text = "%d ITEMS" % bag
     # The lead Pokemon and the live minimap stand in for two of the icons.
-    start_icons[1].texture = m._party_record_frame(party[0]) if not party.is_empty() else Icons.icon("POKEMON")
+    start_icons[1].texture = _party_icon(party[0]) if not party.is_empty() else Icons.icon("POKEMON")
     var minimap := m.m3924_minimap_root.get_node_or_null("Map") as TextureRect if is_instance_valid(m.m3924_minimap_root) else null
     start_icons[4].texture = minimap.texture if minimap != null and minimap.texture != null else Icons.icon("MAP")
     for i in party_slots.size():
@@ -687,7 +687,7 @@ func _refresh_start_details() -> void:
         slot.visible = i < party.size()
         if not slot.visible: continue
         var record: Dictionary = party[i]
-        (slot.get_node("Sprite") as TextureRect).texture = m._party_record_frame(record)
+        (slot.get_node("Sprite") as TextureRect).texture = _party_icon(record)
         var egg := bool(record.get("is_egg", false))
         var ratio := clampf(float(record.get("hp", 0)) / maxf(1.0, float(record.get("max_hp", 1))), 0.0, 1.0)
         var fill := slot.get_node("Fill") as ColorRect
@@ -695,6 +695,10 @@ func _refresh_start_details() -> void:
         (slot.get_node("Track") as ColorRect).visible = not egg
         fill.size.x = 20.0 * ratio
         fill.color = Color("58c048") if ratio > 0.5 else (Color("f0c040") if ratio > 0.2 else Color("e04038"))
+
+## A party member's walking frame, or the egg (an egg keeps its species).
+func _party_icon(record: Dictionary) -> Texture2D:
+    return main.POKEMON_EGG_TEXTURE if bool(record.get("is_egg", false)) else main._party_record_frame(record)
 
 # --- reorder by drag ------------------------------------------------------------
 

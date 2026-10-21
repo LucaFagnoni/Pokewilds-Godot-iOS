@@ -64,6 +64,8 @@ func heal()->void:
         pokemon=game.main.BattleEngine.ensure_pokemon(pokemon)
         pokemon.hp=int(pokemon.max_hp);pokemon.status="";pokemon.status_counter=0;pokemon.toxic_counter=0
         game.main.caught_pokemon[index]=pokemon
+    # An open POKEMON list shows the healed HP at once (the touch start menu follows on its own).
+    if game.main.pokemon_menu_open:game.main._refresh_pokemon_category_menu()
     set_respawn()
 
 func _message(_peer:int,actor:String,packet:Dictionary)->void:

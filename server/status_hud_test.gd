@@ -97,9 +97,12 @@ func _initialize() -> void:
     # A tap on the clock: game time, with a sun or moon, saved; a second tap: real time.
     await tap(hud.clock_chip)
     check(int(Settings.values.clock) == StatusHud.CLOCK_GAME and int(saved("clock")) == StatusHud.CLOCK_GAME, "a tap switches to game time and saves it")
+    # The chip ticks once a second and a game minute lasts a quarter of one, so it
+    # may be up to four game minutes behind the world when read a few frames on.
     var minutes: int = main.world.clock_minutes()
     shown = hud.clock_chip.get_node("Text").text
-    check(shown == "%02d:%02d" % [minutes / 60, minutes % 60], "game time %s is the world's %d" % [shown, minutes])
+    var shown_minutes := int(shown.get_slice(":", 0)) * 60 + int(shown.get_slice(":", 1).strip_edges())
+    check(posmod(minutes - shown_minutes, 1440) <= 4, "game time %s is the world's %d" % [shown, minutes])
     check(hud.clock_chip.get_node("Sun").visible, "game time shows a sun or moon")
     await tap(hud.clock_chip)
     check(int(Settings.values.clock) == StatusHud.CLOCK_REAL and not hud.clock_chip.get_node("Sun").visible, "a second tap is real time again")
