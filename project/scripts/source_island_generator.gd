@@ -2635,7 +2635,11 @@ func apply_blotch_mountain(origin_tile: SourceTile, maximum_distance: int, tiles
         elif level > 30:
             level = 30
         if distance < float(maximum_distance / 40):
-            var snow_size := 2147483647 if distance == 0.0 else 7 * int(float(maximum_distance) / distance)
+            # The source divides by zero when the peak itself is drawn (about
+            # 1 new world in 60, size S, to 1 in 112): a blotch of size 2^31
+            # then grew until memory ran out and the world never came. The
+            # peak now counts as one tile away; nothing else changes.
+            var snow_size := 7 * int(float(maximum_distance) / maxf(distance, 16.0))
             apply_blotch("mtn_snow1", tile, snow_size, biome_tiles, 0, false, SourceRoute.new("snow1", level))
         else:
             apply_blotch("mtn_green1", tile, maximum_distance / 240, biome_tiles, 0, false, SourceRoute.new("mountain1", level))

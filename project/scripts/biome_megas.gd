@@ -35,15 +35,7 @@ static func habitat(tile: SourceTile, group: String) -> bool:
     return false
 
 static func available(world: Node, cell: Vector2i, group: String, occupied: Dictionary = {}) -> bool:
-    var tile: SourceTile = world.exact_world.tile_at(cell)
-    if not habitat(tile, group) or tile.is_lava or tile.is_ledge: return false
-    if tile.is_solid and not (group in ["gyarados", "sharpedo", "blastoise"] and tile.is_water): return false
-    if group not in ["blastoise", "gyarados", "sharpedo"] and (tile.is_water or tile.is_tidal): return false
-    if not tile.name_upper.is_empty() or not tile.has_item.is_empty() or not tile.item_snapshot().is_empty(): return false
-    if world.blocked.has(cell) or world.interior_interactables.has(cell) or world.built_structures.has(cell) \
-        or world.resource_objects.has(cell) or world.landmarks.has(cell) or world.wild_eggs.has(cell) \
-        or world.deployed_pokemon.has(cell) or world.source_plant_farms.has(world._cell_key(cell)): return false
-    if cell == world._player_cell() or cell == world.field_helper_cell or cell == world.follower_cell: return false
+    if not tile_allows(world.exact_world.tile_at(cell), group) or not cell_free(world, cell): return false
     if not occupied.is_empty(): return not occupied.has(cell)
     for record in world.wild_pokemon.values():
         if record.get("cell", Vector2i(-99999, -99999)) == cell: return false
@@ -51,45 +43,87 @@ static func available(world: Node, cell: Vector2i, group: String, occupied: Dict
         if is_instance_valid(sprite) and sprite.position.distance_to(world._cell_center(cell)) < 15.0: return false
     return true
 
+## What `group` needs of the cell's own tile.
+static func tile_allows(tile: SourceTile, group: String) -> bool:
+    if not habitat(tile, group) or tile.is_lava or tile.is_ledge: return false
+    if tile.is_solid and not (group in ["gyarados", "sharpedo", "blastoise"] and tile.is_water): return false
+    if group not in ["blastoise", "gyarados", "sharpedo"] and (tile.is_water or tile.is_tidal): return false
+    return tile.name_upper.is_empty() and tile.has_item.is_empty() and tile.item_snapshot().is_empty()
+
+## Nothing of the world's (but its Pokemon) stands on the cell.
+static func cell_free(world: Node, cell: Vector2i) -> bool:
+    if world.blocked.has(cell) or world.interior_interactables.has(cell) or world.built_structures.has(cell) \
+        or world.resource_objects.has(cell) or world.landmarks.has(cell) or world.wild_eggs.has(cell) \
+        or world.deployed_pokemon.has(cell) or world.source_plant_farms.has(world._cell_key(cell)): return false
+    return cell != world._player_cell() and cell != world.field_helper_cell and cell != world.follower_cell
+
 static func choose_cell(world: Node, group: String) -> Variant:
     var prepared: Dictionary = world.get_meta("mega_load_choices", {})
     if prepared.has(group):
         var cell: Variant = prepared[group]
         prepared.erase(group)
         return cell
-    # Reservoir sampling avoids allocating another whole-world tile array.
-    var choice: Variant = null
-    var count := 0
-    var occupied: Dictionary = {world._player_cell(): true}
-    for record in world.wild_pokemon.values():
-        occupied[record.get("cell", Vector2i.ZERO)] = true
-        var sprite := record.get("sprite") as Sprite2D
-        if is_instance_valid(sprite):
-            var current := Vector2i(floori(sprite.position.x / 16.0), floori(sprite.position.y / 16.0))
-            occupied[current] = true
-    var store: WorldTileStore = world.exact_world.tiles
-    var tile := store.new_cursor()
-    for index in store.indices():
-        tile.repoint(index)
-        if not habitat(tile, group): continue
-        var cell := SourceWorldData.pixel_to_cell(tile.position)
-        if not available(world, cell, group, occupied): continue
-        var open := true
-        for direction in DIRECTIONS:
-            var neighbor: SourceTile = world.exact_world.tile_at(cell + direction)
-            if neighbor == null or (neighbor.is_solid and not (group in ["gyarados", "sharpedo"] and neighbor.is_water)) or neighbor.is_lava or neighbor.is_ledge \
-                or world.blocked.has(cell + direction):
-                open = false
-                break
-        if not open: continue
-        count += 1
-        if world.rng.randi_range(1, count) == 1: choice = cell
-    return choice
+    var found := {group: []}
+    _find_open(world, found, 0, world.exact_world.tiles.flags.size(), {})
+    return _pick(world, found[group], {})
 
-static func choose_cell_async(world: Node, group: String, reserved: Dictionary = {}) -> Variant:
-    # Reservoir sampling avoids allocating another whole-world tile array.
-    var choice: Variant = null
-    var count := 0
+## Adds to `found` (group -> cells) the cells of store indices [from, to) where
+## that group's Mega could go, Pokemon aside (_pick): its habitat, available()
+## and four open neighbours, in map order. This was a pass over the map per
+## group with a SourceTile per cell: ~60 s of a new size S world in the editor
+## build, most of it the sea Gyarados and Sharpedo share. It now reads the
+## store's arrays, and a
+## tile holding nothing is judged by its name, biome, route and flags: once
+## per such kind (`kinds`), not per cell.
+static func _find_open(world: Node, found: Dictionary, from: int, to: int, kinds: Dictionary) -> void:
+    var store: WorldTileStore = world.exact_world.tiles
+    var groups: Array = found.keys()
+    for index in range(from, to):
+        var bits := store.flags[index]
+        if not bits & WorldTileStore.PRESENT or store.upper_ids[index] != 0 or store.has_item_ids[index] != 0 \
+            or (store.items.has(index) and not (store.items[index] as Dictionary).is_empty()): continue
+        var kind := Vector4i(store.name_ids[index], store.biome_ids[index], store.route_ids[index], bits)
+        var allowed: int = kinds.get(kind, -1)
+        if allowed < 0:
+            allowed = 0
+            var tile := store.cursor(index)
+            for bit in groups.size():
+                if tile_allows(tile, groups[bit]): allowed |= 1 << bit
+            kinds[kind] = allowed
+        if allowed == 0: continue
+        var cell := Vector2i(index % store.width, index / store.width) + store.origin
+        if not cell_free(world, cell): continue
+        # -1 not yet asked, else 0/1: walkers and swimmers (Gyarados, Sharpedo).
+        var walks := -1
+        var swims := -1
+        for bit in groups.size():
+            if not allowed & (1 << bit): continue
+            var group: String = groups[bit]
+            if group in ["gyarados", "sharpedo"]:
+                if swims < 0: swims = int(_open(world, store, cell, true))
+                if swims == 1: found[group].append(cell)
+            else:
+                if walks < 0: walks = int(_open(world, store, cell, false))
+                if walks == 1: found[group].append(cell)
+
+## A Mega at `cell` could step to each of its four neighbours.
+static func _open(world: Node, store: WorldTileStore, cell: Vector2i, swimmer: bool) -> bool:
+    for direction: Vector2i in DIRECTIONS:
+        var next := cell + direction
+        if world.blocked.has(next): return false
+        var at := next - store.origin
+        if at.x < 0 or at.y < 0 or at.x >= store.width or at.y >= store.height:
+            # Outside the store's rectangle: a tile kept on its own, if any.
+            var tile: SourceTile = world.exact_world.tile_at(next)
+            if tile == null or (tile.is_solid and not (swimmer and tile.is_water)) or tile.is_lava or tile.is_ledge: return false
+            continue
+        var bits := store.flags[at.y * store.width + at.x]
+        if not bits & WorldTileStore.PRESENT or bits & (WorldTileStore.LAVA | WorldTileStore.LEDGE) \
+            or (bits & WorldTileStore.SOLID and not (swimmer and bits & WorldTileStore.WATER)): return false
+    return true
+
+## One of `cells` at random that no Pokemon, the player or `reserved` takes.
+static func _pick(world: Node, cells: Array, reserved: Dictionary) -> Variant:
     var occupied: Dictionary = {world._player_cell(): true}
     for record in world.wild_pokemon.values():
         occupied[record.get("cell", Vector2i.ZERO)] = true
@@ -98,34 +132,18 @@ static func choose_cell_async(world: Node, group: String, reserved: Dictionary =
             var current := Vector2i(floori(sprite.position.x / 16.0), floori(sprite.position.y / 16.0))
             occupied[current] = true
     occupied.merge(reserved)
-    var deadline := Time.get_ticks_usec() + 13000
-    var store: WorldTileStore = world.exact_world.tiles
-    var tile := store.new_cursor()
-    for index in store.indices():
-        if Time.get_ticks_usec() >= deadline:
-            await world.get_tree().process_frame
-            deadline = Time.get_ticks_usec() + 13000
-        if world.exact_world == null or world.exact_world.tiles != store: return null
-        tile.repoint(index)
-        if not habitat(tile, group): continue
-        var cell := SourceWorldData.pixel_to_cell(tile.position)
-        if not available(world, cell, group, occupied): continue
-        var open := true
-        for direction in DIRECTIONS:
-            var neighbor: SourceTile = world.exact_world.tile_at(cell + direction)
-            if neighbor == null or (neighbor.is_solid and not (group in ["gyarados", "sharpedo"] and neighbor.is_water)) or neighbor.is_lava or neighbor.is_ledge \
-                or world.blocked.has(cell + direction):
-                open = false
-                break
-        if not open: continue
+    # Reservoir sampling avoids allocating another whole-world tile array.
+    var choice: Variant = null
+    var count := 0
+    for cell in cells:
+        if occupied.has(cell): continue
         count += 1
         if world.rng.randi_range(1, count) == 1: choice = cell
     return choice
 
 static func prepare_load(world: Node) -> void:
     if not world.exact_world_mode or world.exact_world == null: return
-    var choices := {}
-    var reserved := {}
+    var found := {}
     var completed: Dictionary = world.event_progress.get("completed", {})
     for group: String in GROUPS:
         var remaining := false
@@ -135,7 +153,24 @@ static func prepare_load(world: Node) -> void:
         var saved: Dictionary = world.event_progress.get(SAVE_KEY, {}).get(group, {})
         var cell := Vector2i(int(saved.get("x",-99999)),int(saved.get("y",-99999)))
         if available(world,cell,group) or world.interior_interactables.get(cell, "") == "SPECIAL:" + String(saved.get("species", "")): continue
-        choices[group] = await choose_cell_async(world,group,reserved)
+        found[group] = []
+    var store: WorldTileStore = world.exact_world.tiles
+    var kinds := {}
+    var index := 0
+    var deadline := Time.get_ticks_usec() + 13000
+    while not found.is_empty() and index < store.flags.size():
+        if Time.get_ticks_usec() >= deadline:
+            await world.get_tree().process_frame
+            deadline = Time.get_ticks_usec() + 13000
+            if world.exact_world == null or world.exact_world.tiles != store:
+                for group in found: found[group] = []
+                break
+        _find_open(world, found, index, mini(index + 2048, store.flags.size()), kinds)
+        index += 2048
+    var choices := {}
+    var reserved := {}
+    for group in found:
+        choices[group] = _pick(world, found[group], reserved)
         if choices[group] != null: reserved[choices[group]] = true
     world.set_meta("mega_load_choices",choices)
 

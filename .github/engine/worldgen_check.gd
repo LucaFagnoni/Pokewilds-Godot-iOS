@@ -14,6 +14,8 @@ const EXPECTED := {
     "1792426775391992 0": "634a29c7cf0a77d8d0b8746cd46c1644a73c537fff1a7751d30ba6b632f2c2fd",
     # Its first attempt fails validation: the retry path.
     "1 0": "ed43abe8ab0fe81fbcd72252afa000b4dfeb0b1c5f39f4f68624f23b48727ea6",
+    # Its snow blotch starts on the mountain peak: it never finished before.
+    "639450379 0": "5e653dd772dc01d2d734bfcab367029b5929975d76bd8cdc2651833656dea59b",
     "1792426775391992 1": "cd2d28670042002434879fcd178af656d5402ce7233c67f9396c68bbc55cd50f",
     "424242 1": "1d2e6359573c8ab229b5c62d9bcb39fcbcc0ca804c7405e85efebb6989e141cf",
 }
