@@ -19,6 +19,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "0.10.209",
+          "buildVersion": "209",
+          "date": "2026-10-21T23:06:11Z",
+          "localizedDescription": "Merge ios-zerotier",
+          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0035/Pokewilds-unsigned.ipa",
+          "size": 63272243,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.10.197",
           "buildVersion": "197",
           "date": "2026-10-21T22:04:53Z",
@@ -98,15 +107,6 @@
           "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0024/Pokewilds-unsigned.ipa",
           "size": 60333585,
           "minOSVersion": "15.0"
-        },
-        {
-          "version": "0.10.179",
-          "buildVersion": "179",
-          "date": "2026-10-21T13:33:16Z",
-          "localizedDescription": "Merge move-learn-preview: tap a move to read it before replacing it",
-          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0023/Pokewilds-unsigned.ipa",
-          "size": 65578349,
-          "minOSVersion": "15.0"
         }
       ],
       "appPermissions": {
@@ -117,11 +117,11 @@
           "NSPhotoLibraryUsageDescription": "Not used by the game (Godot's default key)."
         }
       },
-      "version": "0.10.197",
-      "versionDate": "2026-10-21T22:04:53Z",
-      "versionDescription": "Typing: no stray iOS keyboard after SOLO, COPY and PASTE buttons\n\n- The classic setup panel's world-name LineEdit stays under the touch\n  setup screen (invisible, still tappable); with its own virtual keyboard\n  on, a tap landing there (choosing SOLO) opened the iOS keyboard. The\n  game opens its keyboard itself, so that one is off.\n- The names and the CO-OP text pages are not system text fields, so iOS\n  offers no paste: COPY and PASTE buttons while typing (setup screen and\n  the CO-OP typing pages), pasting as far as the field takes.",
-      "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0034/Pokewilds-unsigned.ipa",
-      "size": 62841158
+      "version": "0.10.209",
+      "versionDate": "2026-10-21T23:06:11Z",
+      "versionDescription": "Merge ios-zerotier",
+      "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0035/Pokewilds-unsigned.ipa",
+      "size": 63272243
     }
   ],
   "news": []
