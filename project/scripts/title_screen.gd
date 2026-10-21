@@ -2,7 +2,7 @@ extends CanvasLayer
 ## The title screen's art (StartupSplash): the background's frames (trees
 ## bending in the wind, leaves, the lake), the loading screen's clouds drifting
 ## across the sky, and the logo, which drops in when the title first opens
-## (intro) and now and then catches the light.
+## (intro) and now and then catches the light. Also the title's music.
 
 const FRAME_SECONDS := 0.2
 ## Each cloud: its region in title_clouds.png (the loading screen's clouds,
@@ -17,6 +17,10 @@ const CLOUDS := [
 const SHINE_EVERY := 6.0
 const SHINE_SECONDS := 0.7
 const INTRO_SECONDS := 0.9
+## The game has no title track of its own: PokeWilds' calm Heart Tower theme,
+## which nothing else plays.
+const TITLE_MUSIC := "res://assets/environment/music/Wilds_HeartTower_Calm.ogg"
+const MUSIC_FADE_SECONDS := 1.5
 ## A band of light a few logo pixels wide, on the logo's own pixel grid.
 const SHINE_SHADER := """
 shader_type canvas_item;
@@ -39,6 +43,7 @@ var cloud_x: Array[float] = []
 var shine_wait := 2.5
 var shine_time := -1.0
 var intro_played := false
+var music: AudioStreamPlayer
 
 func _ready() -> void:
     var holder := Control.new()
@@ -69,8 +74,10 @@ func _ready() -> void:
     # Hidden through loading (the boot splash has no logo either) until intro().
     logo.visible = false
 
-## The logo drops in from above, once: the first time the title opens.
+## Each time the title shows: the music (if not already on), and the first
+## time only, the logo dropping in from above.
 func intro() -> void:
+    _play_music()
     if intro_played:
         return
     intro_played = true
@@ -82,7 +89,25 @@ func intro() -> void:
     drop.tween_property(logo, "offset_top", 0.0, INTRO_SECONDS)
     drop.tween_property(logo, "offset_bottom", 0.0, INTRO_SECONDS)
 
+## From the title through the other menus and the world setup; it fades out
+## when a game starts, where the world's own music takes over.
+func _play_music() -> void:
+    if music != null or get_parent().started:
+        return
+    music = AudioStreamPlayer.new()
+    music.name = "TitleMusic"
+    music.stream = load(TITLE_MUSIC)
+    add_child(music)
+    AudioBalance.apply(music)  # the Music bus (MUSIC volume option) and this file's level
+    music.finished.connect(music.play)
+    music.play()
+
 func _process(delta: float) -> void:
+    if music != null and get_parent().started:
+        var fade := create_tween()
+        fade.tween_property(music, "volume_db", -60.0, MUSIC_FADE_SECONDS)
+        fade.tween_callback(music.queue_free)
+        music = null
     if not visible:
         return
     var frames := art.texture as AtlasTexture
