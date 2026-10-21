@@ -1,12 +1,14 @@
-# OPTIONS > BATTERY and CLOCK in a real game on a throwaway data folder: the HUD
-# in the top left, the options and game.ini, a tap on the clock, and the battery
-# as the iOS plugin reports it (set here with OS.set_environment).
+# OPTIONS > BATTERY and CLOCK in a real game on a throwaway data folder: the
+# clock at the top centre, the battery top right, the options and game.ini, a
+# tap on the clock, and the battery as the iOS plugin reports it (set here with
+# OS.set_environment).
 # Run: godot --headless --path project -s <this file> -- --touch-ui
 extends SceneTree
 
 const Paths = preload("res://scripts/game_data_paths.gd")
 const Settings = preload("res://scripts/game_options.gd")
 const StatusHud = preload("res://scripts/status_hud.gd")
+const TouchUI = preload("res://scripts/touch_ui.gd")
 
 var main: Node
 var hud
@@ -65,11 +67,12 @@ func _initialize() -> void:
 
     # Desktop: no battery to read, so no battery and no BATTERY option.
     check(hud.root != null and hud.root.visible, "the HUD shows in the field")
-    check(hud.clock.visible and not hud.battery.visible, "clock only, without a battery")
+    check(hud.clock_chip.visible and not hud.battery_chip.visible, "clock only, without a battery")
     var now := Time.get_time_dict_from_system()
     check(hud.clock.text in ["%02d:%02d" % [now.hour, now.minute], "%02d:%02d" % [now.hour, (now.minute + 59) % 60]], "real time: %s" % hud.clock.text)
-    var minimap: Control = main.m3924_minimap_root
-    check(minimap.visible and is_equal_approx(hud.root.position.x, minimap.position.x + minimap.size.x + 4), "right of the minimap: %s" % hud.root.position)
+    var screen: Vector2 = main.get_viewport().get_visible_rect().size
+    var chip: Rect2 = hud.clock_chip.get_global_rect()
+    check(absf(chip.get_center().x - screen.x / 2.0) <= 0.5 and chip.position.y == main.touch_controls.usable_rect.position.y + 2.0, "the clock is at the top centre: %s on %s" % [chip, screen])
     main._open_game_menu()
     main.options_menu.open()
     check(main.options_menu.all_rows.any(func(row): return row[0] == "clock"), "CLOCK is an option")
@@ -82,25 +85,36 @@ func _initialize() -> void:
     check(hud.root.visible, "back after the menus")
 
     # A tap on the clock: game time, in gold, saved; a second tap: real time.
-    await tap(hud.clock)
+    await tap(hud.clock_chip)
     check(int(Settings.values.clock) == StatusHud.CLOCK_GAME and int(saved("clock")) == StatusHud.CLOCK_GAME, "a tap switches to game time and saves it")
     var minutes: int = main.world.clock_minutes()
     check(hud.clock.text == "%02d:%02d" % [minutes / 60, minutes % 60], "game time %s is the world's %d" % [hud.clock.text, minutes])
-    check(hud.clock.get_theme_color("font_color") == StatusHud.GAME_CLOCK_COLOR, "game time is gold")
-    await tap(hud.clock)
+    check(hud.clock_chip.get_theme_stylebox("panel") == TouchUI.button_style(true) and hud.clock.get_theme_font("font") == StatusHud.WHITE_FONT, "game time is white on a dark chip")
+    await tap(hud.clock_chip)
     check(int(Settings.values.clock) == StatusHud.CLOCK_REAL, "a second tap is real time again")
 
     # The battery as the iOS plugin reports it: 57%, charging.
     OS.set_environment(StatusHud.BATTERY_ENV, "57,2")
     hud.update()
-    check(hud.battery.visible and hud.percent.text == "57%", "battery 57%%: %s" % hud.percent.text)
+    check(hud.battery_chip.visible and hud.percent.text == "57%", "battery 57%%: %s" % hud.percent.text)
+    # The icon and the digits' ink share the chip's middle line.
+    var middle: float = StatusHud.CHIP_HEIGHT / 2.0
+    var icon: Control = hud.battery_fill.get_parent().get_child(0)
+    check(is_equal_approx(icon.position.y + icon.size.y / 2.0, middle) and is_equal_approx(hud.percent.position.y + StatusHud.INK_CENTRE, middle), "icon and percentage on one line")
+    # Top right, on the clock's line, left of the menu button when it is there.
+    await _frames(2)
+    var battery: Rect2 = hud.battery_chip.get_global_rect()
+    var menu := main.touch_controls.get_node_or_null("Start") as Control
+    var right: float = menu.get_global_rect().position.x - 3.0 if menu != null and menu.is_visible_in_tree() else main.touch_controls.usable_rect.end.x - 2.0
+    check(battery.position.y == chip.position.y and is_equal_approx(battery.end.x, right), "battery at the top right: %s, edge %s" % [battery, right])
+    check(not battery.intersects(hud.clock_chip.get_global_rect()), "battery and clock apart")
     check(hud.battery_fill.size.x == 6.0 and hud.battery_fill.color == StatusHud.CHARGING_COLOR, "green fill 6 px while charging")
     OS.set_environment(StatusHud.BATTERY_ENV, "15,1")
     hud.update()
     check(hud.battery_fill.color == StatusHud.LOW_BATTERY_COLOR, "red when low")
     OS.set_environment(StatusHud.BATTERY_ENV, "-1,0")
     hud.update()
-    check(not hud.battery.visible, "an unknown level shows no battery")
+    check(not hud.battery_chip.visible, "an unknown level shows no battery")
     OS.set_environment(StatusHud.BATTERY_ENV, "80,1")
     main._open_game_menu()
     main.options_menu.open()
@@ -118,7 +132,7 @@ func _initialize() -> void:
     check(Settings.values.battery_hud == false and int(Settings.values.clock) == 0, "the options persist: %s %s" % [Settings.values.battery_hud, Settings.values.clock])
     Settings.change("clock", StatusHud.CLOCK_GAME)
     await _frames(3)
-    check(hud.root.visible and hud.clock.visible and not hud.battery.visible, "game clock alone")
+    check(hud.root.visible and hud.clock_chip.visible and not hud.battery_chip.visible, "game clock alone")
 
     print("STATUS HUD TEST: %d checks, %d failed" % [checks, failed])
     quit(1 if failed > 0 else 0)

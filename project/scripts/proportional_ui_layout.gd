@@ -1,7 +1,7 @@
 extends CanvasLayer
 ## The world expands with the display. Existing menu coordinates stay 320x180.
 const DESIGN := Vector2(320,180)
-const FULL_SCREEN := ["TouchControls", "TouchChrome", "TouchBackdrop", "SourceBattleTransition", "WorldTravelView"]
+const FULL_SCREEN := ["TouchControls", "TouchChrome", "TouchBackdrop", "SourceBattleTransition", "WorldTravelView", "StatusHud"]
 var centers: Dictionary = {}
 
 func _ready() -> void:
