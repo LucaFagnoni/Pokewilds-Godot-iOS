@@ -161,6 +161,14 @@ func _list_arrow(at:Vector2,up:bool)->Polygon2D:
 func _build_title()->void:
     # Lives in the startup artwork's own layer so it scales with the artwork.
     splash=main.get_node("StartupSplash")
+    # title_background.png holds three frames side by side (leaves in the wind,
+    # a glittering lake): the next one every 0.4 s while the title shows.
+    var frames:=Timer.new();frames.name="BackgroundFrames";frames.wait_time=0.4;frames.autostart=true
+    splash.add_child(frames)
+    frames.timeout.connect(func():
+        if splash.visible:
+            var art:=(splash.get_node("Artwork") as TextureRect).texture as AtlasTexture
+            art.region.position.x=fmod(art.region.position.x+art.region.size.x,art.atlas.get_width()))
     title_box=Control.new();title_box.name="TitleChoices";title_box.mouse_filter=Control.MOUSE_FILTER_IGNORE
     splash.add_child(title_box);title_box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     for i in range(CHOICES.title.size()):
@@ -185,7 +193,7 @@ func open()->void:
     main.setup_panel.hide();show();_go("title")
 
 func close()->void:
-    _hide_keyboard();hide();page="";splash.hide();_load_artwork(false)
+    _hide_keyboard();hide();page="";splash.hide()
     main.coop_game.lobby.browse(false)
     main.setup_panel.show()
 
@@ -262,16 +270,9 @@ func _title()->String:
 func _count()->int:
     return _names().size()
 
-## The 6 MB title artwork only exists while the title is shown.
-func _load_artwork(shown:bool)->void:
-    var artwork:=splash.get_node("Artwork") as TextureRect
-    if not shown:artwork.texture=null
-    elif artwork.texture==null:artwork.texture=load("res://assets/startup_splash.png")
-
 func refresh()->void:
     var on_title:=page=="title"
     splash.visible=visible and on_title
-    _load_artwork(splash.visible)
     var unseen:=on_title or page in ["loading","connecting"]
     backdrop.visible=not unseen;panel.visible=not unseen
     _layout_typing()

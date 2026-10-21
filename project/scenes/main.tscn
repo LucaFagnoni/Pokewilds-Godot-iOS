@@ -5,9 +5,7 @@
 [ext_resource type="Script" path="res://scripts/player_controller.gd" id="3_player"]
 [ext_resource type="Script" path="res://scripts/touch_controls.gd" id="4_touch"]
 [ext_resource type="Texture2D" path="res://assets/player_runtime.png" id="5_playertex"]
-[ext_resource type="Texture2D" path="res://assets/pokewilds.png" id="6_logo"]
 [ext_resource type="Script" path="res://scripts/button_skin.gd" id="7_btn"]
-[ext_resource type="Texture2D" path="res://assets/title_bg1.png" id="8_titlebg"]
 [ext_resource type="Texture2D" path="res://assets/player_green.png" id="9_preview"]
 [ext_resource type="Texture2D" path="res://assets/generation_sky.png" id="10_gensky"]
 
@@ -35,7 +33,12 @@
 [ext_resource type="Texture2D" path="res://assets/source_exact/battle/gsc/enemy_levelchar.png" id="37_source_enemy_level"]
 [ext_resource type="Texture2D" path="res://assets/source_exact/battle/gsc/friendly_levelchar.png" id="38_source_player_level"]
 
-[ext_resource type="Texture2D" path="res://assets/startup_splash.png" id="40_startup"]
+[ext_resource type="Texture2D" path="res://assets/title_background.png" id="40_startup"]
+[ext_resource type="Texture2D" path="res://assets/title_logo.png" id="41_title_logo"]
+
+[sub_resource type="AtlasTexture" id="TitleBackgroundFrame"]
+atlas = ExtResource("40_startup")
+region = Rect2(0, 0, 230, 102)
 
 [sub_resource type="AtlasTexture" id="DialogueBorderCropped"]
 atlas = ExtResource("12_dialogue_border")
@@ -2191,13 +2194,24 @@ mouse_filter = 2
 color = Color(0.965, 0.957, 0.906, 1)
 
 [node name="Artwork" type="TextureRect" parent="StartupSplash"]
-texture_filter = 2
+texture_filter = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-texture = ExtResource("40_startup")
+texture = SubResource("TitleBackgroundFrame")
 expand_mode = 1
-stretch_mode = 0
+stretch_mode = 6
+
+[node name="Logo" type="TextureRect" parent="StartupSplash"]
+texture_filter = 1
+anchor_top = 0.0598
+anchor_right = 1.0
+anchor_bottom = 0.401
+grow_horizontal = 2
+mouse_filter = 2
+texture = ExtResource("41_title_logo")
+expand_mode = 1
+stretch_mode = 5
