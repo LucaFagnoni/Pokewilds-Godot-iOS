@@ -19,6 +19,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "0.10.190",
+          "buildVersion": "190",
+          "date": "2026-10-21T18:01:28Z",
+          "localizedDescription": "Menus: live party strip, A HINT option at the bottom centre, OPTIONS blocks the field UI\n\n- The touch start menu's party strip walks and follows HP (sleeping bag,\n  bed, co-op campfire) while it stays open, on the party views' 0.3 s tick;\n  eggs show as eggs there (they keep their species). A co-op campfire heal\n  refreshes an open POKEMON list too.\n- OPTIONS > CONTROLS > A HINT (off by default, touch only): the \"A: ...\" chip\n  sits at the bottom centre; off, nothing polls what A would do.\n- An OPTIONS menu open without the game menu (back from MOVE BUTTONS) now\n  blocks the field UI, so the next-throw ball icon cannot come back over it.\n- status_hud_test: the game clock chip ticks once a second, up to four game\n  minutes behind the world, which the check now allows.",
+          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0031/Pokewilds-unsigned.ipa",
+          "size": 57591924,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.10.189",
           "buildVersion": "189",
           "date": "2026-10-21T16:59:40Z",
@@ -98,15 +107,6 @@
           "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0019/Pokewilds-unsigned.ipa",
           "size": 65572825,
           "minOSVersion": "15.0"
-        },
-        {
-          "version": "0.10.173",
-          "buildVersion": "173",
-          "date": "2026-10-20T22:24:36Z",
-          "localizedDescription": "xtool: do not fail at the end where there is no wslpath [skip ci]",
-          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0015/Pokewilds-unsigned.ipa",
-          "size": 60330825,
-          "minOSVersion": "15.0"
         }
       ],
       "appPermissions": {
@@ -117,11 +117,11 @@
           "NSPhotoLibraryUsageDescription": "Not used by the game (Godot's default key)."
         }
       },
-      "version": "0.10.189",
-      "versionDate": "2026-10-21T16:59:40Z",
-      "versionDescription": "Title music: lake6, fading out as soon as a save loads or a server is joined\n\n- The menus play lake6 (the lofi one with OPTIONS > LOFI MUSIC on), fading in.\n- It fades out as soon as any loading screen goes up: a save loading, a\n  world being made, a server being joined or created. Cancelled back to the\n  menus, it fades in again; in a game the world's music takes over.",
-      "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0030/Pokewilds-unsigned.ipa",
-      "size": 57591636
+      "version": "0.10.190",
+      "versionDate": "2026-10-21T18:01:28Z",
+      "versionDescription": "Menus: live party strip, A HINT option at the bottom centre, OPTIONS blocks the field UI\n\n- The touch start menu's party strip walks and follows HP (sleeping bag,\n  bed, co-op campfire) while it stays open, on the party views' 0.3 s tick;\n  eggs show as eggs there (they keep their species). A co-op campfire heal\n  refreshes an open POKEMON list too.\n- OPTIONS > CONTROLS > A HINT (off by default, touch only): the \"A: ...\" chip\n  sits at the bottom centre; off, nothing polls what A would do.\n- An OPTIONS menu open without the game menu (back from MOVE BUTTONS) now\n  blocks the field UI, so the next-throw ball icon cannot come back over it.\n- status_hud_test: the game clock chip ticks once a second, up to four game\n  minutes behind the world, which the check now allows.",
+      "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0031/Pokewilds-unsigned.ipa",
+      "size": 57591924
     }
   ],
   "news": []
