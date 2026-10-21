@@ -1,12 +1,14 @@
 # Single-player saves survive the app being killed (iOS ends suspended apps):
 # the save when the app goes to the background, a kill while a save is written
 # (a cut .pending file, or a cut save from an older game, falls back to .bak),
-# a shared storage write that fails is told, and the world still loads.
+# a shared storage write that fails is told, the world still loads, and world
+# caches no save needs are removed.
 # Run: godot --headless --path project -s <this file> -- --touch-ui
 extends SceneTree
 
 const Paths = preload("res://scripts/game_data_paths.gd")
 const SharedStorage = preload("res://scripts/shared_storage.gd")
+const Cache = preload("res://scripts/source_world_cache.gd")
 
 var main: Node
 var checks := 0
@@ -110,8 +112,19 @@ func _initialize() -> void:
     check(float(main._read_save_file(save).get("player_x", -1)) == expected_x, "a cut save falls back to .bak")
     check(main._available_save_entries().any(func(entry): return entry.path == save), "the world is still in the LOAD list")
 
+    # At startup, world caches no save needs are removed, on a thread.
+    var cache: String = Cache.cache_path(seed_value, int(main.world.get("map_size_index")))
+    check(FileAccess.file_exists(cache), "the world has a cache")
+    var unused := [Cache.cache_path(99, 1), Cache.cache_path(99, 1, Cache.CACHE_VERSION)]
+    for path in unused + [Cache.cache_directory().path_join("notes.txt")]:
+        FileAccess.open(path, FileAccess.WRITE).store_string("x")
+    await create_timer(1.1).timeout
+
     # And it loads.
     await _open_main()
+    while main.world_cache_cleanup.is_alive(): await process_frame
+    check(not unused.any(func(path): return FileAccess.file_exists(path)), "unused caches removed at startup")
+    check(FileAccess.file_exists(cache) and FileAccess.file_exists(Cache.cache_directory().path_join("notes.txt")), "the saved world's cache and other files stay")
     check(main.world_edit.text == "KillTest", "the newest save is offered: %s" % main.world_edit.text)
     main.selected_mode = "LOAD"
     main.setup_load_path = save
@@ -126,6 +139,8 @@ func _initialize() -> void:
     # Deleting the world removes its .bak too, or it would come back.
     check(main._delete_save("KillTest", save) == OK, "deleted")
     check(not FileAccess.file_exists(save + ".bak") and main._read_save_file(save).is_empty(), "no copy brings it back")
+    while main.world_cache_cleanup.is_alive(): await process_frame
+    check(not FileAccess.file_exists(cache), "its cache goes with the last save that needed it")
 
     print("SAVE KILL TEST: %d checks, %d failed" % [checks, failed])
     quit(1 if failed > 0 else 0)

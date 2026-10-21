@@ -1019,6 +1019,7 @@ var shared_storage_serial := 0
 var shared_storage_error := OK
 ## Writes the world save in the background (see _write_single_player_save).
 var save_thread: Thread
+var world_cache_cleanup: Thread
 var storage_menu: Control
 var storage_rows: Array[Dictionary] = []
 var storage_actions: Panel
@@ -1380,6 +1381,7 @@ func _ready() -> void:
 
     world_edit.text = "PokeWilds"
     _load_setup()
+    _start_world_cache_cleanup()
     _update_classic_menu_labels()
 
     # WORLD NAME uses the source-style 24-character entry buffer. Keep the
@@ -8637,6 +8639,8 @@ func _exit_tree() -> void:
     var _joined := battle_animation_manifest # a thread must be waited for
     if save_thread != null:
         save_thread.wait_to_finish() # the save lands before the game goes
+    if world_cache_cleanup != null:
+        world_cache_cleanup.wait_to_finish()
 
 func _load_battle_animation_manifest() -> Dictionary:
     const MANIFEST_PATH = "res://assets/battle_animations/manifest.json"
@@ -10643,9 +10647,8 @@ func _write_save_index(world_name: String, save_path: String) -> void:
     cfg.set_value("last", "save_path", save_path.get_file())
     cfg.save(SAVE_INDEX_PATH)
 
-## Deletes a single-player world from the LOAD list's bin: its one save file
-## and its lines in the save index. The world cache stays: it is keyed by seed
-## and size, may serve another save, and is rebuilt when needed.
+## Deletes a single-player world from the LOAD list's bin: its save file and
+## its lines in the save index. World caches no other save needs go after it.
 func _delete_save(world_name: String, save_path: String) -> Error:
     var error := DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path))
     if error != OK: return error
@@ -10658,9 +10661,43 @@ func _delete_save(world_name: String, save_path: String) -> Error:
         if String(cfg.get_value("worlds", key, "")) == save_path.get_file(): cfg.erase_section_key("worlds", key)
         if String(cfg.get_value("last", "save_path", "")) == save_path.get_file(): cfg.erase_section("last")
         cfg.save(SAVE_INDEX_PATH)
+    _start_world_cache_cleanup()
     return OK
 
-func _read_save_file(save_path: String) -> Dictionary:
+## Removes, on a thread, the world caches that no single-player save needs.
+func _start_world_cache_cleanup() -> void:
+    if world_cache_cleanup != null:
+        world_cache_cleanup.wait_to_finish()
+    world_cache_cleanup = Thread.new()
+    world_cache_cleanup.start(_remove_unused_world_caches.bind(
+        SAVE_DIR, DataPaths.path("world_cache"), int(Time.get_unix_time_from_system())))
+
+## A world cache (exact_v<version>_<seed>_<size>.bin, tens of MB) is kept while
+## a save in `save_dir` is in that world or next to it. Files changed since
+## `before` are kept too: they may be a world being made now.
+static func _remove_unused_world_caches(save_dir: String, cache_dir: String, before: int) -> void:
+    if not DirAccess.dir_exists_absolute(save_dir):
+        return # no list of saves: no way to tell what is unused
+    var needed := {}
+    for file_name in DirAccess.get_files_at(save_dir):
+        if not file_name.to_lower().ends_with(".json"):
+            continue
+        var data := _read_save_file(save_dir.path_join(file_name))
+        if data.is_empty():
+            continue
+        needed["%d_%d" % [absi(int(data.get("world_seed", 0))), int(data.get("world_size", 0))]] = true
+        var neighbors = data.get("adjacent_worlds", {})
+        for neighbor in (neighbors.values() if neighbors is Dictionary else []):
+            if neighbor is Dictionary:
+                needed["%d_%d" % [absi(int(neighbor.get("seed", 0))), int(neighbor.get("size", 0))]] = true
+    var cache_name := RegEx.create_from_string("^exact_v\\d+_(\\d+_\\d+)\\.bin$")
+    for file_name in DirAccess.get_files_at(cache_dir):
+        var found := cache_name.search(file_name)
+        var path := cache_dir.path_join(file_name)
+        if found != null and not needed.has(found.get_string(1)) and FileAccess.get_modified_time(path) < before:
+            DirAccess.remove_absolute(path)
+
+static func _read_save_file(save_path: String) -> Dictionary:
     if save_path.is_empty():
         return {}
     # A save left broken (by a game from before saves were written safely)
