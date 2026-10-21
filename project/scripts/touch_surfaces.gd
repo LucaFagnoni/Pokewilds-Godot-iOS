@@ -49,6 +49,11 @@ func build() -> Dictionary:
     # Loading (also before the first world starts): nothing to press, so the pad steps aside.
     if m.generating: return {"tap_at": func(_p): pass}
     if not m.started:
+        # The title and the CO-OP pages take their taps themselves: the pad steps
+        # aside, and every page after the title gets the on-screen back button.
+        if is_instance_valid(m.coop_menu) and m.coop_menu.visible:
+            if m.coop_menu.page in ["title", "loading"]: return {"modal": false, "hide_pad": true}
+            return {"modal": false, "hide_pad": true, "back": func(): m.coop_menu._back()}
         return setup_screen.surface() if is_instance_valid(setup_screen) else {}
     if not m.game_menu_open: map_from_minimap = false
     if m.touch_controls.edit_mode:
