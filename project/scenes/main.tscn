@@ -35,6 +35,7 @@
 
 [ext_resource type="Texture2D" path="res://assets/title_background.png" id="40_startup"]
 [ext_resource type="Texture2D" path="res://assets/title_logo.png" id="41_title_logo"]
+[ext_resource type="Script" path="res://scripts/title_screen.gd" id="42_title_screen"]
 
 [sub_resource type="AtlasTexture" id="TitleBackgroundFrame"]
 atlas = ExtResource("40_startup")
@@ -2183,6 +2184,7 @@ horizontal_alignment = 1
 
 [node name="StartupSplash" type="CanvasLayer" parent="."]
 layer = 100
+script = ExtResource("42_title_screen")
 
 [node name="Backdrop" type="ColorRect" parent="StartupSplash"]
 anchors_preset = 15

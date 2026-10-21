@@ -50,7 +50,7 @@ func _initialize() -> void:
     await _frames(30)
     main = current_scene
     while not main.startup_complete: await process_frame
-    # The SINGLE PLAYER / MULTIPLAYER menu would take the first A.
+    # The SOLO / CO-OP menu would take the first A.
     main.coop_menu.close()
     main.world_edit.text = "MoveTest"
     main.selected_mode = "NEW"

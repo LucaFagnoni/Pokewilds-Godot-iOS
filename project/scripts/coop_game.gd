@@ -853,9 +853,9 @@ func _choose(action:String,value:String)->void:
     if action=="SOLO":
         cancel_join()
         new_setup_pending=false;join_setup_code="";join_lobby={};main.world_edit.editable=true
-        main.coop_menu.close();_mode_label("SINGLE PLAYER")
+        main.coop_menu.close();_mode_label("SOLO")
         main.menu_row=main.MENU_ROW_MODE;main.menu_col=0 if main.selected_mode=="NEW" else 1
-        main.menu_status.text="SINGLE PLAYER"
+        main.menu_status.text="SOLO"
         main._update_classic_menu_labels();main._update_menu_cursor()
         return
     if action=="JOIN_SETUP":
@@ -870,7 +870,7 @@ func _choose(action:String,value:String)->void:
         main._update_classic_menu_labels();main._update_menu_cursor()
         return
     if action=="SETUP":
-        _mode_label("MULTIPLAYER")
+        _mode_label("CO-OP")
         join_setup_code=""
         main.world_edit.editable=true
         new_setup_pending=true

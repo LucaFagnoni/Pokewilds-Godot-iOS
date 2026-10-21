@@ -195,6 +195,8 @@ jobs:
           BUNDLE: ${{ needs.draft.outputs.bundle }}
         run: |
           echo "$GITHUB_SHA" > project/build_id.txt
+          # The title screen shows it in its corner.
+          echo "$VERSION" > project/build_version.txt
           python3 - <<'EOF'
           import os, re
           path = "project/export_presets.cfg"

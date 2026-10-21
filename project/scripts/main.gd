@@ -1503,7 +1503,7 @@ func _ready() -> void:
     online_label = _source_ui_label(setup_panel,"OnlineLabel",
         Vector2(mode_label.position.x + JOHTO_FONT.get_string_size("NEW        ",HORIZONTAL_ALIGNMENT_LEFT,-1,12).x,6),
         Vector2(80,18),12,"BACK")
-    # The top row is one control: BACK to the SINGLE PLAYER / MULTIPLAYER choice.
+    # The top row is one control: BACK to the SOLO / CO-OP choice.
     # The current mode is already shown in the status corner.
     online_label.hide()
     var back_label := $UI/SetupPanel/LocalLabel as Label
@@ -1525,7 +1525,7 @@ func _ready() -> void:
     setup_panel.show()
     $UI.show()
     $StartupSplash.hide()
-    # First choice after the splash: SINGLE PLAYER or MULTIPLAYER.
+    # First choice after the splash: SOLO or CO-OP.
     coop_menu.open()
     dark_mode_ui = preload("res://scripts/dark_mode.gd").new()
     add_child(dark_mode_ui)
@@ -4847,7 +4847,7 @@ func _unhandled_input(event: InputEvent) -> void:
             _update_menu_cursor()
             get_viewport().set_input_as_handled()
         elif not started and not generating:
-            # Back to the SINGLE PLAYER / MULTIPLAYER choice.
+            # Back to the SOLO / CO-OP choice.
             coop_game.cancel_join();coop_menu.open()
             get_viewport().set_input_as_handled()
         return

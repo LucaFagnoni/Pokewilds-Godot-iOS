@@ -97,8 +97,9 @@ git -C "$repo" rev-parse HEAD > "$work/project/build_id.txt"
 [ "$(git -C "$repo" rev-parse --is-shallow-repository)" = false ] \
   || { echo "Shallow clone: the version is the commit count, run git fetch --unshallow" >&2; exit 1; }
 count=$(git -C "$repo" rev-list --count HEAD)
-VERSION="$(sed -n 's/^application\/short_version="\([0-9]*\.[0-9]*\).*/\1/p' "$work/project/export_presets.cfg").$count" \
-BUNDLE=$count python3 - "$work/project/export_presets.cfg" <<'EOF'
+version="$(sed -n 's/^application\/short_version="\([0-9]*\.[0-9]*\).*/\1/p' "$work/project/export_presets.cfg").$count"
+echo "$version" > "$work/project/build_version.txt"  # shown on the title screen
+VERSION=$version BUNDLE=$count python3 - "$work/project/export_presets.cfg" <<'EOF'
 import os, re, sys
 path = sys.argv[1]
 text = open(path, newline="").read()

@@ -167,7 +167,7 @@ func refresh() -> void:
             preview.texture = frame
     _set_field(start_button, "JOIN!" if joining else ("CHOOSE SAVE" if showing_load and m.coop_game.new_setup_pending else "START!"))
     start_button.visible = not showing_load or m.coop_game.new_setup_pending
-    status.text = String(m.menu_status.text) if String(m.menu_status.text) not in ["SINGLE PLAYER", ""] else ""
+    status.text = String(m.menu_status.text) if String(m.menu_status.text) not in ["SOLO", ""] else ""
     # The list (and its file dates) only changes with the saves or the scroll.
     var list_signature := [load_list.visible, saves.size(), load_scroll]
     if load_list.visible and list_signature != saves_signature:

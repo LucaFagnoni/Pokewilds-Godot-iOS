@@ -1,8 +1,8 @@
 extends Control
 ## Start menu and MULTIPLAYER flow. Uses the game's font, frame and tick alignment helpers.
 ## The first choice is plain text over the startup artwork, which stays up until a mode is picked.
-##   SINGLE PLAYER -> the normal world setup screen
-##   MULTIPLAYER   -> CREATE GAME (PUBLIC / PRIVATE + password), JOIN GAME (lobby list)
+##   SOLO  -> the normal world setup screen
+##   CO-OP -> CREATE GAME (PUBLIC / PRIVATE + password), JOIN GAME (lobby list)
 ##                    or MY SERVERS (dedicated servers saved on this device)
 ## MY SERVERS is a list: tapping a server (A) joins it in one step, its EDIT tag (START/E on a
 ## controller or keyboard) opens its form, and the last row, ADD SERVER, opens an empty form.
@@ -22,9 +22,9 @@ const VISIBLE_ROWS:=4
 const PASSWORD_LENGTH:=16
 const ADDRESS_LENGTH:=48
 const JoinCode=preload("res://scripts/coop_join_code.gd")
-const CHOICES:={"title":["SINGLE PLAYER","MULTIPLAYER"],"multi":["CREATE GAME","JOIN GAME","MY SERVERS"],
+const CHOICES:={"title":["SOLO","CO-OP"],"multi":["CREATE GAME","JOIN GAME","MY SERVERS"],
     "access":["PUBLIC","PRIVATE"],"world":["NEW WORLD","SAVED WORLD"]}
-const TITLES:={"title":"POKEWILDS","multi":"MULTIPLAYER","access":"CREATE GAME","world":"CREATE GAME",
+const TITLES:={"title":"POKEWILDS","multi":"CO-OP","access":"CREATE GAME","world":"CREATE GAME",
     "load":"SAVED WORLDS","browse":"JOIN GAME","password_set":"SET A PASSWORD",
     "password_join":"ENTER PASSWORD","connecting":"JOIN GAME","loading":"SAVED WORLDS","servers":"MY SERVERS",
     "server_form":"EDIT SERVER"}
@@ -68,6 +68,12 @@ var title_rows:Array[Label]=[]
 var title_tick:TextureRect
 var title_notice:Label
 const TITLE_ROW_Y:=[0.515,0.61]
+## Trainers left of each title word: one for SOLO, two for CO-OP (player sheets, first frame).
+const TITLE_TRAINERS:=[["red"],["red","blue"]]
+## Where the title words start, from the screen's centre; the trainers sit left of them,
+## right-aligned, so trainers and words make one centred column.
+const TITLE_TEXT_X:=-2.0
+const TITLE_TRAINER_X:=[-38.0,-22.0]
 ## MY SERVERS: the saved list, the entry open in the form (-1 = a new one), the unsaved fields,
 ## the field being typed, and the entry being joined (so a refusal can reopen its form).
 var servers:Array[Dictionary]=[]
@@ -161,21 +167,22 @@ func _list_arrow(at:Vector2,up:bool)->Polygon2D:
 func _build_title()->void:
     # Lives in the startup artwork's own layer so it scales with the artwork.
     splash=main.get_node("StartupSplash")
-    # title_background.png holds three frames side by side (leaves in the wind,
-    # a glittering lake): the next one every 0.4 s while the title shows.
-    var frames:=Timer.new();frames.name="BackgroundFrames";frames.wait_time=0.4;frames.autostart=true
-    splash.add_child(frames)
-    frames.timeout.connect(func():
-        if splash.visible:
-            var art:=(splash.get_node("Artwork") as TextureRect).texture as AtlasTexture
-            art.region.position.x=fmod(art.region.position.x+art.region.size.x,art.atlas.get_width()))
     title_box=Control.new();title_box.name="TitleChoices";title_box.mouse_filter=Control.MOUSE_FILTER_IGNORE
     splash.add_child(title_box);title_box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     for i in range(CHOICES.title.size()):
         var row:Label=main._source_ui_label(title_box,"Mode%d"%i,Vector2.ZERO,Vector2.ZERO,12,CHOICES.title[i])
-        row.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER;row.vertical_alignment=VERTICAL_ALIGNMENT_CENTER
-        row.anchor_left=0.2;row.anchor_right=0.8;row.anchor_top=TITLE_ROW_Y[i];row.anchor_bottom=TITLE_ROW_Y[i]
-        row.offset_left=0;row.offset_right=0;row.offset_top=-8;row.offset_bottom=8
+        row.horizontal_alignment=HORIZONTAL_ALIGNMENT_LEFT;row.vertical_alignment=VERTICAL_ALIGNMENT_CENTER
+        row.anchor_left=0.5;row.anchor_right=0.5;row.anchor_top=TITLE_ROW_Y[i];row.anchor_bottom=TITLE_ROW_Y[i]
+        row.offset_left=TITLE_TEXT_X;row.offset_right=TITLE_TEXT_X+64;row.offset_top=-8;row.offset_bottom=8
+        var trainers:Array=TITLE_TRAINERS[i]
+        for j in trainers.size():
+            var look:=AtlasTexture.new();look.atlas=load("res://assets/player_%s.png"%trainers[j]);look.region=Rect2(0,0,16,16)
+            var trainer:=TextureRect.new();trainer.name="Trainer%d"%j;trainer.texture=look
+            trainer.texture_filter=CanvasItem.TEXTURE_FILTER_NEAREST
+            # A tap on a trainer picks its row like a tap on the word.
+            trainer.mouse_filter=Control.MOUSE_FILTER_PASS
+            trainer.position=Vector2(TITLE_TRAINER_X[j+TITLE_TRAINER_X.size()-trainers.size()],0);trainer.size=Vector2(16,16)
+            row.add_child(trainer)
         row.mouse_filter=Control.MOUSE_FILTER_STOP
         row.gui_input.connect(func(event):
             if event is InputEventMouseButton and event.pressed and event.button_index==MOUSE_BUTTON_LEFT and page=="title":
@@ -186,6 +193,21 @@ func _build_title()->void:
     title_notice.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER;title_notice.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
     title_notice.anchor_left=0.2;title_notice.anchor_right=0.8;title_notice.anchor_top=0.67;title_notice.anchor_bottom=0.67
     title_notice.offset_left=0;title_notice.offset_right=0;title_notice.offset_top=0;title_notice.offset_bottom=22
+    # The build's version, small in the bottom right corner (CI writes build_version.txt).
+    var version:=FileAccess.get_file_as_string("res://build_version.txt").strip_edges() if FileAccess.file_exists("res://build_version.txt") else ""
+    if not version.is_empty():
+        var tag:Label=main._source_ui_label(title_box,"Version",Vector2.ZERO,Vector2.ZERO,7,"v"+version)
+        # Light text (the white copy of the font: the bitmap glyphs are black) on
+        # a small dark tag, readable over trees or lake whatever the screen's shape;
+        # it grows left from the corner, clear of the screen's rounded edge.
+        tag.add_theme_font_override("font",load("res://assets/source_text_font_white.fnt"))
+        tag.add_theme_color_override("font_color",Color("f6f4e7"))
+        var back:=StyleBoxFlat.new();back.bg_color=Color(0.13,0.23,0.25,0.8);back.set_corner_radius_all(2)
+        back.content_margin_left=3;back.content_margin_right=3;back.content_margin_top=1;back.content_margin_bottom=1
+        tag.add_theme_stylebox_override("normal",back)
+        tag.anchor_left=1.0;tag.anchor_right=1.0;tag.anchor_top=1.0;tag.anchor_bottom=1.0
+        tag.grow_horizontal=Control.GROW_DIRECTION_BEGIN;tag.grow_vertical=Control.GROW_DIRECTION_BEGIN
+        tag.offset_left=-12;tag.offset_right=-12;tag.offset_top=-8;tag.offset_bottom=-8
 
 ## Always starts at the start menu; nothing online is touched until MULTIPLAYER.
 func open()->void:
@@ -273,6 +295,7 @@ func _count()->int:
 func refresh()->void:
     var on_title:=page=="title"
     splash.visible=visible and on_title
+    if splash.visible:splash.call("intro") # title_screen.gd: the logo drops in, once
     var unseen:=on_title or page in ["loading","connecting"]
     backdrop.visible=not unseen;panel.visible=not unseen
     _layout_typing()
@@ -281,8 +304,9 @@ func refresh()->void:
     entry.add_theme_font_size_override("font_size",entry_size)
     if on_title:
         var chosen_row:Label=title_rows[clampi(selection,0,title_rows.size()-1)]
-        var width:float=main.JOHTO_FONT.get_string_size(chosen_row.text,HORIZONTAL_ALIGNMENT_LEFT,-1,12).x
-        title_tick.position.x=roundf(chosen_row.position.x+(chosen_row.size.x-width)/2.0-12.0)
+        # Just left of the chosen row's first trainer.
+        var trainers:int=TITLE_TRAINERS[clampi(selection,0,title_rows.size()-1)].size()
+        title_tick.position.x=roundf(chosen_row.position.x+TITLE_TRAINER_X[TITLE_TRAINER_X.size()-trainers]-12.0)
         main._align_menu_tick(title_tick,chosen_row) # Same glyph-centred height as every other menu.
         return
     panel.get_node("Title").text=_title()
