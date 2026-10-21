@@ -34,6 +34,8 @@ var load_list: Control
 var load_rows: Array[Panel] = []
 var load_empty: Label
 var saves: Array[Dictionary] = []
+var copy_button: Control
+var paste_button: Control
 var saves_loaded := false
 ## The save whose bin was tapped once: a second tap deletes it.
 var delete_armed := -1
@@ -87,6 +89,11 @@ func configure(owner_main: Node, owner_ui: Node) -> void:
     start_button = ui.make_button(self, "START!", Vector2(104, 28), 11)
     start_button.position = Vector2(210, 147)
     status = main._source_ui_label(self, "Status", Vector2(8, 155), Vector2(196, 14), 8, "")
+    # While a name is being typed: copy it, or paste the clipboard into it.
+    copy_button = ui.make_button(self, "COPY", Vector2(50, 20), 8)
+    copy_button.position = Vector2(6, 150)
+    paste_button = ui.make_button(self, "PASTE", Vector2(50, 20), 8)
+    paste_button.position = Vector2(62, 150)
 
     load_list = Control.new()
     load_list.position = Vector2(6, 30)
@@ -168,6 +175,9 @@ func refresh() -> void:
     load_list.visible = showing_load and not m.coop_game.new_setup_pending
     for i in size_chips.size(): _set_selected(size_chips[i], i == m.selected_world_size)
     var typing: String = m.text_entry_target
+    copy_button.visible = typing != ""
+    paste_button.visible = typing != ""
+    status.visible = typing == ""
     _set_field(world_field, (m.text_entry_buffer + "_") if typing == "world" else String(m.world_edit.text))
     _set_field(player_field, (m.text_entry_buffer + "_") if typing == "player" else String(m.player_model_name.text))
     swatch.texture = m.player_color_swatch.texture
@@ -274,6 +284,8 @@ func surface() -> Dictionary:
     add.call(color_next, func(): m._next_color())
     add.call(model_prev, func(): m._previous_model())
     add.call(model_next, func(): m._next_model())
+    add.call(copy_button, func(): m._copy_text_entry())
+    add.call(paste_button, func(): m._paste_text_entry())
     add.call(start_button, func():
         if m.text_entry_target != "": m._finish_text_entry(true)
         m._start_game())

@@ -95,6 +95,8 @@ var page_down:Control
 var text_font:FontFile
 var type_ok:Label
 var type_back:Label
+var type_copy:Label
+var type_paste:Label
 
 func configure(game:Node)->void:
     main=game;name="OnlineMenu";size=Vector2(320,180);z_index=345
@@ -154,9 +156,14 @@ func configure(game:Node)->void:
     for zone in [page_up,page_down]:panel.add_child(zone)
     _tap(page_up,func():_nudge(-1));_tap(page_down,func():_nudge(1))
     # While typing on a phone the keyboard hides the lower half, so OK / BACK sit above it.
-    type_ok=main._source_ui_label(panel,"TypeOk",Vector2(26,44),Vector2(70,16),12,"OK")
-    type_back=main._source_ui_label(panel,"TypeBack",Vector2(112,44),Vector2(70,16),12,"BACK")
+    type_ok=main._source_ui_label(panel,"TypeOk",Vector2(26,44),Vector2(30,16),12,"OK")
+    type_back=main._source_ui_label(panel,"TypeBack",Vector2(62,44),Vector2(44,16),12,"BACK")
+    # The text is not a system field, so iOS has no paste of its own: COPY and PASTE.
+    type_copy=main._source_ui_label(panel,"TypeCopy",Vector2(114,44),Vector2(44,16),12,"COPY")
+    type_paste=main._source_ui_label(panel,"TypePaste",Vector2(164,44),Vector2(50,16),12,"PASTE")
     _tap(type_ok,activate);_tap(type_back,_back)
+    _tap(type_copy,func():DisplayServer.clipboard_set(buffer))
+    _tap(type_paste,_paste)
     hide()
 
 ## A left click or finger tap on this control runs the action.
@@ -249,6 +256,13 @@ func _show_keyboard()->void:
     var kind:=DisplayServer.KEYBOARD_TYPE_URL if page=="server_text" and _field=="address" else DisplayServer.KEYBOARD_TYPE_DEFAULT
     DisplayServer.virtual_keyboard_show(buffer,Rect2i(),kind,_limit(),buffer.length(),buffer.length())
 
+## The clipboard's text at the end of what is typed, as far as the field takes it.
+func _paste()->void:
+    for character in DisplayServer.clipboard_get().replace("\n"," ").strip_edges():
+        if buffer.length()>=_limit():break
+        if _field!="id" or page!="server_text" or Saved.id_char(character):buffer+=character
+    refresh();_show_keyboard()
+
 func _limit()->int:
     return Saved.limit(_field) if page=="server_text" else PASSWORD_LENGTH
 
@@ -264,7 +278,7 @@ func _layout_typing()->void:
     panel.size.y=92.0 if raised else 148.0
     entry.position.y=26.0 if raised else 38.0
     status.position.y=62.0 if raised else 115.0
-    type_ok.visible=raised;type_back.visible=raised
+    type_ok.visible=raised;type_back.visible=raised;type_copy.visible=raised;type_paste.visible=raised
 
 ## Text that fits the width: cut from the end, or from the start to keep the cursor end in view.
 func _clip(text:String,font_size:int,width:float,from_start:bool=false)->String:

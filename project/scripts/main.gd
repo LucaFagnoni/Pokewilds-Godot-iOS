@@ -1373,6 +1373,10 @@ func _ready() -> void:
     # LineEdit itself out of keyboard/controller focus so its native caret
     # handling cannot consume D-pad navigation or resize the field while typing.
     world_edit.focus_mode = Control.FOCUS_NONE
+    # The game opens its own keyboard (_show_virtual_keyboard_custom). Left on, the
+    # system one also opened when a tap landed on this field, which the touch
+    # setup screen hides but does not remove (tapping SOLO did it on iPhone).
+    world_edit.virtual_keyboard_enabled = false
     world_edit.expand_to_text_length = false
     world_edit.mouse_filter = Control.MOUSE_FILTER_STOP
 
@@ -5691,6 +5695,18 @@ func _refresh_text_entry_display() -> void:
     elif text_entry_target == "player":
         player_model_name.text = text_entry_buffer
         _fit_player_name()
+
+## COPY / PASTE while typing a name (the touch setup screen's buttons): the
+## names are not system text fields, so iOS offers no paste of its own.
+func _paste_text_entry() -> void:
+    if text_entry_target == "": return
+    var clip := DisplayServer.clipboard_get().replace("\n", " ").strip_edges()
+    text_entry_buffer = (text_entry_buffer + clip).left(24)
+    _refresh_text_entry_display()
+    _show_virtual_keyboard_custom()  # the phone keyboard keeps its own copy of the text
+
+func _copy_text_entry() -> void:
+    if text_entry_target != "": DisplayServer.clipboard_set(text_entry_buffer)
 
 func _show_virtual_keyboard_custom() -> void:
     if not OS.has_feature("mobile"):
