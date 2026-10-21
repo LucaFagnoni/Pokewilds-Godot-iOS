@@ -19,15 +19,6 @@
       "screenshots": [],
       "versions": [
         {
-          "version": "0.10.187",
-          "buildVersion": "187",
-          "date": "2026-10-21T16:56:47Z",
-          "localizedDescription": "Title music: PokeWilds' calm Heart Tower theme on the start menu\n\nThe game has no title track and the start menu was silent (music started\nonly with a world). title_screen.gd plays Wilds_HeartTower_Calm, which\nnothing else plays, from the title through the menus and the world setup,\non the Music bus at the file's balanced level, and fades it out over 1.5 s\nwhen a game starts.",
-          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0029/Pokewilds-unsigned.ipa",
-          "size": 57579254,
-          "minOSVersion": "15.0"
-        },
-        {
           "version": "0.10.185",
           "buildVersion": "185",
           "date": "2026-10-21T16:50:06Z",
@@ -117,11 +108,11 @@
           "NSPhotoLibraryUsageDescription": "Not used by the game (Godot's default key)."
         }
       },
-      "version": "0.10.187",
-      "versionDate": "2026-10-21T16:56:47Z",
-      "versionDescription": "Title music: PokeWilds' calm Heart Tower theme on the start menu\n\nThe game has no title track and the start menu was silent (music started\nonly with a world). title_screen.gd plays Wilds_HeartTower_Calm, which\nnothing else plays, from the title through the menus and the world setup,\non the Music bus at the file's balanced level, and fades it out over 1.5 s\nwhen a game starts.",
-      "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0029/Pokewilds-unsigned.ipa",
-      "size": 57579254
+      "version": "0.10.185",
+      "versionDate": "2026-10-21T16:50:06Z",
+      "versionDescription": "Title screen: trees bending in the wind, clouds, logo intro and shine, SOLO / CO-OP, version\n\n- title_background.png: six frames; the two trees bend with the wind\n  (0-3 pixels at the top down to none at the bottom row), leaves flutter\n  and the lake glitters, every 0.2 s while the title shows.\n- title_clouds.png: three pixel-art clouds that drift across the sky,\n  behind the logo, on the background's pixel grid.\n- The logo drops in with a bounce when the title first opens (the boot\n  splash is now the landscape alone) and catches the light every 6 s.\n- The choices read SOLO and CO-OP, with one trainer and two trainers left of\n  the words; the cursor sits by the chosen row's trainers. The mode labels\n  elsewhere follow (SOLO, CO-OP).\n- The version, small in the bottom right corner: CI and tools/ios_xtool\n  write build_version.txt next to build_id.txt.\n- title_screen.gd on StartupSplash runs all of it; coop_menu.gd only asks\n  for the intro.",
+      "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0027/Pokewilds-unsigned.ipa",
+      "size": 57577853
     }
   ],
   "news": []
