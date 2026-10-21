@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://pw3aftb761jk"
-path="res://.godot/imported/LeftStick_dark.svg-0b6cdc416a27c65f453d69b7e3b71eb9.ctex"
+uid="uid://cc2o4eonnh8cp"
+path="res://.godot/imported/L2.svg-1d595705ae4596b385636d869e8b7dd5.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/touch_ui/LeftStick_dark.svg"
-dest_files=["res://.godot/imported/LeftStick_dark.svg-0b6cdc416a27c65f453d69b7e3b71eb9.ctex"]
+source_file="res://assets/touch_ui/L2.svg"
+dest_files=["res://.godot/imported/L2.svg-1d595705ae4596b385636d869e8b7dd5.ctex"]
 
 [params]
 

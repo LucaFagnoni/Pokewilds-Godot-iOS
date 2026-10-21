@@ -1,39 +1,38 @@
 extends RefCounted
-## OPTIONS > BATTERY and CLOCK, like a phone's status bar: the clock at the top
-## centre of the screen, the battery top right, left of the menu button. Each is
-## a chip in the touch buttons' style, so it reads over any ground. The texts
-## change every few seconds at most; on touch a tap on the clock switches
-## between real time and game time.
+## The HUD's top row, on one line MARGIN under the safe area's top edge (see
+## hud_style.gd): the minimap at the left edge, the clock (OPTIONS > CLOCK) at
+## the centre of the screen, and at the right edge the menu button, then the
+## battery (OPTIONS > BATTERY) and the FPS counter (OPTIONS > FPS COUNTER) to
+## its left, GAP apart. Chips are as tall as the menu button. The texts change
+## every few seconds at most (the FPS twice a second); on touch a tap on the
+## clock switches between real time and game time.
 
 const Settings = preload("res://scripts/game_options.gd")
-const TouchUI = preload("res://scripts/touch_ui.gd")
-const BLACK_FONT := preload("res://assets/source_text_font.fnt")
-const WHITE_FONT := preload("res://assets/source_text_font_white.fnt")
+const HudStyle = preload("res://scripts/hud_style.gd")
 ## Set by ios/plugins/pokewilds_battery: "<percent, or -1>,<state>" with the
 ## state 2 charging, 3 full. Empty where nothing reads a battery (desktop, server).
 const BATTERY_ENV := "POKEWILDS_BATTERY"
 const CLOCK_REAL := 1
 const CLOCK_GAME := 2
 const LOW_BATTERY_COLOR := Color8(232, 56, 40)
-const CHARGING_COLOR := Color8(56, 176, 48)
-const FONT_SIZE := 8
-## The digits' ink is rows 1-6 of the font's 8-pixel cell, so its centre line
-## is 4 cell pixels under the label's top (as _align_menu_tick has it).
-const INK_CENTRE := 4.0 * FONT_SIZE / 10.0
-const CHIP_HEIGHT := 11.0
-const PAD := 3.0
-const MARGIN := 2.0
-## The battery's case; its nub sticks out one more pixel on the right.
+const CHARGING_COLOR := Color8(88, 208, 72)
+## The battery's case, as tall as the digits; its nub sticks out one more pixel.
 const BATTERY := Vector2(13, 6)
+const BATTERY_ROOM := 14.0 + 3.0
+## The sun or moon before the world's time.
+const SUN_ROOM := HudStyle.INK_HEIGHT + 3.0
 
 var main: Node
 var root: Control
-var clock_chip: Panel
-var clock: Label
-var battery_chip: Panel
+var clock_chip: Control
+var battery_chip: Control
 var battery_fill: ColorRect
-var percent: Label
+var fps_chip: Control
 var wait := 0.0
+var fps_wait := 0.0
+var top_free := false
+var dark := true
+var height := HudStyle.ROW
 
 func _init(owner_main: Node) -> void:
     main = owner_main
@@ -42,38 +41,68 @@ static func battery_available() -> bool:
     return not OS.get_environment(BATTERY_ENV).is_empty()
 
 ## Every frame from main; top_free: nothing (menu, battle, top box) covers the top.
-func refresh(delta: float, top_free: bool) -> void:
-    var wanted: bool = top_free and not main.touch_controls.edit_mode \
-            and (int(Settings.values.clock) > 0 or Settings.enabled("battery_hud"))
-    if root == null:
-        if not wanted: return
-        _build()
-    root.visible = wanted
-    if not wanted:
-        wait = 0.0  # fresh texts as soon as it shows again (an option may have changed)
-        return
-    wait -= delta / maxf(Engine.time_scale, 0.01)
-    if wait <= 0.0: update()
+func refresh(delta: float, free: bool) -> void:
+    if root == null: _build()
+    top_free = free and not main.touch_controls.edit_mode
+    if row_height() != height:
+        # BUTTON SIZE changed the menu button: the chips follow at once.
+        height = row_height()
+        wait = 0.0
+        fps_wait = 0.0
+    var clock_on := top_free and int(Settings.values.clock) > 0
+    var battery_on := top_free and Settings.enabled("battery_hud")
+    if not clock_on and not battery_on:
+        clock_chip.hide()
+        battery_chip.hide()
+        wait = 0.0  # fresh texts as soon as they show again (an option may have changed)
+    else:
+        wait -= delta / maxf(Engine.time_scale, 0.01)
+        if wait <= 0.0: update()
     _place()
 
-## The clock centred on the screen, the battery on the same line at the right
-## edge of the safe area, moved left of the menu button or the FPS counter
-## when either is on that line.
+## Every frame from main: the FPS counter, in the field like the rest of the row.
+func update_fps(delta: float) -> void:
+    if root == null: return
+    fps_chip.visible = top_free and Settings.enabled("fps_counter")
+    if not fps_chip.visible: return
+    fps_wait -= delta / maxf(Engine.time_scale, 0.01)
+    if fps_wait <= 0.0:
+        fps_wait = 0.5
+        HudStyle.set_chip_text(fps_chip, str(roundi(Engine.get_frames_per_second())), row_height())
+
+## The menu button's height when it is on screen (BUTTON SIZE scales it), else ROW.
+func row_height() -> float:
+    var menu := _menu()
+    return menu.size.y * menu.scale.y if menu != null else HudStyle.ROW
+
+## The menu button, when the touch controls use it in the top row.
+func _menu() -> Control:
+    var pad: Control = main.touch_controls
+    var menu := pad.get_node_or_null("Start") as Control
+    if menu == null or not pad.android_runtime: return null
+    return menu if menu.position.y < pad.usable_rect.position.y + HudStyle.ROW * 2.0 else null
+
 func _place() -> void:
     var safe: Rect2 = main.touch_controls.usable_rect
-    var top := safe.position.y + MARGIN
+    var top := safe.position.y + HudStyle.MARGIN
+    # The button theme reaches every piece of the HUD.
+    if dark != HudStyle.dark:
+        dark = HudStyle.dark
+        for item in [clock_chip, battery_chip, fps_chip, main.m3924_minimap_root.get_node("Ring"), main.minimap_north]:
+            item.queue_redraw()
+    _move(main.m3924_minimap_root, Vector2(safe.position.x + HudStyle.MARGIN, top))
     var centre: float = main.get_viewport().get_visible_rect().size.x / 2.0
     _move(clock_chip, Vector2(roundf(centre - clock_chip.size.x / 2.0), top))
-    var right := safe.end.x - MARGIN
-    for obstacle in [main.touch_controls.get_node_or_null("Start"), main.fps_label]:
-        if obstacle is Control and obstacle.is_visible_in_tree():
-            var rect: Rect2 = obstacle.get_global_rect()
-            if rect.position.y < top + CHIP_HEIGHT and rect.end.y > top and rect.end.x > right - battery_chip.size.x:
-                right = minf(right, rect.position.x - 3.0)
-    _move(battery_chip, Vector2(right - battery_chip.size.x, top))
+    var right := safe.end.x - HudStyle.MARGIN
+    var menu := _menu()
+    if menu != null: right = menu.position.x - HudStyle.GAP
+    for chip in [battery_chip, fps_chip]:
+        if not chip.visible: continue
+        _move(chip, Vector2(right - chip.size.x, top))
+        right = chip.position.x - HudStyle.GAP
 
-func _move(chip: Control, at: Vector2) -> void:
-    if chip.position != at: chip.position = at
+func _move(item: Control, at: Vector2) -> void:
+    if item.position != at: item.position = at
 
 ## Touch: a tap on the clock switches between the phone's time and the world's.
 func switch_clock() -> void:
@@ -82,80 +111,72 @@ func switch_clock() -> void:
 
 func update() -> void:
     var mode := int(Settings.values.clock)
+    height = row_height()
     # iOS reports the battery at most once a minute; a charger shows within 10 s.
     wait = 10.0
     var parts := OS.get_environment(BATTERY_ENV).split(",")
     var level := int(parts[0]) if parts.size() == 2 else -1
-    battery_chip.visible = Settings.enabled("battery_hud") and level >= 0
+    battery_chip.visible = top_free and Settings.enabled("battery_hud") and level >= 0
     if battery_chip.visible:
-        _set_text(battery_chip, percent, "%d%%" % level)
+        HudStyle.set_chip_text(battery_chip, "%d%%" % level, height, BATTERY_ROOM)
+        battery_fill.get_parent().position.y = roundf(height / 2.0 - BATTERY.y / 2.0)
+        battery_fill.get_parent().position.x = (height - HudStyle.INK_HEIGHT) / 2.0
         battery_fill.size.x = roundf((BATTERY.x - 2.0) * clampi(level, 0, 100) / 100.0)
-        battery_fill.color = CHARGING_COLOR if int(parts[1]) >= 2 else LOW_BATTERY_COLOR if level <= 20 else Color.BLACK
-    clock_chip.visible = mode > 0
+        battery_fill.color = CHARGING_COLOR if int(parts[1]) >= 2 else LOW_BATTERY_COLOR if level <= 20 else HudStyle.INK
+    clock_chip.visible = top_free and mode > 0
     if mode == CLOCK_GAME:
         # A game minute lasts a quarter of a second: tick every second.
         wait = 1.0
         var minutes: int = main.world.clock_minutes()
-        _set_text(clock_chip, clock, "%02d:%02d" % [minutes / 60, minutes % 60])
+        HudStyle.set_chip_text(clock_chip, "%02d:%02d" % [minutes / 60, minutes % 60], height, SUN_ROOM)
     elif mode == CLOCK_REAL:
         var now := Time.get_time_dict_from_system()
         wait = minf(wait, 60.0 - float(now.second))
-        _set_text(clock_chip, clock, "%02d:%02d" % [now.hour, now.minute])
-    # The world's time on a dark chip, so it never passes for the phone's.
-    var style := TouchUI.button_style(mode == CLOCK_GAME)
-    if clock_chip.get_theme_stylebox("panel") != style:
-        clock_chip.add_theme_stylebox_override("panel", style)
-        clock.add_theme_font_override("font", WHITE_FONT if mode == CLOCK_GAME else BLACK_FONT)
-
-## A chip as wide as its text.
-func _set_text(chip: Panel, label: Label, text: String) -> void:
-    if label.text == text: return
-    label.text = text
-    chip.size.x = label.position.x + BLACK_FONT.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x + PAD
+        HudStyle.set_chip_text(clock_chip, "%02d:%02d" % [now.hour, now.minute], height)
+    # The world's time carries a sun or a moon, so it never passes for the phone's.
+    var sun := clock_chip.get_node("Sun") as Control
+    sun.visible = mode == CLOCK_GAME
+    if sun.visible:
+        sun.position = Vector2((height - HudStyle.INK_HEIGHT) / 2.0, roundf(height / 2.0 - HudStyle.INK_HEIGHT / 2.0))
+        sun.set_meta("night", is_instance_valid(main.world.environment_system) and main.world.environment_system.is_night_time())
+        sun.queue_redraw()
 
 func _build() -> void:
     root = Control.new()
-    root.name = "StatusHud"
+    root.name = "StatusHud"  # full screen: proportional_ui_layout.gd's FULL_SCREEN
     root.mouse_filter = Control.MOUSE_FILTER_IGNORE
     root.z_index = 80
     main.get_node("UI").add_child(root)
-    clock_chip = _chip("Clock")
-    clock = _label(clock_chip, PAD)
-    battery_chip = _chip("Battery")
-    # A battery like the phone's own, centred on the digits' line: black case
-    # and nub, a fill as long as the charge.
-    var at := Vector2(PAD, CHIP_HEIGHT / 2.0 - BATTERY.y / 2.0)
-    _rect(at, BATTERY, Color.BLACK)
-    _rect(at + Vector2(BATTERY.x, 2), Vector2(1, BATTERY.y - 4), Color.BLACK)
-    _rect(at + Vector2.ONE, BATTERY - Vector2(2, 2), Color.WHITE)
-    battery_fill = _rect(at + Vector2.ONE, Vector2(0, BATTERY.y - 2), Color.BLACK)
-    percent = _label(battery_chip, PAD + BATTERY.x + 4)
+    # The minimap joins the row: placed on the whole screen, not the centred 320x180 area.
+    main.m3924_minimap_root.reparent(root, false)
+    main.m3924_minimap_root.z_index = 0
+    clock_chip = HudStyle.chip(root, "Clock")
+    var sun := Control.new()
+    sun.name = "Sun"
+    sun.size = Vector2(HudStyle.INK_HEIGHT, HudStyle.INK_HEIGHT)
+    sun.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    sun.draw.connect(func():
+        var r := HudStyle.INK_HEIGHT / 2.0
+        if sun.get_meta("night", false): sun.draw_arc(Vector2(r, r), r - 1.0, PI * 0.5, PI * 1.5, 12, HudStyle.INK, 2.0, true)
+        else: sun.draw_circle(Vector2(r, r), r, Color8(248, 216, 96)))
+    clock_chip.add_child(sun)
+    battery_chip = HudStyle.chip(root, "Battery")
+    # A battery like the phone's own, on the digits' line: case, nub, and a
+    # fill as long as the charge.
+    var icon := Control.new()
+    icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    battery_chip.add_child(icon)
+    for part in [[Vector2.ZERO, BATTERY, HudStyle.INK], [Vector2(BATTERY.x, 2), Vector2(1, BATTERY.y - 4), HudStyle.INK], [Vector2.ONE, BATTERY - Vector2(2, 2), Color(0.1, 0.1, 0.1)]]:
+        _rect(icon, part[0], part[1], part[2])
+    battery_fill = _rect(icon, Vector2(1, 1), Vector2(0, BATTERY.y - 2), HudStyle.INK)
+    fps_chip = HudStyle.chip(root, "Fps")
+    for chip in [clock_chip, battery_chip, fps_chip]: chip.hide()
 
-func _chip(node_name: String) -> Panel:
-    var chip := Panel.new()
-    chip.name = node_name
-    chip.size = Vector2(0, CHIP_HEIGHT)
-    chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    chip.add_theme_stylebox_override("panel", TouchUI.button_style(false))
-    root.add_child(chip)
-    return chip
-
-func _rect(at: Vector2, dimensions: Vector2, color: Color) -> ColorRect:
+func _rect(parent: Control, at: Vector2, dimensions: Vector2, color: Color) -> ColorRect:
     var rect := ColorRect.new()
     rect.position = at
     rect.size = dimensions
     rect.color = color
     rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    battery_chip.add_child(rect)
+    parent.add_child(rect)
     return rect
-
-## The digits' ink centred on the chip's middle line, where the battery is too.
-func _label(chip: Panel, x: float) -> Label:
-    var label := Label.new()
-    label.position = Vector2(x, CHIP_HEIGHT / 2.0 - INK_CENTRE)
-    label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    label.add_theme_font_override("font", BLACK_FONT)
-    label.add_theme_font_size_override("font_size", FONT_SIZE)
-    label.add_theme_color_override("font_color", Color.WHITE)
-    chip.add_child(label)
-    return label

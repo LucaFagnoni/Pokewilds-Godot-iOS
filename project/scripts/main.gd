@@ -1067,7 +1067,6 @@ const DEFAULT_MAP_ZOOM := 3.0 / SOURCE_MAP_TILE_PIXELS
 const MAP_MARKER_DISPLAY_SIZE := Vector2(13.0, 9.0)
 const MAP_SLEEPING_BAG_DISPLAY_SIZE := Vector2(12.0, 8.0)
 const MAP_SLEEPING_BAG_TEXTURE := preload("res://assets/source_ui/sleeping_bag1.png")
-const M3924_MINIMAP_BORDER := "res://assets/source_ui/minimap_dialogue_circle.png"
 const M3924_MINIMAP_SIZE := Vector2(64.0, 64.0)
 const M3924_MINIMAP_MAP_SIZE := Vector2i(64, 64)
 const M3924_MINIMAP_MAP_OFFSET := Vector2.ZERO
@@ -1097,10 +1096,8 @@ var m3924_dig_right_label: Label
 var dig_reward_panel: Panel
 var dig_reward_label: Label
 var dig_reward_seconds := 0.0
-var minimap_frame: TextureRect
 var minimap_angle := 0.0
 var minimap_north: Control
-var minimap_frame_type := -1
 var m3924_minimap_root: Control
 var m3924_minimap_map: TextureRect
 var m3924_minimap_player: TextureRect
@@ -1696,43 +1693,21 @@ func _build_m3924_dig_minimap_ui() -> void:
     m3924_minimap_map.stretch_mode = TextureRect.STRETCH_SCALE
     m3924_minimap_map.z_index = 1
 
-    var backing := ColorRect.new()
-    backing.name = "FrameBacking"
-    backing.color = Color(0.025, 0.035, 0.03)
-    backing.size = M3924_MINIMAP_SIZE
-    backing.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    m3924_minimap_root.add_child(backing)
-    m3924_minimap_root.move_child(backing, 0)
-    minimap_frame = TextureRect.new()
-    minimap_frame.name = "SelectedFrame"
-    minimap_frame.size = M3924_MINIMAP_SIZE
-    minimap_frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-    minimap_frame.stretch_mode = TextureRect.STRETCH_SCALE
-    minimap_frame.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-    var minimap_ring_material := ShaderMaterial.new()
-    minimap_ring_material.shader = preload("res://scripts/radial_frame.gdshader")
-    minimap_ring_material.set_shader_parameter("base_radius", 64.0)
-    minimap_ring_material.set_shader_parameter("border_outset", 0.0)
-    minimap_frame.material = minimap_ring_material
-    minimap_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    minimap_frame.z_index = 5
-    m3924_minimap_root.add_child(minimap_frame)
+    # The HUD's ring (hud_style.gd) around the map, with the north marker on it.
+    var ring := Control.new()
+    ring.name = "Ring"
+    ring.size = M3924_MINIMAP_SIZE
+    ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    ring.z_index = 5
+    ring.draw.connect(func():
+        var centre := M3924_MINIMAP_SIZE * 0.5
+        var outer := M3924_MINIMAP_SIZE.x * 0.5 - HudStyle.STROKE * 0.5
+        ring.draw_arc(centre, (outer + M3924_MINIMAP_MAP_RADIUS) * 0.5, 0.0, TAU, 64, HudStyle.fill(false, true), outer - M3924_MINIMAP_MAP_RADIUS + 0.5, true)
+        ring.draw_arc(centre, outer, 0.0, TAU, 64, HudStyle.INK, HudStyle.STROKE, true))
+    m3924_minimap_root.add_child(ring)
     minimap_north = preload("res://scripts/minimap_north.gd").new()
     minimap_north.name="North"
     m3924_minimap_root.add_child(minimap_north)
-    var border_layers := _m3924_minimap_border_layers()
-    var outer_border: TextureRect = _source_texture_rect(
-        m3924_minimap_root, "OuterBlackBorder", Vector2.ZERO,
-        M3924_MINIMAP_SIZE, border_layers["outer"])
-    outer_border.stretch_mode = TextureRect.STRETCH_SCALE
-    outer_border.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-    outer_border.z_index = 4
-    var border: TextureRect = _source_texture_rect(
-        m3924_minimap_root, "DialogueCircleBorder", Vector2.ZERO,
-        M3924_MINIMAP_SIZE, border_layers["inner"])
-    border.stretch_mode = TextureRect.STRETCH_SCALE
-    border.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-    border.z_index = 5
     m3924_minimap_player = _source_texture_rect(
         m3924_minimap_root, "Player", Vector2.ZERO, Vector2(7.0, 5.0), null)
     var appearance_texture: Texture2D = _player_appearance_texture(false)
@@ -1747,63 +1722,6 @@ func _build_m3924_dig_minimap_ui() -> void:
         m3924_minimap_root, "Respawn", Vector2.ZERO, Vector2(6.0, 4.0), MAP_SLEEPING_BAG_TEXTURE)
     m3924_minimap_respawn.z_index = 3
     m3924_minimap_respawn.visible = false
-
-func _m3924_minimap_border_layers() -> Dictionary:
-    var inner: Image = TexturePixels.of((load(M3924_MINIMAP_BORDER) as Texture2D)).duplicate()
-    _m3924_fit_minimap_ornaments(inner)
-    var outer := Image.create(inner.get_width(), inner.get_height(),
-        false, Image.FORMAT_RGBA8)
-    outer.fill(Color.TRANSPARENT)
-    for y in range(inner.get_height()):
-        var first_border := -1
-        var last_border := -1
-        for x in range(inner.get_width()):
-            var pixel := inner.get_pixel(x, y)
-            if pixel.a > 0.0 and maxf(pixel.r, maxf(pixel.g, pixel.b)) > 0.1:
-                if first_border < 0:
-                    first_border = x
-                last_border = x
-        if first_border < 0:
-            first_border = inner.get_width()
-        for x in range(first_border):
-            if inner.get_pixel(x, y).a > 0.0:
-                outer.set_pixel(x, y, Color.BLACK)
-            inner.set_pixel(x, y, Color.TRANSPARENT)
-        for x in range(last_border + 1, inner.get_width()):
-            if inner.get_pixel(x, y).a > 0.0:
-                outer.set_pixel(x, y, Color.BLACK)
-            inner.set_pixel(x, y, Color.TRANSPARENT)
-    return {
-        "outer": ImageTexture.create_from_image(outer),
-        "inner": ImageTexture.create_from_image(inner)
-    }
-
-func _m3924_fit_minimap_ornaments(border: Image) -> void:
-    # Keep each ornament's center and colors, but reduce its black backing by
-    # one source pixel per side at the 64-pixel minimap display size.
-    var patches := [
-        [Rect2i(240, 8, 40, 48), Rect2i(244, 12, 32, 40), true],
-        [Rect2i(240, 456, 40, 48), Rect2i(244, 460, 32, 40), true],
-        [Rect2i(8, 240, 48, 40), Rect2i(12, 244, 40, 32), false],
-        [Rect2i(456, 240, 48, 40), Rect2i(460, 244, 40, 32), false]
-    ]
-    for patch in patches:
-        var original: Rect2i = patch[0]
-        var fitted: Rect2i = patch[1]
-        var horizontal: bool = patch[2]
-        var ornament := border.get_region(original)
-        for y in range(original.position.y, original.end.y):
-            for x in range(original.position.x, original.end.x):
-                var reference: Vector2i
-                if horizontal:
-                    reference = Vector2i(original.position.x - 1 if x < 260
-                        else original.end.x, y)
-                else:
-                    reference = Vector2i(x, original.position.y - 1 if y < 260
-                        else original.end.y)
-                border.set_pixel(x, y, border.get_pixelv(reference))
-        ornament.resize(fitted.size.x, fitted.size.y, Image.INTERPOLATE_NEAREST)
-        border.blit_rect(ornament, Rect2i(Vector2i.ZERO, fitted.size), fitted.position)
 
 func _m3924_minimap_top_box_visible(ignore_dig: bool = false) -> bool:
     if not started or generating or battle_active or progression_active:
@@ -1888,30 +1806,13 @@ func _update_m3924_dig_hud_and_minimap(delta: float) -> void:
         _apply_minimap_rotation(delta)
     m3924_minimap_last_player_cell = player_cell
 
-func _refresh_minimap_frame() -> void:
-    if not is_instance_valid(minimap_frame): return
-    var frame := int(GameOptions.values.frame)
-    var original := frame == 0
-    for key in ["OuterBlackBorder", "DialogueCircleBorder"]:
-        m3924_minimap_root.get_node(key).visible = original
-    m3924_minimap_root.get_node("FrameBacking").hide()
-    minimap_frame.visible = not original
-    minimap_north.visible = not original
-    if frame != minimap_frame_type:
-        minimap_frame_type = frame
-        minimap_frame.texture = ImageTexture.create_from_image(TexturePixels.of(GameOptions.frame_texture()))
-
 func _apply_minimap_rotation(delta: float = 1.0) -> void:
     minimap_angle = 0.0
     var angle:=minimap_angle
-    _refresh_minimap_frame()
     m3924_minimap_map.pivot_offset = m3924_minimap_map.size * 0.5
     m3924_minimap_map.rotation = angle
-    for key in ["OuterBlackBorder", "DialogueCircleBorder"]:
-        var border := m3924_minimap_root.get_node(key) as Control
-        border.pivot_offset = border.size * 0.5
-        border.rotation = angle
-    minimap_north.position = (M3924_MINIMAP_SIZE * 0.5 + Vector2(0,-29).rotated(angle) - minimap_north.size * 0.5).round()
+    # On the ring, inside its outer edge.
+    minimap_north.position = (M3924_MINIMAP_SIZE * 0.5 + Vector2(0,-27).rotated(angle) - minimap_north.size * 0.5).round()
     if m3924_minimap_respawn.visible:
         var center := M3924_MINIMAP_MAP_OFFSET + Vector2(M3924_MINIMAP_MAP_SIZE) * 0.5
         var unrotated: Vector2 = m3924_minimap_respawn.get_meta("unrotated_position", m3924_minimap_respawn.position)
@@ -2489,8 +2390,6 @@ func _apply_game_options() -> void:
     GameOptions.refresh_frames($UI)
     if is_instance_valid(dark_mode_ui): dark_mode_ui.set_enabled(GameOptions.enabled("dark_mode"))
     if not source_effect_playing: _restore_battle_background()
-    minimap_frame_type = -1
-    _refresh_minimap_frame()
 
 func _classic_dialogue_style() -> StyleBoxTexture:
     return GameOptions.style()
@@ -3230,12 +3129,10 @@ func _build_m66_source_ui() -> void:
     progression_sprite_top.z_index = 2
     _create_progression_menu_frames()
 
-var fps_label: Label
-var fps_refresh := 0.0
-## OPTIONS > BATTERY and CLOCK, top left.
+## The top row: minimap, clock, FPS counter, battery (status_hud.gd).
 var status_hud = preload("res://scripts/status_hud.gd").new(self)
+const HudStyle = preload("res://scripts/hud_style.gd")
 
-## OPTIONS > FPS COUNTER: frames drawn per second, top right.
 var last_input_msec := 0
 
 ## Battery saver: OFF keeps 60 FPS; ON draws 30; AUTO draws 30 only while
@@ -3259,38 +3156,8 @@ func _apply_battery_saver() -> void:
         fps = 60
     if Engine.max_fps != fps: Engine.max_fps = fps
 
-func _update_fps_counter(delta: float) -> void:
-    if not GameOptions.enabled("fps_counter") or not started:
-        if is_instance_valid(fps_label): fps_label.hide()
-        return
-    if not is_instance_valid(fps_label):
-        fps_label = _source_ui_label(get_node("UI"), "FpsCounter", Vector2.ZERO, Vector2(40, 10), 8)
-        fps_label.anchor_left = 1.0
-        fps_label.anchor_right = 1.0
-        fps_label.offset_left = -46
-        fps_label.offset_right = -4
-        fps_label.offset_top = 3
-        fps_label.offset_bottom = 13
-        fps_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-        fps_label.z_index = 300
-        # White with a dark edge, so it reads over any ground.
-        fps_label.add_theme_color_override("font_color", Color.WHITE)
-        fps_label.add_theme_color_override("font_outline_color", Color.BLACK)
-        fps_label.add_theme_constant_override("outline_size", 3)
-        fps_refresh = 0.0
-    fps_label.show()
-    var menu_button := touch_controls.get_node_or_null("Start") as Control
-    if is_instance_valid(touch_ui) and touch_ui.enabled and menu_button != null and menu_button.is_visible_in_tree():
-        # The corner belongs to the menu button on touch: sit just under it.
-        var corner := menu_button.get_global_rect()
-        fps_label.global_position = Vector2(corner.end.x - fps_label.size.x, corner.end.y + 2)
-    fps_refresh -= delta / maxf(Engine.time_scale, 0.01)
-    if fps_refresh <= 0.0:
-        fps_refresh = 0.25
-        fps_label.text = str(roundi(Engine.get_frames_per_second()))
-
 func _process(delta: float) -> void:
-    _update_fps_counter(delta)
+    status_hud.update_fps(delta)
     _apply_battery_saver()
     _hide_world_under_battle()
     map_cache_check_time -= delta

@@ -19,6 +19,7 @@ extends Node
 ##   long_press: Callable(int) a row was pressed for LONG_PRESS seconds
 ##   drop: Callable(int, Vector2) the finger lifted after a long press (drag and drop)
 ##   modal: bool              swallow every touch (default true)
+##   hud: bool                buttons in the field HUD's look (hud_style.gd), not the menus'
 ##   hide_pad: bool           hide the gamepad overlay (default: modal)
 
 const JOHTO_FONT := preload("res://assets/source_text_font.fnt")
@@ -97,7 +98,7 @@ func make_button(parent: Node, text: String, size: Vector2, font_size: int = 10)
     button.add_child(label)
     parent.add_child(button)
     set_text(button, text)
-    button.resized.connect(func(): set_text(button, label.text))
+    button.resized.connect(func(): if not button.get_meta("hud", false): set_text(button, label.text))
     return button
 
 ## Centers the text inside the border and squeezes it if it would not fit.
@@ -131,6 +132,40 @@ static func set_selected(button: Control, selected: bool) -> void:
     label.add_theme_font_override("font", WHITE_FONT if selected else JOHTO_FONT)
     label.add_theme_color_override("font_color", Color.WHITE if selected else Color.BLACK)
 
+const HudStyle = preload("res://scripts/hud_style.gd")
+
+## Field buttons wear the HUD's look (glass, ring, white text, a white
+## triangle for < and >); menu buttons keep the menus' white and black.
+func _hud_look(button: Control, hud: bool, pointing: int) -> void:
+    if button.get_meta("hud", false) == hud and button.get_meta("pointing", 0) == pointing and button.get_meta("dark", true) == HudStyle.dark:
+        return
+    if button.get_meta("hud", false) != hud:
+        var label := button.get_node("Text") as Label
+        label.text = ""
+        label.scale = Vector2.ONE
+        label.add_theme_font_override("font", HudStyle.FONT if hud else JOHTO_FONT)
+        label.add_theme_color_override("font_color", HudStyle.INK if hud else Color.BLACK)
+        button.add_theme_stylebox_override("panel", StyleBoxEmpty.new() if hud else button_style(false))
+        if hud and not button.has_meta("hud_drawn"):
+            button.set_meta("hud_drawn", true)
+            button.draw.connect(_draw_hud_button.bind(button))
+    button.set_meta("hud", hud)
+    button.set_meta("pointing", pointing)
+    button.set_meta("dark", HudStyle.dark)
+    button.queue_redraw()
+
+func _draw_hud_button(button: Control) -> void:
+    if not button.get_meta("hud", false): return
+    HudStyle.draw_shape(button, Rect2(Vector2.ZERO, button.size), false, HudStyle.INK, false, HudStyle.STROKE, true)
+    var pointing := int(button.get_meta("pointing", 0))
+    if pointing != 0:
+        var c := button.size / 2.0
+        var h := HudStyle.INK_HEIGHT / 2.0
+        button.draw_colored_polygon(PackedVector2Array([c + Vector2(h * pointing, 0), c + Vector2(-h * pointing / 2.0, -h), c + Vector2(-h * pointing / 2.0, h)]), HudStyle.INK)
+
+static func _ink_width(text: String) -> float:
+    return HudStyle.FONT.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, HudStyle.FONT_SIZE).x - 1.0
+
 ## A button showing the game's own triangle cursor (the font maps < > to PK MN).
 func make_arrow(parent: Node, pointing_left: bool, size: Vector2) -> Control:
     var button := make_button(parent, "", size)
@@ -149,6 +184,7 @@ func _process(_delta: float) -> void:
     if has_back:
         close_button.position = Vector2(bounds.end.x - close_button.size.x - 4, bounds.position.y + 4)
     var wanted: Array = surface.get("buttons", [])
+    var hud := bool(surface.get("hud", false))
     while extra_buttons.size() < wanted.size():
         extra_buttons.append(make_arrow(chrome, false, Vector2(10, 10)))
     for i in extra_buttons.size():
@@ -161,11 +197,18 @@ func _process(_delta: float) -> void:
         # "<" and ">" draw the game's triangle (the font maps them to PK/MN).
         var text := String(wanted[i][0])
         var arrow := button.get_node("Arrow") as TextureRect
-        arrow.visible = text in ["<", ">"]
+        var pointing := 0 if text not in ["<", ">"] else (-1 if text == "<" else 1)
+        arrow.visible = pointing != 0 and not hud
         arrow.flip_h = text == "<"
         arrow.position = (button.size - arrow.size) * 0.5
-        if arrow.visible: text = ""
-        if (button.get_node("Text") as Label).text != text: set_text(button, text)
+        if pointing != 0: text = ""
+        _hud_look(button, hud, pointing)
+        var label := button.get_node("Text") as Label
+        if hud:
+            # The ink centred both ways, as on every HUD chip.
+            label.text = text
+            label.position = Vector2(roundf((rect.size.x - _ink_width(text)) / 2.0), roundf(rect.size.y / 2.0 - HudStyle.INK_CENTRE))
+        elif label.text != text: set_text(button, text)
     # One resting finger: fast-forward (hold) or a long press on a row.
     if points.size() == 1 and not moved:
         held_time += _delta
