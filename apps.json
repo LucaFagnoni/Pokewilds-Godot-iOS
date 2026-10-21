@@ -19,6 +19,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "0.10.181",
+          "buildVersion": "181",
+          "date": "2026-10-21T15:45:17Z",
+          "localizedDescription": "Server: give up on an area before the player does\n\nThe flaky travel step in CI (run 39477428637): the server printed\n\"making new area 1,0...\" and nothing more, the client gave up at\nprepare_travel's 10 minutes (\"travel to the next area failed\"), and\nthe runner killed an orphaned Godot at cleanup: the area maker had hit\nthe snow-on-the-peak hang fixed in the previous commit.\n\nIt also showed why a hung area maker is a failure and not a fallback:\nthe server waited 15 minutes before handing the area to the player's\ndevice, 5 more than the player waits. It now waits 8, so the device\nmakes the area while the player is still waiting (checked with a 5 s\ntimeout: the client made area 1,0 itself and travelled).",
+          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0024/Pokewilds-unsigned.ipa",
+          "size": 60333585,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.10.179",
           "buildVersion": "179",
           "date": "2026-10-21T13:33:16Z",
@@ -98,15 +107,6 @@
           "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0003/Pokewilds-unsigned.ipa",
           "size": 65551196,
           "minOSVersion": "15.0"
-        },
-        {
-          "version": "0.9.3",
-          "buildVersion": "93",
-          "date": "2026-10-20T10:12:07Z",
-          "localizedDescription": "CI: one release per commit with the IPA and the server, published only when both pass\n\nA single workflow creates a draft release, the iOS and server jobs upload\ntheir files, and the release is published as Latest only when both passed;\na failed or cancelled build deletes the draft. The README links use\nreleases/latest/download, so they always give a matching pair.",
-          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0001/Pokewilds-unsigned.ipa",
-          "size": 65551191,
-          "minOSVersion": "15.0"
         }
       ],
       "appPermissions": {
@@ -117,11 +117,11 @@
           "NSPhotoLibraryUsageDescription": "Not used by the game (Godot's default key)."
         }
       },
-      "version": "0.10.179",
-      "versionDate": "2026-10-21T13:33:16Z",
-      "versionDescription": "Merge move-learn-preview: tap a move to read it before replacing it",
-      "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0023/Pokewilds-unsigned.ipa",
-      "size": 65578349
+      "version": "0.10.181",
+      "versionDate": "2026-10-21T15:45:17Z",
+      "versionDescription": "Server: give up on an area before the player does\n\nThe flaky travel step in CI (run 39477428637): the server printed\n\"making new area 1,0...\" and nothing more, the client gave up at\nprepare_travel's 10 minutes (\"travel to the next area failed\"), and\nthe runner killed an orphaned Godot at cleanup: the area maker had hit\nthe snow-on-the-peak hang fixed in the previous commit.\n\nIt also showed why a hung area maker is a failure and not a fallback:\nthe server waited 15 minutes before handing the area to the player's\ndevice, 5 more than the player waits. It now waits 8, so the device\nmakes the area while the player is still waiting (checked with a 5 s\ntimeout: the client made area 1,0 itself and travelled).",
+      "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0024/Pokewilds-unsigned.ipa",
+      "size": 60333585
     }
   ],
   "news": []
