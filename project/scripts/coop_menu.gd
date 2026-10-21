@@ -42,6 +42,9 @@ var main:Node
 var page:=""
 var selection:=0
 var entries:Array[Dictionary]=[]
+## SAVED WORLDS: the bins, and the world whose bin was tapped once (a second tap deletes it).
+var trash_bins:Array[TextureRect]=[]
+var _trash_armed:=-1
 var lobbies:Array[Dictionary]=[]
 var rows:Array[Label]=[]
 var panel:Panel
@@ -116,6 +119,12 @@ func configure(game:Node)->void:
         tag.horizontal_alignment=HORIZONTAL_ALIGNMENT_RIGHT
         _tap(tag,func():selection=_scroll+i;_edit_selected())
         edit_tags.append(tag)
+        # SAVED WORLDS only: a bin at the right end of the row.
+        var bin:=TextureRect.new();bin.name="Trash";bin.texture=preload("res://scripts/touch_icons.gd").icon("TRASH")
+        # Centred on the 8 px name, which sits at the row's top.
+        bin.position=Vector2(168,-3);bin.size=Vector2(12,12);bin.texture_filter=CanvasItem.TEXTURE_FILTER_NEAREST
+        row.add_child(bin);_tap(bin,func():_trash(_scroll+i))
+        trash_bins.append(bin)
     # The compact server form: four fields, then SAVE / DELETE / BACK, all visible at once.
     for i in range(FIELDS.size()+3):
         var row:Label=main._source_ui_label(panel,"Form%d"%i,Vector2(26,27+i*FORM_PITCH),Vector2(182,FORM_PITCH),8,"")
@@ -267,7 +276,7 @@ func _names()->Array:
     if CHOICES.has(page):return CHOICES[page]
     var names:Array=[]
     if page=="load":
-        for entry in entries:names.append(String(entry.data.get("world_name","WORLD")).left(24))
+        for entry in entries:names.append(_clip(String(entry.data.get("world_name","WORLD")).left(24),8,136.0))
     elif page=="browse":
         for lobby in lobbies:
             names.append("%s  %d/%d%s"%[String(lobby.name).to_upper().left(13),int(lobby.players),int(lobby["max"]),"  PRIVATE" if lobby.private else ""])
@@ -320,12 +329,16 @@ func refresh()->void:
         selection=clampi(selection,0,names.size()-1)
         _scroll=0 if forming else clampi(_scroll,maxi(0,selection-VISIBLE_ROWS+1),selection)
     if forming and _sure and _form_ids()[selection]!="delete":_sure=false;_hint=""
+    # A bin stays armed only while its world is the one chosen.
+    if _trash_armed>=0 and (page!="load" or selection!=_trash_armed):_trash_armed=-1;_hint=""
     for i in range(rows.size()):
         var index:=_scroll+i
         rows[i].visible=not _typing() and not forming and page not in ["connecting","loading"] and index<names.size()
         rows[i].text=names[index] if index<names.size() else ""
         rows[i].add_theme_font_size_override("font_size",8 if listing else 12)
         edit_tags[i].visible=page=="servers" and index<servers.size()
+        trash_bins[i].visible=page=="load" and index<entries.size()
+        trash_bins[i].modulate=Color(1.0,0.35,0.3) if index==_trash_armed else Color.WHITE
     _refresh_form()
     var no_servers:=page=="servers" and servers.is_empty()
     empty.visible=(listing and names.is_empty()) or no_servers
@@ -562,6 +575,20 @@ func _save()->void:
     if _from_lobby:_join(_edit);return
     selection=_edit;_go("servers",true);_hint="SAVED.";_update_status()
 
+## SAVED WORLDS' bin (START or E on a controller or keyboard): the first press
+## asks (the bin turns red), the second deletes that online world from the device.
+func _trash(index:int)->void:
+    if page!="load" or index>=entries.size():return
+    if _trash_armed!=index:
+        _trash_armed=index;selection=index
+        _hint="TAP THE BIN AGAIN TO DELETE IT.";refresh();_update_status();return
+    _trash_armed=-1
+    if main.coop_game.saves.delete_world(String(entries[index].id))==OK:
+        entries.remove_at(index);selection=clampi(selection,0,maxi(0,entries.size()-1))
+        _hint="DELETED."
+    else:_hint="IT COULD NOT BE DELETED."
+    refresh();_update_status()
+
 func _delete()->void:
     servers.remove_at(_edit)
     var saved:=Saved.save_all(servers)
@@ -615,6 +642,7 @@ func handle(event:InputEvent)->void:
     if event.is_action_pressed("cancel") or (event is InputEventKey and event.pressed and event.keycode in [KEY_ESCAPE,KEY_BACK]):
         _back()
     elif page=="servers" and ((event is InputEventJoypadButton and event.pressed and event.is_action_pressed("start")) or (event is InputEventKey and event.pressed and event.keycode==KEY_E)):_edit_selected()
+    elif page=="load" and ((event is InputEventJoypadButton and event.pressed and event.is_action_pressed("start")) or (event is InputEventKey and event.pressed and event.keycode==KEY_E)):_trash(selection)
     elif event.is_action_pressed("confirm") or (event is InputEventKey and event.pressed and event.keycode in [KEY_ENTER,KEY_KP_ENTER]):activate()
     elif direction!=0 and not _typing() and page!="connecting":
         var count:=_count()

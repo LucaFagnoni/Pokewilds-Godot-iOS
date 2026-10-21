@@ -46,6 +46,24 @@ func load_host(id:String,actor:String)->Dictionary:
     var data=_read(path,id,actor)
     return _read(path+".bak",id,actor) if data.is_empty() else data
 
+## Deletes an online world from this device (SAVED WORLDS' bin): its whole
+## folder, with its saves, journal, backups, snapshots and caches.
+func delete_world(id:String)->Error:
+    if not Store.valid_id(id):return ERR_INVALID_PARAMETER
+    return _remove_tree(root.path_join(id))
+
+static func _remove_tree(path:String)->Error:
+    var directory=DirAccess.open(path)
+    if directory==null:return DirAccess.get_open_error()
+    directory.include_hidden=true
+    for name in directory.get_directories():
+        var error=_remove_tree(path.path_join(name))
+        if error!=OK:return error
+    for name in directory.get_files():
+        var error=DirAccess.remove_absolute(path.path_join(name))
+        if error!=OK:return error
+    return DirAccess.remove_absolute(path)
+
 func entries(actor:String)->Array[Dictionary]:
     var result:Array[Dictionary]=[]
     var directory=DirAccess.open(root)

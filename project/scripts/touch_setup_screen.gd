@@ -6,6 +6,7 @@ const WHITE_FONT := preload("res://assets/source_text_font_white.fnt")
 const JOHTO_FONT := preload("res://assets/source_text_font.fnt")
 const SIZE_NAMES := ["S", "M", "L", "XL", "XXL"]
 const SAVE_ROW_HEIGHT := 32.0
+const Icons = preload("res://scripts/touch_icons.gd")
 
 var main: Node
 var ui: Node
@@ -30,6 +31,9 @@ var load_list: Control
 var load_rows: Array[Panel] = []
 var load_empty: Label
 var saves: Array[Dictionary] = []
+var saves_loaded := false
+## The save whose bin was tapped once: a second tap deletes it.
+var delete_armed := -1
 var load_scroll := 0
 var showing_load := false
 var saves_signature := []
@@ -95,7 +99,15 @@ func configure(owner_main: Node, owner_ui: Node) -> void:
         row.add_theme_stylebox_override("panel", main._classic_dialogue_style())
         load_list.add_child(row)
         main._source_ui_label(row, "Name", Vector2(12, 4), Vector2(200, 12), 10, "")
-        main._source_ui_label(row, "Info", Vector2(12, 17), Vector2(284, 9), 7, "")
+        main._source_ui_label(row, "Info", Vector2(12, 17), Vector2(268, 9), 7, "")
+        var bin := TextureRect.new()
+        bin.name = "Trash"
+        bin.texture = Icons.icon("TRASH")
+        bin.position = Vector2(286, 8)
+        bin.size = Vector2(12, 12)
+        bin.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+        bin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        row.add_child(bin)
         load_rows.append(row)
     load_empty = main._source_ui_label(load_list, "Empty", Vector2(0, 50), Vector2(308, 14), 10, "NO SAVED WORLDS YET")
     load_empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -168,6 +180,10 @@ func refresh() -> void:
     _set_field(start_button, "JOIN!" if joining else ("CHOOSE SAVE" if showing_load and m.coop_game.new_setup_pending else "START!"))
     start_button.visible = not showing_load or m.coop_game.new_setup_pending
     status.text = String(m.menu_status.text) if String(m.menu_status.text) not in ["SOLO", ""] else ""
+    # LOAD can be the remembered mode: read the saves the first time it shows.
+    if load_list.visible and not saves_loaded:
+        saves = main._available_save_entries()
+        saves_loaded = true
     # The list (and its file dates) only changes with the saves or the scroll.
     var list_signature := [load_list.visible, saves.size(), load_scroll]
     if load_list.visible and list_signature != saves_signature:
@@ -187,6 +203,8 @@ func _refresh_saves() -> void:
         (row.get_node("Name") as Label).text = world_name if not world_name.is_empty() else "default"
         var party: Array = data.get("caught_pokemon", [])
         var saved := Time.get_datetime_string_from_unix_time(FileAccess.get_modified_time(String(saves[index].path))).replace("T", "  ")
+        # Red while armed: the next tap on it deletes the world.
+        (row.get_node("Trash") as TextureRect).modulate = Color(1.0, 0.35, 0.3) if index == delete_armed else Color.WHITE
         (row.get_node("Info") as Label).text = "%s   %s   SIZE %s   %d POKEMON" % [
             String(data.get("player_name", "")).to_upper(), saved.left(17),
             SIZE_NAMES[clampi(int(data.get("world_size", 0)), 0, 4)], party.size()]
@@ -196,9 +214,28 @@ func _set_mode(mode: String) -> void:
     main.selected_mode = mode
     if mode == "LOAD":
         saves = main._available_save_entries()
+        saves_loaded = true
         load_scroll = 0
+        delete_armed = -1
     main._update_classic_menu_labels()
     main._update_menu_cursor()
+
+## The bin on a save: the first tap asks (it turns red), the second deletes.
+func _trash(index: int) -> void:
+    if index >= saves.size(): return
+    var world_name := String(saves[index].data.get("world_name", "default")).strip_edges()
+    if delete_armed != index:
+        delete_armed = index
+        main.menu_status.text = "TAP THE BIN AGAIN TO DELETE %s." % world_name.to_upper()
+        _refresh_saves()
+        return
+    delete_armed = -1
+    if main._delete_save(world_name, String(saves[index].path)) == OK:
+        saves.remove_at(index)
+        main.menu_status.text = "%s DELETED." % world_name.to_upper()
+    else:
+        main.menu_status.text = "%s COULD NOT BE DELETED." % world_name.to_upper()
+    _refresh_saves()
 
 func _load_save(index: int) -> void:
     var m := main
@@ -239,13 +276,17 @@ func surface() -> Dictionary:
         m._start_game())
     var rows := []
     if load_list.visible:
-        for row in load_rows:
-            if row.visible: rows.append(row.get_global_rect())
+        for i in load_rows.size():
+            var row := load_rows[i]
+            if not row.visible: continue
+            rows.append(row.get_global_rect())
+            # The bin, with room for a finger; checked before the row's own tap.
+            buttons.append(["", func(): _trash(load_scroll + i), (row.get_node("Trash") as Control).get_global_rect().grow(6)])
     return {
         "hotspots": buttons,
         "rows": rows,
         "tap": func(i): _load_save(load_scroll + i),
-        "scroll": func(d): load_scroll += d; _refresh_saves(),
+        "scroll": func(d): load_scroll += d; delete_armed = -1; _refresh_saves(),
         "row_height": SAVE_ROW_HEIGHT,
         "tap_at": func(_p): if m.text_entry_target != "": m._finish_text_entry(true),
     }

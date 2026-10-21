@@ -10638,6 +10638,20 @@ func _write_save_index(world_name: String, save_path: String) -> void:
     cfg.set_value("last", "save_path", save_path.get_file())
     cfg.save(SAVE_INDEX_PATH)
 
+## Deletes a single-player world from the LOAD list's bin: its one save file
+## and its lines in the save index. The world cache stays: it is keyed by seed
+## and size, may serve another save, and is rebuilt when needed.
+func _delete_save(world_name: String, save_path: String) -> Error:
+    var error := DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path))
+    if error != OK: return error
+    var cfg := ConfigFile.new()
+    if cfg.load(SAVE_INDEX_PATH) == OK:
+        var key = _safe_world_filename(world_name)
+        if String(cfg.get_value("worlds", key, "")) == save_path.get_file(): cfg.erase_section_key("worlds", key)
+        if String(cfg.get_value("last", "save_path", "")) == save_path.get_file(): cfg.erase_section("last")
+        cfg.save(SAVE_INDEX_PATH)
+    return OK
+
 func _read_save_file(save_path: String) -> Dictionary:
     if save_path.is_empty() or not FileAccess.file_exists(save_path):
         return {}

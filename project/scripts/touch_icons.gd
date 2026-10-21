@@ -8,6 +8,10 @@ const PALETTE := {
 }
 
 const ART := {
+    # A bin: deletes a saved world (the LOAD lists).
+    "TRASH": [
+        "....kkkk....", "...kwwwwk...", "kkkkkkkkkkkk", "kwwwwwwwwwwk", "kkkkkkkkkkkk", ".kwgwgwgwgk.",
+        ".kwgwgwgwgk.", ".kwgwgwgwgk.", ".kwgwgwgwgk.", ".kwgwgwgwgk.", ".kwwwwwwwwk.", "..kkkkkkkk.."],
     "POKEDEX": [
         ".kkkkkkkkkk.", "krrrrrrrrrrk", "krkkkkkkkkrk", "krkbbbbbbkrk", "krkbwbbbbkrk", "krkbbbbbbkrk",
         "krkkkkkkkkrk", "krrrrrrrrrrk", "krkkrrrrgkrk", "krkkrrrgggrk", "krrrrrrrrrrk", ".kkkkkkkkkk."],
