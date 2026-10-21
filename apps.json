@@ -19,6 +19,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "0.10.185",
+          "buildVersion": "185",
+          "date": "2026-10-21T16:50:06Z",
+          "localizedDescription": "Title screen: trees bending in the wind, clouds, logo intro and shine, SOLO / CO-OP, version\n\n- title_background.png: six frames; the two trees bend with the wind\n  (0-3 pixels at the top down to none at the bottom row), leaves flutter\n  and the lake glitters, every 0.2 s while the title shows.\n- title_clouds.png: three pixel-art clouds that drift across the sky,\n  behind the logo, on the background's pixel grid.\n- The logo drops in with a bounce when the title first opens (the boot\n  splash is now the landscape alone) and catches the light every 6 s.\n- The choices read SOLO and CO-OP, with one trainer and two trainers left of\n  the words; the cursor sits by the chosen row's trainers. The mode labels\n  elsewhere follow (SOLO, CO-OP).\n- The version, small in the bottom right corner: CI and tools/ios_xtool\n  write build_version.txt next to build_id.txt.\n- title_screen.gd on StartupSplash runs all of it; coop_menu.gd only asks\n  for the intro.",
+          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0027/Pokewilds-unsigned.ipa",
+          "size": 57577853,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.10.184",
           "buildVersion": "184",
           "date": "2026-10-21T16:21:41Z",
@@ -98,15 +107,6 @@
           "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0010/Pokewilds-unsigned.ipa",
           "size": 65572821,
           "minOSVersion": "15.0"
-        },
-        {
-          "version": "0.10.6",
-          "buildVersion": "106",
-          "date": "2026-10-20T15:34:18Z",
-          "localizedDescription": "Merge stream-spikes: tile streams never over ~4 ms in a frame, setup sliced, teleports prepared",
-          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0006/Pokewilds-unsigned.ipa",
-          "size": 65568755,
-          "minOSVersion": "15.0"
         }
       ],
       "appPermissions": {
@@ -117,11 +117,11 @@
           "NSPhotoLibraryUsageDescription": "Not used by the game (Godot's default key)."
         }
       },
-      "version": "0.10.184",
-      "versionDate": "2026-10-21T16:21:41Z",
-      "versionDescription": "Title screen: pixel-art logo and background, never stretched, animated\n\nThe title artwork was one 1536x1024 picture stretched to fill the screen,\nlogo included, and the boot splash stretched it too (stretch_mode 5 is\nIgnore). Now:\n\n- title_logo.png: the PokeWilds logo alone, 167x58 pixels, three colours\n  plus transparency, taken off the old artwork's ~6.8 px grid.\n- title_background.png: the landscape widened for phones (2.25:1), 230x102\n  pixels in eight colours, as three frames side by side: leaves flutter and\n  the lake glitters (colour cycling, so it loops without a jump). The title\n  menu shows the next frame every 0.4 s while it is on screen.\n- The background covers the screen keeping its proportions, the logo sits\n  at the top keeping its own, both with nearest filtering.\n- title_splash.png: both together for the boot splash, shown with Cover and\n  no filtering, laid out like the title so nothing jumps when it appears.\n- The old 1.6 MB artwork and the unused pokewilds.png/title_bg1.png scene\n  references are gone; the title no longer loads a 6 MB texture.",
-      "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0026/Pokewilds-unsigned.ipa",
-      "size": 57550117
+      "version": "0.10.185",
+      "versionDate": "2026-10-21T16:50:06Z",
+      "versionDescription": "Title screen: trees bending in the wind, clouds, logo intro and shine, SOLO / CO-OP, version\n\n- title_background.png: six frames; the two trees bend with the wind\n  (0-3 pixels at the top down to none at the bottom row), leaves flutter\n  and the lake glitters, every 0.2 s while the title shows.\n- title_clouds.png: three pixel-art clouds that drift across the sky,\n  behind the logo, on the background's pixel grid.\n- The logo drops in with a bounce when the title first opens (the boot\n  splash is now the landscape alone) and catches the light every 6 s.\n- The choices read SOLO and CO-OP, with one trainer and two trainers left of\n  the words; the cursor sits by the chosen row's trainers. The mode labels\n  elsewhere follow (SOLO, CO-OP).\n- The version, small in the bottom right corner: CI and tools/ios_xtool\n  write build_version.txt next to build_id.txt.\n- title_screen.gd on StartupSplash runs all of it; coop_menu.gd only asks\n  for the intro.",
+      "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0027/Pokewilds-unsigned.ipa",
+      "size": 57577853
     }
   ],
   "news": []
