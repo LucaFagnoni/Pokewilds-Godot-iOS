@@ -1,16 +1,18 @@
 extends CanvasLayer
-## The title screen's art (StartupSplash), laid out on the background's own
-## pixels: the background's frames (trees bending in the wind, leaves, the
-## lake), clouds drifting across the sky, and the logo, which drops in when
-## the title first opens (intro) and now and then catches the light.
+## The title screen's art (StartupSplash): the background's frames (trees
+## bending in the wind, leaves, the lake), the loading screen's clouds drifting
+## across the sky, and the logo, which drops in when the title first opens
+## (intro) and now and then catches the light.
 
 const FRAME_SECONDS := 0.2
-## Each cloud: its region in title_clouds.png, starting column and row on the
-## background, speed in background pixels a second. They pass behind the logo.
+## Each cloud: its region in title_clouds.png (the loading screen's clouds,
+## recoloured, one game pixel per pixel as there), where it starts (fractions of
+## the screen's width and height) and its speed in game pixels a second. They
+## pass behind the logo, over the menu's rows only by their wisps.
 const CLOUDS := [
-    [Rect2(0, 1, 24, 8), 20.0, 5.0, 0.9],
-    [Rect2(25, 3, 16, 6), 160.0, 19.0, 0.6],
-    [Rect2(42, 0, 32, 9), 95.0, 31.0, 0.75],
+    [Rect2(51, 0, 64, 42), 0.58, 0.02, 2.5],
+    [Rect2(0, 0, 35, 24), 0.06, 0.29, 4.0],
+    [Rect2(36, 0, 14, 9), 0.33, 0.2, 5.5],
 ]
 const SHINE_EVERY := 6.0
 const SHINE_SECONDS := 0.7
@@ -54,9 +56,10 @@ func _ready() -> void:
         cloud.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
         cloud.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
         cloud.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        cloud.size = c[0].size
         holder.add_child(cloud)
         clouds.append(cloud)
-        cloud_x.append(c[1])
+        cloud_x.append(NAN)  # placed once the screen has a size
     var shader := Shader.new()
     shader.code = SHINE_SHADER
     var shine := ShaderMaterial.new()
@@ -87,21 +90,14 @@ func _process(delta: float) -> void:
     if frame_time >= FRAME_SECONDS:
         frame_time -= FRAME_SECONDS
         frames.region.position.x = fmod(frames.region.position.x + frames.region.size.x, frames.atlas.get_width())
-    # The background covers the screen keeping its proportions (Artwork's stretch
-    # mode): the same scale and offset place the clouds on its pixels.
-    var cells := frames.region.size
-    var scale := maxf(art.size.x / cells.x, art.size.y / cells.y)
-    var origin := (art.size - cells * scale) / 2.0
-    var first := -origin.x / scale
-    var last := (art.size.x - origin.x) / scale
+    # Clouds move a whole game pixel at a time and come back in from the left.
     for i in clouds.size():
-        var size: Vector2 = CLOUDS[i][0].size
+        if is_nan(cloud_x[i]):
+            cloud_x[i] = CLOUDS[i][1] * art.size.x
         cloud_x[i] += CLOUDS[i][3] * delta
-        if cloud_x[i] > last:
-            cloud_x[i] = first - size.x
-        var cloud := clouds[i]
-        cloud.position = origin + Vector2(floorf(cloud_x[i]), CLOUDS[i][2]) * scale
-        cloud.size = size * scale
+        if cloud_x[i] > art.size.x:
+            cloud_x[i] = -clouds[i].size.x
+        clouds[i].position = Vector2(floorf(cloud_x[i]), roundf(CLOUDS[i][2] * art.size.y))
     if intro_played:
         _shine(delta)
 

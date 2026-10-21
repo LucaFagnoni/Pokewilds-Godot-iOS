@@ -175,13 +175,15 @@ func _build_title()->void:
         row.anchor_left=0.5;row.anchor_right=0.5;row.anchor_top=TITLE_ROW_Y[i];row.anchor_bottom=TITLE_ROW_Y[i]
         row.offset_left=TITLE_TEXT_X;row.offset_right=TITLE_TEXT_X+64;row.offset_top=-8;row.offset_bottom=8
         var trainers:Array=TITLE_TRAINERS[i]
+        # Trainers centred on the word's capitals, as _align_menu_tick centres the cursor.
+        var ink:float=(16.0-row.get_theme_font("font").get_height(12))/2.0+4.0*12.0/10.0
         for j in trainers.size():
             var look:=AtlasTexture.new();look.atlas=load("res://assets/player_%s.png"%trainers[j]);look.region=Rect2(0,0,16,16)
             var trainer:=TextureRect.new();trainer.name="Trainer%d"%j;trainer.texture=look
             trainer.texture_filter=CanvasItem.TEXTURE_FILTER_NEAREST
             # A tap on a trainer picks its row like a tap on the word.
             trainer.mouse_filter=Control.MOUSE_FILTER_PASS
-            trainer.position=Vector2(TITLE_TRAINER_X[j+TITLE_TRAINER_X.size()-trainers.size()],0);trainer.size=Vector2(16,16)
+            trainer.position=Vector2(TITLE_TRAINER_X[j+TITLE_TRAINER_X.size()-trainers.size()],roundf(ink-8.0));trainer.size=Vector2(16,16)
             row.add_child(trainer)
         row.mouse_filter=Control.MOUSE_FILTER_STOP
         row.gui_input.connect(func(event):
