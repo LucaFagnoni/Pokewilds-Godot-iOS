@@ -7,6 +7,7 @@ const Rules = preload("res://scripts/overworld_ball_rules.gd")
 const Ring = preload("res://scripts/ball_wheel_ring.gd")
 const Clock = preload("res://scripts/game_clock.gd")
 const TexturePixels = preload("res://scripts/texture_pixels.gd")
+const HudStyle = preload("res://scripts/hud_style.gd")
 var main: Node
 var ring = Ring.new()
 var wheel_kind = 0
@@ -260,26 +261,34 @@ func update_next_icon(delta: float) -> void:
                 var balls = bag_balls()
                 ball = balls[0] if not balls.is_empty() else ""
             if ball!="": wanted = "B|"+ball
+    # On touch the throw button already shows what will be thrown (touch_controls
+    # _refresh_throw_icon): this icon is for controllers and keyboards only.
+    var throw_button = main.touch_controls.get_node_or_null("R2")
+    if throw_button != null and throw_button.is_visible_in_tree(): wanted = ""
     if wanted=="":
         if is_instance_valid(next_icon): next_icon.hide()
         return
     if not is_instance_valid(next_icon):
+        # In a full-screen holder (proportional_ui_layout's FULL_SCREEN), so it is
+        # placed in screen units on the HUD's grid like the top row.
+        var holder = Control.new()
+        holder.name = "BallMechanicsNext"
+        holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        holder.z_index = 240
+        main.get_node("UI").add_child(holder)
         next_icon = TextureRect.new()
-        next_icon.name = "BallMechanicsNext"
-        main.get_node("UI").add_child(next_icon)
-        next_icon.anchor_left = 1.0
-        next_icon.anchor_right = 1.0
-        next_icon.offset_left = -21
-        next_icon.offset_right = -5
+        next_icon.name = "Icon"
+        next_icon.size = Vector2(16, 16)
         next_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
         next_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
         next_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
         next_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-        next_icon.z_index = 240
+        holder.add_child(next_icon)
         next_shown = ""
-    # Under the FPS counter when that is showing in the same corner.
-    next_icon.offset_top = 14 if Options.enabled("fps_counter") else 3
-    next_icon.offset_bottom = next_icon.offset_top+16
+    # Top right, one row under the HUD's top row (never over it).
+    var safe: Rect2 = main.touch_controls.usable_rect
+    var at := Vector2(safe.end.x - HudStyle.MARGIN - 16.0, safe.position.y + HudStyle.MARGIN + main.status_hud.row_height() + HudStyle.GAP)
+    if next_icon.position != at: next_icon.position = at
     if wanted!=next_shown:
         next_shown = wanted
         next_seconds = 11.0
