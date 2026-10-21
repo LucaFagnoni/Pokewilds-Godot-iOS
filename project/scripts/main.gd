@@ -920,6 +920,8 @@ var hatch_skip_requested := false
 const HATCH_PLAYBACK_SPEED := 1.2
 var progression_waiting_input := false
 var progression_choice_index := 0
+# The move last shown on the forget screen, kept across its YES/NO questions.
+var progression_move_index := 0
 var progression_pending_move := ""
 var progression_pokemon: Dictionary = {}
 var progression_level_dialogue: Panel
@@ -3886,7 +3888,7 @@ func _show_progression_move_menu(pokemon: Dictionary, move_name: String) -> void
     progression_pokemon = pokemon
     progression_pending_move = move_name.to_upper().replace(" ", "_")
     var moves: Array = pokemon.get("moves", [])
-    progression_choice_index = clampi(progression_choice_index, 0, maxi(0, moves.size() - 1))
+    progression_choice_index = clampi(progression_move_index, 0, maxi(0, moves.size() - 1))
     progression_level_message.text = "Which move should be forgotten?"
     progression_level_dialogue.show()
     progression_move_frame.show()
@@ -3895,6 +3897,7 @@ func _show_progression_move_menu(pokemon: Dictionary, move_name: String) -> void
     _refresh_progression_move_menu()
 
 func _refresh_progression_move_menu() -> void:
+    progression_move_index = progression_choice_index
     var moves: Array = progression_pokemon.get("moves", [])
     for index in range(4):
         var row := progression_move_rows[index]
@@ -3918,7 +3921,7 @@ func _refresh_progression_move_menu() -> void:
     progression_level_message.add_theme_font_size_override("font_size", 7)
     progression_level_message.position = Vector2(12,7)
     progression_level_message.size = Vector2(288,44)
-    progression_level_message.text = "NEW: %s\n%s\n%s" % [progression_pending_move.replace("_"," "), details.stats_text(progression_pending_move).replace("\n","  "), details.effect_text(progression_pending_move)]
+    progression_level_message.text = "NEW: %s  (%s)\n%s\n%s" % [progression_pending_move.replace("_"," "), PokemonState.display_name(progression_pokemon).to_upper(), details.stats_text(progression_pending_move).replace("\n","  "), details.effect_text(progression_pending_move)]
 
 func _show_progression_yes_no(prompt: String, mode: String = "YES_NO") -> void:
     _reset_progression_overlay()
@@ -3940,7 +3943,7 @@ func _ask_progression_yes_no(prompt: String) -> bool:
 
 func _choose_move_to_forget(pokemon: Dictionary,
         move_name: String) -> int:
-    progression_choice_index = 0
+    progression_move_index = 0
     while true:
         _show_progression_move_menu(pokemon, move_name)
         var choice = await progression_choice_made
