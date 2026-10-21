@@ -28,3 +28,4 @@
 .DS_Store
 **/.DS_Store
 **/node_modules/
+**/ios/plugins/pokewilds_zerotier/*.a

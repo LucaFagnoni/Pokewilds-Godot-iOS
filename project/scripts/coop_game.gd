@@ -991,6 +991,8 @@ func game_started()->bool:
     session.access_proof=Lobby.proof(lobby_salt,lobby_password) if lobby_private else ""
     session.access_salt=lobby_salt
     Network.start();Network.host_open();lobby.advertise(_lobby_record)
+    # A phone stops hosting when the screen locks or the player switches apps.
+    if OS.has_feature("mobile"):show_notice("","hosting")
     endpoints=preload("res://scripts/coop_join_code.gd").local_endpoints()
     var entry=service.areas.enter(session.actor,_area());area_authority=String(entry.get("authority",""));area_epoch=int(entry.get("epoch",0));visuals.set_area(_area())
     if not await wild.initialize_ids():return false
@@ -1104,7 +1106,11 @@ var _notice_fade:Tween
 
 ## "loading" when a player connects, "joined" once their world has loaded and
 ## they are standing in it, "left" when they go.
-const NOTICE_TEXT:={"loading":"%s is loading in...","joined":"%s joined the game.","left":"%s left the game."}
+## "away"/"back" when the host leaves the app and returns, "hosting" to the
+## host itself on a phone.
+const NOTICE_TEXT:={"loading":"%s is loading in...","joined":"%s joined the game.","left":"%s left the game.",
+    "away":"%s left the app. Waiting...","back":"%s is back.",
+    "hosting":"Keep the app open while you host.\nPlug in the charger."}
 var _notice_loading:Dictionary={}
 
 func _player_notice(peer:int,player:String,event:String)->void:
@@ -1134,7 +1140,7 @@ func show_notice(player:String,event:String)->void:
         frame.content_margin_left=10;frame.content_margin_right=10;frame.content_margin_top=NOTICE_PAD_TOP;frame.content_margin_bottom=NOTICE_PAD_BOTTOM
         _notice_box.add_theme_stylebox_override("panel",frame)
         _notice_label=main._source_ui_label(_notice_box,"Text",Vector2.ZERO,Vector2.ZERO,NOTICE_FONT_SIZE)
-    _notice_label.text=String(NOTICE_TEXT[event])%player.strip_edges().left(24).to_upper()
+    _notice_label.text=String(NOTICE_TEXT[event]).replace("%s",player.strip_edges().left(24).to_upper())
     _notice_box.modulate.a=1.0;_notice_box.visible=true
     if _notice_fade!=null and _notice_fade.is_valid():_notice_fade.kill()
     _notice_fade=create_tween();_notice_fade.set_speed_scale(1.0/maxf(Engine.time_scale,0.01))
@@ -1305,6 +1311,22 @@ func _failure(reason:String)->void:
         preload("res://scripts/crafting_data.gd").online_enabled=false
         session.transport.stop();active=false;hosting=false;_loading=false;Cache.online_namespace=""
         lobby.stop_advertise();Network.host_close();Network.join_close()
+
+## Phones suspend a game in the background (iOS as soon as the player leaves
+## the app). The others then wait for it as for a player loading an area
+## (LOADING_TIMEOUT_MS in coop_transport.gd) instead of dropping it after 20 s
+## of silence; everything queued goes out first, as _process stops here.
+func _notification(what:int)->void:
+    if not active or session==null or not session.trusted:return
+    if what not in [NOTIFICATION_APPLICATION_PAUSED,NOTIFICATION_APPLICATION_RESUMED]:return
+    var away:=what==NOTIFICATION_APPLICATION_PAUSED
+    # Coming back, _process clears it once no area is loading.
+    if away:session.set_loading(true)
+    if hosting:
+        for peer in session.players:
+            if peer!=1:session.send_to(peer,{"kind":"player_notice","name":String(session.profile.get("name","HOST")),"event":"away" if away else "back"})
+        if not away and OS.has_feature("mobile"):show_notice("","hosting")
+    if away:session.transport.flush()
 
 func _exit_tree()->void:
     if _area_cleanup!=null:_area_cleanup.wait_to_finish();_area_cleanup=null

@@ -38,6 +38,13 @@ project/android/build/libs/zerotier/libzt-release.aar, which build.gradle includ
 The Android export will not compile without this file, because
 PokeWildsZeroTier.java uses the libzt classes. Use CMake 3.22 from the SDK;
 CMake 4 rejects libzt's CMakeLists.
+   iPhone: the IPA embeds the same node through the iOS plugin in
+project/ios/plugins/pokewilds_zerotier. tools/build_libzt_ios.sh clones libzt
+at a fixed commit, applies libzt_patches.py like the Android build and compiles
+it with the plugin into libpokewilds_zerotier.a, which the iOS export links.
+CI runs it in both IPA builds (see .github/workflows/build.yml); by hand on a Mac:
+CC="xcrun -sdk iphoneos clang" AR="xcrun -sdk iphoneos ar" bash tools/build_libzt_ios.sh
+The iOS export fails ("Invalid plugin config") until that file exists.
 2. Ad-hoc networks cannot broadcast, so JOIN GAME reads its list from the small
 lobby directory in lobby-directory/ in this package (a Cloudflare Worker; node
 test/directory.test.mjs runs its tests, node test/local_server.mjs runs it
@@ -49,11 +56,16 @@ own file. Testers can override the address without a rebuild with
 [lobby] url="..." in zerotier.cfg in the game data folder. Only the lobby list
 uses it; play is player to player and relies on ZeroTier's public root servers
 for peers to find each other.
-3. Desktop builds and Android builds without libzt use the same menus over the
+3. Desktop builds, and phone builds without libzt, use the same menus over the
 local network instead (UDP 54556 broadcast for the list, TCP 54555 for play).
 Add force=true under [lobby] to make them use the directory for testing.
 libzt is under the ZeroTier BSL 1.1; see LICENSES/ZeroTier-libzt-BSL-1.1.txt
 and check its terms against the GPL scope before publishing binaries.
+The iPhone build is such a binary too, and there libzt is linked statically
+into the game's executable rather than shipped as a separate library. The same
+check applies, and so does keeping the notices of what libzt bundles (lwIP,
+miniupnpc and libnatpmp, all BSD-style licences that ask for their notice in
+binary distributions) with the IPA as with the APK.
 
 VALIDATION LIMIT
 This package's current game source is matched by hash to the working fixes170

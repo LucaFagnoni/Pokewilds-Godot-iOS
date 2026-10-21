@@ -1,5 +1,5 @@
 extends RefCounted
-## Where ONLINE packets travel. Android builds that include libzt run an embedded
+## Where ONLINE packets travel. Android and iPhone builds that include libzt run an embedded
 ## ZeroTier node on an ad-hoc network: no ZeroTier app, account, network owner or
 ## member limit. Ad-hoc networks cannot broadcast, so those builds read the lobby
 ## list from the lobby directory. Everywhere else the same lobby flow runs on the
@@ -46,6 +46,10 @@ static func embedded()->bool:
     if OS.get_name()=="Android" and Engine.has_singleton("JavaClassWrapper"):
         var wrapped=Engine.get_singleton("JavaClassWrapper").wrap("com.godot.game.PokeWildsZeroTier")
         if wrapped!=null and wrapped.available():bridge=wrapped
+    # The iOS plugin (ios/plugins/pokewilds_zerotier) announces itself here;
+    # nothing else sets this, so tests can stand in for it on any system.
+    elif not OS.get_environment("POKEWILDS_ZEROTIER").is_empty():
+        bridge=preload("res://scripts/coop_zerotier_ios.gd").new()
     return bridge!=null
 
 ## zerotier.cfg as last read. The lobby asks for it every frame while hosting;

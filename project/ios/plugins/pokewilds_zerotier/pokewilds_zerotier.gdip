@@ -1,0 +1,12 @@
+; Embedded ZeroTier (libzt) for ONLINE play: see pokewilds_zerotier.mm. The
+; library is built from it and libzt before the iOS export (tools/build_libzt_ios.sh,
+; run by CI's ios job and tools/ios_xtool), and the iOS preset enables it with
+; plugins/PokeWildsZeroTier=true.
+[config]
+name="PokeWildsZeroTier"
+binary="libpokewilds_zerotier.a"
+initialization="pokewilds_zerotier_init"
+deinitialization="pokewilds_zerotier_deinit"
+
+[dependencies]
+system=["UIKit.framework", "Foundation.framework"]
