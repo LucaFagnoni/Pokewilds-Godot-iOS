@@ -19,6 +19,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "0.10.179",
+          "buildVersion": "179",
+          "date": "2026-10-21T13:33:16Z",
+          "localizedDescription": "Merge move-learn-preview: tap a move to read it before replacing it",
+          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0023/Pokewilds-unsigned.ipa",
+          "size": 65578349,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.10.176",
           "buildVersion": "176",
           "date": "2026-10-21T11:59:32Z",
@@ -108,11 +117,11 @@
           "NSPhotoLibraryUsageDescription": "Not used by the game (Godot's default key)."
         }
       },
-      "version": "0.10.176",
-      "versionDate": "2026-10-21T11:59:32Z",
-      "versionDescription": "Sideloading source for Feather, AltStore and SideStore, updated with each release\n\n.github/source/make_source.py turns the published releases into an AltStore\nsource (apps.json) with every IPA, newest first. The new \"source\" job runs it\nafter publish and stores apps.json on the \"source\" branch, whose raw address\nthe README gives.",
-      "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0022/Pokewilds-unsigned.ipa",
-      "size": 65586880
+      "version": "0.10.179",
+      "versionDate": "2026-10-21T13:33:16Z",
+      "versionDescription": "Merge move-learn-preview: tap a move to read it before replacing it",
+      "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0023/Pokewilds-unsigned.ipa",
+      "size": 65578349
     }
   ],
   "news": []
