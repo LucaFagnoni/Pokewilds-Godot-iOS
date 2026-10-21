@@ -8,7 +8,7 @@ signal touch_config_requested
 signal safe_area_changed(bounds: Rect2)
 
 const SAVE_PATH := "user://touch_layout_m43.cfg"
-const SETTINGS_SCHEMA_VERSION := 11
+const SETTINGS_SCHEMA_VERSION := 12
 const THEME_SYSTEM := 0
 const THEME_LIGHT := 1
 const THEME_DARK := 2
@@ -35,24 +35,27 @@ const PINCH_WINDOW_MSEC := 250
 ## A stick finger that moved less than this (canvas pixels) since it landed
 ## can still turn out to be half of a pinch.
 const PINCH_STICK_SLOP := 6.0
-# Baseline dimensions are fractions of the usable 320x180 game canvas.
-# Everything hugs the edges so the field around the player stays clear.
-const FACE_CENTER := Vector2(285,134)
+# The default layout on the 320x180 design screen, on the HUD's grid
+# (hud_style.gd): MARGIN from the edges, GAP between buttons. Each button keeps
+# its distance to its nearest corner on any screen (see _apply_default_layout),
+# so the field around the player stays clear.
+const FACE_CENTER := Vector2(286,162)
 # Dragging from MOSSE/LANCIO steers the wheel, like the stick did.
 const WHEEL_BUTTONS := ["L2", "R2"]
 const WHEEL_DRAG_DEADZONE := 0.35
 const CANCEL_TAP_MSEC := 350
 const CONTROL_LAYOUT := {
-    "LeftStick": Rect2(14,122,44,44),
-    # Right thumb arc: A largest, B below-left, MOSSE and LANCIO above.
-    "A": Rect2(287,116,28,28),
-    "B": Rect2(253,140,26,26),
-    "L2": Rect2(250,102,24,24),
-    "R2": Rect2(290,78,26,26),
-    # Wheel pages: on the left, free while the right thumb steers the wheel.
-    "L1": Rect2(12,94,24,18),
-    "R1": Rect2(40,94,24,18),
-    "Start": Rect2(298,8,18,16)
+    "LeftStick": Rect2(4,132,44,44),
+    # Right thumb: B and A on the bottom line, MOSSE over B and LANCIO over A.
+    "A": Rect2(288,148,28,28),
+    "B": Rect2(256,148,28,28),
+    "L2": Rect2(258,120,24,24),
+    "R2": Rect2(290,120,24,24),
+    # Wheel pages: over the stick, free while the right thumb steers the wheel.
+    "L1": Rect2(4,110,24,18),
+    "R1": Rect2(32,110,24,18),
+    # The top row's right end (status_hud.gd lines the battery up beside it).
+    "Start": Rect2(298,4,18,18)
 }
 const GLYPH = preload("res://scripts/touch_glyph.gd")
 var movement_contacts: Dictionary = {}
@@ -183,11 +186,19 @@ func _apply_safe_rect(bounds: Rect2) -> void:
     usable_rect = bounds
     for control_name in ACTIONS:
         var button := get_node(control_name) as Control
-        var extent := button.size * scale_of(control_name)
-        var fraction := (button.position - previous.position) / (previous.size - extent).max(Vector2.ONE)
-        button.position = bounds.position + fraction.clamp(Vector2.ZERO, Vector2.ONE) * (bounds.size - extent).max(Vector2.ZERO)
+        button.position = keep_edges(button.position, button.size * scale_of(control_name), previous, bounds)
         _clamp_button(button)
     safe_area_changed.emit(usable_rect)
+
+## Where a box at `at` in `from` goes in `to`: the same distance from the
+## nearer edge on each axis, so margins hold when the safe area changes.
+static func keep_edges(at: Vector2, extent: Vector2, from: Rect2, to: Rect2) -> Vector2:
+    var result := Vector2.ZERO
+    for axis in 2:
+        var near: float = at[axis] - from.position[axis]
+        var far: float = from.end[axis] - at[axis] - extent[axis]
+        result[axis] = to.position[axis] + near if near <= far else to.end[axis] - far - extent[axis]
+    return result
 
 func face_letter(control_name: String) -> String:
     if button_layout == 1:
@@ -382,6 +393,8 @@ func _refresh_visibility() -> void:
         else Control.MOUSE_FILTER_IGNORE
     )
     modulate.a = 1.0 if edit_mode else control_opacity
+    # The menu button is part of the top row, which BUTTON OPACITY leaves alone.
+    (get_node("Start") as Control).modulate.a = 1.0 / modulate.a
 
 # Control GUI picking follows tree order, not drawing z_index. Route the
 # visible overlay's contacts before underlying menu/world panels consume them.
@@ -666,13 +679,13 @@ func _clamp_button(button: Control) -> void:
 func _apply_default_layout() -> void:
     for control_name in CONTROL_LAYOUT:
         var button := get_node(control_name) as Control
-        var extent := button.size * scale_of(control_name)
-        var center: Vector2 = CONTROL_LAYOUT[control_name].get_center()
-        if control_name in ["A","B","X","Y"]:
-            center = FACE_CENTER+(center-FACE_CENTER)*maxf(1.0,control_scale)
-        var canonical: Vector2 = center-extent*0.5
-        var fraction := canonical / (DESIGN_SIZE-extent).max(Vector2.ONE)
-        button.position = usable_rect.position+fraction.clamp(Vector2.ZERO,Vector2.ONE)*(usable_rect.size-extent).max(Vector2.ZERO)
+        var rect: Rect2 = CONTROL_LAYOUT[control_name]
+        # Measured from the nearest corner, and scaled with BUTTON SIZE margins
+        # and gaps included: the grid holds on every screen and at every size.
+        var corner := (rect.get_center() / DESIGN_SIZE).round() * DESIGN_SIZE
+        var target := usable_rect.position + (corner / DESIGN_SIZE) * usable_rect.size
+        button.position = target + (rect.position - corner) * control_scale
+        _clamp_button(button)
 
 func _apply_control_scale() -> void:
     for control_name in ACTIONS:
@@ -681,14 +694,16 @@ func _apply_control_scale() -> void:
         button.scale = Vector2.ONE * scale_of(control_name)
         _clamp_button(button)
 
+const WHEEL_COLORS := {"L2": Color("#b58ae0"), "R2": Color("#f0c040")}
+
 func _apply_nintendo_styles() -> void:
     var dark := resolved_theme_is_dark()
+    preload("res://scripts/hud_style.gd").dark = dark
     var face_colors := {"A":Color("#87bd27"),"B":Color("#ee583c"),"X":Color("#169cd5"),"Y":Color("#edc12c")}
     for control_name in ACTIONS:
         var control = get_node(control_name)
-        control.ink = face_colors.get(face_letter(control_name),Color.WHITE)
-        # White outlines/text in every theme; retain the optional surface theme.
-        control.fill = Color(0.10,0.10,0.10,0.80) if dark else Color(0.10,0.10,0.10,0.45)
+        # The ring carries the button's colour; everything else is the HUD's look.
+        control.ink = face_colors.get(face_letter(control_name), WHEEL_COLORS.get(control_name, Color.WHITE))
         control.queue_redraw()
 
 func _save_layout() -> void:
@@ -732,7 +747,8 @@ func _load_layout() -> void:
                 (get_node(control_name) as Control).position = cfg.get_value("controls",control_name)
     else:
         # The replacement layout has different shapes and anchors; keep user
-        # settings but migrate old positions to the requested reference layout.
+        # settings but migrate old positions (and pinched sizes) to the layout.
+        control_factors.clear()
         _apply_default_layout()
         _save_layout()
 

@@ -18,7 +18,7 @@ const ROWS := [
     ["minimap","MINIMAP","Show the minimap while exploring."],
     ["fps_counter","FPS COUNTER","Show frames per second in the top right corner."],
     ["battery_hud","BATTERY","Show the phone battery in the top right corner."],
-    ["clock","CLOCK","REAL: phone time. GAME: world time, on a dark chip. Tap the clock to switch."],
+    ["clock","CLOCK","REAL: phone time. GAME: world time, with a sun or moon. Tap the clock to switch."],
     ["diagonal","DIAGONAL MOVE","Allow diagonal thumbstick movement."],
     ["auto_run","AUTO RUN","Run automatically when walking."],
     ["battle_animations","BATTLE ANIMATIONS","Play battle animations."],

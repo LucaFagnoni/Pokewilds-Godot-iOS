@@ -88,7 +88,7 @@ func _field() -> Dictionary:
     var buttons: Array = field_hud.buttons()
     # A tap on the clock switches real time and game time.
     var hotspots := []
-    var clock: Panel = m.status_hud.clock_chip
+    var clock: Control = m.status_hud.clock_chip
     if is_instance_valid(clock) and clock.is_visible_in_tree(): hotspots.append(["CLOCK", func(): m.status_hud.switch_clock(), grown(clock, Vector2(3, 6))])
     if rows.is_empty() and buttons.is_empty() and hotspots.is_empty(): return {}
     return {
@@ -97,6 +97,7 @@ func _field() -> Dictionary:
         "tap": func(_i): _open_map_from_minimap(),
         "buttons": buttons,
         "hotspots": hotspots,
+        "hud": true,
     }
 
 func _finish_layout_edit() -> void:
