@@ -159,22 +159,32 @@ func _process(_delta:float)->void:
             if stats != null: count("rx:"+String(decoded.get("kind","")), length + 4, started)
             if decoded.get("kind", "") != "keepalive": received.emit(peer, decoded)
         if not peers.has(peer): continue
-        var remaining := FRAME_BUDGET
-        while not state.tx.is_empty() and remaining > 0:
-            var frame: PackedByteArray = state.tx[0]
-            var offset := int(state.offset)
-            var sent := socket.put_partial_data(frame.slice(offset, mini(frame.size(), offset + remaining)))
-            if sent[0] != OK:
-                _drop(peer,"socket_write_failed")
-                break
-            var count := int(sent[1])
-            if count <= 0: break
-            remaining -= count
-            state.offset += count
-            state.queued -= count
-            if int(state.offset) == frame.size():
-                state.tx.pop_front()
-                state.offset = 0
+        _write(peer, FRAME_BUDGET)
+
+func _write(peer: int, budget: int) -> void:
+    var state: Dictionary = peers[peer]
+    var socket: StreamPeerTCP = state.socket
+    while not state.tx.is_empty() and budget > 0:
+        var frame: PackedByteArray = state.tx[0]
+        var offset := int(state.offset)
+        var sent := socket.put_partial_data(frame.slice(offset, mini(frame.size(), offset + budget)))
+        if sent[0] != OK:
+            _drop(peer,"socket_write_failed")
+            break
+        var count := int(sent[1])
+        if count <= 0: break
+        budget -= count
+        state.offset += count
+        state.queued -= count
+        if int(state.offset) == frame.size():
+            state.tx.pop_front()
+            state.offset = 0
+
+## Hands everything queued to the sockets now: the app is about to be
+## suspended and _process will not run again until it comes back.
+func flush() -> void:
+    for peer in peers.keys():
+        if peers.has(peer) and peers[peer].ready: _write(peer, MAX_QUEUE)
 
 func _drop(peer: int, reason: String = "session_closed") -> void:
     if not peers.has(peer): return

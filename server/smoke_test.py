@@ -65,6 +65,11 @@ if "--exe" not in sys.argv:
     found = re.search(r"SAVED SERVERS TEST: (\d+) checks, (\d+) failed", check.stdout)
     if not found or found.group(2) != "0": print(check.stdout[-3000:]); print("SMOKE FAIL: saved servers list"); sys.exit(1)
     print(f"saved servers list ok ({found.group(1)} checks)")
+    # The iPhone's ZeroTier plugin, as the game uses it, against a stand-in.
+    import zerotier_stub
+    ok, output = zerotier_stub.run(command)
+    if not ok: print(output[-3000:]); print("SMOKE FAIL: ZeroTier bridge"); sys.exit(1)
+    print("ZeroTier bridge ok")
 
 server_data = os.path.join(work, "server")
 server = None

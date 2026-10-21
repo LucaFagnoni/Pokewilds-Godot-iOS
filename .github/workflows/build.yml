@@ -240,6 +240,29 @@ jobs:
             -c pokewilds_battery.mm -o "$RUNNER_TEMP/pokewilds_battery.o"
           xcrun -sdk iphoneos ar rcs libpokewilds_battery.a "$RUNNER_TEMP/pokewilds_battery.o"
 
+      # The lobby list's address and password (project/lobby_server.txt, never
+      # in the repository): the secret LOBBY_SERVER holds the file's two lines.
+      # Without it the build runs, but JOIN GAME has no online lobby list.
+      - name: Lobby list address
+        if: env.SKIP != 'true'
+        env:
+          LOBBY_SERVER: ${{ secrets.LOBBY_SERVER }}
+        run: |
+          if [ -n "$LOBBY_SERVER" ]; then printf '%s\n' "$LOBBY_SERVER" > project/lobby_server.txt
+          else echo "::warning::No LOBBY_SERVER secret: this IPA has no online lobby list"; fi
+
+      # Embedded ZeroTier for ONLINE play (an iOS plugin with libzt): libzt is
+      # compiled once per commit and patch set, then only the plugin.
+      - uses: actions/cache@v4
+        if: env.SKIP != 'true'
+        with:
+          path: ~/.cache/pokewilds-libzt-ios
+          key: libzt-ios-mac-${{ hashFiles('tools/build_libzt_ios.sh', 'libzt_patches.py') }}
+
+      - name: Build the ZeroTier plugin
+        if: env.SKIP != 'true'
+        run: CC="xcrun -sdk iphoneos clang" AR="xcrun -sdk iphoneos ar" bash tools/build_libzt_ios.sh
+
       # Godot's import cache (.godot): only assets that changed since are imported again.
       - uses: actions/cache@v4
         if: env.SKIP != 'true'
@@ -383,11 +406,29 @@ jobs:
           key: godot-import-xtool-${{ env.GODOT_VERSION }}-${{ hashFiles('project/assets/**/*.import') }}
           restore-keys: godot-import-xtool-${{ env.GODOT_VERSION }}-
 
+      # libzt for the ZeroTier plugin (tools/build_libzt_ios.sh), compiled once.
+      - uses: actions/cache@v4
+        if: steps.mac.outputs.fallback == 'true'
+        with:
+          path: ~/pokewilds-ios/cache/libzt
+          key: libzt-ios-xtool-${{ hashFiles('tools/build_libzt_ios.sh', 'libzt_patches.py', 'tools/ios_xtool/setup.sh') }}
+
       - name: Swift, xtool and the iOS SDK
         if: steps.mac.outputs.fallback == 'true'
         run: |
           bash tools/ios_xtool/setup.sh "$RUNNER_TEMP/xcode/Xcode.xip"
           rm -rf "$RUNNER_TEMP/xcode"
+
+      # The lobby list's address and password (project/lobby_server.txt, never
+      # in the repository): the secret LOBBY_SERVER holds the file's two lines.
+      # Without it the build runs, but JOIN GAME has no online lobby list.
+      - name: Lobby list address
+        if: steps.mac.outputs.fallback == 'true'
+        env:
+          LOBBY_SERVER: ${{ secrets.LOBBY_SERVER }}
+        run: |
+          if [ -n "$LOBBY_SERVER" ]; then printf '%s\n' "$LOBBY_SERVER" > project/lobby_server.txt
+          else echo "::warning::No LOBBY_SERVER secret: this IPA has no online lobby list"; fi
 
       # The smoke job already checked this pack with the stripped engine.
       - name: Build the IPA with xtool

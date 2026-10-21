@@ -91,6 +91,8 @@ mkdir -p "$work/project"
 find "$work/project" -mindepth 1 -maxdepth 1 ! -name .godot -exec rm -rf {} +
 git -C "$repo" -c core.autocrlf=false archive HEAD project | tar -x -C "$work"
 python3 "$repo/.github/engine/minify_json.py" "$work/project"
+# The lobby list's address and password are never committed (see coop_network.gd).
+[ ! -f "$repo/project/lobby_server.txt" ] || cp "$repo/project/lobby_server.txt" "$work/project/"
 
 # The commit this build comes from: hosts refuse players of another build.
 git -C "$repo" rev-parse HEAD > "$work/project/build_id.txt"
@@ -115,6 +117,9 @@ plugin=$work/project/ios/plugins/pokewilds_battery
 "$swiftbin/clang" -target arm64-apple-ios15.0 -isysroot "$ios_sdk" -O2 -fobjc-arc \
   -c "$plugin/pokewilds_battery.mm" -o "$cache/pokewilds_battery.o"
 "$swiftbin/llvm-ar" rcs "$plugin/libpokewilds_battery.a" "$cache/pokewilds_battery.o"
+# Embedded ZeroTier for ONLINE play: the plugin and libzt, same script as the ios job.
+CC="$swiftbin/clang -isysroot $ios_sdk" AR="$swiftbin/llvm-ar" LIBZT_CACHE="$cache/libzt" \
+  PLUGIN_DIR="$work/project/ios/plugins/pokewilds_zerotier" bash "$repo/tools/build_libzt_ios.sh"
 
 # Export the Xcode project straight into the SwiftPM package xtool builds.
 app=$work/app
