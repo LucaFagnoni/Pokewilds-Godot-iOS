@@ -9,6 +9,16 @@ An iPhone port of PokeWilds, remade in Godot, with a Windows dedicated server fo
 
 Both links always point to the newest release. Each release holds an IPA and a server built from the same commit, so they always play together.
 
+## Sideloading source
+
+Add this source in Feather (Sources, +) or in AltStore and SideStore (Add Source) to see every version and get updates in the app:
+
+```
+https://raw.githubusercontent.com/LucaFagnoni/Pokewilds-Godot-iOS/source/apps.json
+```
+
+It lists every published IPA and is updated automatically with each new release.
+
 ## Versions
 
 Every build is a release named after its version, for example **PokeWilds 0.10.166**. The last number is the commit count of `main`, so it goes up with every change and a new IPA always installs as an update. When GitHub has no Mac to build on, the IPA is built on Linux with xtool instead ([tools/ios_xtool](tools/ios_xtool/README.md), which also works on Windows with WSL): same version, same server, simpler icons. The first two numbers are set in the iOS export preset (`application/short_version` in `project/export_presets.cfg`) and are raised by hand for bigger steps. All releases: [Releases](https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases).

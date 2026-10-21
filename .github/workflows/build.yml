@@ -407,6 +407,26 @@ jobs:
           gh release list --limit 100 --exclude-drafts --json tagName --jq '.[].tagName' | grep '^build-' | tail -n +11 \
             | while read -r old; do gh release delete "$old" --cleanup-tag --yes; done
 
+  # The sideloading source (Feather, AltStore, SideStore...): apps.json with
+  # every published IPA, made again from the releases after each one and kept
+  # on the "source" branch (the README gives its address). A job of its own, so
+  # a failure here never touches the release.
+  source:
+    needs: publish
+    if: ${{ always() && needs.publish.result == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update apps.json on the source branch
+        run: |
+          gh api "repos/$GH_REPO/releases?per_page=100" | python3 .github/source/make_source.py > apps.json
+          sha=$(gh api "repos/$GH_REPO/contents/apps.json?ref=source" --jq .sha)
+          gh api -X PUT "repos/$GH_REPO/contents/apps.json" --silent -f branch=source -f sha="$sha"             -f message="Source: build of ${GITHUB_SHA::8}" -f content="$(base64 -w0 apps.json)"
+
   # A build that was not published (a job failed, was cancelled or never got a
   # runner) leaves no half release behind. To retry it, use "Re-run all jobs":
   # the draft is made again.
