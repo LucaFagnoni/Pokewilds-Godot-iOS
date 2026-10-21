@@ -195,7 +195,7 @@ func refresh() -> void:
     status.text = String(m.menu_status.text) if String(m.menu_status.text) not in ["SOLO", ""] else ""
     # LOAD can be the remembered mode: read the saves the first time it shows.
     if load_list.visible and not saves_loaded:
-        saves = main._available_save_entries()
+        saves = main.saves.entries()
         saves_loaded = true
     # The list (and its file dates) only changes with the saves or the scroll.
     var list_signature := [load_list.visible, saves.size(), load_scroll]
@@ -226,7 +226,7 @@ func _set_mode(mode: String) -> void:
     if main.text_entry_target != "": main._finish_text_entry(true)
     main.selected_mode = mode
     if mode == "LOAD":
-        saves = main._available_save_entries()
+        saves = main.saves.entries()
         saves_loaded = true
         load_scroll = 0
         delete_armed = -1
@@ -243,7 +243,7 @@ func _trash(index: int) -> void:
         _refresh_saves()
         return
     delete_armed = -1
-    if main._delete_save(world_name, String(saves[index].path)) == OK:
+    if main.saves.delete(world_name, String(saves[index].path)) == OK:
         saves.remove_at(index)
         main.menu_status.text = "%s DELETED." % world_name.to_upper()
     else:

@@ -57,7 +57,7 @@ func _initialize() -> void:
     await _wait_started()
     check(main.started, "the world started")
     await _frames(10)
-    var save: String = main._save_path_for_world("KillTest")
+    var save: String = main.saves.path_for_world("KillTest")
     var seed_value := int(main.world.get("world_seed"))
     var player: Node2D = main.world.get_node("Player")
 
@@ -87,10 +87,17 @@ func _initialize() -> void:
     check(main.save_thread != null, "SAVE writes on a thread")
     player.position.x += 16.0
     main._notification(NOTIFICATION_APPLICATION_PAUSED)
-    check(float(_parsed(save).player_x) == player.position.x, "the background save comes after the one in flight")
+    var latest := player.position.x
+    check(float(_parsed(save).player_x) == latest, "the background save comes after the one in flight")
     while main.save_thread != null: await process_frame
     await _frames(2)
-    check(float(_parsed(save).player_x) == player.position.x and main.message_label.text == "GAME SAVED.", "both saves end well")
+    check(float(_parsed(save).player_x) == latest and main.message_label.text == "GAME SAVED.", "both saves end well: %s %s, %s" % [_parsed(save).player_x, latest, main.message_label.text])
+    # The nudged player slides back onto the grid: let it stop before the next saves.
+    var still := 0
+    while still < 10:
+        var at := player.position
+        await process_frame
+        still = still + 1 if player.position == at else 0
 
     # A shared storage write that fails is told, not GAME SAVED.
     var blocker := SharedStorage.path() + ".pending"
@@ -105,12 +112,12 @@ func _initialize() -> void:
     # Killed while writing: a cut .pending file is ignored.
     var expected_x := player.position.x
     FileAccess.open(save + ".pending", FileAccess.WRITE).store_string(FileAccess.get_file_as_string(save).left(100))
-    check(float(main._find_save_path("KillTest").get("data", {}).get("player_x", -1)) == expected_x, "a cut .pending file is ignored")
+    check(float(main.saves.find("KillTest").get("data", {}).get("player_x", -1)) == expected_x, "a cut .pending file is ignored")
     # A save cut by a game from before (written in place) falls back to .bak.
     _cut(save)
     check(_parsed(save) == null, "the save is cut")
-    check(float(main._read_save_file(save).get("player_x", -1)) == expected_x, "a cut save falls back to .bak")
-    check(main._available_save_entries().any(func(entry): return entry.path == save), "the world is still in the LOAD list")
+    check(float(main.saves.read(save).get("player_x", -1)) == expected_x, "a cut save falls back to .bak")
+    check(main.saves.entries().any(func(entry): return entry.path == save), "the world is still in the LOAD list")
 
     # At startup, world caches no save needs are removed, on a thread.
     var cache: String = Cache.cache_path(seed_value, int(main.world.get("map_size_index")))
@@ -122,7 +129,7 @@ func _initialize() -> void:
 
     # And it loads.
     await _open_main()
-    while main.world_cache_cleanup.is_alive(): await process_frame
+    while main.saves.cache_cleanup.is_alive(): await process_frame
     check(not unused.any(func(path): return FileAccess.file_exists(path)), "unused caches removed at startup")
     check(FileAccess.file_exists(cache) and FileAccess.file_exists(Cache.cache_directory().path_join("notes.txt")), "the saved world's cache and other files stay")
     check(main.world_edit.text == "KillTest", "the newest save is offered: %s" % main.world_edit.text)
@@ -137,9 +144,9 @@ func _initialize() -> void:
     check(_parsed(save) is Dictionary, "the next save mends the cut file")
 
     # Deleting the world removes its .bak too, or it would come back.
-    check(main._delete_save("KillTest", save) == OK, "deleted")
-    check(not FileAccess.file_exists(save + ".bak") and main._read_save_file(save).is_empty(), "no copy brings it back")
-    while main.world_cache_cleanup.is_alive(): await process_frame
+    check(main.saves.delete("KillTest", save) == OK, "deleted")
+    check(not FileAccess.file_exists(save + ".bak") and main.saves.read(save).is_empty(), "no copy brings it back")
+    while main.saves.cache_cleanup.is_alive(): await process_frame
     check(not FileAccess.file_exists(cache), "its cache goes with the last save that needed it")
 
     print("SAVE KILL TEST: %d checks, %d failed" % [checks, failed])

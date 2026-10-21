@@ -20,8 +20,8 @@ signal progression_choice_made(value: int)
 
 const SETUP_SAVE_PATH := "user://m3_setup.cfg"
 const DataPaths = preload("res://scripts/game_data_paths.gd")
-var SAVE_DIR := "user://saves"
-var SAVE_INDEX_PATH := "user://saves/index.cfg"
+const WorldSaves = preload("res://scripts/world_saves.gd")
+var saves := WorldSaves.new("user://saves")
 const CraftingData = preload("res://scripts/crafting_data.gd")
 const ItemData = preload("res://scripts/item_data.gd")
 const FieldMoveData = preload("res://scripts/field_move_data.gd")
@@ -1019,7 +1019,6 @@ var shared_storage_serial := 0
 var shared_storage_error := OK
 ## Writes the world save in the background (see _write_single_player_save).
 var save_thread: Thread
-var world_cache_cleanup: Thread
 var storage_menu: Control
 var storage_rows: Array[Dictionary] = []
 var storage_actions: Panel
@@ -1332,8 +1331,7 @@ func _ready() -> void:
     set_process_input(false)
     set_process_unhandled_input(false)
     await shared_save_folder.prepare(self)
-    SAVE_DIR = DataPaths.path("saves")
-    SAVE_INDEX_PATH = DataPaths.path("saves/index.cfg")
+    saves = WorldSaves.new(DataPaths.path("saves"))
     GameOptions.load_settings()
     GameOptions.reset_launch_options()
     GameOptions.apply_audio()
@@ -1381,7 +1379,7 @@ func _ready() -> void:
 
     world_edit.text = "PokeWilds"
     _load_setup()
-    _start_world_cache_cleanup()
+    saves.start_cache_cleanup()
     _update_classic_menu_labels()
 
     # WORLD NAME uses the source-style 24-character entry buffer. Keep the
@@ -5073,7 +5071,7 @@ func _activate_menu_item() -> void:
             coop_game.cancel_join();coop_menu.open()
         MENU_ROW_MODE:
             if selected_mode == "LOAD":
-                menu_status.text = "LOAD READY" if not _find_save_path(world_edit.text.strip_edges()).is_empty() else "NO SAVE FILE"
+                menu_status.text = "LOAD READY" if not saves.find(world_edit.text.strip_edges()).is_empty() else "NO SAVE FILE"
             else:
                 menu_status.text = "NEW WORLD"
         MENU_ROW_SIZE:
@@ -5185,40 +5183,8 @@ func _update_menu_cursor() -> void:
         _align_menu_tick(cursor, online_label if menu_row==MENU_ROW_LOCAL and menu_col==1 and is_instance_valid(online_label) else setup_panel.get_node(labels[menu_row]))
     _update_persistent_selection_ticks()
 
-func _available_save_entries() -> Array[Dictionary]:
-    var result: Array[Dictionary] = []
-    var seen: Dictionary = {}
-    if not _ensure_save_directory():
-        return result
-    var cfg := ConfigFile.new()
-    if cfg.load(SAVE_INDEX_PATH) == OK:
-        for raw_key in cfg.get_section_keys("worlds"):
-            var indexed_path := _indexed_save_path(String(cfg.get_value("worlds", String(raw_key), "")))
-            var indexed_data := _read_save_file(indexed_path)
-            if indexed_data.is_empty() or seen.has(indexed_path):
-                continue
-            seen[indexed_path] = true
-            result.append({"path":indexed_path, "data":indexed_data})
-    var directory := DirAccess.open(SAVE_DIR)
-    if directory != null:
-        directory.list_dir_begin()
-        var file_name := directory.get_next()
-        while not file_name.is_empty():
-            if not directory.current_is_dir() and file_name.to_lower().ends_with(".json"):
-                var candidate := "%s/%s" % [SAVE_DIR, file_name]
-                var candidate_data := _read_save_file(candidate)
-                if not candidate_data.is_empty() and not seen.has(candidate):
-                    seen[candidate] = true
-                    result.append({"path":candidate, "data":candidate_data})
-            file_name = directory.get_next()
-        directory.list_dir_end()
-    result.sort_custom(func(first: Dictionary, second: Dictionary) -> bool:
-        return int(FileAccess.get_modified_time(String(first.path))) > \
-            int(FileAccess.get_modified_time(String(second.path))))
-    return result
-
 func _open_setup_load_selector() -> void:
-    setup_load_entries = _available_save_entries()
+    setup_load_entries = saves.entries()
     if setup_load_entries.is_empty():
         menu_status.text = "NO SAVE FILE"
         return
@@ -5334,7 +5300,7 @@ func _start_game() -> void:
         )
     else:
         load_data = coop_game.pending_game.duplicate(true) if coop_game.active else (
-            _read_save_file(setup_load_path)
+            saves.read(setup_load_path)
             if not setup_load_path.is_empty()
             else _read_game_save(world_name)
         )
@@ -5432,7 +5398,7 @@ func _load_setup() -> void:
         selected_mode = str(cfg.get_value("setup", "mode", "NEW"))
         selected_world_size = clampi(int(cfg.get_value("setup", "world_size", 1)), 0, WORLD_SIZE_NAMES.size() - 1)
 
-    var newest := _find_newest_valid_save()
+    var newest := saves.find_newest()
     if not newest.is_empty():
         world_edit.text = String(newest.data.get("world_name", world_edit.text))
 
@@ -8639,8 +8605,7 @@ func _exit_tree() -> void:
     var _joined := battle_animation_manifest # a thread must be waited for
     if save_thread != null:
         save_thread.wait_to_finish() # the save lands before the game goes
-    if world_cache_cleanup != null:
-        world_cache_cleanup.wait_to_finish()
+    saves.wait_for_cache_cleanup()
 
 func _load_battle_animation_manifest() -> Dictionary:
     const MANIFEST_PATH = "res://assets/battle_animations/manifest.json"
@@ -10611,180 +10576,6 @@ func _update_save_confirm_cursor() -> void:
         save_confirm_cursor.position = Vector2(134.0, 57.0)
     _align_menu_tick(save_confirm_cursor, save_confirm.get_node("Yes" if save_confirm_index == 0 else "No"))
 
-func _safe_world_filename(world_name: String) -> String:
-    var clean = world_name.strip_edges().to_lower()
-    if clean.is_empty():
-        clean = "pokewilds"
-    var result = ""
-    for ch in clean:
-        if ch.is_valid_identifier() or ch.is_valid_int():
-            result += ch
-        elif ch == " " or ch == "-" or ch == "_":
-            result += "_"
-    if result.is_empty():
-        result = "pokewilds"
-    return result
-
-func _save_path_for_world(world_name: String) -> String:
-    return "%s/%s.json" % [SAVE_DIR, _safe_world_filename(world_name)]
-
-func _ensure_save_directory() -> bool:
-    var absolute_dir = ProjectSettings.globalize_path(SAVE_DIR)
-    var err = DirAccess.make_dir_recursive_absolute(absolute_dir)
-    return err == OK or err == ERR_ALREADY_EXISTS
-
-func _indexed_save_path(stored: String) -> String:
-    # Old indexes contain private/device-specific absolute paths. The selected
-    # save directory is authoritative after migration or a drag-and-drop copy.
-    return "" if stored.is_empty() else SAVE_DIR.path_join(stored.get_file())
-
-func _write_save_index(world_name: String, save_path: String) -> void:
-    var cfg = ConfigFile.new()
-    cfg.load(SAVE_INDEX_PATH)
-    var key = _safe_world_filename(world_name)
-    cfg.set_value("worlds", key, save_path.get_file())
-    cfg.set_value("last", "world_name", world_name)
-    cfg.set_value("last", "save_path", save_path.get_file())
-    cfg.save(SAVE_INDEX_PATH)
-
-## Deletes a single-player world from the LOAD list's bin: its save file and
-## its lines in the save index. World caches no other save needs go after it.
-func _delete_save(world_name: String, save_path: String) -> Error:
-    var error := DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path))
-    if error != OK: return error
-    # The kept copy would bring the world back (see _read_save_file).
-    for leftover in [save_path + ".bak", save_path + ".pending"]:
-        if FileAccess.file_exists(leftover): DirAccess.remove_absolute(ProjectSettings.globalize_path(leftover))
-    var cfg := ConfigFile.new()
-    if cfg.load(SAVE_INDEX_PATH) == OK:
-        var key = _safe_world_filename(world_name)
-        if String(cfg.get_value("worlds", key, "")) == save_path.get_file(): cfg.erase_section_key("worlds", key)
-        if String(cfg.get_value("last", "save_path", "")) == save_path.get_file(): cfg.erase_section("last")
-        cfg.save(SAVE_INDEX_PATH)
-    _start_world_cache_cleanup()
-    return OK
-
-## Removes, on a thread, the world caches that no single-player save needs.
-func _start_world_cache_cleanup() -> void:
-    if world_cache_cleanup != null:
-        world_cache_cleanup.wait_to_finish()
-    world_cache_cleanup = Thread.new()
-    world_cache_cleanup.start(_remove_unused_world_caches.bind(
-        SAVE_DIR, DataPaths.path("world_cache"), int(Time.get_unix_time_from_system())))
-
-## A world cache (exact_v<version>_<seed>_<size>.bin, tens of MB) is kept while
-## a save in `save_dir` is in that world or next to it. Files changed since
-## `before` are kept too: they may be a world being made now.
-static func _remove_unused_world_caches(save_dir: String, cache_dir: String, before: int) -> void:
-    if not DirAccess.dir_exists_absolute(save_dir):
-        return # no list of saves: no way to tell what is unused
-    var needed := {}
-    for file_name in DirAccess.get_files_at(save_dir):
-        if not file_name.to_lower().ends_with(".json"):
-            continue
-        var data := _read_save_file(save_dir.path_join(file_name))
-        if data.is_empty():
-            continue
-        needed["%d_%d" % [absi(int(data.get("world_seed", 0))), int(data.get("world_size", 0))]] = true
-        var neighbors = data.get("adjacent_worlds", {})
-        for neighbor in (neighbors.values() if neighbors is Dictionary else []):
-            if neighbor is Dictionary:
-                needed["%d_%d" % [absi(int(neighbor.get("seed", 0))), int(neighbor.get("size", 0))]] = true
-    var cache_name := RegEx.create_from_string("^exact_v\\d+_(\\d+_\\d+)\\.bin$")
-    for file_name in DirAccess.get_files_at(cache_dir):
-        var found := cache_name.search(file_name)
-        var path := cache_dir.path_join(file_name)
-        if found != null and not needed.has(found.get_string(1)) and FileAccess.get_modified_time(path) < before:
-            DirAccess.remove_absolute(path)
-
-static func _read_save_file(save_path: String) -> Dictionary:
-    if save_path.is_empty():
-        return {}
-    # A save left broken (by a game from before saves were written safely)
-    # falls back to the one before it.
-    for candidate in [save_path, save_path + ".bak"]:
-        if not FileAccess.file_exists(candidate):
-            continue
-        var parsed = JSON.parse_string(FileAccess.get_file_as_string(candidate))
-        if parsed is Dictionary:
-            return parsed
-    return {}
-
-## Writes a world's save so that a kill at any moment leaves the old save or
-## the new one, never a cut one: the text goes to .pending and is read back,
-## the old save is kept as .bak, then .pending takes its place.
-static func _write_world_save(save_path: String, data: Dictionary) -> Error:
-    var text := JSON.stringify(data)
-    var pending := save_path + ".pending"
-    var file := FileAccess.open(pending, FileAccess.WRITE)
-    if file == null:
-        return FileAccess.get_open_error()
-    file.store_string(text)
-    file.flush()
-    var error := file.get_error()
-    file.close()
-    if error != OK:
-        return error
-    if FileAccess.get_file_as_string(pending) != text:
-        return ERR_FILE_CORRUPT
-    if FileAccess.file_exists(save_path):
-        error = DirAccess.copy_absolute(save_path, save_path + ".bak")
-        if error != OK:
-            return error
-    return DirAccess.rename_absolute(pending, save_path)
-
-## {"path", "data"} of the newest save that can be read, or {}.
-func _find_newest_valid_save() -> Dictionary:
-    if not _ensure_save_directory():
-        return {}
-
-    var cfg := ConfigFile.new()
-    if cfg.load(SAVE_INDEX_PATH) == OK:
-        var indexed := _indexed_save_path(String(cfg.get_value("last", "save_path", "")))
-        var indexed_data := _read_save_file(indexed)
-        if not indexed_data.is_empty():
-            return {"path": indexed, "data": indexed_data}
-
-    # Newest first: only saves that cannot be read are parsed before the answer.
-    var candidates := []
-    for file_name in DirAccess.get_files_at(SAVE_DIR):
-        if file_name.to_lower().ends_with(".json"):
-            var candidate := "%s/%s" % [SAVE_DIR, file_name]
-            candidates.append([int(FileAccess.get_modified_time(candidate)), candidate])
-    candidates.sort_custom(func(first: Array, second: Array) -> bool: return first[0] > second[0])
-    for candidate in candidates:
-        var data := _read_save_file(candidate[1])
-        if not data.is_empty():
-            return {"path": candidate[1], "data": data}
-    return {}
-
-## {"path", "data"} of the save of `world_name`, or {}.
-func _find_save_path(world_name: String) -> Dictionary:
-    if not _ensure_save_directory():
-        return {}
-
-    var direct_file := _save_path_for_world(world_name)
-    var data := _read_save_file(direct_file)
-    if not data.is_empty():
-        return {"path": direct_file, "data": data}
-
-    var cfg := ConfigFile.new()
-    if cfg.load(SAVE_INDEX_PATH) == OK:
-        var key := _safe_world_filename(world_name)
-        var indexed := _indexed_save_path(String(cfg.get_value("worlds", key, "")))
-        data = _read_save_file(indexed)
-        if not data.is_empty():
-            return {"path": indexed, "data": data}
-
-        var last_name := String(cfg.get_value("last", "world_name", ""))
-        var last_path := _indexed_save_path(String(cfg.get_value("last", "save_path", "")))
-        if world_name.strip_edges().is_empty() or last_name == world_name:
-            data = _read_save_file(last_path)
-            if not data.is_empty():
-                return {"path": last_path, "data": data}
-
-    return _find_newest_valid_save()
-
 func _capture_game_save(version: int = 2, personal_only: bool = false) -> Dictionary:
     var player = world.get_node("Player")
     var world_name = world_edit.text.strip_edges()
@@ -10823,7 +10614,7 @@ func _capture_game_save(version: int = 2, personal_only: bool = false) -> Dictio
 
 func _save_current_game() -> void:
     _sync_pokedex_owned()
-    if not _ensure_save_directory():
+    if not saves.ensure_directory():
         _close_save_confirmation()
         _show_message("SAVE FAILED.")
         return
@@ -10862,7 +10653,7 @@ func _write_single_player_save(data: Dictionary) -> Error:
     if save_path.is_empty():
         return ERR_CANT_CREATE
     save_thread = Thread.new()
-    save_thread.start(_write_world_save.bind(save_path, data.duplicate(true)))
+    save_thread.start(WorldSaves.write.bind(save_path, data.duplicate(true)))
     while save_thread.is_alive():
         await get_tree().process_frame
     var error: Error = save_thread.wait_to_finish()
@@ -10871,18 +10662,18 @@ func _write_single_player_save(data: Dictionary) -> Error:
 
 ## The save's path, once the folder is there and `data` carries the storage serial.
 func _prepare_single_player_save(data: Dictionary) -> String:
-    if not _ensure_save_directory():
+    if not saves.ensure_directory():
         return ""
     data["storage_shared"] = true
     data["storage_serial"] = shared_storage_serial + 1
-    return _save_path_for_world(String(data.world_name))
+    return saves.path_for_world(String(data.world_name))
 
 func _finish_single_player_save(data: Dictionary, save_path: String, error: Error) -> Error:
     if error != OK:
         push_error("%s could not be saved (%d)." % [save_path, error])
         return error
     _write_shared_storage()
-    _write_save_index(String(data.world_name), save_path)
+    saves.write_index(String(data.world_name), save_path)
     world_edit.text = String(data.world_name)
     _save_setup()
     return OK
@@ -10899,7 +10690,7 @@ func _save_on_pause() -> void:
     var data := _capture_game_save()
     var save_path := _prepare_single_player_save(data)
     if not save_path.is_empty():
-        _finish_single_player_save(data, save_path, _write_world_save(save_path, data))
+        _finish_single_player_save(data, save_path, WorldSaves.write(save_path, data))
 
 ## A save being written lands before another starts or the game goes away.
 ## The coroutine that started it still joins the thread.
@@ -10919,7 +10710,7 @@ func _write_shared_storage() -> void:
         push_error("Shared storage could not be written (%d)." % shared_storage_error)
 
 func _read_game_save(world_name: String):
-    return _find_save_path(world_name).get("data", {})
+    return saves.find(world_name).get("data", {})
 
 func _restore_game_save(data) -> void:
     GameOptions.restore_game_options(data.get("options", {}),String(data.get("world_name","")))
