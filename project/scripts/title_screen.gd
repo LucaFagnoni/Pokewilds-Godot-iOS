@@ -17,9 +17,9 @@ const CLOUDS := [
 const SHINE_EVERY := 6.0
 const SHINE_SECONDS := 0.7
 const INTRO_SECONDS := 0.9
-## The game has no title track of its own: PokeWilds' calm Heart Tower theme,
-## which nothing else plays.
-const TITLE_MUSIC := "res://assets/environment/music/Wilds_HeartTower_Calm.ogg"
+## The game has no title track of its own: lake6, also heard by wooded lakes,
+## from the lofi pack when OPTIONS > LOFI MUSIC is on (as the world picks it).
+const TITLE_MUSIC := "lake6"
 const MUSIC_FADE_SECONDS := 1.5
 ## A band of light a few logo pixels wide, on the logo's own pixel grid.
 const SHINE_SHADER := """
@@ -44,6 +44,7 @@ var shine_wait := 2.5
 var shine_time := -1.0
 var intro_played := false
 var music: AudioStreamPlayer
+var music_fade_in: Tween
 
 func _ready() -> void:
     var holder := Control.new()
@@ -74,10 +75,9 @@ func _ready() -> void:
     # Hidden through loading (the boot splash has no logo either) until intro().
     logo.visible = false
 
-## Each time the title shows: the music (if not already on), and the first
-## time only, the logo dropping in from above.
+## The first time the title shows: the logo drops in from above (and the
+## menus' music may start, see _process).
 func intro() -> void:
-    _play_music()
     if intro_played:
         return
     intro_played = true
@@ -89,21 +89,33 @@ func intro() -> void:
     drop.tween_property(logo, "offset_top", 0.0, INTRO_SECONDS)
     drop.tween_property(logo, "offset_bottom", 0.0, INTRO_SECONDS)
 
-## From the title through the other menus and the world setup; it fades out
-## when a game starts, where the world's own music takes over.
+## The menus' music: from the title through the other menus and the world
+## setup. It fades out as soon as a loading screen goes up (a save loading, a
+## world being made, a server being joined) and fades back in if that is
+## cancelled back to the menus; the world's own music takes over in a game.
 func _play_music() -> void:
-    if music != null or get_parent().started:
-        return
     music = AudioStreamPlayer.new()
     music.name = "TitleMusic"
-    music.stream = load(TITLE_MUSIC)
+    var lofi := "res://assets/lofi/music/%s.ogg" % TITLE_MUSIC
+    var use_lofi: bool = preload("res://scripts/game_options.gd").enabled("lofi_music") and ResourceLoader.exists(lofi)
+    music.stream = load(lofi if use_lofi else "res://assets/environment/music/%s.ogg" % TITLE_MUSIC)
     add_child(music)
     AudioBalance.apply(music)  # the Music bus (MUSIC volume option) and this file's level
     music.finished.connect(music.play)
+    var level := music.volume_db
+    music.volume_db = -40.0
     music.play()
+    music_fade_in = create_tween()
+    music_fade_in.tween_property(music, "volume_db", level, MUSIC_FADE_SECONDS)
 
 func _process(delta: float) -> void:
-    if music != null and get_parent().started:
+    var main := get_parent()
+    var in_menus: bool = intro_played and not main.started and not main.generation_panel.visible
+    if in_menus and music == null:
+        _play_music()
+    elif not in_menus and music != null:
+        if music_fade_in != null:
+            music_fade_in.kill()
         var fade := create_tween()
         fade.tween_property(music, "volume_db", -60.0, MUSIC_FADE_SECONDS)
         fade.tween_callback(music.queue_free)
