@@ -19,6 +19,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "0.10.191",
+          "buildVersion": "191",
+          "date": "2026-10-21T18:25:22Z",
+          "localizedDescription": "Next-throw icon: on touch the throw button shows it; otherwise under the top row\n\nThe small picture of what the next throw sends out was anchored where the\nold HUD put it, and after the HUD cleanup it covered the menu button for its\neleven seconds. On touch the throw button already shows that ball or\nPokemon, so the icon now stays away there; with a controller or keyboard it\nsits at the top right, one row under the HUD's top row, in screen units\n(a FULL_SCREEN holder) like the rest of that row.",
+          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0032/Pokewilds-unsigned.ipa",
+          "size": 57592086,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.10.190",
           "buildVersion": "190",
           "date": "2026-10-21T18:01:28Z",
@@ -98,15 +107,6 @@
           "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0020/Pokewilds-unsigned.ipa",
           "size": 65586894,
           "minOSVersion": "15.0"
-        },
-        {
-          "version": "0.10.174",
-          "buildVersion": "174",
-          "date": "2026-10-20T23:33:13Z",
-          "localizedDescription": "CI: faster builds (Mac job alongside the smoke test, LTO and import caches)\n\n- ios no longer waits for smoke; publish needs smoke instead, so only a\n  pack that passed the smoke test is still released.\n- The engine is LTO bitcode recompiled at every link: Apple's ld and xtool's\n  lld keep their LTO cache between runs (keyed on the engine profile and the\n  linker).\n- Godot's import cache (.godot) is restored in smoke, ios, ios_xtool and\n  server: only changed assets are imported again.\n- ios_xtool: no disk cleanup (the runner has ~80 GB free).\n- The server smoke test prints as it goes, to see where its 5 minutes go.",
-          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0019/Pokewilds-unsigned.ipa",
-          "size": 65572825,
-          "minOSVersion": "15.0"
         }
       ],
       "appPermissions": {
@@ -117,11 +117,11 @@
           "NSPhotoLibraryUsageDescription": "Not used by the game (Godot's default key)."
         }
       },
-      "version": "0.10.190",
-      "versionDate": "2026-10-21T18:01:28Z",
-      "versionDescription": "Menus: live party strip, A HINT option at the bottom centre, OPTIONS blocks the field UI\n\n- The touch start menu's party strip walks and follows HP (sleeping bag,\n  bed, co-op campfire) while it stays open, on the party views' 0.3 s tick;\n  eggs show as eggs there (they keep their species). A co-op campfire heal\n  refreshes an open POKEMON list too.\n- OPTIONS > CONTROLS > A HINT (off by default, touch only): the \"A: ...\" chip\n  sits at the bottom centre; off, nothing polls what A would do.\n- An OPTIONS menu open without the game menu (back from MOVE BUTTONS) now\n  blocks the field UI, so the next-throw ball icon cannot come back over it.\n- status_hud_test: the game clock chip ticks once a second, up to four game\n  minutes behind the world, which the check now allows.",
-      "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0031/Pokewilds-unsigned.ipa",
-      "size": 57591924
+      "version": "0.10.191",
+      "versionDate": "2026-10-21T18:25:22Z",
+      "versionDescription": "Next-throw icon: on touch the throw button shows it; otherwise under the top row\n\nThe small picture of what the next throw sends out was anchored where the\nold HUD put it, and after the HUD cleanup it covered the menu button for its\neleven seconds. On touch the throw button already shows that ball or\nPokemon, so the icon now stays away there; with a controller or keyboard it\nsits at the top right, one row under the HUD's top row, in screen units\n(a FULL_SCREEN holder) like the rest of that row.",
+      "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0032/Pokewilds-unsigned.ipa",
+      "size": 57592086
     }
   ],
   "news": []
