@@ -758,13 +758,16 @@ func quiet_experience(defeated: Dictionary, recipients: Array, notices: Array) -
             follow_up[index] = waiting
     return follow_up
 
-## Asks which move to forget for one new move, in a window over the world.
+## Asks which move to forget for one new move, on the same screen as a level
+## up in battle, where each move can be looked at before one is replaced.
 func choose_move(index: int, move: String) -> void:
     var member: Dictionary = main.caught_pokemon[index]
     var title = PokemonState.display_name(member).to_upper()
-    var window = preload("res://scripts/field_move_choice.gd").new()
-    main.get_node("UI").add_child(window)
-    var slot: int = await window.ask(main,member,move)
+    # Button presses only reach the screen while this is set.
+    var was_active = main.progression_active
+    main.progression_active = true
+    var slot: int = await main._choose_move_to_forget(member,move)
+    main.progression_active = was_active
     if slot<0 or slot>=(member.get("moves",[]) as Array).size():
         main._show_message("%s did not learn %s." % [title,move.replace("_"," ")])
         return

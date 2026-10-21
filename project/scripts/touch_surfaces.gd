@@ -560,7 +560,7 @@ func _progression() -> Dictionary:
                 if row.text != "-" and not row.text.is_empty(): rows.append(grown(row, Vector2(16, 2)))
             return {
                 "rows": rows,
-                "tap": func(i): m.progression_choice_index = i; m._refresh_progression_move_menu(); press("confirm"),
+                "tap": func(i): _pick_move_to_forget(i),
                 "back": func(): press("cancel"),
             }
         "MOVE_GIVEUP", "YES_NO":
@@ -570,6 +570,13 @@ func _progression() -> Dictionary:
                 "tap": func(i): m.progression_choice_index = i; m._refresh_progression_yes_no(); press("confirm"),
             }
     return {"tap_at": func(_p): press("confirm")}
+
+## A tap shows a move's details; a tap on the move already shown asks to replace it.
+func _pick_move_to_forget(i: int) -> void:
+    if i == main.progression_choice_index: press("confirm")
+    else:
+        main.progression_choice_index = i
+        main._refresh_progression_move_menu()
 
 # --- field prompts ------------------------------------------------------------
 
@@ -591,15 +598,6 @@ func _field_prompt() -> Dictionary:
             return _yes_no(m.egg_choice_panel, func(i): m.egg_pickup_index = i; m._update_egg_pickup_cursor())
         return {"tap_at": advance, "back": cancel}
     if m.trainer_tip_open: return {"tap_at": advance, "back": cancel}
-    var window := m.get_node_or_null("UI/FieldMoveChoice")
-    if window != null and window.is_visible_in_tree():
-        var rows := []
-        for row in window.rows: rows.append(grown(row, Vector2(10, 0)))
-        return {
-            "rows": rows,
-            "tap": func(i): window.chosen.emit(-1 if i == window.rows.size() - 1 else i),
-            "back": func(): window.chosen.emit(-1),
-        }
     return {}
 
 func _wild_choice(i: int) -> void:
