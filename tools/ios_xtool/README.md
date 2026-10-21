@@ -7,9 +7,11 @@ inside WSL or in CI (the `ios_xtool` job). Sign it with Feather as usual.
 
 ## In CI
 
-`ios_xtool` runs on Ubuntu when the `ios` job did not build the IPA (no
-runner, a failure), never on pull requests, and puts its IPA in the same
-release. It runs `setup.sh` and `SMOKE=0 build_ipa.sh` (the `smoke` job already
+`ios_xtool` runs on Ubuntu next to the `ios` job and watches it: when no Mac
+runner picks it up within a minute, or the Mac build fails, it builds the IPA
+itself and puts it in the same release (a Mac that turns up later stops at
+its first step). Publishing waits for `ios_xtool` only, never for a Mac job
+that GitHub gives up on after ~15 minutes. Never on pull requests. It runs `setup.sh` and `SMOKE=0 build_ipa.sh` (the `smoke` job already
 tested the pack). It caches the iOS engine library, lld's LTO cache and
 Godot's import cache, never the SDK: with them the job takes a few minutes.
 `Xcode.xip` comes from the release `xcode-27.1` of the private repository

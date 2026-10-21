@@ -27,6 +27,8 @@ env:
 # that artifacts fill up.
 permissions:
   contents: write
+  # ios_xtool and ios read each other's state (actions/runs/<id>/jobs).
+  actions: read
 
 jobs:
   draft:
@@ -131,23 +133,39 @@ jobs:
           ! grep -E "SMOKE FAIL|SCRIPT ERROR|Parse Error|Cannot get class|Failed to load|not declared in the current scope" smoke.log
 
   ios:
-    # Runs alongside the smoke test (and waits for a Mac meanwhile); publish
-    # needs both, so only a pack that passed the smoke test is released.
+    # Runs alongside the smoke test; publish needs the smoke test too, so only
+    # a pack that passed it is released. ios_xtool watches this job: when no Mac
+    # picks it up within a minute, xtool builds the IPA instead, and this job,
+    # if a Mac comes later, stops at its first step.
     needs: draft
     if: ${{ !inputs.fallback }}
     runs-on: macos-26
     env:
       TAG: ${{ needs.draft.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Still needed?
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          taken=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=50" \
+            --jq '.jobs[] | select(.name == "ios_xtool") | .steps[] | select(.name == "Take over from the Mac job" and .conclusion == "success") | .name' || true)
+          if [ -n "$taken" ]; then
+            echo "::notice::ios_xtool already builds this IPA (no Mac within a minute)"
+            echo "SKIP=true" >> "$GITHUB_ENV"
+          fi
 
       - uses: actions/checkout@v4
+        if: env.SKIP != 'true'
+
+      - uses: actions/checkout@v4
+        if: env.SKIP != 'true'
         with:
           repository: godotengine/godot
           ref: ${{ env.GODOT_VERSION }}-stable
           path: godot-src
 
       - name: Install Godot + export templates
+        if: env.SKIP != 'true'
         run: |
           base=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
           curl -sSL -o godot.zip "$base/Godot_v${GODOT_VERSION}-stable_macos.universal.zip"
@@ -161,12 +179,14 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/scons" && "$RUNNER_TEMP/scons/bin/pip" -q install scons
 
       - uses: actions/cache@v4
+        if: env.SKIP != 'true'
         with:
           path: ~/.scons_cache
           # The engine source is a fixed tag: one cache per build profile is enough.
           key: scons-ios-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py') }}
 
       - name: Build stripped engine (iOS arm64)
+        if: env.SKIP != 'true'
         working-directory: godot-src
         run: |
           "$RUNNER_TEMP/scons/bin/scons" platform=ios arch=arm64 target=template_release profile="$ENGINE_PROFILE" lto=thin \
@@ -174,6 +194,7 @@ jobs:
           ls -la bin
 
       - name: Swap engine library into the iOS template
+        if: env.SKIP != 'true'
         run: |
           work="$RUNNER_TEMP/ios_template"
           unzip -q "$TPL/ios.zip" -d "$work"
@@ -185,11 +206,13 @@ jobs:
           rm "$TPL/ios.zip" && (cd "$work" && zip -qry "$TPL/ios.zip" .)
 
       - name: Minify JSON data
+        if: env.SKIP != 'true'
         run: python3 .github/engine/minify_json.py project
 
       # The commit this build comes from: hosts refuse players of another build.
       # The IPA's visible and internal versions go up with every build.
       - name: Stamp build id and IPA version
+        if: env.SKIP != 'true'
         env:
           VERSION: ${{ needs.draft.outputs.version }}
           BUNDLE: ${{ needs.draft.outputs.bundle }}
@@ -210,6 +233,7 @@ jobs:
       # The phone's battery for the HUD (an iOS plugin): Godot's export links
       # this library into the Xcode project. Same deployment target as the preset.
       - name: Build the battery plugin
+        if: env.SKIP != 'true'
         working-directory: project/ios/plugins/pokewilds_battery
         run: |
           xcrun -sdk iphoneos clang++ -arch arm64 -miphoneos-version-min=15.0 -O2 -fobjc-arc \
@@ -218,12 +242,14 @@ jobs:
 
       # Godot's import cache (.godot): only assets that changed since are imported again.
       - uses: actions/cache@v4
+        if: env.SKIP != 'true'
         with:
           path: project/.godot
           key: godot-import-ios-${{ env.GODOT_VERSION }}-${{ hashFiles('project/assets/**/*.import') }}
           restore-keys: godot-import-ios-${{ env.GODOT_VERSION }}-
 
       - name: Export Xcode project
+        if: env.SKIP != 'true'
         working-directory: project
         run: |
           mkdir -p ../build/ios
@@ -233,13 +259,16 @@ jobs:
       # The engine is LTO bitcode, compiled again at every link (minutes): the
       # linker's cache keeps that work while the engine and Xcode stay the same.
       - id: xcode
+        if: env.SKIP != 'true'
         run: echo "version=$(xcodebuild -version | tr -s ' \n' '-')" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
+        if: env.SKIP != 'true'
         with:
           path: ~/lto-cache
           key: ios-lto-${{ steps.xcode.outputs.version }}-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py') }}
 
       - name: Build unsigned .app and pack IPA
+        if: env.SKIP != 'true'
         working-directory: build/ios
         run: |
           set -o pipefail
@@ -257,28 +286,71 @@ jobs:
           zip -qry -9 Pokewilds-unsigned.ipa Payload
 
       - name: Add the IPA to the draft release
+        if: env.SKIP != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$TAG" build/ios/Pokewilds-unsigned.ipa
+        run: gh release upload --clobber "$TAG" build/ios/Pokewilds-unsigned.ipa
 
-  # When the macOS job did not build the IPA (no runner, a failure, or skipped
-  # to test this), build the same IPA on Linux with xtool (tools/ios_xtool):
-  # same stripped engine, version and build id. Xcode, which xtool turns into
-  # the iOS SDK, comes from the private LucaFagnoni/xcode-sdk release through a
-  # read-only token (XCODE_SDK_TOKEN). Never on pull requests.
+  # The IPA's watchdog and fallback. It watches the ios job: when no Mac picks
+  # it up within a minute, or the Mac build fails (or was skipped to test
+  # this), it builds the same IPA on Linux with xtool (tools/ios_xtool): same
+  # stripped engine, version and build id. Xcode, which xtool turns into the
+  # iOS SDK, comes from the private LucaFagnoni/xcode-sdk release through a
+  # read-only token (XCODE_SDK_TOKEN). Its output "ipa" is true when the
+  # release has an IPA from either, so publish never waits for a Mac job that
+  # GitHub takes ~15 minutes to give up on. Never on pull requests.
   ios_xtool:
-    needs: [draft, smoke, ios]
-    if: ${{ always() && github.event_name != 'pull_request' && needs.draft.result == 'success' && needs.smoke.result == 'success' && needs.ios.result != 'success' }}
+    needs: draft
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 150
+    outputs:
+      ipa: ${{ steps.mac.outputs.ipa || steps.upload.outputs.ipa }}
     env:
       TAG: ${{ needs.draft.outputs.tag }}
+      GH_TOKEN: ${{ github.token }}
     steps:
+      - name: Wait for the Mac job
+        id: mac
+        run: |
+          jobs="repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=50"
+          state() { gh api "$jobs" --jq '.jobs[] | select(.name == "ios") | "\(.status) \(.conclusion)"'; }
+          start=$(date +%s)
+          # A minute for a Mac to pick it up (a skipped job counts as completed).
+          while :; do
+            read -r status conclusion <<< "$(state)"
+            if [ "$status" = in_progress ] || [ "$status" = completed ]; then break; fi
+            if [ $(( $(date +%s) - start )) -ge 60 ]; then
+              echo "::notice::No Mac runner within a minute: building the IPA with xtool"
+              echo "fallback=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 10
+          done
+          # A Mac took it: wait for its build.
+          while [ "$status" != completed ]; do
+            sleep 30
+            read -r status conclusion <<< "$(state)"
+          done
+          if [ "$conclusion" = success ]; then
+            echo "ipa=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::The Mac job ended $conclusion: building the IPA with xtool"
+            echo "fallback=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The ios job's first step looks for this one: a Mac that comes later stops there.
+      - name: Take over from the Mac job
+        if: steps.mac.outputs.fallback == 'true'
+        run: echo "xtool builds the IPA"
+
       - uses: actions/checkout@v4
+        if: steps.mac.outputs.fallback == 'true'
         with:
           fetch-depth: 0
 
       - name: Download Xcode from the private repository
+        if: steps.mac.outputs.fallback == 'true'
         env:
           GH_TOKEN: ${{ secrets.XCODE_SDK_TOKEN }}
         run: |
@@ -289,6 +361,7 @@ jobs:
           ls -la
 
       - uses: actions/cache@v4
+        if: steps.mac.outputs.fallback == 'true'
         with:
           path: ~/pokewilds-ios/cache/engine
           # The stripped iOS engine, rebuilt only when the profile changes.
@@ -297,35 +370,40 @@ jobs:
       # lld's LTO codegen of that engine (see Package.swift): the link takes
       # seconds instead of ~8 minutes. setup.sh pins xtool, which brings lld.
       - uses: actions/cache@v4
+        if: steps.mac.outputs.fallback == 'true'
         with:
           path: ~/pokewilds-ios/cache/lto
           key: xtool-lto-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py', 'tools/ios_xtool/setup.sh') }}
 
       # Godot's import cache (.godot): only assets that changed since are imported again.
       - uses: actions/cache@v4
+        if: steps.mac.outputs.fallback == 'true'
         with:
           path: ~/pokewilds-ios/project/.godot
           key: godot-import-xtool-${{ env.GODOT_VERSION }}-${{ hashFiles('project/assets/**/*.import') }}
           restore-keys: godot-import-xtool-${{ env.GODOT_VERSION }}-
 
       - name: Swift, xtool and the iOS SDK
+        if: steps.mac.outputs.fallback == 'true'
         run: |
           bash tools/ios_xtool/setup.sh "$RUNNER_TEMP/xcode/Xcode.xip"
           rm -rf "$RUNNER_TEMP/xcode"
 
       # The smoke job already checked this pack with the stripped engine.
       - name: Build the IPA with xtool
+        if: steps.mac.outputs.fallback == 'true'
         run: SMOKE=0 bash tools/ios_xtool/build_ipa.sh
 
       - name: Add the IPA to the draft release
-        env:
-          GH_TOKEN: ${{ github.token }}
+        id: upload
+        if: steps.mac.outputs.fallback == 'true'
         run: |
-          gh release upload "$TAG" "$HOME/pokewilds-ios/Pokewilds-unsigned.ipa"
+          gh release upload --clobber "$TAG" "$HOME/pokewilds-ios/Pokewilds-unsigned.ipa"
           gh release view "$TAG" --json body --jq .body > notes.md
           echo "" >> notes.md
-          echo "IPA built on Linux with xtool (no macOS runner): same engine, version and build id; plain PNG icons and launch screen." >> notes.md
+          echo "IPA built on Linux with xtool (no macOS runner in time): same engine, version and build id; plain PNG icons and launch screen." >> notes.md
           gh release edit "$TAG" --notes-file notes.md
+          echo "ipa=true" >> "$GITHUB_OUTPUT"
 
   server:
     needs: draft
@@ -393,9 +471,9 @@ jobs:
         run: gh release upload "$TAG" PokeWilds-Server-win64.zip
 
   publish:
-    needs: [draft, smoke, ios, ios_xtool, server]
-    # The IPA from macOS or, failing that, from the xtool fallback.
-    if: ${{ always() && needs.draft.result == 'success' && needs.smoke.result == 'success' && needs.server.result == 'success' && (needs.ios.result == 'success' || needs.ios_xtool.result == 'success') }}
+    needs: [draft, smoke, ios_xtool, server]
+    # The IPA from the Mac or, failing that, from xtool: ios_xtool says which.
+    if: ${{ always() && needs.draft.result == 'success' && needs.smoke.result == 'success' && needs.server.result == 'success' && needs.ios_xtool.outputs.ipa == 'true' }}
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
