@@ -19,6 +19,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "0.10.184",
+          "buildVersion": "184",
+          "date": "2026-10-21T16:21:41Z",
+          "localizedDescription": "Title screen: pixel-art logo and background, never stretched, animated\n\nThe title artwork was one 1536x1024 picture stretched to fill the screen,\nlogo included, and the boot splash stretched it too (stretch_mode 5 is\nIgnore). Now:\n\n- title_logo.png: the PokeWilds logo alone, 167x58 pixels, three colours\n  plus transparency, taken off the old artwork's ~6.8 px grid.\n- title_background.png: the landscape widened for phones (2.25:1), 230x102\n  pixels in eight colours, as three frames side by side: leaves flutter and\n  the lake glitters (colour cycling, so it loops without a jump). The title\n  menu shows the next frame every 0.4 s while it is on screen.\n- The background covers the screen keeping its proportions, the logo sits\n  at the top keeping its own, both with nearest filtering.\n- title_splash.png: both together for the boot splash, shown with Cover and\n  no filtering, laid out like the title so nothing jumps when it appears.\n- The old 1.6 MB artwork and the unused pokewilds.png/title_bg1.png scene\n  references are gone; the title no longer loads a 6 MB texture.",
+          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0026/Pokewilds-unsigned.ipa",
+          "size": 57550117,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.10.183",
           "buildVersion": "183",
           "date": "2026-10-21T16:01:01Z",
@@ -98,15 +107,6 @@
           "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0006/Pokewilds-unsigned.ipa",
           "size": 65568755,
           "minOSVersion": "15.0"
-        },
-        {
-          "version": "0.10.4",
-          "buildVersion": "104",
-          "date": "2026-10-20T10:57:13Z",
-          "localizedDescription": "Merge sheet-no-readback: drop the Gen 3 branch in TexturePixels",
-          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0004/Pokewilds-unsigned.ipa",
-          "size": 65554544,
-          "minOSVersion": "15.0"
         }
       ],
       "appPermissions": {
@@ -117,11 +117,11 @@
           "NSPhotoLibraryUsageDescription": "Not used by the game (Godot's default key)."
         }
       },
-      "version": "0.10.183",
-      "versionDate": "2026-10-21T16:01:01Z",
-      "versionDescription": "Merge hud-cleanup: one look and one grid for the field HUD",
-      "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0025/Pokewilds-unsigned.ipa",
-      "size": 60057718
+      "version": "0.10.184",
+      "versionDate": "2026-10-21T16:21:41Z",
+      "versionDescription": "Title screen: pixel-art logo and background, never stretched, animated\n\nThe title artwork was one 1536x1024 picture stretched to fill the screen,\nlogo included, and the boot splash stretched it too (stretch_mode 5 is\nIgnore). Now:\n\n- title_logo.png: the PokeWilds logo alone, 167x58 pixels, three colours\n  plus transparency, taken off the old artwork's ~6.8 px grid.\n- title_background.png: the landscape widened for phones (2.25:1), 230x102\n  pixels in eight colours, as three frames side by side: leaves flutter and\n  the lake glitters (colour cycling, so it loops without a jump). The title\n  menu shows the next frame every 0.4 s while it is on screen.\n- The background covers the screen keeping its proportions, the logo sits\n  at the top keeping its own, both with nearest filtering.\n- title_splash.png: both together for the boot splash, shown with Cover and\n  no filtering, laid out like the title so nothing jumps when it appears.\n- The old 1.6 MB artwork and the unused pokewilds.png/title_bg1.png scene\n  references are gone; the title no longer loads a 6 MB texture.",
+      "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0026/Pokewilds-unsigned.ipa",
+      "size": 57550117
     }
   ],
   "news": []
