@@ -9,7 +9,9 @@ const Snapshot=preload("res://scripts/coop_world_snapshot.gd")
 const Cache=preload("res://scripts/source_world_cache.gd")
 const Paths=preload("res://scripts/game_data_paths.gd")
 const GameOptions=preload("res://scripts/game_options.gd")
-const TIMEOUT_MS:=15*60*1000
+## Under the 10 minutes a player waits for a new area (coop_game.prepare_travel):
+## at 15 the player had given up before their device was asked to make it.
+const TIMEOUT_MS:=8*60*1000
 ## Size of new areas, 0-4; -1 picks one at random as the game does.
 var area_size:=-1
 var _busy:=false
