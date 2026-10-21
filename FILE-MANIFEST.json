@@ -87942,16 +87942,6 @@
 "sha256": "34eba31a6b81a1b6dd69ce90aed8bd89da4ec6d231070a49aee9d78c448ef773"
 },
 {
-"path": "project/scripts/coop_pings.gd",
-"bytes": 4726,
-"sha256": "7a976a5e3f2510041b79679e2cb3ab465b256415ab76da67466876716d6d618f"
-},
-{
-"path": "project/scripts/coop_pings.gd.uid",
-"bytes": 20,
-"sha256": "2742e2ddc8217c43f7c7564b6c6f10ab739820a14bfc85b65f9e9984dc9d2836"
-},
-{
 "path": "project/scripts/coop_players.gd",
 "bytes": 15200,
 "sha256": "cfe15102f7cf9e63d3393f3b1889c174cdaa9d2194c79da0a69a52afc5921cd7"

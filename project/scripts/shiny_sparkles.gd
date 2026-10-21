@@ -8,6 +8,15 @@ static func attach(sprite: Sprite2D, record: Dictionary) -> void:
     if sprite.has_node("ShinySparkles"):return
     var effect=load("res://scripts/shiny_sparkles.gd").new()
     effect.name="ShinySparkles";effect.z_index=1;sprite.add_child(effect)
+func _ready() -> void:
+    # Off-screen sprites cost nothing: process only while the notifier sees them.
+    var sprite:=get_parent() as Sprite2D
+    var notifier:=VisibleOnScreenNotifier2D.new()
+    notifier.rect=sprite.get_rect() if sprite!=null and sprite.texture!=null else Rect2(-16,-16,32,32)
+    notifier.screen_entered.connect(set_process.bind(true))
+    notifier.screen_exited.connect(set_process.bind(false))
+    add_child(notifier)
+    set_process(false)
 func _process(delta: float) -> void:
     visible = Settings.enabled("shiny_sparkles")
     if not is_visible_in_tree():return

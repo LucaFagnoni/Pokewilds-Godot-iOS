@@ -22,7 +22,6 @@ var visuals:Node
 var service:Node
 var commands:Node
 var interaction_ui:Control
-var pings:Control
 var rest:Node
 var storage:Node
 var beacons:Node
@@ -286,8 +285,6 @@ func configure(game:Node)->void:
     main.get_node("UI").add_child(interaction_ui);interaction_ui.configure(main,self)
     pvp=preload("res://scripts/coop_pvp_runtime.gd").new();add_child(pvp);pvp.configure(self)
     interaction_ui.battle_accepted.connect(pvp.receive)
-    pings=preload("res://scripts/coop_pings.gd").new()
-    main.get_node("UI").add_child(pings);pings.configure(self)
     rest=preload("res://scripts/coop_rest.gd").new();add_child(rest);rest.configure(self)
     storage=preload("res://scripts/coop_storage.gd").new();add_child(storage);storage.configure(self)
     beacons=preload("res://scripts/coop_beacons.gd").new();add_child(beacons);beacons.configure(self)

@@ -65,6 +65,8 @@ func _ready() -> void:
     process_mode = Node.PROCESS_MODE_ALWAYS
     transport = Transport.new()
     transport.process_mode = Node.PROCESS_MODE_ALWAYS
+    transport.set_process(false)
+    set_process(false)
     add_child(transport)
     messages.send_frame=transport.send
     messages.send_encoded=transport.send_encoded
@@ -84,7 +86,7 @@ func host(id: String, port: int = 54555, address: String = "*") -> Error:
     if identity.is_empty() or id.is_empty():return ERR_UNCONFIGURED
     var error: Error=transport.host(port,address)
     if error!=OK:return error
-    hosting=true;world_id=id;trusted=true
+    hosting=true;world_id=id;trusted=true;set_process(true)
     players={1:{"actor":actor,"profile":profile.duplicate(true)}}
     session_ready.emit(world_id,actor)
     return OK
@@ -92,12 +94,16 @@ func host(id: String, port: int = 54555, address: String = "*") -> Error:
 func join_code(code: String) -> Error:
     hosting=false;trusted=false;players.clear()
     if identity.is_empty():return ERR_UNCONFIGURED
-    return transport.join_code(code)
+    var error:Error=transport.join_code(code)
+    set_process(error==OK)
+    return error
 
 func join_address(address: String, port: int) -> Error:
     hosting=false;trusted=false;players.clear()
     if identity.is_empty():return ERR_UNCONFIGURED
-    return transport.join_address(address,port)
+    var error:Error=transport.join_address(address,port)
+    set_process(error==OK)
+    return error
 
 func _connected(peer: int) -> void:
     if hosting:return
@@ -284,4 +290,4 @@ func _disconnected(peer: int) -> void:
         departed.emit(peer,id)
 
 func stop() -> void:
-    transport.stop();messages.clear();players.clear();_reject_pending.clear();trusted=false;hosting=false;loading=false;access_proof="";access_salt="";access_password="";_nonces.clear();_account_salts.clear();_account_challenge={}
+    set_process(false);transport.stop();messages.clear();players.clear();_reject_pending.clear();trusted=false;hosting=false;loading=false;access_proof="";access_salt="";access_password="";_nonces.clear();_account_salts.clear();_account_challenge={}

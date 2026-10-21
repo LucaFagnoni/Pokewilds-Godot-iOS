@@ -32,6 +32,7 @@ func host(listen_port: int = JoinCode.PORT, address: String = "*") -> Error:
     if error != OK: return error
     port = listen_port
     hosting = true
+    set_process(true)
     return OK
 
 func join_code(code: String) -> Error:
@@ -46,6 +47,7 @@ func join_address(address: String, remote_port: int) -> Error:
     if error != OK: return error
     joining = true
     _add(1, socket)
+    set_process(true)
     return OK
 
 func _add(peer: int, socket: StreamPeerTCP) -> void:
@@ -192,6 +194,7 @@ func stop() -> void:
     hosting = false
     joining = false
     _next_peer = 2
+    set_process(false)
 
 func _exit_tree() -> void:
     stop()

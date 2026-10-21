@@ -62,6 +62,7 @@ func _send(peer:int,packet:Dictionary)->void:
     elif error!=OK:session.transport._drop(peer)
 
 func _process(_delta:float)->void:
+    if _pending.is_empty():return
     var blocked:Dictionary={}
     for entry in _pending.duplicate():
         if blocked.has(entry.peer):continue
