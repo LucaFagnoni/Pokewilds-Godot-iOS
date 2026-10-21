@@ -292,6 +292,21 @@ var discovered_cells: Dictionary = {}
 var discovered_dirty := Rect2i()
 var discovered_added := 0
 var map_art_revision := 0
+## The same for the full map (main.map_raster takes them): a box round the
+## cells discovered, one round the tiles and buildings whose art changed, and
+## how many map_art_revision bumps came with a box (_bump_map_art). The map
+## redraws all it has after a bump without one.
+var map_fog_dirty := Rect2i()
+var map_art_dirty := Rect2i()
+var map_art_boxed := 0
+
+func _bump_map_art(cells: Array, reach := 0) -> void:
+    map_art_revision += 1
+    map_art_boxed += 1
+    for cell in cells:
+        var box := Rect2i(cell, Vector2i.ONE).grow(reach)
+        map_art_dirty = box if map_art_dirty.size == Vector2i.ZERO else map_art_dirty.merge(box)
+
 var dropped_item_manager: Node2D
 
 func dropped_items() -> Node2D:
@@ -5499,7 +5514,7 @@ func _refresh_exact_pickup_cell(cell: Vector2i) -> void:
 
 func _refresh_exact_pickup_cells(cells: Array) -> void:
     # Pickups mutate one tile. Never scan the whole resident world for them.
-    map_art_revision += 1
+    _bump_map_art(cells)
     for path in ["GroundLayer/ExactBaseTileStream", "DecorLayer/ExactUpperTileStream"]:
         var stream := get_node_or_null(path)
         if stream == null: continue
@@ -5692,7 +5707,8 @@ func _bridge_surface_at(cell: Vector2i) -> bool:
     return _in_bounds(cell) and terrain_kind_at(cell) == 0
 
 func place_structure(build_name: String, cell: Vector2i, restoring: bool = false, restored_state: Dictionary = {}, committed_online: bool = false) -> bool:
-    map_art_revision += 1
+    # The map draws a building with the tiles within 4 of it.
+    _bump_map_art([cell], 4)
     if not restoring:
         cell = _snap_build_cell(build_name, cell)
     # Persisted exterior pieces are authoritative. Reconstructed terrain,
@@ -6526,7 +6542,7 @@ func house_interior_cells_behind(cell: Vector2i) -> Array[Vector2i]:
     return result
 
 func _remove_structure(cell: Vector2i, refund: bool) -> void:
-    map_art_revision += 1
+    _bump_map_art([cell], 4)
     if not built_structures.has(cell):
         return
     # As in the Java game, a piece cut out of the outside of a house takes its
@@ -11127,10 +11143,10 @@ func _tide_tile_is_frontier(tile: SourceTile, lowering: bool) -> bool:
     return false
 
 func _refresh_exact_tile_streams() -> void:
-    map_art_revision += 1
     var changed_cells: Array = []
     for key in SourceTile.resident_changed_cells:
         if exact_world.tiles.has(key): changed_cells.append(Vector2i(key / TILE))
+    _bump_map_art(changed_cells)
     var base_stream := get_node_or_null(
         "GroundLayer/ExactBaseTileStream")
     var upper_stream := get_node_or_null(
@@ -11684,6 +11700,7 @@ func _discover_around(cell: Vector2i, radius: int) -> void:
         discovered_added += added
         var fresh := Rect2i(low, high - low + Vector2i.ONE)
         discovered_dirty = fresh if discovered_dirty.size == Vector2i.ZERO else discovered_dirty.merge(fresh)
+        map_fog_dirty = fresh if map_fog_dirty.size == Vector2i.ZERO else map_fog_dirty.merge(fresh)
 
 func map_color_for_cell(cell: Vector2i) -> Color:
     if not _in_bounds(cell):

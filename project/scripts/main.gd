@@ -1045,12 +1045,8 @@ var item_menu_active := false
 var item_pocket_context := ""
 var bag_action_ui: Control
 var safari_ui: Control
-var map_build_serial := 0
-var map_art_cache_key := []
-## The cache key of map_art_cache without the discovered ground (fog).
-var map_art_cache_art_key := []
-var map_art_cache: Texture2D
-var map_building := false
+## The full map's picture, kept up to date while playing (source_map_raster.gd).
+var map_raster = preload("res://scripts/source_map_raster.gd").new(self)
 var planting_bag_target: Variant = null
 var field_item_busy := false
 var sleeping_bag_heal_accumulator := 0.0
@@ -1083,9 +1079,6 @@ const MAP_VIEWPORT_CENTER := Vector2(160.0, 78.0)
 const MAP_VIEWPORT_SIZE := Vector2(320.0, 156.0)
 var map_zoom := DEFAULT_MAP_ZOOM
 var map_pan := Vector2.ZERO
-var map_art_cache_context := ""
-var map_cache_warming := false
-var map_cache_check_time := 0.0
 var map_view_node: TextureRect
 var map_marker_node: TextureRect
 var map_sleeping_bag_node: TextureRect
@@ -3165,10 +3158,8 @@ func _process(delta: float) -> void:
     status_hud.update_fps(delta)
     _apply_battery_saver()
     _hide_world_under_battle()
-    map_cache_check_time -= delta
-    if started and world.generated and not generating and not map_cache_warming and not map_building and map_cache_check_time <= 0.0:
-        map_cache_check_time = 0.5
-        _warm_map_cache()
+    if started and world.generated and not generating:
+        map_raster.update(game_menu_map_screen.visible)
 
     _poll_android_back_bridge()
     # On touch, menus have their own controls: the bumpers only page the wheels.
@@ -10301,10 +10292,8 @@ func _show_map_menu() -> void:
     game_menu_map.visible = true
     map_zoom = DEFAULT_MAP_ZOOM
     map_pan = Vector2.ZERO
-    var requested_map_serial := map_build_serial + 1
-    await _draw_world_map()
-    if map_build_serial == requested_map_serial and is_instance_valid(map_view_node) and game_menu_map_screen.visible:
-        waypoint_ui.setup_map()
+    _draw_world_map()
+    if is_instance_valid(map_view_node): waypoint_ui.setup_map()
 
 func _open_teleport_map(destinations: Array) -> void:
     if destinations.is_empty():
@@ -10324,9 +10313,8 @@ func _open_teleport_map(destinations: Array) -> void:
     touch_controls.set_game_active(true)
     map_zoom = DEFAULT_MAP_ZOOM
     map_pan = Vector2.ZERO
-    var requested_map_serial := map_build_serial + 1
-    await _draw_world_map()
-    if map_build_serial == requested_map_serial and game_menu_map_screen.visible: _refresh_teleport_map_selection()
+    _draw_world_map()
+    _refresh_teleport_map_selection()
 
 func _cycle_teleport_destination(direction: int) -> void:
     if teleport_destinations.is_empty():
@@ -10364,35 +10352,19 @@ func _refresh_teleport_map_selection() -> void:
 
 func _draw_world_map() -> void:
     _clear_map_canvas()
-    var bounds := Rect2i(
-        Vector2i.ZERO,
-        Vector2i(int(world.get("map_w")), int(world.get("map_h")))
-    )
-    if world.has_method("get_map_bounds"):
-        bounds = world.call("get_map_bounds")
+    var bounds: Rect2i = world.get_map_bounds()
     if bounds.size.x <= 0 or bounds.size.y <= 0:
         return
-    map_building = true
-    var serial := map_build_serial
-    var loading := _source_ui_label(game_menu_map,"MapLoading",Vector2(8,60),Vector2(304,20),9,"DRAWING MAP...")
-    loading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    # The fog is not redrawn while exploring (_warm_map_cache): a map whose
-    # ground was explored since is drawn now.
-    var raster: Texture2D = map_art_cache if map_art_cache_context == preload("res://scripts/source_map_raster.gd").context_key(self, bounds) \
-        and map_art_cache_key == preload("res://scripts/source_map_raster.gd").cache_key(self, bounds) else null
-    if raster == null:
-        raster = await preload("res://scripts/source_map_raster.gd").build(self, bounds, serial)
-    if serial != map_build_serial or raster == null: return
-    loading.queue_free()
-    map_building = false
     var image_size := bounds.size * SOURCE_MAP_TILE_PIXELS
-    var map_texture: Texture2D = raster
-    var map_view := TextureRect.new()
+    # Interiors are one small image; the overworld's picture is kept (map_raster).
+    var interior: Image = world.interior_map_image(bounds)
+    var map_view: TextureRect = map_raster.make_view() if interior == null else TextureRect.new()
+    if interior != null:
+        map_view.texture = ImageTexture.create_from_image(interior)
+        map_view.stretch_mode = TextureRect.STRETCH_SCALE
     map_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    map_view.texture = map_texture
     map_view.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
     map_view.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-    map_view.stretch_mode = TextureRect.STRETCH_SCALE
     map_view.size = Vector2(image_size)
     map_view_node = map_view
     game_menu_map.add_child(map_view)
@@ -10533,8 +10505,6 @@ func _clamp_map_pan() -> void:
     map_pan.y = clampf(map_pan.y, -limit.y, limit.y)
 
 func _clear_map_canvas() -> void:
-    map_build_serial += 1
-    map_building = false
     teleport_name_label = null
     for child in game_menu_map.get_children():
         child.queue_free()
@@ -13155,8 +13125,7 @@ func _travel_adjacent_world(direction: Vector2i) -> void:
     generating = false
 
 func _invalidate_travel_maps() -> void:
-    map_art_cache = null
-    map_art_cache_key = []
+    map_raster.forget()
     m257_minimap_raster_key.clear()
     m3924_minimap_source_cache.clear()
     m3924_minimap_cache_world_id = 0
@@ -13260,19 +13229,9 @@ func _warm_map_cache() -> void:
         waypoint_ui = preload("res://scripts/map_waypoints.gd").new()
         add_child(waypoint_ui)
         waypoint_ui.configure(self)
-    var bounds: Rect2i = world.get_map_bounds()
-    if bounds.size.x <= 0 or bounds.size.y <= 0: return
-    if map_art_cache_key == preload("res://scripts/source_map_raster.gd").cache_key(self, bounds): return
-    # Exploring changes only the fog. Redrawing the whole map (a ~25 MB image
-    # and texture) for it every half second while walking new ground cost
-    # far more than drawing it once when the map screen opens.
-    if map_art_cache != null and not (is_instance_valid(game_menu_map_screen) and game_menu_map_screen.visible) and \
-            map_art_cache_art_key == preload("res://scripts/source_map_raster.gd").cache_key(self, bounds, false): return
-    map_cache_warming = true
-    var texture: Texture2D = await preload("res://scripts/source_map_raster.gd").build(self, bounds, -1)
-    map_cache_warming = false
-    if texture != null and is_instance_valid(map_view_node) and game_menu_map_screen.visible and map_view_node.size == Vector2(bounds.size * SOURCE_MAP_TILE_PIXELS):
-        map_view_node.texture = texture
+    # The map's picture of the ground discovered so far, under the loading screen.
+    if map_raster.refresh():
+        while map_raster.draw_dirty(12000): await get_tree().process_frame
 
 
 var swipe_rows: Array[Control] = []

@@ -92,20 +92,7 @@ func _update_palm_canvas() -> void:
     var key := [exact_world.get_instance_id(), first, last, world.map_art_revision]
     if key != palm_cache_key:
         palm_cache_key = key
-        palm_cache.clear()
-        for y in range(first.y, last.y + 1):
-            for x in range(first.x, last.x + 1):
-                var cell := Vector2i(x, y)
-                var tile := exact_world.tile_at(cell)
-                if tile == null or (tile.name_upper != "tree6" and tile.name != "tree5"):
-                    continue
-                var spec := SourceWorldData.render_spec(tile, true)
-                if spec.is_empty(): continue
-                var texture := spec.get("texture") as Texture2D
-                var source: Rect2 = spec.get("region", Rect2(0, 0, 16, 32))
-                var offset: Vector2 = spec.get("offset", Vector2.ZERO)
-                var anchor := Vector2(cell * 16) + offset + Vector2(0, source.size.y - 8)
-                palm_cache.append([texture, source, anchor])
+        palm_cache = _palms_in(first, last)
     # Palm trees do not move and their ripple has three shapes in its 48-tick
     # cycle. They are drawn on their own canvas, which is redrawn only when
     # the shape, the view or the map changes: a few times a second, where
@@ -116,6 +103,24 @@ func _update_palm_canvas() -> void:
     if state != palm_state:
         palm_state = state
         palm_canvas.queue_redraw()
+
+## The palms of cells first..last, row by row: [texture, region, anchor].
+func _palms_in(first: Vector2i, last: Vector2i) -> Array:
+    var palms := []
+    for y in range(first.y, last.y + 1):
+        for x in range(first.x, last.x + 1):
+            var cell := Vector2i(x, y)
+            var tile := exact_world.tile_at(cell)
+            if tile == null or (tile.name_upper != "tree6" and tile.name != "tree5"):
+                continue
+            var spec := SourceWorldData.render_spec(tile, true)
+            if spec.is_empty(): continue
+            var texture := spec.get("texture") as Texture2D
+            var source: Rect2 = spec.get("region", Rect2(0, 0, 16, 32))
+            var offset: Vector2 = spec.get("offset", Vector2.ZERO)
+            var anchor := Vector2(cell * 16) + offset + Vector2(0, source.size.y - 8)
+            palms.append([texture, source, anchor])
+    return palms
 
 func _draw_palm_canvas() -> void:
     canvas = palm_canvas
