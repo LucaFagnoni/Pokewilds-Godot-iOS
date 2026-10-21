@@ -5,7 +5,10 @@ extends Control
 const WHITE_FONT := preload("res://assets/source_text_font_white.fnt")
 const JOHTO_FONT := preload("res://assets/source_text_font.fnt")
 const SIZE_NAMES := ["S", "M", "L", "XL", "XXL"]
-const SAVE_ROW_HEIGHT := 32.0
+## A save's row is the game's menu frame (8 px of border all round): tall enough
+## for its name and details inside the frame, three to a screen.
+const SAVE_ROW_HEIGHT := 40.0
+const VISIBLE_SAVES := 3
 const Icons = preload("res://scripts/touch_icons.gd")
 
 var main: Node
@@ -87,23 +90,23 @@ func configure(owner_main: Node, owner_ui: Node) -> void:
 
     load_list = Control.new()
     load_list.position = Vector2(6, 30)
-    load_list.size = Vector2(308, 144)
+    load_list.size = Vector2(308, VISIBLE_SAVES * SAVE_ROW_HEIGHT - 3)
     load_list.clip_contents = true
     load_list.mouse_filter = Control.MOUSE_FILTER_IGNORE
     add_child(load_list)
-    for i in 5:
+    for i in VISIBLE_SAVES:
         var row := Panel.new()
         row.size = Vector2(308, SAVE_ROW_HEIGHT - 3)
         row.position = Vector2(0, i * SAVE_ROW_HEIGHT)
         row.mouse_filter = Control.MOUSE_FILTER_IGNORE
         row.add_theme_stylebox_override("panel", main._classic_dialogue_style())
         load_list.add_child(row)
-        main._source_ui_label(row, "Name", Vector2(12, 4), Vector2(200, 12), 10, "")
-        main._source_ui_label(row, "Info", Vector2(12, 17), Vector2(268, 9), 7, "")
+        main._source_ui_label(row, "Name", Vector2(14, 8), Vector2(260, 12), 10, "")
+        main._source_ui_label(row, "Info", Vector2(14, 21), Vector2(262, 9), 7, "")
         var bin := TextureRect.new()
         bin.name = "Trash"
         bin.texture = Icons.icon("TRASH")
-        bin.position = Vector2(286, 8)
+        bin.position = Vector2(284, roundf((SAVE_ROW_HEIGHT - 3.0 - 12.0) / 2.0))
         bin.size = Vector2(12, 12)
         bin.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
         bin.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -192,7 +195,7 @@ func refresh() -> void:
 
 func _refresh_saves() -> void:
     load_empty.visible = saves.is_empty()
-    load_scroll = clampi(load_scroll, 0, maxi(0, saves.size() - 4))
+    load_scroll = clampi(load_scroll, 0, maxi(0, saves.size() - VISIBLE_SAVES))
     for i in load_rows.size():
         var row := load_rows[i]
         var index := load_scroll + i
