@@ -7,6 +7,18 @@ SDKs and export-template binaries are external dependencies, not bundled here.
 2. Import project/project.godot. Allow asset imports to finish, then press F5.
 The .godot cache is intentionally absent and is regenerated locally.
 
+NATIVE WORLD GENERATION
+The released IPA, APK and server run an engine built from Godot 4.7.2's source
+with .github/engine/custom.py, which also compiles the game's engine module
+engine_modules/pokewilds: world generation in C++, the same worlds as the
+GDScript generator in a fraction of the time and memory. The official editor
+and templates do not have it, and the game then uses the GDScript generator
+(project/scripts/native_world_gen.gd chooses). To build an engine with it, run
+SCons in the Godot source with profile=<this package>/.github/engine/custom.py
+(on Windows also d3d12=no). POKEWILDS_NATIVE_WORLDGEN=0 forces GDScript.
+.github/engine/native_worldgen_test.gd, and worldgen_check.gd with
+POKEWILDS_NATIVE_WORLDGEN=1, check it against the GDScript.
+
 ANDROID
 1. Install JDK 17, Android SDK and matching Godot Android export templates.
 The included Gradle config specifies compile SDK 36, Build Tools 36.1.0,
