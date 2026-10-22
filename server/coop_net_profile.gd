@@ -69,6 +69,7 @@ class EndOfFrame extends Node:
 var _frame_started := 0
 var _process_started := 0
 var _reported := false
+var _after_report := false
 ## From one frame's start to the next, sleep included: a frame over the frame
 ## rate's budget shows here too, with what runs after the deferred calls.
 var _last_start := 0
@@ -83,7 +84,7 @@ func _frame_ended() -> void:
 			if part[1] > 0 and part[2] >= part[1]:
 				sections[part[0]] = part[2] - part[1]
 				sections["_top"] = sections.get("_top", 0) + part[2] - part[1]
-	if _last_start > 0 and _frame_started > 0 and phase_started > 0 and not _reported: _intervals.append((_frame_started - _last_start) / 1000.0)
+	if _last_start > 0 and _frame_started > 0 and phase_started > 0 and not _reported and not _after_report: _intervals.append((_frame_started - _last_start) / 1000.0)
 	_last_start = _frame_started
 	_frame_started = 0
 	# The frame that printed the last phase's report is not the game's.
@@ -95,6 +96,8 @@ func _frame_ended() -> void:
 		if ms > 16.0: _spike(ms)
 		var sections: Dictionary = Engine.get_meta("probe_frame", {})
 		for name in sections: _sections[name] = _sections.get(name, 0) + sections[name]
+	# The frame after a report starts late by the report's printing.
+	_after_report = _reported
 	_reported = false
 	if Engine.has_meta("probe_frame"): Engine.get_meta("probe_frame").clear()
 
