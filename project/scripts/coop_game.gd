@@ -618,8 +618,14 @@ func _with_profile_edits(packet:Dictionary)->Dictionary:
 
 func _id()->String:return preload("res://scripts/coop_random.gd").hex(16)
 
+## Wakes those waiting in _rpc: once a frame, and as soon as an answer is in
+## (at the end of the frame that read it). Waiting for the next frame instead
+## added a frame to every request, ~33 ms at 30 FPS, two in a catch.
+signal _answered
+
 func _rpc(packet:Dictionary)->Dictionary:
     var id=String(packet.id)
+    if not get_tree().process_frame.is_connected(_answered.emit):get_tree().process_frame.connect(_answered.emit)
     var deadline=Time.get_ticks_msec()+15000
     var error:Error=session.send_host(packet)
     if error!=OK:return {"ok":false,"reason":"connection_busy"}
@@ -631,7 +637,7 @@ func _rpc(packet:Dictionary)->Dictionary:
             # Reuse the transaction ID: a delayed response must never spend,
             # withdraw or grant the same thing twice.
             session.send_host(packet);retry_at=Time.get_ticks_msec()+3000
-        await get_tree().process_frame
+        await _answered
     return {"ok":false,"reason":"disconnected"}
 
 func _checkpoint_request(peer:int,actor:String,packet:Dictionary)->void:
@@ -1417,6 +1423,7 @@ func _message(_peer:int,actor:String,packet:Dictionary)->void:
     if packet.get("kind") in ["command_result","profile_result"] and packet.get("id") is String and packet.get("result") is Dictionary:
         if packet.kind=="profile_result":_checkpoint_done(packet.id,packet.result)
         _replies[packet.id]=packet.result
+        _answered.emit.call_deferred()
         return
     if packet.get("kind")=="player_notice":
         if packet.get("name") is String and packet.get("event") is String and main.started:show_notice(packet.name,packet.event)
