@@ -93,8 +93,11 @@ func _message(peer:int,actor:String,packet:Dictionary)->void:
         var remote_actor=packet.get("actor")
         if remote_actor is String and remote_actor!=session.actor:_show(remote_actor,packet)
 
+## Packets as read (coop_remote_player.gd unpack) are new each time and never
+## changed after, though one shares the parts that did not change with the
+## one before: they are kept and passed on without deep copies.
 func _relay(sender_peer:int,actor:String,packet:Dictionary)->void:
-    var outgoing=packet.duplicate(true)
+    var outgoing=packet.duplicate()
     outgoing["actor"]=actor
     _last_received[actor]=Time.get_ticks_msec()
     last_packets[actor]=outgoing
@@ -109,7 +112,7 @@ func _relay(sender_peer:int,actor:String,packet:Dictionary)->void:
     if actor!=session.actor and not Server.active:_show(actor,outgoing)
 
 func _show(actor:String,packet:Dictionary)->void:
-    last_packets[actor]=packet.duplicate(true)
+    last_packets[actor]=packet
     _last_received[actor]=Time.get_ticks_msec()
     if packet.area!=area or packet.get("layer","")!=_layer():
         if actors.has(actor):
@@ -123,8 +126,7 @@ func _show(actor:String,packet:Dictionary)->void:
         main.world.add_child(remote);remote.configure(main)
         actors[actor]=remote
     _last_received[actor]=Time.get_ticks_msec()
-    last_packets[actor]=packet.duplicate(true)
-    var visual:Dictionary=packet.visual.duplicate(true)
+    var visual:Dictionary=packet.visual.duplicate()
     visual["battle"]=bool(packet.get("battle",false));visual["afk"]=bool(packet.get("afk",false))
     if packet.has("t"):visual["sent"]=packet.t
     actors[actor].receive(visual)

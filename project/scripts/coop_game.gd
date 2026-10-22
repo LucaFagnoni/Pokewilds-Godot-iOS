@@ -722,6 +722,10 @@ func _visible_bytes(commit:Dictionary,actor:String,areas:Array,personal:bool,del
         if edits is Array and change.get("after") is Array:
             change["entries"]=_entry_ids(change.after);change.erase("after");change["edits"]=edits
     visible.erase("player_edits");visible.erase("list_edits")
+    # Kept by the host to check what comes next (the hashes of the request,
+    # each record's fingerprint before); read by no player.
+    visible.erase("command_hash");visible.erase("request_hash")
+    for change in visible.get("changes",[]):change.erase("before")
     # Read only with a change to the player's own record (_apply_visible).
     if personal:visible["profile_base"]=state.print_of("player/"+actor,{})
     var bytes:=JSON.stringify({"kind":"shared_commit","result":visible}).to_utf8_buffer()

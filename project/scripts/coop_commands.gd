@@ -50,6 +50,8 @@ func _message(peer:int,actor:String,payload:Dictionary)->void:
     # player's whole record on the wire twice.
     var answer:Dictionary=visible_result(result,actor)
     answer.erase("changes");answer.erase("player_edits");answer.erase("list_edits")
+    # Kept by the host to know a retried request; read by no player.
+    answer.erase("command_hash");answer.erase("request_hash")
     var packet={"kind":"command_result","id":payload.get("id",""),"result":answer}
     if session.send_to(peer,packet)==ERR_BUSY and _pending.size()<MAX_PENDING:
         _pending.append({"peer":peer,"packet":packet})

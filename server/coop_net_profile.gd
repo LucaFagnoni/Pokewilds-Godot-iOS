@@ -28,6 +28,10 @@ var _seen: Dictionary = {}
 var _steps: Array = []
 var _last_frame := 0
 var _frame_ms: Array = []
+## What the shared commits a player is sent change: key (up to the record's
+## group) -> [changes, bytes as JSON].
+var _commits: Dictionary = {}
+var _listening := false
 
 func _initialize() -> void:
 	for arg in OS.get_cmdline_user_args():
@@ -56,7 +60,7 @@ func _process(_delta: float) -> bool:
 			phase = next
 			phase_started = now
 			frames = 0; process_ms = 0.0; max_frame_ms = 0.0
-			_steps.clear(); _seen.clear(); _frame_ms.clear()
+			_steps.clear(); _seen.clear(); _frame_ms.clear(); _commits.clear()
 			Transport.stats = {}
 	if main != null and is_instance_valid(main) and main.started and not "--server" in OS.get_cmdline_args():
 		_play(now)
@@ -108,6 +112,15 @@ func _average(wait: float) -> float:
 	return total / maxi(1, n)
 
 func _play(now: int) -> void:
+	if not _listening:
+		_listening = true
+		main.coop_game.session.message.connect(func(_peer, _actor, packet):
+			if packet.get("kind") != "shared_commit" or not packet.get("result") is Dictionary: return
+			for change in packet.result.get("changes", []):
+				var parts := String(change.get("key", "")).split("/")
+				var group := "/".join(parts.slice(0, 3 if parts[0] == "world" else 1))
+				var entry: Array = _commits.get_or_add(group, [0, 0])
+				entry[0] += 1; entry[1] += JSON.stringify(change).length())
 	var walking := phase.begins_with("walk")
 	if walking and (("split" in phase and index % 2 == 1) or "away" in phase) and not travelled:
 		travelled = true
@@ -148,6 +161,8 @@ func _report() -> void:
 		if key in ["proc:transport", "proc:players", "proc:remote"]: net_us += e[2]
 		lines.append("PROFILE %s %s %-28s %8.1f/s %10.0f B/s %8.3f ms/s" % [_role(), phase, key, e[0] / seconds, e[1] / seconds, e[2] / 1000.0 / seconds])
 	for line in lines: print(line)
+	for group in _commits:
+		print("PROFILE %s %s commits %-28s %8.1f/s %10.0f B/s" % [_role(), phase, group, _commits[group][0] / seconds, _commits[group][1] / seconds])
 	var frames_n := maxi(1, frames)
 	var smooth := ""
 	if not _steps.is_empty():

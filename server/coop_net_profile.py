@@ -9,7 +9,7 @@ kind by the server and by every player:
   walkNsplit N players walking, the odd ones in the area east of it
   walkNaway  N players walking, all in the area east (the server's own area empty)
 
-    python server/coop_net_profile.py GODOT [--clients N] [--seconds S] [--breakdown] [--project DIR] [--keep]
+    python server/coop_net_profile.py GODOT [--clients N] [--seconds S] [--breakdown] [--project DIR] [--world-from DIR] [--keep]
 
 --breakdown then prints the server's frame cost by script (each script's nodes
 stopped for a moment while the players keep walking).
@@ -64,6 +64,8 @@ def measure(name, length=seconds):
 
 try:
     set_phase("setup")
+    # The same world for runs to compare: a copy of a server folder kept from an earlier run.
+    if "--world-from" in sys.argv: shutil.copytree(sys.argv[sys.argv.index("--world-from") + 1], os.path.join(work, "server"))
     config = os.path.join(work, "server.cfg")
     open(config, "w").write(f"[server]\nmax_players={clients}\n")
     server = start("server", ["--server", "--port", str(port), "--world", "Profile", "--size", "S", "--data", os.path.join(work, "server"),

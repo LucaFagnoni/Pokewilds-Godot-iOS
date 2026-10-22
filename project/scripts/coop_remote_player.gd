@@ -28,6 +28,8 @@ var _pose_cache:Dictionary={}
 var _night=preload("res://scripts/coop_night_visuals.gd").new()
 ## What render_at last drew: [first, second, weight, local z, local y].
 var _drawn:Array=[null,null,-1.0,0,0.0]
+## The look each part's texture was last set for (_draw_frames).
+var _looks:Dictionary={}
 
 func configure(main:Node)->void:
     _main=main
@@ -71,7 +73,7 @@ func receive(snapshot:Dictionary,received_ms:int=-1)->void:
     if not _frames.is_empty() and _number(snapshot.get("sent")) and _number(_frames[-1].data.get("sent")) \
             and float(snapshot.sent)-float(_frames[-1].data.sent)>HOLD_GAP_MS and now-int(_frames[-1].time)>SEND_INTERVAL_MS:
         _frames.append({"time":now-SEND_INTERVAL_MS,"data":_frames[-1].data})
-    _frames.append({"time":now,"data":snapshot.duplicate(true)})
+    _frames.append({"time":now,"data":snapshot}) # the caller's own copy (coop_players.gd _show)
     while _frames.size()>8:_frames.pop_front()
 
 func _process(_delta:float)->void:
@@ -109,7 +111,11 @@ func _draw_frames(first:Dictionary,second:Dictionary,weight:float)->void:
         var part:Dictionary=data.parts.get(key,{})
         sprite.visible=not part.is_empty()
         if not sprite.visible:continue
-        if key=="player":
+        # Which picture a part shows changes far less often than where it is:
+        # it is looked up (recoloured, cropped) only when it does.
+        var look:Array=[model,color,data.get("running"),data.get("pose"),data.get("pose_frame"),data.get(key+"_species"),data.get(key+"_form"),data.get(key+"_shiny")]
+        if _looks.get(key)==look:pass
+        elif key=="player":
             var running=bool(data.get("running",false))
             var base:Texture2D=_main.lazy_texture((_main.PLAYER_MODEL_RUN_TEXTURES if running else _main.PLAYER_MODEL_WALK_TEXTURES)[model])
             var pose=String(data.get("pose","walk"))
@@ -137,6 +143,7 @@ func _draw_frames(first:Dictionary,second:Dictionary,weight:float)->void:
             var sparkles:=sprite.get_node_or_null("ShinySparkles")
             if shiny and sparkles==null:preload("res://scripts/shiny_sparkles.gd").attach(sprite,{"species":species,"shiny":true})
             elif not shiny and sparkles!=null:sparkles.name="ShinySparklesGone";sparkles.queue_free()
+        _looks[key]=look
         if sprite.texture==null:sprite.hide();continue
         sprite.hframes=clampi(int(part.get("hframes",1)),1,sprite.texture.get_width())
         sprite.vframes=clampi(int(part.get("vframes",1)),1,sprite.texture.get_height())
