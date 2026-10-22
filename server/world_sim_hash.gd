@@ -1,6 +1,7 @@
 # A deterministic run of the overworld: a fixed seed, a fixed frame time and a
-# seeded RNG, then a scripted minute of play (walking, DIG, building, CUT, a
-# low tide coming in and going out, a new day). Prints one hash of what the
+# seeded RNG, then a scripted minute of play (walking, DIG, building, CUT,
+# each field move on and off, a low tide coming in and going out, a new day).
+# Prints one hash of what the
 # game would save plus the live tile store, and one hash per part, so a
 # refactor of the world can be checked for "no change in behaviour": run it
 # before and after, the hashes must match.
@@ -10,8 +11,9 @@
 # Work the game spreads over frames by wall time (loading, nightfall's cacti,
 # the day's dig sites) runs with the world paused and the RNG is reseeded
 # after it, so two runs on any machine give the same hash. Reference hashes
-# (81ba4bd3): seed 12345 11d22e98708ecb5877c3ef3790a8626177eeb09d2e60bed586f759087022bde2,
-#             seed 987654321 2d0a4685a701676dcf41fc6ee40d22df33c837342674ab795e5c6c501f95ab91
+# (unchanged by the world cleanup from 81ba4bd3 on, which this harness checked):
+#   seed 12345 5f7d1e2bbcae53290b5121f9025a49c3d5dc7b138ad8161a8c17b1273b797d6c,
+#   seed 987654321 6fd602e3400971b788b612b91e1b7687162fb3cb606b55a9ec2a6ee5081ff795
 extends SceneTree
 
 const Paths = preload("res://scripts/game_data_paths.gd")
@@ -186,6 +188,18 @@ func _initialize() -> void:
     await _frames(30)
     await _walk("move_down", 60)
     _note("cut")
+    # Each field move in turn: on, a few steps each way, off.
+    var used := []
+    for move in ["RIDE", "SURF", "FLY", "CUT", "SMASH", "HEADBUTT", "BUILD", "DIG"]:
+        var helper := {"species": "pidgeot" if move == "FLY" else "machop", "level": 30, "hp": 60}
+        used.append([move, world.call("set_active_field_move", helper, move)])
+        await _walk("move_right", 40)
+        await _walk("move_up", 40)
+        await _walk("move_left", 40)
+        world.call("clear_active_field_move", false)
+        await _frames(150)
+    parts["field_moves"] = _digest(used)
+    _note("field_moves")
     if not shots.is_empty():
         var helper: Dictionary = main.caught_pokemon[0] if not main.caught_pokemon.is_empty() else main._make_starter_machop()
         world.call("set_active_field_move", helper, "BUILD")
