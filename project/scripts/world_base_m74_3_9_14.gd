@@ -45,7 +45,6 @@ const WorldParity = preload("res://scripts/world_parity.gd")
 const SourceWorldGenerator = preload("res://scripts/source_world_generator.gd")
 const SourceWorldCache = preload("res://scripts/source_world_cache.gd")
 const SourceWorldData = preload("res://scripts/source_world_data.gd")
-const SourceInteriorGenerator = preload("res://scripts/source_interior_generator.gd")
 const SourceRouteData = preload("res://scripts/source_route_data.gd")
 const SourceExactWorldAdapter = preload("res://scripts/source_exact_world_adapter.gd")
 const SOURCE_CHUNK_TILE_LAYER_SCRIPT = preload("res://scripts/source_resident_tile_layer.gd")
@@ -57,7 +56,6 @@ const WorldEnvironmentSystem = preload(
     "res://scripts/world_environment_system.gd"
 )
 
-const FARM_SECONDS := 60.0 # legacy saves only; new farms use world-day harvest tracking
 const SOURCE_DAY_TICKS := 18000.0
 const SOURCE_NIGHT_TICKS := 5000.0
 const WORLD_DAY_SECONDS := (SOURCE_DAY_TICKS + SOURCE_NIGHT_TICKS) / 60.0
@@ -68,13 +66,11 @@ const LOW_TIDE_START_1 := 5000.0 / 23000.0
 const LOW_TIDE_END_1 := 13000.0 / 23000.0
 const LOW_TIDE_START_2 := 18000.0 / 23000.0
 const TIDE_MESSAGE_COOLDOWN_SECONDS := 600.0
-const FARM_RADIUS := 2
 const WILD_INITIAL_EGG_SECONDS := 30.0
 const MATE_BOND_RADIUS := 6
 
-# The live generator must use the original 0.8.11 GenIsland1 radius and tile
-# algorithms.  The smaller bounded generator remains below only as a diagnostic
-# fallback for old QA fixtures; it must never be selected for a normal game.
+# One entry per world size: the size index is clamped to them. The world's
+# real extent comes from the GenIsland1 generator (exact_world_bounds).
 const MAP_SIZE_PRESETS := [
     Vector2i(80, 60),
     Vector2i(96, 72),
@@ -86,79 +82,38 @@ const MAP_SIZE_PRESETS := [
 var map_w: int = 64
 var map_h: int = 48
 var map_size_index: int = 1
-var exact_world_mode := true
 var exact_world: SourceExactWorldAdapter
 var exact_world_bounds := Rect2i()
 
 const GRASS := preload("res://assets/grass_runtime.png")
 const SAND := preload("res://assets/sand_runtime.png")
 const WATER := preload("res://assets/water_runtime.png")
-const TREE_1 := preload("res://assets/tree1_runtime.png")
-const TREE_2 := preload("res://assets/tree2_runtime.png")
-const TREE_LARGE := preload("res://assets/tree_large_runtime.png")
-const BUSH := preload("res://assets/bush_runtime.png")
-const ROCK_1 := preload("res://assets/rock1_runtime.png")
-const ROCK_3 := preload("res://assets/rock3_runtime.png")
 const FLOWER_1 := preload("res://assets/flower1_runtime.png")
-const FLOWER_3 := preload("res://assets/flower3_runtime.png")
-const TALL_GRASS := preload("res://assets/tall_grass.png")
-const TALL_GRASS_FRONT := preload("res://assets/tall_grass_front.png")
-const BIOME_SAVANNA := preload("res://assets/biome_savanna.png")
-const BIOME_MOUNTAIN := preload("res://assets/biome_mountain.png")
-const BIOME_DESERT := preload("res://assets/biome_desert.png")
-const BIOME_SNOW := preload("res://assets/biome_snow.png")
-const BIOME_WOODED_LAKE := preload("res://assets/biome_wooded_lake.png")
-const BIOME_TREE_SAVANNA := preload("res://assets/biome_tree_savanna.png")
-const BIOME_CACTUS := preload("res://assets/biome_cactus.png")
-const BIOME_TREE_SNOW := preload("res://assets/biome_tree_snow.png")
 const POKEMON_EGG := preload("res://assets/pokemon_egg.png")
 const SOURCE_STORAGE_BOX := preload(
     "res://assets/source_0_8_11/tiles/chest1.png"
 )
-const ECOLOGY_EMOTES := preload("res://assets/ecology/emotes.png")
 const TRAPINCH_BURROW := preload("res://assets/ecology/trapinch_ow1.png")
 const DESERT_WHIRLPOOL := preload("res://assets/ecology/whirlpool_desert2.png")
 const DESERT_BURROW_SAND := preload("res://assets/ecology/grass_over_sheet3.png")
 const LANDMARK_BALL := preload("res://assets/landmark_pokeball.png")
-const LANDMARK_SIGN := preload("res://assets/landmark_sign.png")
-const LANDMARK_CAMP := preload("res://assets/landmark_campfire.png")
-const SOURCE_PATH_1 := preload("res://assets/world_source/path1.png")
-const SOURCE_PATH_2 := preload("res://assets/world_source/path2.png")
 const SOURCE_SIGN := preload("res://assets/world_source/sign1.png")
 const SOURCE_CAVE_DOOR := preload("res://assets/world_source/cave_door.png")
 const SOURCE_HOUSE := preload("res://assets/world_source/house6_all.png")
 const SOURCE_HOUSE_ROOF := preload("res://assets/world_source/house6_roof_all.png")
 const SOURCE_HOUSE_DOOR := preload("res://assets/world_source/house6_door1.png")
-const SOURCE_FLOOR := preload("res://assets/world_source/floor1.png")
-const SOURCE_HOUSE5_FLOOR := preload("res://assets/source_0_8_11/tiles/buildings/house5_floor1.png")
 const SOURCE_SAVANNA_TREE := preload("res://assets/source_0_8_11/tiles/tree_savanna1.png")
 const SOURCE_HOUSE5_RUG := preload("res://assets/source_0_8_11/tiles/buildings/house5_floor_rug1.png")
 const SOURCE_HOUSE5_WALL := preload("res://assets/source_0_8_11/tiles/buildings/house5_wall1.png")
-const SOURCE_HOUSE5_WALL_LEFT := preload("res://assets/source_0_8_11/tiles/buildings/house5_left1.png")
 const SOURCE_HOUSE5_WALL_MIDDLE := preload("res://assets/source_0_8_11/tiles/buildings/house5_middle1.png")
-const SOURCE_HOUSE5_WALL_RIGHT := preload("res://assets/source_0_8_11/tiles/buildings/house5_right1.png")
-const SOURCE_HOUSE5_SIDE_W := preload("res://assets/source_0_8_11/tiles/buildings/house5_W.png")
-const SOURCE_HOUSE5_SIDE_E := preload("res://assets/source_0_8_11/tiles/buildings/house5_E.png")
-const SOURCE_HOUSE5_STAIRS := preload("res://assets/source_0_8_11/tiles/buildings/stairs_down2.png")
 const SOURCE_HOUSE5_DOOR := preload("res://assets/source_0_8_11/tiles/buildings/house5_door1.png")
-const SOURCE_NORMAL_ENCOUNTER_GRASS := preload("res://assets/source_0_8_11/tiles/grass1.png")
 const SOURCE_HOUSE8_WALL_SHEET := preload("res://assets/source_0_8_11/tiles/buildings/house8_all.png")
 const SOURCE_HOUSE8_ROOF := preload("res://assets/source_0_8_11/tiles/buildings/house8_roof_middle1.png")
 const SOURCE_HOUSE8_DOOR := preload("res://assets/source_0_8_11/tiles/buildings/house8_door1.png")
 const SOURCE_HOUSE12_WALL_SHEET := preload("res://assets/source_0_8_11/tiles/buildings/house12_all.png")
 const SOURCE_HOUSE12_ROOF := preload("res://assets/source_0_8_11/tiles/buildings/house12_roof_middle1.png")
 const SOURCE_HOUSE12_DOOR := preload("res://assets/source_0_8_11/tiles/buildings/house12_door1.png")
-const SOURCE_WALL_1 := preload("res://assets/world_source/wall1.png")
-const SOURCE_WALL_2 := preload("res://assets/world_source/wall2.png")
-const SOURCE_WALL_3 := preload("res://assets/world_source/wall3.png")
-const SOURCE_STAIRS_DOWN := preload("res://assets/world_source/stairs_down1.png")
-const SOURCE_CAVE_FLOOR := preload("res://assets/world_source/cave1_floor1.png")
-const SOURCE_CAVE_STONE := preload("res://assets/world_source/cave1_stone1.png")
-const SOURCE_CAVE_RAMP := preload("res://assets/world_source/cave1_ramp1.png")
-const SOURCE_BED := preload("res://assets/world_source/house_bed1.png")
 const SOURCE_TABLE := preload("res://assets/world_source/house_table1_default.png")
-const SOURCE_PLANT := preload("res://assets/world_source/house_plant1.png")
-const SOURCE_NPC_SHEET := preload("res://assets/events/npcs-sheet.png")
 const SOURCE_MYSTERY_NPC := preload("res://assets/events/npc1.png")
 const SOURCE_PUDDLE_SPLASH := preload("res://assets/source_ui/puddle3.png")
 const SOURCE_TIDAL_WATER := preload("res://assets/source_0_8_11/tiles/water2.png")
@@ -172,9 +127,6 @@ const FARM_POKEMON_TEXTURES := {
     "machop": preload("res://assets/pokemon_machop.png")
 }
 
-var terrain_noise := FastNoiseLite.new()
-var detail_noise := FastNoiseLite.new()
-var biome_noise := FastNoiseLite.new()
 var rng := RandomNumberGenerator.new()
 
 var terrain: Array = []
@@ -221,15 +173,11 @@ var respawn_cell := Vector2i(-2147483648, -2147483648)
 var respawn_house: Dictionary = {}
 var field_previous_collision_mask := 1
 var structure_textures: Dictionary = {}
-var horizontal_sprite_center_cache: Dictionary = {}
 var grass_exclusion: Dictionary = {}
 var flower_cells: Dictionary = {}
 var animated_flowers: Array[Sprite2D] = []
 var flower_anim_time := 0.0
 var spawn_cell := Vector2i(map_w / 2, map_h / 2)
-var starting_biome := "FOREST"
-var biome_order: Array[String] = []
-var biome_regions: Array = []
 var biome_centers: Dictionary = {}
 var route_cells: Dictionary = {}
 var source_landmarks: Dictionary = {}
@@ -364,9 +312,6 @@ var source_event_collisions: Dictionary = {}
 var ghost_step_countdown := -1
 var last_event_day := 0
 
-const WORLD_BIOMES: Array[String] = [
-    "FOREST", "SAVANNA", "MOUNTAIN", "DESERT", "SNOW", "WOODED_LAKE"
-]
 
 # Source GenIsland1 keeps several authored habitat names that the surrounding
 # Godot systems historically collapsed into the six compatibility biomes.
@@ -497,15 +442,14 @@ func generate_world(
     PokemonData.load_in_background()
     var previous_gameplay_enabled := gameplay_enabled
     gameplay_enabled = false
-    if exact_world_mode:
-        var normalized_seed: int = absi(seed_value)
-        if normalized_seed == 0: normalized_seed = 81102
-        var accepted := await _prepare_exact_world(normalized_seed, clampi(size_index,0,MAP_SIZE_PRESETS.size()-1), prefer_saved_cache)
-        if accepted.is_empty() or accepted.has("generation_error"):
-            generation_error = String(accepted.get("generation_error", "World generation failed. Please try again."))
-            gameplay_enabled = previous_gameplay_enabled
-            return
-        _accepted_exact_result = accepted
+    var normalized_seed: int = absi(seed_value)
+    if normalized_seed == 0: normalized_seed = 81102
+    var accepted := await _prepare_exact_world(normalized_seed, clampi(size_index,0,MAP_SIZE_PRESETS.size()-1), prefer_saved_cache)
+    if accepted.is_empty() or accepted.has("generation_error"):
+        generation_error = String(accepted.get("generation_error", "World generation failed. Please try again."))
+        gameplay_enabled = previous_gameplay_enabled
+        return
+    _accepted_exact_result = accepted
     generated = false
     gameplay_enabled = false
 
@@ -516,22 +460,14 @@ func generate_world(
     spawn_cell = Vector2i(map_w / 2, map_h / 2)
 
     if player.has_method("set_streamed_overworld_depth"):
-        player.call("set_streamed_overworld_depth", exact_world_mode)
+        player.call("set_streamed_overworld_depth", true)
 
     world_seed = abs(seed_value)
     if world_seed == 0:
         world_seed = 81102
 
     await _clear_generated_world()
-    # FastNoiseLite belongs only to the old bounded compatibility generator.
-    # The exact Java path does not use noise frequency, octaves, or a radial
-    # falloff, so do not let those settings affect a normal new world.
-    if not exact_world_mode:
-        _configure_noise()
-    generation_progress.emit(
-        0.90 if exact_world_mode else 0.03,
-        "Preparing world..." if exact_world_mode else "Creating %dx%d world..." % [map_w, map_h]
-    )
+    generation_progress.emit(0.90, "Preparing world...")
     await get_tree().process_frame
 
     terrain.clear()
@@ -713,114 +649,10 @@ func generate_world(
     collision_body.name = "WorldCollision"
     add_child(collision_body)
 
-    if exact_world_mode:
-        await _generate_exact_live_world(
-            world_seed, map_size_index, ground_layer, decor_layer,
-            collision_body, prefer_saved_cache
-        )
-        return
-
-    # M44 routes all world output through the Java-port plan. The migration is
-    # intentionally isolated here so unrelated UI/battle/control code remains
-    # unchanged while individual generator stages gain parity fixtures.
-    generation_progress.emit(0.08, "Running world generator...")
-    await get_tree().process_frame
-    var source_plan: Dictionary = SourceWorldGenerator.generate(
-        map_w, map_h, world_seed, map_size_index
+    await _generate_exact_live_world(
+        world_seed, map_size_index, ground_layer, decor_layer,
+        collision_body, prefer_saved_cache
     )
-    terrain = source_plan.get("terrain", [])
-    biomes = source_plan.get("biomes", [])
-    source_tiles = source_plan.get("source_tiles", {})
-    habitat_routes = source_plan.get("habitat_routes", {})
-    route_cells = source_plan.get("route_cells", {})
-    biome_centers = source_plan.get("biome_centers", {})
-    source_landmarks = source_plan.get("landmarks", {})
-    generated_source_interior_plans = SourceInteriorGenerator.from_source_layers(
-        source_plan.get("source_interiors", []),
-        source_plan.get("source_interior_pokemon", [])
-    )
-    generation_progress.emit(0.52, "Source terrain and habitats formed...")
-    await get_tree().process_frame
-
-    _find_safe_spawn()
-    _reserve_source_world_cells()
-    _discover_around(spawn_cell, DISCOVERY_RADIUS)
-
-    # Render only after paths and landmark approaches have been carved.
-    for y in range(map_h):
-        for x in range(map_w):
-            var kind: int = terrain[y][x]
-            _add_ground_tile(ground_layer, x, y, kind, String(biomes[y][x]))
-            if kind == 0:
-                var water_cell := Vector2i(x, y)
-                blocked[water_cell] = true
-                ground_collisions[water_cell] = _add_block_collision(
-                    collision_body, x, y
-                )
-            else:
-                var source_cell := Vector2i(x, y)
-                var source_tile: Dictionary = source_tiles.get(source_cell, {})
-                if bool(source_tile.get("solid", false)):
-                    blocked[source_cell] = true
-                    grass_exclusion[source_cell] = true
-                    ground_collisions[source_cell] = _add_block_collision(
-                        collision_body, x, y
-                    )
-        if y % 8 == 0:
-            generation_progress.emit(
-                0.42 + 0.14 * (float(y) / float(map_h)),
-                "Rendering source world..."
-            )
-            await get_tree().process_frame
-
-    _render_routes(route_layer)
-
-    generation_progress.emit(0.60, "Growing forests and tall grass...")
-    await get_tree().process_frame
-
-    for y in range(2, map_h - 2):
-        for x in range(2, map_w - 2):
-            var cell := Vector2i(x, y)
-            if terrain[y][x] == 0:
-                continue
-            if route_cells.has(cell) or grass_exclusion.has(cell):
-                continue
-            if Vector2(x - spawn_cell.x, y - spawn_cell.y).length() < 6.0:
-                continue
-
-            _decorate_source_cell(decor_layer, collision_body, cell)
-
-        if y % 8 == 0:
-            generation_progress.emit(
-                0.60 + 0.15 * (float(y) / float(map_h)),
-                "Growing trees..."
-            )
-            await get_tree().process_frame
-
-    _generate_tall_grass_patches(grass_layer, grass_front_layer)
-    generation_progress.emit(0.84, "Planting tall grass...")
-    await get_tree().process_frame
-
-    _place_source_landmarks(landmark_layer, collision_body)
-    _place_landmarks(landmark_layer, collision_body)
-    await _build_source_interiors(collision_body)
-    generation_progress.emit(0.90, "Placing landmarks...")
-    await get_tree().process_frame
-
-    _spawn_wild_pokemon()
-    # Eggs enter the world through nearby compatible parents, as in Java.
-    generation_progress.emit(0.96, "Populating biome habitats...")
-    await get_tree().process_frame
-
-    player.position = _cell_center(spawn_cell)
-    player.visible = true
-    _configure_camera()
-    last_player_cell = _player_cell()
-
-    generated = true
-    gameplay_enabled = true
-    generation_progress.emit(1.0, "World ready!")
-    generation_finished.emit()
 
 func _prepare_exact_world(seed_value: int, size_index: int, prefer_saved_cache: bool) -> Dictionary:
     var exact_result: Dictionary = {}
@@ -1071,76 +903,6 @@ func _register_exact_exterior_interactables() -> void:
     if exact_world != null:
         exact_world.set_meta("unown_generated_signs", unown_generated_signs)
 
-func _spawn_location_npcs() -> void:
-    if not exact_world_mode or exact_world == null:
-        return
-    var layer := get_node_or_null("LandmarkLayer") as Node2D
-    var collision_body := get_node_or_null("WorldCollision") as CollisionBody
-    if layer == null or collision_body == null:
-        return
-    var wanted := ["FOREST", "SAVANNA", "MOUNTAIN", "DESERT", "SNOW", "WOODED_LAKE"]
-    var candidates: Dictionary = {}
-    for raw_tile in source_tiles.values():
-        var tile := raw_tile as SourceTile
-        if tile == null or tile.is_solid or tile.is_water or not tile.name_upper.is_empty():
-            continue
-        var cell := SourceWorldData.pixel_to_cell(tile.position)
-        var biome := _source_biome_for_tile(tile)
-        if biome == "DEEP_FOREST":
-            biome = "FOREST"
-        elif biome == "OASIS" or biome == "VOLCANO":
-            biome = "DESERT"
-        if biome not in wanted or candidates.has(biome):
-            continue
-        if Vector2(cell - spawn_cell).length_squared() < 900.0:
-            continue
-        if interior_interactables.has(cell) or exact_world.pokemon.has(tile.position):
-            continue
-        candidates[biome] = tile
-        if candidates.size() == wanted.size():
-            break
-    for index in range(wanted.size()):
-        var biome := String(wanted[index])
-        var tile := candidates.get(biome) as SourceTile
-        if tile == null:
-            continue
-        var cell := SourceWorldData.pixel_to_cell(tile.position)
-        var trainer_id := "trainer_%s" % biome.to_lower()
-        var route_level := 5 if tile.route_belongs_to == null else tile.route_belongs_to.level
-        var context := SourceEventData.trainer_spec(biome, route_level, trainer_id)
-        var atlas := AtlasTexture.new()
-        atlas.atlas = SOURCE_NPC_SHEET
-        atlas.region = Rect2((index % 6) * 16, 0, 16, 16)
-        var sprite := Sprite2D.new()
-        sprite.texture = atlas
-        sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-        sprite.position = _cell_center(cell)
-        sprite.z_as_relative = false
-        sprite.z_index = _depth_z(cell, 18)
-        layer.add_child(sprite)
-        var collision := _add_landmark_collision(collision_body, cell.x, cell.y)
-        blocked[cell] = true
-        interior_interactables[cell] = "TRAINER:%s" % trainer_id
-        event_npcs[trainer_id] = {
-            "cell": cell, "sprite": sprite, "collision": collision,
-            "context": context
-        }
-
-func _find_entry_layer_for_source_cell(
-        source_cell: Vector2i, minimum_layer: int, maximum_layer: int
-    ) -> int:
-    var fallback := -1
-    for plan in generated_source_interior_plans:
-        var layer_index := int(plan.get("layer_index", -1))
-        if layer_index < minimum_layer or layer_index > maximum_layer:
-            continue
-        if fallback < 0 and not (plan.get("entries", []) as Array).is_empty():
-            fallback = layer_index
-        var source_to_local := plan.get("source_to_local", {}) as Dictionary
-        if source_to_local.has(source_cell):
-            return layer_index
-    return fallback
-
 func _spawn_exact_source_pokemon(records: Array[Dictionary], spread: bool = false) -> void:
     var spawn_deadline := Time.get_ticks_usec() + 13000
     for record in records:
@@ -1276,557 +1038,6 @@ func _spawn_exact_burrowed_pokemon(records: Array[Dictionary]) -> void:
             "trapinch", int(record.get("level", 22)), cell,
             home_biome, 0, record
         )
-
-func _spawn_exact_wild_eggs() -> void:
-    # Kept for old fixture callers. Java does not seed unrelated random eggs;
-    # eggs are laid by compatible nearby Pokemon during normal ecology upkeep.
-    pass
-
-func _configure_noise() -> void:
-    terrain_noise.seed = world_seed
-    terrain_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-    # Slight scale adjustment keeps large worlds from feeling like stretched
-    # copies of small ones while retaining the same overall PokeWilds style.
-    var size_scale := lerpf(1.10, 0.82, float(map_size_index) / 4.0)
-    terrain_noise.frequency = 0.052 * size_scale
-    terrain_noise.fractal_octaves = 4
-    terrain_noise.fractal_gain = 0.50
-
-    detail_noise.seed = world_seed + 197
-    detail_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
-    detail_noise.frequency = 0.12 * size_scale
-    detail_noise.fractal_octaves = 2
-
-    biome_noise.seed = world_seed + 4099
-    biome_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-    biome_noise.frequency = 0.035 * size_scale
-    biome_noise.fractal_octaves = 2
-
-    rng.seed = world_seed
-    biome_order = WORLD_BIOMES.duplicate()
-    for index in range(biome_order.size() - 1, 0, -1):
-        var swap_index := rng.randi_range(0, index)
-        var held := biome_order[index]
-        biome_order[index] = biome_order[swap_index]
-        biome_order[swap_index] = held
-    biome_regions = WorldParity.build_biome_regions(
-        map_w, map_h, biome_order, rng
-    )
-
-func _terrain_kind(x: int, y: int) -> int:
-    return WorldParity.terrain_kind(
-        x, y, map_w, map_h, terrain_noise, detail_noise
-    )
-
-func _biome_kind(x: int, y: int, terrain_kind: int) -> String:
-    return WorldParity.biome_kind(
-        x, y, terrain_kind, map_w, map_h, biome_regions,
-        biome_noise, detail_noise
-    )
-
-func _add_ground_tile(
-        parent: Node2D,
-        x: int,
-        y: int,
-        kind: int,
-        biome: String
-    ) -> void:
-    var sprite := Sprite2D.new()
-    sprite.position = _cell_center(Vector2i(x, y))
-    sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-
-    var source_tile: Dictionary = source_tiles.get(Vector2i(x, y), {})
-    var source_texture := SourceWorldData.texture_for(
-        String(source_tile.get("base", ""))
-    )
-    if source_texture != null:
-        sprite.texture = source_texture
-        sprite.centered = false
-        sprite.position = Vector2(x * TILE, y * TILE)
-        if source_texture.get_width() > TILE or source_texture.get_height() > TILE:
-            sprite.region_enabled = true
-            sprite.region_rect = Rect2(0, 0, TILE, TILE)
-        parent.add_child(sprite)
-        ground_sprites[Vector2i(x, y)] = sprite
-        return
-
-    match kind:
-        0:
-            sprite.texture = WATER
-            sprite.region_enabled = true
-            sprite.region_rect = Rect2(0, 0, TILE, TILE)
-            water_sprites.append(sprite)
-        1:
-            sprite.texture = SAND
-        _:
-            sprite.texture = _ground_texture_for_biome(biome)
-
-    parent.add_child(sprite)
-    ground_sprites[Vector2i(x, y)] = sprite
-
-func _decorate_source_cell(
-        parent: Node2D,
-        collision_body: CollisionBody,
-        cell: Vector2i
-    ) -> void:
-    var source_tile: Dictionary = source_tiles.get(cell, {})
-    var upper_name := String(source_tile.get("upper", ""))
-    if upper_name.is_empty():
-        return
-    var texture := SourceWorldData.texture_for(upper_name)
-    if texture == null:
-        return
-    # A stool is walked over like any floor tile; A while facing it sits.
-    var solid := "stool" not in upper_name and bool(source_tile.get("solid", SourceWorldData.is_upper_solid(upper_name)))
-    var resource_kind := ""
-    if "tree" in upper_name:
-        resource_kind = "tree"
-    elif "rock" in upper_name:
-        resource_kind = "rock"
-    elif "cactus" in upper_name:
-        resource_kind = "cactus"
-    elif "bush" in upper_name:
-        resource_kind = "bush"
-    _add_object(
-        parent,
-        collision_body,
-        cell.x,
-        cell.y,
-        texture,
-        solid,
-        texture.get_height() > TILE,
-        "flower" in upper_name,
-        resource_kind
-    )
-    if not resource_kind.is_empty() and resource_objects.has(cell):
-        var resource_data: Dictionary = resource_objects[cell]
-        resource_data["source_name"] = upper_name.to_lower().trim_suffix(".png")
-        resource_objects[cell] = resource_data
-
-func _ground_texture_for_biome(biome: String) -> Texture2D:
-    match biome:
-        "SAVANNA":
-            return BIOME_SAVANNA
-        "MOUNTAIN":
-            return BIOME_MOUNTAIN
-        "DESERT":
-            return BIOME_DESERT
-        "SNOW":
-            return BIOME_SNOW
-        "WOODED_LAKE":
-            return BIOME_WOODED_LAKE
-        _:
-            return GRASS
-
-func _decorate_biome_cell(
-        parent: Node2D,
-        collision_body: CollisionBody,
-        cell: Vector2i
-    ) -> void:
-    var biome := biome_at(cell)
-    var d := detail_noise.get_noise_2d(float(cell.x), float(cell.y))
-    var roll := rng.randf()
-
-    match biome:
-        "FOREST":
-            if d > 0.38 and roll < 0.18 and _tree_has_safe_ground(cell):
-                _add_large_tree(parent, collision_body, cell)
-            elif d > 0.14 and roll < 0.28:
-                _add_bush(parent, collision_body, cell)
-            elif d < -0.52 and roll < 0.15:
-                _add_rock(parent, collision_body, cell)
-            elif roll < 0.035:
-                _add_flower_if_clear(parent, collision_body, cell)
-        "DEEP_FOREST":
-            if d > 0.10 and roll < 0.30 and _tree_has_safe_ground(cell):
-                _add_large_tree(parent, collision_body, cell)
-            elif roll < 0.38:
-                _add_bush(parent, collision_body, cell)
-            elif roll < 0.405:
-                _add_flower_if_clear(parent, collision_body, cell)
-        "SAVANNA":
-            if d > 0.22 and roll < 0.055 and _tree_has_safe_ground(cell):
-                _add_savanna_tree(parent, collision_body, cell)
-            elif roll < 0.095:
-                _add_bush(parent, collision_body, cell)
-            elif roll < 0.125:
-                _add_flower_if_clear(parent, collision_body, cell)
-        "MOUNTAIN":
-            if roll < 0.15:
-                _add_rock(parent, collision_body, cell)
-        "DESERT":
-            if roll < 0.075:
-                _add_object(
-                    parent, collision_body, cell.x, cell.y,
-                    BIOME_CACTUS, true, false, false, "bush"
-                )
-            elif roll < 0.145:
-                _add_rock(parent, collision_body, cell)
-        "SNOW":
-            if d > 0.20 and roll < 0.065:
-                _add_object(
-                    parent, collision_body, cell.x, cell.y,
-                    BIOME_TREE_SNOW, true, true, false, "tree"
-                )
-                # Compatibility tundra trees represent source tree4. Treat
-                # them as large-yield trees, but tree4 remains directly CUTtable as in
-                # the requested tundra behavior; it still gives the 2-7 LOG yield.
-                if resource_objects.has(cell):
-                    var snow_tree: Dictionary = resource_objects[cell]
-                    snow_tree["large"] = true
-                    snow_tree["source_name"] = "tree4"
-                    resource_objects[cell] = snow_tree
-            elif roll < 0.13:
-                _add_rock(parent, collision_body, cell)
-        "WOODED_LAKE":
-            if d > 0.30 and roll < 0.16 and _tree_has_safe_ground(cell):
-                _add_large_tree(parent, collision_body, cell)
-            elif roll < 0.27:
-                _add_bush(parent, collision_body, cell)
-            elif roll < 0.31:
-                _add_flower_if_clear(parent, collision_body, cell)
-
-func _add_rock(
-        parent: Node2D,
-        collision_body: CollisionBody,
-        cell: Vector2i
-    ) -> void:
-    _add_object(
-        parent, collision_body, cell.x, cell.y,
-        ROCK_1 if rng.randf() < 0.6 else ROCK_3,
-        true, false, false, "rock"
-    )
-
-func _add_flower_if_clear(
-        parent: Node2D,
-        collision_body: CollisionBody,
-        cell: Vector2i
-    ) -> void:
-    for yy in range(cell.y - 1, cell.y + 2):
-        for xx in range(cell.x - 1, cell.x + 2):
-            if flower_cells.has(Vector2i(xx, yy)):
-                return
-    _add_object(
-        parent, collision_body, cell.x, cell.y,
-        FLOWER_1 if rng.randf() < 0.6 else FLOWER_3,
-        false, false, true, "flower"
-    )
-    flower_cells[cell] = true
-
-func _add_savanna_tree(
-        parent: Node2D,
-        collision_body: CollisionBody,
-        cell: Vector2i
-    ) -> void:
-    if blocked.has(cell):
-        return
-    var sprite := Sprite2D.new()
-    sprite.texture = BIOME_TREE_SAVANNA
-    sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-    sprite.centered = false
-    sprite.position = Vector2(cell.x * TILE - TILE, (cell.y + 1) * TILE - 48)
-    sprite.z_as_relative = false
-    sprite.z_index = _depth_z(cell)
-    parent.add_child(sprite)
-    blocked[cell] = true
-    grass_exclusion[cell] = true
-    var collision := _add_block_collision(collision_body, cell.x, cell.y)
-    resource_objects[cell] = {
-        "type": "tree", "sprite": sprite, "collision": collision, "large": true
-    }
-
-func _add_bush(
-        parent: Node2D,
-        collision_body: CollisionBody,
-        cell: Vector2i
-    ) -> void:
-    if blocked.has(cell):
-        return
-
-    var sprite := Sprite2D.new()
-    sprite.texture = BUSH
-    sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-    sprite.centered = false
-    sprite.position = Vector2(cell.x * TILE, cell.y * TILE)
-    sprite.z_as_relative = false
-    sprite.z_index = _depth_z(cell)
-    parent.add_child(sprite)
-
-    blocked[cell] = true
-    grass_exclusion[cell] = true
-    var bush_collision := _add_block_collision(collision_body, cell.x, cell.y)
-    resource_objects[cell] = {
-        "type": "bush",
-        "sprite": sprite,
-        "collision": bush_collision
-    }
-
-func _add_object(
-        parent: Node2D,
-        collision_body: CollisionBody,
-        x: int,
-        y: int,
-        texture: Texture2D,
-        solid: bool,
-        tall: bool,
-        force_front: bool = false,
-        resource_kind: String = ""
-    ) -> void:
-    var sprite := Sprite2D.new()
-    sprite.texture = texture
-    sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-    sprite.centered = false
-
-    var size := texture.get_size()
-    if size.x > TILE:
-        sprite.region_enabled = true
-        sprite.region_rect = Rect2(0, 0, TILE, min(size.y, TILE * 2))
-        size = Vector2(TILE, min(size.y, TILE * 2))
-
-    # Bottom-align every sprite to its occupied tile.
-    sprite.position = Vector2(
-        x * TILE + (TILE - size.x) * 0.5,
-        (y + 1) * TILE - size.y
-    )
-
-    # Absolute visual order. Flowers are always above both tall-grass layers.
-    sprite.z_as_relative = false
-    sprite.z_index = _depth_z(Vector2i(x, y), 1 if force_front else 0)
-
-    parent.add_child(sprite)
-
-    if force_front:
-        animated_flowers.append(sprite)
-
-    var object_cell := Vector2i(x, y)
-    var object_collision: CollisionBox = null
-    if solid:
-        grass_exclusion[object_cell] = true
-        if blocked.has(object_cell):
-            object_collision = ground_collisions.get(object_cell) as CollisionBox
-        else:
-            blocked[object_cell] = true
-            object_collision = _add_block_collision(collision_body, x, y)
-
-    if not resource_kind.is_empty():
-        resource_objects[object_cell] = {
-            "type": resource_kind,
-            "sprite": sprite,
-            "collision": object_collision
-        }
-
-func _add_tall_grass(
-        parent: Node2D,
-        front_parent: Node2D,
-        cell: Vector2i
-    ) -> void:
-    # Classic Pokemon depth: the full grass tile is below the player, while
-    # only the bottom blade tips render above the player's feet.
-    var sprite := Sprite2D.new()
-    sprite.texture = TALL_GRASS
-    sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-    sprite.centered = false
-    sprite.position = Vector2(cell.x * TILE, cell.y * TILE)
-    sprite.z_as_relative = false
-    sprite.z_index = _depth_z(cell, -2)
-    parent.add_child(sprite)
-
-    var front := Sprite2D.new()
-    front.texture = TALL_GRASS_FRONT
-    front.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-    front.centered = false
-    front.position = Vector2(cell.x * TILE, cell.y * TILE)
-    front.z_as_relative = false
-    front.z_index = _depth_z(cell, 2)
-    front_parent.add_child(front)
-
-    tall_grass[cell] = {"back": sprite, "front": front}
-
-func _generate_tall_grass_patches(parent: Node2D, front_parent: Node2D) -> void:
-    # Dense contiguous fields with no strip gaps.
-    var patch_count := maxi(12, int(float(map_w * map_h) / 170.0))
-
-    for _i in range(patch_count):
-        var center := Vector2i(
-            rng.randi_range(5, map_w - 6),
-            rng.randi_range(5, map_h - 6)
-        )
-        var half_w := rng.randi_range(3, 6)
-        var half_h := rng.randi_range(2, 5)
-
-        for y in range(center.y - half_h, center.y + half_h + 1):
-            for x in range(center.x - half_w, center.x + half_w + 1):
-                var cell := Vector2i(x, y)
-
-                if x < 3 or y < 3 or x >= map_w - 3 or y >= map_h - 3:
-                    continue
-                if terrain[y][x] != 2:
-                    continue
-
-                # Keep object collision cells on plain normal grass. Because the grass
-                # overlay itself is transparent, surrounding cells blend naturally.
-                if grass_exclusion.has(cell):
-                    continue
-
-                if Vector2(x - spawn_cell.x, y - spawn_cell.y).length() < 5.0:
-                    continue
-
-                _add_tall_grass(parent, front_parent, cell)
-
-func _tree_has_safe_ground(cell: Vector2i) -> bool:
-    # A 16x32 tree visually occupies two vertical tiles. Require its visible
-    # footprint and immediate side neighbors to be land, never water/shore.
-    var checks := [
-        cell,
-        cell + Vector2i(0, -1),
-        cell + Vector2i(-1, 0),
-        cell + Vector2i(1, 0),
-        cell + Vector2i(-1, -1),
-        cell + Vector2i(1, -1)
-    ]
-    for c in checks:
-        if c.x < 0 or c.y < 0 or c.x >= map_w or c.y >= map_h:
-            return false
-        if terrain[c.y][c.x] != 2:
-            return false
-    return true
-
-func _add_large_tree(
-        parent: Node2D,
-        collision_body: CollisionBody,
-        cell: Vector2i
-    ) -> void:
-    if blocked.has(cell):
-        return
-
-    # Broad rounded canopy tree matching the first reference.
-    var sprite := Sprite2D.new()
-    sprite.texture = TREE_LARGE
-    sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-    sprite.centered = false
-
-    sprite.position = Vector2(
-        cell.x * TILE - 8,
-        (cell.y + 1) * TILE - 32
-    )
-    sprite.z_as_relative = false
-    sprite.z_index = _depth_z(cell)
-    parent.add_child(sprite)
-
-    # Keep the existing one-tile trunk collision.
-    blocked[cell] = true
-    grass_exclusion[cell] = true
-    var tree_collision := _add_block_collision(collision_body, cell.x, cell.y)
-    resource_objects[cell] = {
-        "type": "tree",
-        "sprite": sprite,
-        "collision": tree_collision,
-        "large": true
-    }
-
-func _place_landmarks(parent: Node2D, collision_body: CollisionBody) -> void:
-    var candidates := [
-        {"offset": Vector2i(8, -5), "type": "sign", "texture": LANDMARK_SIGN},
-        {"offset": Vector2i(-10, 6), "type": "campfire", "texture": LANDMARK_CAMP},
-        {"offset": Vector2i(13, 7), "type": "item", "texture": LANDMARK_BALL}
-    ]
-
-    for entry in candidates:
-        var cell: Vector2i = spawn_cell + entry["offset"]
-        cell.x = clamp(cell.x, 3, map_w - 4)
-        cell.y = clamp(cell.y, 3, map_h - 4)
-
-        # Search nearby until a walkable tile is found.
-        if blocked.has(cell):
-            for radius in range(1, 6):
-                var found := false
-                for yy in range(cell.y - radius, cell.y + radius + 1):
-                    for xx in range(cell.x - radius, cell.x + radius + 1):
-                        var test := Vector2i(xx, yy)
-                        if _is_walkable(test):
-                            cell = test
-                            found = true
-                            break
-                    if found:
-                        break
-                if found:
-                    break
-
-        var sprite := Sprite2D.new()
-        sprite.texture = entry["texture"]
-        sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-        sprite.centered = false
-
-        var landmark_size := sprite.texture.get_size()
-        # Ground the sign exactly on the tile bottom; no floating offset.
-        sprite.position = Vector2(
-            cell.x * TILE + (TILE - landmark_size.x) * 0.5,
-            (cell.y + 1) * TILE - landmark_size.y
-        )
-
-        # Sort from the grounded tile, matching the player's foot depth.
-        sprite.z_as_relative = false
-        sprite.z_index = _depth_z(cell)
-        parent.add_child(sprite)
-
-        # Classic Pokemon-style collision:
-        # signs, campfires and overworld item balls occupy one solid tile.
-        blocked[cell] = true
-        var landmark_collision := _add_landmark_collision(
-            collision_body, cell.x, cell.y
-        )
-
-        landmarks[cell] = {
-            "type": entry["type"],
-            "sprite": sprite,
-            "collision": landmark_collision,
-            "used": false
-        }
-
-func _reserve_source_world_cells() -> void:
-    for raw_cell in route_cells.keys():
-        grass_exclusion[raw_cell] = true
-    for landmark_name in ["desert_ruins", "fossil_lab", "pokemon_mansion", "regi_dungeon"]:
-        if not source_landmarks.has(landmark_name):
-            continue
-        var descriptor: Dictionary = source_landmarks[landmark_name]
-        var anchor: Vector2i = descriptor.get("anchor", Vector2i.ZERO)
-        var size: Vector2i = descriptor.get("size", Vector2i.ONE)
-        for yy in range(anchor.y, anchor.y + size.y):
-            for xx in range(anchor.x, anchor.x + size.x):
-                grass_exclusion[Vector2i(xx, yy)] = true
-        var entry: Vector2i = descriptor.get("entry", anchor)
-        grass_exclusion[entry] = true
-        grass_exclusion[entry + Vector2i.DOWN] = true
-    for raw_cave in source_landmarks.get("mountain_caves", []):
-        var cave: Dictionary = raw_cave
-        var cave_anchor: Vector2i = cave.get("anchor", Vector2i.ZERO)
-        var cave_size: Vector2i = cave.get("size", Vector2i(3, 3))
-        for yy in range(cave_anchor.y, cave_anchor.y + cave_size.y):
-            for xx in range(cave_anchor.x, cave_anchor.x + cave_size.x):
-                grass_exclusion[Vector2i(xx, yy)] = true
-    if source_landmarks.has("house_anchor"):
-        var anchor: Vector2i = source_landmarks["house_anchor"]
-        for yy in range(anchor.y, anchor.y + 2):
-            for xx in range(anchor.x, anchor.x + 2):
-                grass_exclusion[Vector2i(xx, yy)] = true
-    for key in ["house_door", "cave_door", "route_sign"]:
-        if source_landmarks.has(key):
-            var cell: Vector2i = source_landmarks[key]
-            grass_exclusion[cell] = true
-            grass_exclusion[cell + Vector2i.DOWN] = true
-
-func _render_routes(parent: Node2D) -> void:
-    for raw_cell in route_cells.keys():
-        var cell: Vector2i = raw_cell
-        if not _in_bounds(cell):
-            continue
-        var sprite := Sprite2D.new()
-        sprite.texture = SOURCE_PATH_1 if (cell.x + cell.y) % 3 else SOURCE_PATH_2
-        sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-        sprite.centered = false
-        sprite.position = Vector2(cell.x * TILE, cell.y * TILE)
-        parent.add_child(sprite)
 
 func _place_source_landmarks(
         parent: Node2D,
@@ -1993,7 +1204,6 @@ func _add_source_sprite(
     return sprite
 
 func _refresh_house_structure_depths() -> void:
-    if not exact_world_mode: return
     for cell in built_structures:
         var data: Dictionary = built_structures[cell]
         var kind := String(data.get("name", ""))
@@ -2030,14 +1240,12 @@ func _house_piece_z(kind: String, cell: Vector2i) -> int:
 const HOUSE_STAIRS_Z := -3
 
 func _depth_z(cell: Vector2i, offset: int = 0) -> int:
-    if exact_world_mode:
-        # Source-world cells can be deeply negative. Absolute cell Y placed
-        # followers and roaming Pokemon behind the streamed ground layer.
-        # Keep actors above both tile streams while preserving local north/
-        # south ordering around the player.
-        var relative_y := clampi(cell.y - _player_cell().y, -32, 32)
-        return clampi(100 + relative_y * 2 + offset, 16, 190)
-    return clampi(100 + (cell.y + 1) * TILE + offset, -4096, 4095)
+    # Source-world cells can be deeply negative. Absolute cell Y placed
+    # followers and roaming Pokemon behind the streamed ground layer.
+    # Keep actors above both tile streams while preserving local north/
+    # south ordering around the player.
+    var relative_y := clampi(cell.y - _player_cell().y, -32, 32)
+    return clampi(100 + relative_y * 2 + offset, 16, 190)
 
 func _setup_normal_grass_front_overlay() -> void:
     pass
@@ -2061,7 +1269,7 @@ func _source_tile_key(value: String) -> String:
     return key
 
 func _is_normal_encounter_grass(cell: Vector2i) -> bool:
-    if not exact_world_mode or exact_world == null:
+    if exact_world == null:
         return false
     var tile: SourceTile = exact_world.tile_at(cell)
     if tile == null:
@@ -2089,7 +1297,7 @@ func _setup_savanna_tree_front_overlay() -> void:
     savanna_tree_front_sprite = sprite
 
 func _savanna_tree_anchor_covering(cell: Vector2i) -> Vector2i:
-    if not exact_world_mode or exact_world == null:
+    if exact_world == null:
         return Vector2i(-2147483648, -2147483648)
     # tree_savanna1 is the authored 48x48 source object. Its source anchor draws
     # one tile left and three tiles tall, so test only anchors whose visual
@@ -2311,13 +1519,6 @@ func _find_route_entry(plan: Dictionary, route_name: String) -> Vector2i:
             return cell
     return fallback
 
-func _build_house_interior(parent: Node2D, collision_body: CollisionBody) -> void:
-    # Legacy helper retained for compatibility; built houses are generated
-    # from their connected exterior footprint by _prepare_built_house_interior.
-    var origin := Vector2i(map_w + 8, 4)
-    var size := Vector2i(7, 6)
-    _draw_built_house_interior(parent, collision_body, origin, size, Vector2i(int(size.x / 2), size.y - 1))
-
 func _built_house_floor_tile_key(
         door_cell: Vector2i, floor_index: int, local_cell: Vector2i
     ) -> String:
@@ -2341,12 +1542,6 @@ func _built_house_floor_index_for_cell(cell: Vector2i) -> int:
         if Rect2i(origin, built_house_room_size).has_point(cell):
             return floor_index
     return -1
-
-func _built_house_local_for_cell(cell: Vector2i) -> Vector2i:
-    var floor_index: int = _built_house_floor_index_for_cell(cell)
-    if floor_index < 0:
-        return Vector2i(-2147483648, -2147483648)
-    return cell - _built_house_floor_origin(floor_index)
 
 func _built_house_global_cell(floor_index: int, local_cell: Vector2i) -> Vector2i:
     return _built_house_floor_origin(floor_index) + local_cell
@@ -2847,26 +2042,6 @@ func apply_paint(picture_index: int, cell: Vector2i) -> bool:
     world_message.emit("SMEARGLE painted PICTURE %d." % index)
     return true
 
-
-func _build_cave_interior(parent: Node2D, collision_body: CollisionBody) -> void:
-    var origin := Vector2i(map_w + 8, 20)
-    var size := Vector2i(20, 12)
-    var exit_cell := origin + Vector2i(10, 10)
-    for yy in range(size.y):
-        for xx in range(size.x):
-            var cell := origin + Vector2i(xx, yy)
-            _add_source_sprite(parent, SOURCE_CAVE_FLOOR, cell, -5)
-            var boundary := xx == 0 or yy == 0 or xx == size.x - 1 or yy == size.y - 1
-            if boundary and cell != exit_cell:
-                _add_source_sprite(parent, SOURCE_CAVE_STONE, cell, 16)
-                _add_landmark_collision(collision_body, cell.x, cell.y)
-    _add_source_sprite(parent, SOURCE_CAVE_RAMP, exit_cell, 3)
-    for rock_offset in [Vector2i(4, 3), Vector2i(15, 3), Vector2i(7, 7)]:
-        var rock_cell: Vector2i = origin + rock_offset
-        _add_source_sprite(parent, SOURCE_CAVE_STONE, rock_cell, 16)
-        _add_landmark_collision(collision_body, rock_cell.x, rock_cell.y)
-    interior_interactables[exit_cell] = "EXIT_CAVE"
-    area_return_cells["CAVE_ENTRY"] = origin + Vector2i(10, 9)
 
 var held_emote_refresh_remaining := 0.0
 var window_display_cache: Dictionary = {}
@@ -3565,7 +2740,7 @@ func _field_helper_can_use_work_target(cell: Vector2i) -> bool:
             return _is_built_house_floor_cell(cell) and not blocked.has(cell) and not built_structures.has(cell) and not interior_interactables.has(cell)
         if built_structures.has(cell) or landmarks.has(cell) or resource_objects.has(cell):
             return false
-        if exact_world_mode and exact_world != null:
+        if exact_world != null:
             var dig_tile: SourceTile = exact_world.tile_at(cell)
             if dig_tile == null or dig_tile.is_water:
                 return false
@@ -3745,18 +2920,9 @@ func _feed_ecology_record(data: Dictionary, happiness_gain: int) -> void:
     data["friendship"] = int(data["happiness"])
 
 func _set_water_collision_enabled(enabled: bool) -> void:
-    if exact_world_mode:
-        var stream := get_node_or_null("ExactCollisionStream") as SourceChunkCollisionStreamer
-        if stream != null:
-            stream.set_allow_water(not enabled)
-        return
-    for key in ground_collisions.keys():
-        var cell: Vector2i = key
-        if not _in_bounds(cell) or terrain[cell.y][cell.x] != 0:
-            continue
-        var collision: CollisionBox = ground_collisions.get(cell) as CollisionBox
-        if is_instance_valid(collision):
-            collision.set_deferred("disabled", not enabled)
+    var stream := get_node_or_null("ExactCollisionStream") as SourceChunkCollisionStreamer
+    if stream != null:
+        stream.set_allow_water(not enabled)
 
 func _interact_in_front() -> void:
     var target := _player_cell() + _facing_cell()
@@ -3834,7 +3000,7 @@ func _interact_in_front() -> void:
                 (built_structures[target] as Dictionary).get("name", "")) in \
                 ["GRAVE", "STATUE"]:
             structure_removal_requested.emit(target, "SMASH")
-        elif exact_world_mode and not _exact_resource_kind(target).is_empty():
+        elif not _exact_resource_kind(target).is_empty():
             _harvest_exact_resource(target, "SMASH")
         elif resource_objects.has(target):
             _harvest_resource_with_move(target, "SMASH")
@@ -3871,7 +3037,7 @@ func _interact_in_front() -> void:
         }[active_field_move])
         return
     if active_field_move == "RIDE":
-        if exact_world_mode and exact_world != null:
+        if exact_world != null:
             var ride_tile := exact_world.tile_at(target)
             if ride_tile != null and ride_tile.is_ledge:
                 _ride_jump_over(target)
@@ -3988,7 +3154,7 @@ func _interact_in_front() -> void:
             return
         "SMASH":
             target = _field_move_action_cell(target, "SMASH")
-            if exact_world_mode and not _exact_resource_kind(target).is_empty():
+            if not _exact_resource_kind(target).is_empty():
                 _harvest_exact_resource(target, "SMASH")
                 return
             if resource_objects.has(target):
@@ -4033,7 +3199,7 @@ func _interact_in_front() -> void:
             world_message.emit("SURF lets you cross water. Press B to stop.")
             return
         "RIDE":
-            if exact_world_mode and exact_world != null:
+            if exact_world != null:
                 var ride_tile := exact_world.tile_at(target)
                 if ride_tile != null and ride_tile.is_ledge:
                     _ride_jump_over(target)
@@ -4133,7 +3299,7 @@ func take_friendly_wild(wild_id: int) -> Dictionary:
     return result
 
 func _exact_resource_kind(cell: Vector2i) -> String:
-    if not exact_world_mode or exact_world == null:
+    if exact_world == null:
         return ""
     var tile := exact_world.tile_at(cell)
     if tile == null:
@@ -4152,7 +3318,7 @@ func _exact_resource_kind(cell: Vector2i) -> String:
     return ""
 
 func _exact_savanna_tree_anchor(cell: Vector2i) -> Vector2i:
-    if not exact_world_mode or exact_world == null:
+    if exact_world == null:
         return Vector2i(-2147483648, -2147483648)
     # tree_savanna1 is a 48x48 upper-layer sprite anchored one tile to the
     # right of its visual left edge. Resolve every visible 3x3 footprint cell
@@ -4174,7 +3340,7 @@ func _exact_savanna_tree_anchor(cell: Vector2i) -> Vector2i:
     return Vector2i(-2147483648, -2147483648)
 
 func _exact_resource_anchor(cell: Vector2i) -> Vector2i:
-    if not exact_world_mode or exact_world == null:
+    if exact_world == null:
         return Vector2i(-2147483648, -2147483648)
     var savanna_anchor: Vector2i = _exact_savanna_tree_anchor(cell)
     if savanna_anchor.x > -2147483648:
@@ -4215,7 +3381,7 @@ func _resource_object_anchor(cell: Vector2i) -> Vector2i:
     return Vector2i(-2147483648, -2147483648)
 
 func _exact_berry_name(cell: Vector2i) -> String:
-    if not exact_world_mode or exact_world == null:
+    if exact_world == null:
         return ""
     var tile := exact_world.tile_at(cell)
     if tile == null:
@@ -4264,7 +3430,7 @@ func _clear_agitated_berry_tree(cell: Vector2i, tile: SourceTile) -> void:
 
 
 func _exact_tile_is_large_tree(cell: Vector2i) -> bool:
-    if not exact_world_mode or exact_world == null:
+    if exact_world == null:
         return false
     var tile := exact_world.tile_at(cell)
     if tile == null:
@@ -4308,7 +3474,7 @@ func _repair_orphaned_large_trees() -> void:
             tile.set_names("bush1", "")
 
 func _exact_large_tree1_anchor(cell: Vector2i) -> Vector2i:
-    if not exact_world_mode or exact_world == null:
+    if exact_world == null:
         return Vector2i(-2147483648, -2147483648)
     # GenForest2 stores the visible giant-tree anchor plus three noSprite
     # collision cells at +X, +Y and +X+Y. Resolve any quadrant back to the
@@ -4523,7 +3689,7 @@ func _exact_cut_resource_replacement(tile: SourceTile, cell: Vector2i) -> Dictio
     return {"base":base, "upper":""}
 
 func _contextual_ground_name(cell: Vector2i, biome_hint: String = "") -> String:
-    if not exact_world_mode or exact_world == null:
+    if exact_world == null:
         return ""
     var counts: Dictionary = {}
     for offset in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN,
@@ -4589,7 +3755,7 @@ func _use_dig(cell: Vector2i) -> void:
         return
     # PlayerStanding gives an item tile priority while DIG is selected.  The
     # ball is collected in-place instead of being left above the new ground.
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         var item_tile := exact_world.tile_at(cell)
         if item_tile != null and not item_tile.has_item.is_empty():
             var action := String(interior_interactables.get(cell, ""))
@@ -4615,17 +3781,6 @@ func _dig_surface(cell: Vector2i) -> void:
 
 func _apply_dig_choice(cell: Vector2i, choice: String) -> bool:
     return false
-
-func _teleport_to_any_beacon() -> void:
-    for key in built_structures.keys():
-        var cell: Vector2i = key
-        var data: Dictionary = built_structures[cell]
-        if String(data.get("name", "")) == "BEACON":
-            player.position = _cell_center(cell + Vector2i(0, 1))
-            _sync_follower_to_player()
-            world_message.emit("TELEPORT brought you to a WARP TILE.")
-            return
-    world_message.emit("There are no WARP TILES to TELEPORT to.")
 
 func teleport_destinations() -> Array[Dictionary]:
     return _travel_destinations(false)
@@ -4696,7 +3851,7 @@ func _valid_fly_landing(cell: Vector2i) -> bool:
         return false
     if built_structures.has(cell) or landmarks.has(cell) or resource_objects.has(cell) or deployed_pokemon.has(cell) or wild_eggs.has(cell) or _wild_id_at_cell(cell) >= 0:
         return false
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         var tile := exact_world.tile_at(cell)
         return tile != null and not exact_world.is_solid(cell) and not tile.is_ledge and not tile.is_bottom_mtn_layer
     return true
@@ -4773,7 +3928,7 @@ func _use_headbutt(cell: Vector2i) -> void:
         _harvest_resource_with_move(resource_anchor, "HEADBUTT")
         return
     var headbuttable := false
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         var tile := exact_world.tile_at(exact_headbutt_cell)
         headbuttable = tile != null and tile.is_headbuttable
         if headbuttable and tile.route_belongs_to != null and not tile.route_belongs_to.stored_pokemon.is_empty():
@@ -4794,7 +3949,7 @@ func _use_headbutt(cell: Vector2i) -> void:
 
 func _ride_jump_over(obstacle: Vector2i) -> void:
     var jump_direction := _facing_cell()
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         var obstacle_tile := exact_world.tile_at(obstacle)
         if obstacle_tile != null and obstacle_tile.is_ledge:
             var ledge_key: String = (obstacle_tile.name + " " + obstacle_tile.name_upper).to_lower()
@@ -4868,26 +4023,6 @@ func _is_built_house_floor_cell(cell: Vector2i) -> bool:
         and built_house_interior_cells.has(cell)
         and not interior_interactables.has(cell)
     )
-
-func _build_snap_piece_name(build_name: String) -> String:
-    return _house_piece_name(build_name).to_upper()
-
-func _build_snap_cell_available(cell: Vector2i) -> bool:
-    var in_house: bool = _is_built_house_floor_cell(cell)
-    if not _in_bounds(cell) and not in_house:
-        return false
-    if (
-            built_structures.has(cell) or landmarks.has(cell)
-            or resource_objects.has(cell) or deployed_pokemon.has(cell)
-            or wild_eggs.has(cell) or interior_interactables.has(cell)
-            or _wild_id_at_cell(cell) >= 0
-        ):
-        return false
-    if _is_tall_grass_cell(cell):
-        return false
-    if in_house:
-        return true
-    return terrain_kind_at(cell) != 0 and not blocked.has(cell)
 
 ## An interior wall takes windows, clocks and paint wherever it stands in the
 ## room: on a floor tile, or on the old row just above the room.
@@ -5104,33 +4239,28 @@ func _remove_resource(cell: Vector2i, remember: bool) -> void:
 func _cut_tall_grass(cell: Vector2i) -> void:
     if not _is_cuttable_grass_cell(cell):
         return
-    if exact_world_mode and plants().harvest(cell):
+    if plants().harvest(cell):
         return
     const GRASS_AMOUNT := 1
     material_collected.emit("GRASS", GRASS_AMOUNT)
     play_source_sound("cut1")
-    if exact_world_mode:
-        var tile := exact_world.tile_at(cell)
-        if tile != null:
-            var old_base := tile.name.to_lower().trim_suffix(".png")
-            # Preserve the source grass2 Miracle Seed bonus; the harvested
-            # GRASS material itself is always exactly x1 for every grass tile.
-            if old_base == "grass2" and rng.randi_range(0, 255) < 64:
-                material_collected.emit("MIRACLE SEED", 1)
-            var replacement := _cuttable_grass_replacement(tile, cell)
-            tile.set_names(String(replacement.get("base", tile.name)),
-                String(replacement.get("upper", "")))
-            source_interior_mutations[_cell_key(cell)] = {
-                "kind":"TILE_NAMES", "base":tile.name, "upper":tile.name_upper
-            }
-            _unblock_ground(cell)
-            # CUT changes this tile; update resident neighbors without scanning
-            # collision revisions for the entire world after every grass tuft.
-            _refresh_exact_tile_streams()
-        return
-    if rng.randf() < 0.22:
-        material_collected.emit("MIRACLE SEED", 1)
-    _remove_resource(cell, true)
+    var tile := exact_world.tile_at(cell)
+    if tile != null:
+        var old_base := tile.name.to_lower().trim_suffix(".png")
+        # Preserve the source grass2 Miracle Seed bonus; the harvested
+        # GRASS material itself is always exactly x1 for every grass tile.
+        if old_base == "grass2" and rng.randi_range(0, 255) < 64:
+            material_collected.emit("MIRACLE SEED", 1)
+        var replacement := _cuttable_grass_replacement(tile, cell)
+        tile.set_names(String(replacement.get("base", tile.name)),
+            String(replacement.get("upper", "")))
+        source_interior_mutations[_cell_key(cell)] = {
+            "kind":"TILE_NAMES", "base":tile.name, "upper":tile.name_upper
+        }
+        _unblock_ground(cell)
+        # CUT changes this tile; update resident neighbors without scanning
+        # collision revisions for the entire world after every grass tuft.
+        _refresh_exact_tile_streams()
 
 func _set_exact_tile_names(cell: Vector2i, base_name: String, upper_name: String) -> void:
     if exact_world == null:
@@ -5212,27 +4342,9 @@ func _refresh_exact_streams() -> void:
     _refresh_exact_tile_streams()
 
 func _set_exact_overworld_streaming(enabled: bool) -> void:
-    if not exact_world_mode:
-        return
     var collision_stream := get_node_or_null("ExactCollisionStream") as SourceChunkCollisionStreamer
     if collision_stream != null:
         collision_stream.set_streaming_enabled(enabled)
-
-func _dig_sand(cell: Vector2i) -> void:
-    if not _in_bounds(cell) or terrain_kind_at(cell) != 1:
-        return
-    material_collected.emit("SOFT SAND", 1)
-    if exact_world_mode:
-        _set_exact_tile_names(cell, "green1", "")
-        terrain_changes[_cell_key(cell)] = 2
-        world_message.emit("DIG! You gathered SOFT SAND.")
-        return
-    terrain[cell.y][cell.x] = 2
-    terrain_changes[_cell_key(cell)] = 2
-    var sprite: Sprite2D = ground_sprites.get(cell) as Sprite2D
-    if is_instance_valid(sprite):
-        sprite.texture = GRASS
-    world_message.emit("DIG! You gathered SOFT SAND.")
 
 const SourceHouseStyles = preload("res://scripts/source_house_styles.gd")
 
@@ -5374,7 +4486,7 @@ func can_place_structure(
     return not blocked.has(cell)
 
 func _bridge_surface_at(cell: Vector2i) -> bool:
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         var tile := exact_world.tile_at(cell)
         return tile != null and ("water" in tile.name or "_tidal" in tile.name or "lava" in tile.name) and not "bridge" in tile.name
     return _in_bounds(cell) and terrain_kind_at(cell) == 0
@@ -5465,10 +4577,9 @@ func place_structure(build_name: String, cell: Vector2i, restoring: bool = false
 
     if structure_name == "BRIDGE" and _bridge_surface_at(cell):
         bridged_water = true
-        if exact_world_mode:
-            var exact_collision := get_node_or_null("ExactCollisionStream") as SourceChunkCollisionStreamer
-            if exact_collision != null:
-                exact_collision.set_cell_passable(cell, true)
+        var exact_collision := get_node_or_null("ExactCollisionStream") as SourceChunkCollisionStreamer
+        if exact_collision != null:
+            exact_collision.set_cell_passable(cell, true)
         var water_collision: CollisionBox = ground_collisions.get(cell) as CollisionBox
         if is_instance_valid(water_collision):
             water_collision.queue_free()
@@ -5953,7 +5064,7 @@ func _house_connection_style(cell: Vector2i) -> String:
 
 func _house_exit_clear(cell: Vector2i) -> bool:
     if built_structures.has(cell) or blocked.has(cell) or resource_objects.has(cell) or landmarks.has(cell): return false
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         var tile: SourceTile = exact_world.tile_at(cell)
         return tile != null and not tile.is_solid and not tile.is_water and not tile.is_lava
     return _in_bounds(cell) and terrain_kind_at(cell) != 0
@@ -6280,19 +5391,13 @@ func _remove_structure(cell: Vector2i, refund: bool) -> void:
     if bool(data.get("solid", false)):
         blocked.erase(cell)
     if bool(data.get("bridged_water", false)):
-        if exact_world_mode:
-            var stream := get_node_or_null("ExactCollisionStream") as SourceChunkCollisionStreamer
-            if stream != null: stream.set_cell_passable(cell, false)
-        else:
-            var body := get_node_or_null("WorldCollision") as CollisionBody
-            if body != null:
-                blocked[cell] = true
-                ground_collisions[cell] = _add_block_collision(body, cell.x, cell.y)
+        var stream := get_node_or_null("ExactCollisionStream") as SourceChunkCollisionStreamer
+        if stream != null: stream.set_cell_passable(cell, false)
 
     built_structures.erase(cell)
     # A restored shell can cover regenerated grass. Cutting that shell must
     # leave its previously cleared building ground usable for a new doorway.
-    if build_name in ["WALL", "ROOF", "DOOR"] and active_area_id == "OVERWORLD" and exact_world_mode and exact_world != null:
+    if build_name in ["WALL", "ROOF", "DOOR"] and active_area_id == "OVERWORLD" and exact_world != null:
         var underneath := exact_world.tile_at(cell)
         if underneath != null and underneath.is_grass:
             var cleared := _cuttable_grass_replacement(underneath, cell)
@@ -6326,19 +5431,6 @@ func remove_structure_with_field_move(cell: Vector2i, move: String) -> bool:
         world_message.emit("Something rose from the shattered GRAVE!")
         encounter_requested.emit(spooky, 22)
     return true
-
-func _teleport_to_other_beacon(source: Vector2i) -> void:
-    for key in built_structures.keys():
-        var cell: Vector2i = key
-        if cell == source:
-            continue
-        var data: Dictionary = built_structures[cell]
-        if String(data.get("name", "")) == "BEACON":
-            player.position = _cell_center(cell + Vector2i(0, 1))
-            _sync_follower_to_player()
-            world_message.emit("The WARP TILE bends space around you.")
-            return
-    world_message.emit("There is no other WARP TILE to travel to.")
 
 func _is_cell_indoors(cell: Vector2i) -> bool:
     if active_area_id != "OVERWORLD":
@@ -6504,16 +5596,6 @@ func _interact_deployed_pokemon(cell: Vector2i) -> void:
         _deployed_recall_hint("%s looks happy in this habitat." % PokemonState.display_name(data).to_upper())
     _show_ecology_emote(data.get("sprite") as Sprite2D, "happy")
 
-func _habitat_satisfied(cell: Vector2i, habitat: String) -> bool:
-    var group := habitat.to_lower()
-    for y in range(cell.y - PokemonEcology.HABITAT_RADIUS, cell.y + PokemonEcology.HABITAT_RADIUS + 1):
-        for x in range(cell.x - PokemonEcology.HABITAT_RADIUS, cell.x + PokemonEcology.HABITAT_RADIUS + 1):
-            var names := _ecology_names_at(Vector2i(x, y))
-            for raw_option in group.split("|"):
-                if String(raw_option) in names:
-                    return true
-    return false
-
 func _refresh_record_habitat(
         data: Dictionary, cell: Vector2i, ecology_name_cache: Dictionary = {}
     ) -> Dictionary:
@@ -6570,45 +5652,6 @@ func _is_night_time() -> bool:
 func source_time_of_day() -> String:
     return "night" if _is_night_time() else "day"
 
-func _maybe_spawn_night_ghost(cell: Vector2i) -> bool:
-    if not _is_night_time():
-        return false
-    if _flash_is_active() or _ghost_warded_at(cell):
-        return false
-    var biome := biome_at(cell)
-    if biome not in ["DEEP_FOREST", "GRAVEYARD", "WOODED_LAKE"]:
-        return false
-    if ghost_step_countdown < 0:
-        ghost_step_countdown = rng.randi_range(500, 999)
-    ghost_step_countdown -= 1
-    if ghost_step_countdown > 0:
-        return false
-    ghost_step_countdown = rng.randi_range(1000, 2999)
-    var ghost_species := String(SourceEventData.GHOST_SPECIES[
-        rng.randi_range(0, SourceEventData.GHOST_SPECIES.size() - 1)
-    ])
-    _request_event_battle("ghost", cell, {
-        "id": "ghost_%d" % int(world_elapsed_seconds),
-        "party": [{"species": ghost_species, "level": 21}],
-        "requires_silph_scope": true,
-        "clear_on_capture": false,
-        "clear_on_defeat": false
-    })
-    return true
-
-func _ghost_warded_at(cell: Vector2i) -> bool:
-    for raw_cell in built_structures.keys():
-        var structure_cell := Vector2i(raw_cell)
-        if Vector2(structure_cell - cell).length_squared() > 64.0:
-            continue
-        var structure := built_structures[raw_cell] as Dictionary
-        if String(structure.get("name", "")) == "CAMPFIRE" or bool(structure.get("torch", false)) or (
-                String(structure.get("name", "")) == "TORCH"
-                and bool(structure.get("lit", true))
-            ):
-            return true
-    return false
-
 func respawn_after_whiteout() -> void:
     if not respawn_house.is_empty():
         var door := Vector2i(int(respawn_house.x), int(respawn_house.y))
@@ -6646,7 +5689,7 @@ func _ecology_names_at(cell: Vector2i) -> String:
     if not _in_bounds(cell):
         return ""
     var names: Array[String] = []
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         var tile_names := _exact_names_at(cell)
         if not tile_names.is_empty():
             names.append(tile_names[0].to_lower())
@@ -6656,14 +5699,6 @@ func _ecology_names_at(cell: Vector2i) -> String:
         names.append(String(source_data.get("base", source_data.get("name", ""))).to_lower())
         names.append(String(source_data.get("upper", source_data.get("name_upper", ""))).to_lower())
         names.append(String(source_data.get("biome", "")).to_lower())
-    if not exact_world_mode:
-        if terrain_kind_at(cell) == 0:
-            names.append("water")
-        elif terrain_kind_at(cell) == 1:
-            names.append_array(["sand", "desert"])
-        else:
-            names.append("green")
-        names.append(biome_at(cell).to_lower())
     if _is_tall_grass_cell(cell):
         names.append("grass")
     if flower_cells.has(cell):
@@ -7009,7 +6044,7 @@ func _egg_ground_cell_is_valid(cell: Vector2i, ignored_wild_id: int = -1) -> boo
     # 48x48 Savanna tree whose authored anchor is only one tile.
     if _exact_resource_anchor(cell).x > -2147483648:
         return false
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         var tile: SourceTile = exact_world.tile_at(cell)
         if tile == null or tile.is_water or tile.is_solid or tile.is_ledge:
             return false
@@ -7208,7 +6243,7 @@ void fragment() {
     return water_pokemon_shader
 
 func _source_pokemon_in_water(cell: Vector2i) -> bool:
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         var names := _exact_names_at(cell)
         return not names.is_empty() and "water" in names[0] and not "_tidal" in names[0]
     return terrain_kind_at(cell) == 0
@@ -7242,7 +6277,7 @@ func _update_pokemon_water_visual(data: Dictionary) -> void:
     sprite.set_meta("water_visual", true)
 
 func _pokemon_can_move_between(species: String, origin: Vector2i, target: Vector2i) -> bool:
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         var destination := exact_world.tile_at(target)
         var current := exact_world.tile_at(origin)
         # Pokemon.java Move/Wander reject ledges even when player-passable.
@@ -7257,7 +6292,7 @@ func _pokemon_can_move_between(species: String, origin: Vector2i, target: Vector
     var structure: Dictionary = built_structures.get(target, {})
     if String(structure.get("name", "")) == "FENCE" or bool(structure.get("gate", false)):
         return false
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         var tile := exact_world.tile_at(target)
         if tile == null or "fence" in tile.name_upper or "fence" in tile.name:
             return false
@@ -7294,7 +6329,7 @@ func _pokemon_can_enter(species: String, cell: Vector2i) -> bool:
     if String(structure.get("name", "")) == "FENCE" or \
             bool(structure.get("gate", false)):
         return false
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         var tile: SourceTile = exact_world.tile_at(cell)
         if tile != null and (tile.is_ledge or "fence" in tile.name.to_lower() or \
                 "fence" in tile.name_upper.to_lower()):
@@ -7529,15 +6564,9 @@ func restore_crafting_save_state(state: Dictionary) -> void:
             if _in_bounds(cell):
                 var kind := int(saved_terrain[key])
                 terrain_changes[String(key)] = kind
-                if exact_world_mode:
-                    _set_exact_tile_names(
-                        cell, "sand1" if kind == 1 else "green1", ""
-                    )
-                    continue
-                terrain[cell.y][cell.x] = kind
-                var sprite: Sprite2D = ground_sprites.get(cell) as Sprite2D
-                if is_instance_valid(sprite):
-                    sprite.texture = GRASS if kind == 2 else SAND
+                _set_exact_tile_names(
+                    cell, "sand1" if kind == 1 else "green1", ""
+                )
 
     var removed = state.get("removed_resources", [])
     if typeof(removed) == TYPE_ARRAY:
@@ -7547,7 +6576,7 @@ func restore_crafting_save_state(state: Dictionary) -> void:
                 restore_deadline = Time.get_ticks_usec() + 13000
             var key := String(raw_key)
             var cell := _cell_from_key(key)
-            if exact_world_mode and exact_world != null:
+            if exact_world != null:
                 var tile := exact_world.tile_at(cell)
                 if tile != null:
                     tile.set_names(tile.name, "")
@@ -7814,7 +6843,7 @@ func _cell_from_key(key: String) -> Vector2i:
     return Vector2i(int(parts[0]), int(parts[1]))
 
 func _in_bounds(cell: Vector2i) -> bool:
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         return exact_world.contains_cell(cell)
     return cell.x >= 0 and cell.y >= 0 and cell.x < map_w and cell.y < map_h
 
@@ -7847,17 +6876,13 @@ func _spawn_wild_pokemon() -> void:
 func _ensure_overworld_pokemon_population() -> void:
     if not wild_pokemon.is_empty():
         return
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         var source_records := exact_world.pokemon_cell_records()
         await _spawn_exact_source_pokemon(source_records, true)
         await _spawn_extra_biome_pokemon(source_records, true)
         _spawn_exact_burrowed_pokemon(exact_world.burrowed_cell_records())
         return
     _spawn_wild_pokemon()
-
-func _spawn_wild_eggs() -> void:
-    # Compatibility entry point. Eggs are produced by ecology parents.
-    pass
 
 func _add_wild_pokemon(
         species: String,
@@ -7875,7 +6900,7 @@ func _add_wild_pokemon(
     # biome's species family while allowing the higher stages documented by
     # PokeWilds to appear for a sufficiently high-level party. Saved roaming
     # records keep their already-resolved species.
-    if saved_state.is_empty() and not bool(source_record.get("is_trapping", false)) and exact_world_mode and exact_world != null:
+    if saved_state.is_empty() and not bool(source_record.get("is_trapping", false)) and exact_world != null:
         var adaptive_level := _effective_wild_level(level)
         if adaptive_level > level:
             # Keep adaptive evolution deterministic per world/cell and do not
@@ -8036,7 +7061,7 @@ func _random_land_species_for_biome(biome: String) -> String:
 func _random_land_species_for_cell(cell: Vector2i) -> String:
     var route_name := String(habitat_routes.get(cell, ""))
     var is_dungeon := SourceRouteData.is_dungeon(route_name)
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         var source_route := exact_world.route_at(cell)
         route_name = "" if source_route == null else source_route.name
         is_dungeon = source_route != null and source_route.is_dungeon
@@ -8073,7 +7098,7 @@ func _is_tall_grass_cell(cell: Vector2i) -> bool:
     # encounter habitat and must never disappear to CUT.
     if tall_grass.has(cell):
         return biome_at(cell) != "SNOW"
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         # Same tests as below from the store's names and flags, without
         # building a tile object (only a tidal tile needs its biome).
         var store = exact_world.tiles
@@ -8104,7 +7129,7 @@ func _is_source_grass_name(asset_name: String) -> bool:
 func _is_cuttable_grass_cell(cell: Vector2i) -> bool:
     if tall_grass.has(cell):
         return true
-    if not exact_world_mode or exact_world == null:
+    if exact_world == null:
         return false
     var tile: SourceTile = exact_world.tile_at(cell)
     if tile == null:
@@ -8232,61 +7257,6 @@ func _configure_overworld_sprite(sprite: Sprite2D) -> void:
         sprite.hframes = 1
         sprite.vframes = 1
         sprite.frame = 0
-
-func _horizontal_visible_center_offset(
-        texture: Texture2D,
-        horizontal_frames: int = 1,
-        vertical_frames: int = 1,
-        frame_index: int = 0,
-        cache_key: String = ""
-    ) -> Vector2:
-    if texture == null:
-        return Vector2.ZERO
-    horizontal_frames = maxi(1, horizontal_frames)
-    vertical_frames = maxi(1, vertical_frames)
-    var resolved_key := "%s:%d:%d:%d" % [
-        cache_key, horizontal_frames, vertical_frames, frame_index
-    ]
-    if not cache_key.is_empty() and horizontal_sprite_center_cache.has(resolved_key):
-        return horizontal_sprite_center_cache[resolved_key] as Vector2
-
-    var image := TexturePixels.of(texture)
-    if texture is AtlasTexture:
-        var atlas_texture := texture as AtlasTexture
-        if atlas_texture.atlas != null:
-            var atlas_image := TexturePixels.of(atlas_texture.atlas)
-            var region := Rect2i(atlas_texture.region)
-            if atlas_image != null and not atlas_image.is_empty() and region.has_area():
-                image = atlas_image.get_region(region)
-    if image == null or image.is_empty():
-        return Vector2.ZERO
-
-    var frame_width := int(image.get_width() / horizontal_frames)
-    var frame_height := int(image.get_height() / vertical_frames)
-    if frame_width <= 0 or frame_height <= 0:
-        return Vector2.ZERO
-    var normalized_frame := posmod(
-        frame_index, horizontal_frames * vertical_frames
-    )
-    var frame_x := (normalized_frame % horizontal_frames) * frame_width
-    var frame_y := floori(
-        float(normalized_frame) / float(horizontal_frames)
-    ) * frame_height
-    var left := frame_width
-    var right := -1
-    for y in range(frame_y, frame_y + frame_height):
-        for x in range(frame_x, frame_x + frame_width):
-            if image.get_pixel(x, y).a8 <= 0:
-                continue
-            left = mini(left, x - frame_x)
-            right = maxi(right, x - frame_x)
-    var result := Vector2.ZERO
-    if right >= left:
-        var visible_center := float(left + right + 1) * 0.5
-        result.x = roundf(float(frame_width) * 0.5 - visible_center)
-    if not cache_key.is_empty():
-        horizontal_sprite_center_cache[resolved_key] = result
-    return result
 
 func _show_ecology_emote(sprite: Sprite2D, emote_name: String) -> void:
     if not is_instance_valid(sprite) or sprite.get_parent() == null:
@@ -8475,9 +7445,6 @@ func _wild_id_at_cell_scan(cell: Vector2i, ignored_id: int = -1) -> int:
         if Vector2i(data.get("cell", Vector2i(-1, -1))) == cell:
             return wild_id
     return -1
-
-func _egg_at_cell(cell: Vector2i) -> Vector2i:
-    return cell if wild_eggs.has(cell) else Vector2i(-1, -1)
 
 func _attack_wild_egg(cell: Vector2i) -> void:
     if not wild_eggs.has(cell):
@@ -8793,7 +7760,7 @@ func _update_sand_trap(wild_id: int, data: Dictionary, player_cell: Vector2i, fl
     return true
 
 func _level_for_cell(cell: Vector2i) -> int:
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         var route := exact_world.route_at(cell)
         return clampi(2 if route == null else route.level, 2, 100)
     if source_tiles.has(cell):
@@ -8805,7 +7772,7 @@ func _level_for_cell(cell: Vector2i) -> int:
 func _adaptive_grass_encounter_species(
         species: String, cell: Vector2i, source_level: int
     ) -> String:
-    if species.is_empty() or not exact_world_mode or exact_world == null:
+    if species.is_empty() or exact_world == null:
         return species
     var encounter_level: int = _effective_wild_level(source_level)
     if encounter_level <= source_level:
@@ -9057,7 +8024,7 @@ func _use_interior_interactable(action: String, action_cell: Vector2i = Vector2i
             if is_instance_valid(item_sprite):
                 item_sprite.queue_free()
             source_interior_upper_sprites.erase(action_cell)
-            if exact_world_mode and exact_world != null and exact_world.contains_cell(action_cell):
+            if exact_world != null and exact_world.contains_cell(action_cell):
                 var exterior_item_tile := exact_world.tile_at(action_cell)
                 if exterior_item_tile != null:
                     exterior_item_tile.has_item = ""
@@ -9199,11 +8166,6 @@ func _request_event_battle(
     pending_battle_context = context.duplicate(true)
     battle_requested.emit(context)
 
-func take_pending_battle_context() -> Dictionary:
-    var result := pending_battle_context.duplicate(true)
-    pending_battle_context.clear()
-    return result
-
 func complete_battle_event(result: Dictionary) -> void:
     preload("res://scripts/source_unown_event.gd").complete(self, result)
     var context := result.get("context", {}) as Dictionary
@@ -9332,7 +8294,7 @@ func _clear_event_cell(cell: Vector2i, event_id: String) -> void:
         "kind": "EVENT_CLEARED", "event_id": event_id
     }
     _hide_event_cell(cell)
-    if exact_world_mode and exact_world != null and exact_world.contains_cell(cell):
+    if exact_world != null and exact_world.contains_cell(cell):
         var tile := exact_world.tile_at(cell)
         if tile != null:
             tile.set_names(tile.name, "")
@@ -9430,7 +8392,7 @@ func _show_mystery_npc(gravestone_cell: Vector2i) -> void:
     tween.tween_callback(sprite.queue_free)
 
 func _refresh_biome_dig_sites(spread: bool = false) -> void:
-    if not exact_world_mode or exact_world == null:
+    if exact_world == null:
         return
     var day := _world_day_index()
     var identity := exact_world
@@ -9542,7 +8504,7 @@ func clock_minutes() -> int:
     return int(floor(fmod(world_elapsed_seconds, WORLD_DAY_SECONDS) / WORLD_DAY_SECONDS * 24.0 * 60.0))
 
 func _refresh_sand_traps(spread: bool = false) -> void:
-    if not exact_world_mode or exact_world == null or get_node_or_null("WildPokemonLayer") == null:
+    if exact_world == null or get_node_or_null("WildPokemonLayer") == null:
         return
     var day := _world_day_index()
     var identity := exact_world
@@ -9646,7 +8608,7 @@ func can_awaken_regi(species_name: String) -> bool:
     )
 
 func unlock_mansion_door(cell: Vector2i) -> bool:
-    if not exact_world_mode or exact_world == null:
+    if exact_world == null:
         return false
     var tile := exact_world.tile_at(cell)
     if tile == null or tile.name_upper != "pkmnmansion_ext_locked":
@@ -9660,7 +8622,7 @@ func unlock_mansion_door(cell: Vector2i) -> bool:
 func _apply_source_interior_mutation(cell: Vector2i, mutation: Dictionary) -> void:
     var kind := String(mutation.get("kind", ""))
     if kind == "BIOME_DIG_SITE":
-        if exact_world_mode and exact_world != null and exact_world.contains_cell(cell):
+        if exact_world != null and exact_world.contains_cell(cell):
             var dig_tile := exact_world.tile_at(cell)
             if dig_tile != null:
                 dig_tile.set_names(
@@ -9671,7 +8633,7 @@ func _apply_source_interior_mutation(cell: Vector2i, mutation: Dictionary) -> vo
                 _refresh_exact_streams()
         return
     if kind == "TILE_NAMES":
-        if exact_world_mode and exact_world != null and exact_world.contains_cell(cell):
+        if exact_world != null and exact_world.contains_cell(cell):
             var changed_tile: SourceTile = exact_world.tile_at(cell)
             if changed_tile != null:
                 changed_tile.set_names(
@@ -9681,7 +8643,7 @@ func _apply_source_interior_mutation(cell: Vector2i, mutation: Dictionary) -> vo
                 _refresh_exact_streams()
         return
     if kind == "BERRY_EMPTY":
-        if exact_world_mode and exact_world != null and exact_world.contains_cell(cell):
+        if exact_world != null and exact_world.contains_cell(cell):
             var berry_tile := exact_world.tile_at(cell)
             if berry_tile != null:
                 berry_tile.set_names(
@@ -9702,7 +8664,7 @@ func _apply_source_interior_mutation(cell: Vector2i, mutation: Dictionary) -> vo
         if is_instance_valid(collected_sprite):
             collected_sprite.queue_free()
         source_interior_upper_sprites.erase(cell)
-        if exact_world_mode and exact_world != null and exact_world.contains_cell(cell):
+        if exact_world != null and exact_world.contains_cell(cell):
             var collected_tile := exact_world.tile_at(cell)
             if collected_tile != null:
                 collected_tile.has_item = ""
@@ -9719,7 +8681,7 @@ func _apply_source_interior_mutation(cell: Vector2i, mutation: Dictionary) -> vo
         return
     if kind == "EVENT_CLEARED":
         _hide_event_cell(cell)
-        if exact_world_mode and exact_world != null and exact_world.contains_cell(cell):
+        if exact_world != null and exact_world.contains_cell(cell):
             var cleared_tile := exact_world.tile_at(cell)
             if cleared_tile != null:
                 cleared_tile.set_names(cleared_tile.name, "")
@@ -9794,7 +8756,7 @@ func use_escape_rope() -> bool:
     var directions: Array[Vector2i] = [
         Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN
     ]
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         for radius in range(1, 513):
             for offset in range(-radius, radius + 1):
                 for cell in [
@@ -10008,7 +8970,7 @@ func environment_context() -> Dictionary:
     # and the biome (biome_at would build a second one for the same cell).
     var biome := "INTERIOR"
     if active_area_id == "OVERWORLD":
-        if exact_world_mode and exact_world != null:
+        if exact_world != null:
             var exact_tile := exact_world.tile_at(cell)
             var route: SourceRoute = exact_tile.route_belongs_to if exact_tile != null else null
             if route != null:
@@ -10043,7 +9005,7 @@ func environment_tile_flags() -> Dictionary:
     if String(built_structures.get(cell, {}).get("name", "")) == "BRIDGE": return result
     if active_area_id != "OVERWORLD":
         return result
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         var tile := exact_world.tile_at(cell)
         if tile != null:
             var beach_surface := _is_beach_tidal_tile(tile) or (
@@ -10063,7 +9025,6 @@ func environment_nearby_lava_cells(radius: int = 12) -> Array:
     var result: Array = []
     if (
             active_area_id != "OVERWORLD"
-            or not exact_world_mode
             or exact_world == null
         ):
         return result
@@ -10103,14 +9064,6 @@ func environment_structure_texture(
         return _structure_display_texture(build_name, frame)
     return atlas
 
-func environment_debug_snapshot() -> Dictionary:
-    if environment_system == null or not is_instance_valid(environment_system):
-        return {}
-    var result := environment_system.debug_snapshot()
-    result["low_tide"] = low_tide_active
-    result["day"] = _world_day_index()
-    return result
-
 func _is_beach_tidal_tile(tile: SourceTile) -> bool:
     if tile == null:
         return false
@@ -10142,24 +9095,6 @@ func _handle_biome_entry(cell: Vector2i) -> void:
     event_progress["biome_first_entries"] = entries
     _show_ecology_emote(player.sprite, "!")
     world_message.emit("The desert is dangerous. Be careful as you explore.")
-
-func _is_renewable_ashen_contact(cell: Vector2i) -> bool:
-    if not exact_world_mode or exact_world == null:
-        return false
-    var center := exact_world.tile_at(cell)
-    if center == null or _source_biome_for_tile(center) != "VOLCANO":
-        return false
-    if center.is_water or center.is_lava:
-        return false
-    var has_lava := false
-    var has_water := false
-    for offset in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
-        var neighbor := exact_world.tile_at(cell + offset)
-        if neighbor == null:
-            continue
-        has_lava = has_lava or neighbor.is_lava or "lava" in neighbor.name.to_lower()
-        has_water = has_water or (neighbor.is_water and not neighbor.is_lava)
-    return has_lava and has_water
 
 func _is_low_tide_time() -> bool:
     var fraction := fmod(world_elapsed_seconds, WORLD_DAY_SECONDS) / WORLD_DAY_SECONDS
@@ -10451,7 +9386,7 @@ func _apply_tide_band(band: Array, lowering: bool) -> Array[Vector2i]:
     return changed_cells
 
 func _update_tide_state(force: bool = false, delta: float = 0.0, spread := false) -> void:
-    if not exact_world_mode or exact_world == null:
+    if exact_world == null:
         tide_initialized = true
         low_tide_active = false
         if is_instance_valid(tide_wade_base):
@@ -10508,25 +9443,6 @@ func _update_tide_state(force: bool = false, delta: float = 0.0, spread := false
             "The tide is receding." if desired_low_tide
             else "The tide is coming in."
         )
-
-func _tide_tile_is_frontier(tile: SourceTile, lowering: bool) -> bool:
-    var offsets: Array[Vector2i] = [
-        Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]
-    if not lowering:
-        offsets.append_array([
-            Vector2i(-1, -1), Vector2i(1, -1),
-            Vector2i(-1, 1), Vector2i(1, 1)])
-    var cell := SourceWorldData.pixel_to_cell(tile.position)
-    for offset in offsets:
-        var neighbor := exact_world.tile_at(cell + offset)
-        if neighbor == null:
-            continue
-        if lowering:
-            if not neighbor.is_water and not neighbor.is_tidal:
-                return true
-        elif neighbor.name == "water2" or _is_beach_tidal_tile(neighbor):
-            return true
-    return false
 
 func _refresh_exact_tile_streams() -> void:
     var changed_cells: Array = []
@@ -10717,7 +9633,7 @@ func constrain_player_motion(before: Vector2, after: Vector2) -> Vector2:
                 return before
     # FLY is the sole terrain bypass. RIDE still moves faster, but it may not
     # climb back up a one-way cliff or mountain edge.
-    if active_field_move == "FLY" or not exact_world_mode or \
+    if active_field_move == "FLY" or \
             exact_world == null or active_area_id != "OVERWORLD":
         return after
     if before_cell == after_cell:
@@ -10852,106 +9768,8 @@ func _facing_cell() -> Vector2i:
         return Vector2i(1 if facing.x > 0.0 else -1, 0)
     return Vector2i(0, 1 if facing.y > 0.0 else -1)
 
-func _find_safe_spawn() -> void:
-    var largest_component := _largest_land_component()
-    var candidates_by_biome: Dictionary = {}
-    for cell in largest_component:
-        var biome := biome_at(cell)
-        # Never begin a new save on a shoreline or a tiny isolated patch.
-        if biome in ["BEACH", "OCEAN", "RIVER"]:
-            continue
-        if not _has_spawn_clearance(cell, 2):
-            continue
-        var open_neighbors := 0
-        for direction in [
-                Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN
-            ]:
-            if _is_spawn_walkable(cell + direction):
-                open_neighbors += 1
-        if open_neighbors < 3:
-            continue
-        if not candidates_by_biome.has(biome):
-            candidates_by_biome[biome] = []
-        (candidates_by_biome[biome] as Array).append(cell)
-
-    var available_biomes: Array[String] = []
-    for desired in WORLD_BIOMES + ["DEEP_FOREST", "GRAVEYARD", "OASIS"]:
-        if candidates_by_biome.has(desired):
-            available_biomes.append(desired)
-
-    if not available_biomes.is_empty():
-        starting_biome = available_biomes[
-            rng.randi_range(0, available_biomes.size() - 1)
-        ]
-        var candidates: Array = candidates_by_biome[starting_biome]
-        spawn_cell = candidates[rng.randi_range(0, candidates.size() - 1)]
-        return
-
-    if not largest_component.is_empty():
-        spawn_cell = largest_component[
-            rng.randi_range(0, largest_component.size() - 1)
-        ]
-        starting_biome = biome_at(spawn_cell)
-        return
-
-    spawn_cell = Vector2i(map_w / 2, map_h / 2)
-    starting_biome = biome_at(spawn_cell)
-
-func _largest_land_component() -> Array[Vector2i]:
-    var visited: Dictionary = {}
-    var largest: Array[Vector2i] = []
-    var directions: Array[Vector2i] = [
-        Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN
-    ]
-    for y in range(2, map_h - 2):
-        for x in range(2, map_w - 2):
-            var start := Vector2i(x, y)
-            if visited.has(start) or not _is_spawn_walkable(start):
-                continue
-            var component: Array[Vector2i] = []
-            var queue: Array[Vector2i] = [start]
-            var queue_index := 0
-            visited[start] = true
-            while queue_index < queue.size():
-                var cell := queue[queue_index]
-                queue_index += 1
-                component.append(cell)
-                for direction in directions:
-                    var neighbor := cell + direction
-                    if (
-                            not _in_bounds(neighbor)
-                            or visited.has(neighbor)
-                            or not _is_spawn_walkable(neighbor)
-                        ):
-                        continue
-                    visited[neighbor] = true
-                    queue.append(neighbor)
-            if component.size() > largest.size():
-                largest = component
-    return largest
-
-func _has_spawn_clearance(cell: Vector2i, radius: int) -> bool:
-    if (
-            cell.x < radius + 2
-            or cell.y < radius + 2
-            or cell.x >= map_w - radius - 2
-            or cell.y >= map_h - radius - 2
-        ):
-        return false
-    for y in range(cell.y - radius, cell.y + radius + 1):
-        for x in range(cell.x - radius, cell.x + radius + 1):
-            if not _is_spawn_walkable(Vector2i(x, y)):
-                return false
-    return true
-
-func _is_spawn_walkable(cell: Vector2i) -> bool:
-    if not _in_bounds(cell) or terrain[cell.y][cell.x] == 0:
-        return false
-    var source_tile: Dictionary = source_tiles.get(cell, {})
-    return not bool(source_tile.get("solid", false))
-
 func biome_at(cell: Vector2i) -> String:
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         var source_tile := exact_world.tile_at(cell)
         return "OCEAN" if source_tile == null else _source_biome_for_tile(source_tile)
     if not _in_bounds(cell) or biomes.is_empty():
@@ -11059,7 +9877,7 @@ func map_color_for_cell(cell: Vector2i) -> Color:
     # Preserve small-scale source-map detail instead of painting every land
     # cell as a biome-only blob. Object/upper-tile colors intentionally sit
     # over the terrain color, matching the visual hierarchy of the world.
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         var map_tile := exact_world.tile_at(cell)
         if map_tile != null:
             var map_key := (map_tile.name + " " + map_tile.name_upper).to_lower()
@@ -11113,7 +9931,7 @@ func _is_walkable(cell: Vector2i) -> bool:
         var coordinator=get_parent().get("coop_game")
         var online_wild=is_instance_valid(coordinator) and coordinator.active and coordinator.wild.simulating
         if not online_wild:return built_house_interior_cells.has(cell) and not blocked.has(cell) and String(built_structures.get(cell + Vector2i.DOWN, {}).get("name", "")) != "BED"
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         return exact_world.contains_cell(cell) and not exact_world.is_solid(cell) and not blocked.has(cell)
     if cell.x < 0 or cell.y < 0 or cell.x >= map_w or cell.y >= map_h:
         return false
@@ -11122,7 +9940,7 @@ func _is_walkable(cell: Vector2i) -> bool:
 func terrain_kind_at(cell: Vector2i) -> int:
     if String(built_structures.get(cell, {}).get("name", "")) == "BRIDGE":
         return 2
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         var tile := exact_world.tile_at(cell)
         if tile == null or tile.is_water or SourceWorldData.is_water(tile.name):
             return 0
@@ -11136,7 +9954,7 @@ func terrain_kind_at(cell: Vector2i) -> int:
 func get_map_bounds() -> Rect2i:
     if active_area_id != "OVERWORLD" and source_area_rects.has(active_area_id):
         return _interior_map_bounds()
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         return exact_world_bounds
     return Rect2i(Vector2i.ZERO, Vector2i(map_w, map_h))
 
@@ -11183,7 +10001,7 @@ func _configure_camera() -> void:
             # A built house orders its furniture round the player the same
             # way the open map does; without this the player was simply
             # drawn over everything in the room.
-            exact_world_mode and active_area_id in ["OVERWORLD", "HOUSE"]
+            active_area_id in ["OVERWORLD", "HOUSE"]
         )
 
     if active_area_id == "HOUSE" or active_field_move == "BUILD":
@@ -11193,8 +10011,7 @@ func _configure_camera() -> void:
         camera.limit_bottom = 10000000
         camera.offset = Vector2.ZERO
     elif (
-            exact_world_mode
-            and exact_world != null
+            exact_world != null
             and active_area_id == "OVERWORLD"
         ):
         # GenIsland1 is centered around Java pixel coordinate (0, 0), so its
@@ -11635,7 +10452,7 @@ func _can_prompt_shore_surf(target: Vector2i) -> bool:
         return false
     if built_structures.has(target) or _wild_id_at_cell(target) >= 0 or deployed_pokemon.has(target):
         return false
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         var tile: SourceTile = exact_world.tile_at(target)
         return tile != null and tile.is_water
     return _in_bounds(target) and terrain_kind_at(target) == 0
@@ -11809,7 +10626,7 @@ func _update_house_pokemon(delta: float) -> void:
 func _pokemon_drop_ground_allowed(pokemon: Dictionary, cell: Vector2i) -> bool:
     if not _in_bounds(cell): return false
     var water := _source_pokemon_in_water(cell)
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         var tile := exact_world.tile_at(cell)
         if tile == null or tile.is_ledge or (tile.is_solid and not water): return false
         if SourceWorldData.is_upper_solid(tile.name_upper): return false

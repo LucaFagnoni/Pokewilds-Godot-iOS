@@ -131,13 +131,10 @@ func _try_cut_target(cell:Vector2i)->bool:
 
 # M74.3.9.21 compatibility layer. The base is the known-working 9.14 world script.
 # Only world behaviors intentionally changed after 9.14 are overridden here.
-const M921_SOURCE_SAVANNA_GRASS1 = preload("res://assets/source_0_8_11/tiles/grass_savanna1.png")
-const M921_SOURCE_SAVANNA_GRASS2 = preload("res://assets/source_0_8_11/tiles/grass_savanna2.png")
 const M3922_SOURCE_FLY_SHADOW = preload("res://assets/source_exact/global/shadow1.png")
 const SOURCE_TIDAL_FRONT_SPLASH = preload("res://assets/source_exact/global/splash_anim4.png")
 const M3922_FLY_TAKEOFF_SECONDS = 96.0 / 60.0
 const M3922_FLY_LANDING_SECONDS = 80.0 / 60.0
-const M3922_FLY_HOVER_HEIGHTS = [29.0, 30.0, 31.0, 32.0, 33.0, 32.0, 31.0, 30.0]
 var m3922_fly_shadow_sprite: Sprite2D
 var m3922_fly_phase: String = ""
 var m3922_fly_phase_elapsed: float = 0.0
@@ -148,7 +145,6 @@ var m3922_ice_slide_direction: Vector2 = Vector2.ZERO
 var ice_blocked_direction := Vector2.ZERO
 var tidal_front_splash_frames: SpriteFrames
 var tidal_front_splash_phase_known := false
-var tidal_front_splash_last_phase := false
 
 
 var tidal_puddle_splashes: Array[AnimatedSprite2D] = []
@@ -383,7 +379,7 @@ func _update_normal_grass_front_overlay(_cell: Vector2i) -> void:
             m257_grass_fronts[k].hide()
 
 func _place_normal_grass_fronts() -> int:
-    if active_area_id != "OVERWORLD" or not exact_world_mode or exact_world == null:
+    if active_area_id != "OVERWORLD" or exact_world == null:
         return 0
     if active_field_move in ["FLY", "RIDE", "SURF"]:
         return 0
@@ -782,7 +778,7 @@ func field_movement_direction(input_direction: Vector2) -> Vector2:
     # Source ice is continuous sliding: once a direction is committed on ice,
     # releasing/turning the stick does not stop or turn the player until the
     # slide leaves ice or meets an obstruction.
-    if not exact_world_mode or exact_world == null or active_area_id != "OVERWORLD" or active_field_move in ["FLY", "DIG"]:
+    if exact_world == null or active_area_id != "OVERWORLD" or active_field_move in ["FLY", "DIG"]:
         m3922_ice_slide_direction = Vector2.ZERO
         return input_direction
     var cell = _player_cell()
@@ -842,7 +838,7 @@ func _align_ice_slide(cell: Vector2i) -> void:
         player.position += step
 
 func _ride_jump_over(obstacle: Vector2i) -> void:
-    if active_field_move == "RIDE" and exact_world_mode and exact_world != null and active_area_id == "OVERWORLD":
+    if active_field_move == "RIDE" and exact_world != null and active_area_id == "OVERWORLD":
         var tile = exact_world.tile_at(obstacle)
         if tile != null and (tile.is_bottom_mtn_layer or "ledges3" in (String(tile.name) + " " + String(tile.name_upper))):
             var landing = try_pre_move_field_jump(player.position, Vector2(_facing_cell()))
@@ -854,7 +850,7 @@ func _ride_jump_over(obstacle: Vector2i) -> void:
     super._ride_jump_over(obstacle)
 
 func try_pre_move_field_jump(before: Vector2, movement_direction: Vector2):
-    if active_field_move != "RIDE" or not exact_world_mode or exact_world == null or active_area_id != "OVERWORLD":
+    if active_field_move != "RIDE" or exact_world == null or active_area_id != "OVERWORLD":
         return null
     if player.has_method("is_ledge_jump_active") and bool(player.call("is_ledge_jump_active")):
         return null
@@ -932,31 +928,6 @@ func try_pre_move_field_jump(before: Vector2, movement_direction: Vector2):
         play_source_sound("ledge1")
         return landing_position
     return null
-
-func _build_piece_is_grid_snapped(build_name: String) -> bool:
-    return not _build_snap_piece_name(build_name).is_empty()
-
-func _build_snap_connection_score(build_name: String, cell: Vector2i) -> int:
-    var piece = _build_snap_piece_name(build_name)
-    var desired_style = _house_style_for_recipe(build_name)
-    var compatible = ["WALL", "ROOF", "DOOR", "WINDOW", "CHIMNEY", "INTERIOR WALL"]
-    var score = 0
-    for direction in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
-        var neighbor = cell + direction
-        if not built_structures.has(neighbor):
-            continue
-        var data = built_structures[neighbor]
-        var neighbor_name = String(data.get("name", "")).to_upper()
-        if piece in compatible:
-            if neighbor_name not in compatible:
-                continue
-            if piece != "INTERIOR WALL" and desired_style != "DEFAULT":
-                var neighbor_style = String(data.get("house_style", "DEFAULT"))
-                if neighbor_style not in [desired_style, "DEFAULT"]:
-                    continue
-        # Non-shell BUILD items also snap to cardinal built neighbors.
-        score += 1
-    return score
 
 func _update_friendly_passby(_data: Dictionary, _cell: Vector2i, _owned: bool) -> void:
     # Proximity alone does not trigger CHARM's heart effect.
@@ -1091,30 +1062,6 @@ func _interact_wild_pokemon(wild_id: int) -> void:
         await get_tree().create_timer(10.0/60.0).timeout
         confirm_wild_provocation(wild_id)
         # Battle entry owns the gameplay lock after explicit provocation.
-
-func _wild_record_is_mean(data: Dictionary) -> bool:
-    var behavior = data.get("behavior", {})
-    var source_record = data.get("source_record", {})
-    return (
-        bool(source_record.get("aggressive", false))
-        or bool(behavior.get("lunge", false))
-        or int(behavior.get("aggression", 1)) >= 1
-        or bool(data.get("aggro_player", false))
-        or bool(data.get("warned", false))
-    )
-
-func _mean_ecology_emote(data: Dictionary) -> String:
-    var behavior = data.get("behavior", {})
-    var source_record = data.get("source_record", {})
-    if (
-            bool(source_record.get("aggressive", false))
-            or bool(behavior.get("lunge", false))
-            or int(behavior.get("aggression", 1)) >= 2
-            or bool(data.get("aggro_player", false))
-            or bool(data.get("warned", false))
-        ):
-        return "skull"
-    return "alert"
 
 func _show_friend_reunion(data: Dictionary, friend_id: String) -> void:
     super._show_friend_reunion(data, friend_id)
@@ -1425,7 +1372,7 @@ func _source_fishing_species(tile: SourceTile, rod_name: String) -> Array:
 func _spawn_puddle_step_effect(cell: Vector2i) -> void:
     if active_field_move == "FLY":
         return
-    if active_area_id != "OVERWORLD" or not exact_world_mode or exact_world == null:
+    if active_area_id != "OVERWORLD" or exact_world == null:
         return
     var tile = exact_world.tile_at(cell)
     if tile == null or _source_biome_for_tile(tile) != "BEACH":
@@ -1469,7 +1416,7 @@ func _spawn_puddle_step_effect(cell: Vector2i) -> void:
 func _update_tidal_wade_visual() -> void:
     var show_wade = false
     var tile = null
-    if active_area_id == "OVERWORLD" and exact_world_mode and exact_world != null:
+    if active_area_id == "OVERWORLD" and exact_world != null:
         if active_field_move not in ["FLY", "SURF"]:
             # A walking sprite overlaps more than one tile at an edge. Keep
             # the wade visible while its lower edge still touches tide water.
@@ -1586,7 +1533,7 @@ func _update_tidal_front_splash_frame(splash: AnimatedSprite2D) -> void:
 func _pokemon_can_enter(species: String, cell: Vector2i) -> bool:
     if species.to_lower() in [
             "araichu", "raichu_alolan", "aexeggutor", "exeggutor_alolan"] and \
-            exact_world_mode and exact_world != null and not blocked.has(cell):
+            exact_world != null and not blocked.has(cell):
         var tile: SourceTile = exact_world.tile_at(cell)
         if tile != null and tile.is_water and not tile.is_solid:
             var route_name := "" if tile.route_belongs_to == null else \
@@ -1599,7 +1546,7 @@ func _pokemon_can_enter(species: String, cell: Vector2i) -> bool:
 
 func _ensure_overworld_pokemon_population() -> void:
     await super._ensure_overworld_pokemon_population()
-    if not exact_world_mode or exact_world == null:
+    if exact_world == null:
         return
     # Older saves persisted the roaming population before these source aliases
     # had visible textures. Restore only authored Alolan records absent from
@@ -1664,7 +1611,7 @@ func _field_helper_can_use_work_target(cell: Vector2i) -> bool:
         return false
     if built_structures.has(cell) or landmarks.has(cell) or resource_objects.has(cell):
         return false
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         var tile: SourceTile = exact_world.tile_at(cell)
         if tile == null:
             return false
@@ -1692,7 +1639,7 @@ func _m3924_refresh_dig_farms(changed_cell: Vector2i) -> void:
     # signal is emitted because that signal carries a specific Pokemon record.
 
 func _m3924_dig_material_at(cell: Vector2i) -> String:
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         var tile: SourceTile = exact_world.tile_at(cell)
         if tile == null:
             return ""
@@ -1705,7 +1652,7 @@ func _m3924_dig_material_at(cell: Vector2i) -> String:
     return "SOFT SAND" if terrain_kind_at(cell) == 1 else "GRASS"
 
 func _m3924_dig_surface_name_at(cell: Vector2i) -> String:
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         var tile: SourceTile = exact_world.tile_at(cell)
         if tile == null:
             return "GROUND"
@@ -1720,7 +1667,7 @@ func _m3924_dig_surface_name_at(cell: Vector2i) -> String:
 func _dig_target_accepts_soil(cell: Vector2i) -> bool:
     if active_area_id == "HOUSE":
         return bool(built_house_decorations.get(_built_house_paint_key(cell), {}).get("dig_hole", false))
-    if not exact_world_mode or exact_world == null:
+    if exact_world == null:
         return false
     var tile: SourceTile = exact_world.tile_at(cell)
     if tile == null:
@@ -1731,7 +1678,7 @@ func _dig_target_accepts_soil(cell: Vector2i) -> bool:
         "water5" in tile.name or "lava" in tile.name
 
 func _dig_action_choice(cell: Vector2i) -> String:
-    if exact_world_mode and not _dig_target_accepts_soil(cell):
+    if not _dig_target_accepts_soil(cell):
         return "HOLE"
     # Retain the approved palette selection for the next fillable target.
     # Source currDigTile is automatic on intact ground, never a fill choice.
@@ -1740,7 +1687,7 @@ func _dig_action_choice(cell: Vector2i) -> String:
 func _cycle_dig_selection(direction: int) -> void:
     var target := _field_move_action_cell(_player_cell() + _facing_cell(), "DIG")
     # PlayerStanding ignores terrain-selection input while currDigTile is active.
-    if exact_world_mode and not _dig_target_accepts_soil(target):
+    if not _dig_target_accepts_soil(target):
         return
     dig_selection_index = 1 + wrapi(maxi(1, dig_selection_index) - 1 + direction, 0, DIG_CHOICES.size() - 1)
     _show_current_dig_selection()
@@ -1752,7 +1699,7 @@ func get_dig_hud_state() -> Dictionary:
     if choice == "HOLE":
         var material: String = _m3924_dig_material_at(target)
         var fossil_site: bool = false
-        if exact_world_mode and exact_world != null:
+        if exact_world != null:
             fossil_site = _m3924_dig_tile_is_fossil_site(exact_world.tile_at(target))
         return {
             "choice": choice,
@@ -1868,7 +1815,7 @@ func _connect_source_dig_holes(changed: Vector2i) -> void:
             _save_source_dig_tile(cell)
 
 func _fill_source_dig_holes() -> void:
-    if not exact_world_mode or exact_world == null or active_area_id != "OVERWORLD": return
+    if exact_world == null or active_area_id != "OVERWORLD": return
     var replacements := {}
     # Inspect only edited cells, never scan the full world each frame. Collect
     # before applying so a water pulse advances one hole at a time.
@@ -1951,7 +1898,7 @@ func _use_dig(cell: Vector2i) -> void:
         return
     if not _in_bounds(cell): return
     if _collect_source_dig_item(cell): return
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         var tile: SourceTile = exact_world.tile_at(cell)
         if tile != null and not tile.has_item.is_empty():
             # Preserve the existing source item-pickup priority.
@@ -2032,7 +1979,7 @@ func _apply_source_interior_mutation(cell: Vector2i, mutation: Dictionary) -> vo
 
 func _dig_surface(cell: Vector2i) -> void:
     var exact_tile: SourceTile = null
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         exact_tile = exact_world.tile_at(cell)
     if _collect_source_dig_item(cell): return
     if exact_tile != null and exact_tile.name_upper.begins_with("hole1") and not _dig_is_mountain(exact_tile):
@@ -2041,7 +1988,7 @@ func _dig_surface(cell: Vector2i) -> void:
     if built_structures.has(cell) or landmarks.has(cell) or resource_objects.has(cell):
         world_message.emit("DIG can't break that tile.")
         return
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         if exact_tile == null or not _m3924_dig_tile_is_surface(exact_tile):
             world_message.emit("DIG can't break that tile.")
             return
@@ -2056,7 +2003,7 @@ func _dig_surface(cell: Vector2i) -> void:
 
     var material: String = "GRASS"
     var loot: Array = []
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         var tile: SourceTile = exact_tile
         var route_name: String = "" if tile.route_belongs_to == null else tile.route_belongs_to.name
         material = FieldMoveData.dig_material(tile.name, tile.name_upper, tile.biome, route_name)
@@ -2104,13 +2051,13 @@ func _apply_dig_choice(cell: Vector2i, choice: String) -> bool:
     if choice == "HOLE":
         _dig_surface(cell)
         return true
-    if exact_world_mode and not _dig_target_accepts_soil(cell):
+    if not _dig_target_accepts_soil(cell):
         world_message.emit("DIG can't change that tile.")
         return false
     var info: Dictionary = FieldMoveData.dig_choice_info(choice)
     if info.is_empty():
         return false
-    if exact_world_mode and exact_world != null:
+    if exact_world != null:
         var tile: SourceTile = exact_world.tile_at(cell)
         if tile == null or not (_m3924_dig_tile_is_surface(tile) or _dig_target_accepts_soil(cell)):
             world_message.emit("DIG can't change that tile.")
@@ -2125,22 +2072,14 @@ func _apply_dig_choice(cell: Vector2i, choice: String) -> bool:
         return false
     if tall_grass.has(cell):
         _remove_resource(cell, false)
-    var base_name: String = String(info.get("base", "green1"))
-    if exact_world_mode:
-        var tile: SourceTile = exact_world.tile_at(cell)
-        FieldMoveData.apply_dig_terrain(tile, choice)
-        if choice == "CLIFF": FieldMoveData.adjust_dig_cliff(tile, exact_world.tiles)
-        _save_source_dig_tile(cell)
-        terrain_changes.erase(_cell_key(cell))
-        _connect_source_dig_holes(cell)
-        _recoastify_exact_cells([cell])
-        _refresh_exact_tile_streams()
-    else:
-        terrain[cell.y][cell.x] = 1 if "sand" in base_name else 2
-        terrain_changes[_cell_key(cell)] = terrain[cell.y][cell.x]
-        var sprite: Sprite2D = ground_sprites.get(cell) as Sprite2D
-        if is_instance_valid(sprite):
-            sprite.texture = SAND if terrain[cell.y][cell.x] == 1 else GRASS
+    var tile: SourceTile = exact_world.tile_at(cell)
+    FieldMoveData.apply_dig_terrain(tile, choice)
+    if choice == "CLIFF": FieldMoveData.adjust_dig_cliff(tile, exact_world.tiles)
+    _save_source_dig_tile(cell)
+    terrain_changes.erase(_cell_key(cell))
+    _connect_source_dig_holes(cell)
+    _recoastify_exact_cells([cell])
+    _refresh_exact_tile_streams()
     _m3924_refresh_dig_farms(cell)
     play_source_sound("dig1")
     world_message.emit("DIG changed the ground to %s." % choice)

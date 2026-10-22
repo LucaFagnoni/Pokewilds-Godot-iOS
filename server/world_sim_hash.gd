@@ -95,9 +95,12 @@ func _initialize() -> void:
         if arg == "--trace": trace = true
         if arg.begins_with("--shots="): shots = arg.trim_prefix("--shots=")
     # A script error would leave the run waiting forever.
-    create_timer(1800.0).timeout.connect(func():
-        printerr("WORLD SIM FAIL: timed out")
-        quit(2))
+    # Wall time: a game-time timer runs out in seconds at an uncapped --fixed-fps.
+    var give_up_at := Time.get_ticks_msec() + 900000
+    process_frame.connect(func():
+        if Time.get_ticks_msec() > give_up_at:
+            printerr("WORLD SIM FAIL: timed out")
+            quit(2))
     var data := OS.get_temp_dir().path_join("world_sim_hash_%d" % Time.get_ticks_usec())
     DirAccess.make_dir_recursive_absolute(data)
     FileAccess.open(data.path_join(".private-saves-migrated"), FileAccess.WRITE).close()

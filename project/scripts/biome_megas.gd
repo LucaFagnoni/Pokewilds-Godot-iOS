@@ -142,7 +142,7 @@ static func _pick(world: Node, cells: Array, reserved: Dictionary) -> Variant:
     return choice
 
 static func prepare_load(world: Node) -> void:
-    if not world.exact_world_mode or world.exact_world == null: return
+    if world.exact_world == null: return
     var found := {}
     var completed: Dictionary = world.event_progress.get("completed", {})
     for group: String in GROUPS:
@@ -175,7 +175,7 @@ static func prepare_load(world: Node) -> void:
     world.set_meta("mega_load_choices",choices)
 
 static func install(world: Node) -> void:
-    if not world.exact_world_mode or world.exact_world == null: return
+    if world.exact_world == null: return
     if world.active_area_id != "OVERWORLD":
         world.set_meta("biome_megas_pending", true)
         return
@@ -234,7 +234,7 @@ static var _water_args := {"sprite": null, "species": ""}
 static var _water_seen := {}
 
 static func update(world: Node) -> void:
-    if world.active_area_id != "OVERWORLD" or not world.exact_world_mode or world.exact_world == null: return
+    if world.active_area_id != "OVERWORLD" or world.exact_world == null: return
     if bool(world.get_meta("biome_megas_pending", false)) and world.gameplay_enabled: install(world)
     var states: Dictionary = world.event_progress.get(SAVE_KEY, {})
     var tiles = world.exact_world.tiles

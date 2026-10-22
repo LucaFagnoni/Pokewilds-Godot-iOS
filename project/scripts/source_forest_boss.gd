@@ -80,7 +80,7 @@ static func select_cell(world: Node) -> Variant:
     return null
 
 static func install(world: Node) -> void:
-    if not world.exact_world_mode or world.exact_world == null:
+    if world.exact_world == null:
         return
     var saved: Dictionary = world.event_progress.get(SAVE_KEY, {})
     if world.active_area_id != "OVERWORLD":
@@ -136,7 +136,7 @@ static func install(world: Node) -> void:
     world.event_progress[SAVE_KEY] = saved
 
 static func update_visibility(world: Node) -> void:
-    if not world.exact_world_mode or world.exact_world == null or world.active_area_id != "OVERWORLD":
+    if world.exact_world == null or world.active_area_id != "OVERWORLD":
         return
     var night: bool = world._is_night_time()
     if not world.has_meta("forest_boss_night") or bool(world.get_meta("forest_boss_night")) != night:

@@ -1972,7 +1972,7 @@ func _m3924_minimap_source_region(bounds: Rect2i, view_origin: Vector2) -> Dicti
     if interior != null:
         return {"image": interior, "origin": bounds.position, "bounds": bounds, "region": bounds}
     var exact_world = world.get("exact_world")
-    if not bool(world.get("exact_world_mode")) or exact_world == null:
+    if exact_world == null:
         return {}
     # Use the full MAP screen's source tile recipes in a small window around
     # the player. The margin preserves tall art crossing the window edge.
