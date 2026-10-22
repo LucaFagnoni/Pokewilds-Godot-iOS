@@ -5,7 +5,11 @@
 # validation report (timings dropped), one hash per part, and compares the
 # combined hash with the reference code's.
 # Run: godot --headless --path project -s ../.github/engine/worldgen_check.gd
-#      (add "-- <seed> <size>" to print one world's hash and its parts)
+#      (add "-- <seed> <size>" to print one world's hash and its parts, or
+#      "-- --shard K/N" to check every Nth world from the Kth: CI runs 4 at once)
+# The worlds checked are EXPECTED below plus worldgen_hashes.json next to this
+# file ({"<seed> <size>": hash}, all five sizes): after a change that must alter
+# worlds, print the new hashes with "-- <seed> <size>" and put them in the file.
 extends SceneTree
 
 const EXPECTED := {
@@ -25,6 +29,7 @@ var _tile_props: Array[String] = []
 var _route_props: Array[String] = []
 var _context: HashingContext
 var _lines := PackedStringArray()
+var _attempt := 0 # of the last world: above 0, validation rejected the first tries
 
 func _initialize() -> void:
     for p in SourceTile.new("x", Vector2i.ZERO).get_property_list():
@@ -36,31 +41,48 @@ func _initialize() -> void:
         if p.usage & PROPERTY_USAGE_SCRIPT_VARIABLE:
             _route_props.append(p.name)
     var args := OS.get_cmdline_user_args()
-    if args.size() >= 2:
+    var shard := [0, 1]
+    if args.size() == 2 and args[0] == "--shard":
+        shard = Array(args[1].split("/")).map(func(n: String) -> int: return int(n))
+    elif args.size() >= 2:
         var parts := {}
         var digest := _world_hash(int(args[0]), int(args[1]), parts)
-        print("WORLDGEN %s %s %s" % [args[0], args[1], digest])
+        print("WORLDGEN %s %s %s (attempt %d)" % [args[0], args[1], digest, _attempt])
         for part in parts: print("  %s %s" % [part, parts[part]])
         quit()
         return
-    var failures := 0
-    for key: String in EXPECTED:
+    var expected := EXPECTED.duplicate()
+    var more: Variant = JSON.parse_string(FileAccess.get_file_as_string(_engine_dir().path_join("worldgen_hashes.json")))
+    if more is Dictionary: expected.merge(more)
+    else: printerr("WORLDGEN FAIL: worldgen_hashes.json is missing or not a JSON object")
+    var failures := 0 if more is Dictionary else 1
+    var checked := 0
+    var index := -1
+    for key: String in expected:
+        index += 1
+        if index % shard[1] != shard[0]: continue
+        checked += 1
         var parts := key.split(" ")
         var started := Time.get_ticks_msec()
         var digest := _world_hash(int(parts[0]), int(parts[1]), {})
-        var ok: bool = digest == EXPECTED[key]
+        var ok: bool = digest == expected[key]
         if not ok: failures += 1
         print("WORLDGEN %s seed=%s size=%s (%d ms)%s" % [
             "PASS" if ok else "FAIL", parts[0], parts[1], Time.get_ticks_msec() - started,
             "" if ok else " got " + digest])
-    print("WORLDGEN: checked %d, failed %d" % [EXPECTED.size(), failures])
+    print("WORLDGEN: checked %d, failed %d" % [checked, failures])
     quit(1 if failures else 0)
+
+## This script's folder (the tool is run with -s, so it is not under res://).
+func _engine_dir() -> String:
+    return (get_script() as Script).resource_path.get_base_dir()
 
 ## Fills `parts` with one hash per part of the world; returns their hash.
 func _world_hash(seed_value: int, size_index: int, parts: Dictionary) -> String:
     var result := SourceWorldGenerator.generate_exact_source_world(seed_value, size_index)
     var validation: Dictionary = result.get("generation_validation", {}).duplicate(true)
     validation.erase("elapsed_ms")
+    _attempt = int(validation.get("attempt", 0))
     var bottom_left: Variant = result.get("bottom_left")
     var top_right: Variant = result.get("top_right")
     var landmarks: Variant = result.get("landmark_origins")
