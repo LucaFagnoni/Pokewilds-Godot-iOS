@@ -138,7 +138,8 @@ func _play(now: int) -> void:
 	# Where each other player is drawn this frame.
 	for actor in main.coop_game.visuals.actors:
 		var remote = main.coop_game.visuals.actors[actor]
-		if not is_instance_valid(remote) or not is_instance_valid(remote.player) or not remote.player.sprite.visible: continue
+		# Culled off screen (coop_remote_player.gd), not drawn: no step to count.
+		if not is_instance_valid(remote) or not is_instance_valid(remote.player) or not remote.player.sprite.visible or not remote.visible: _seen.erase(actor); continue
 		var at: Vector2 = remote.player.sprite.global_position
 		if _seen.has(actor): _steps.append(at.distance_to(_seen[actor]))
 		_seen[actor] = at
