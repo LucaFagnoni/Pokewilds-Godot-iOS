@@ -930,7 +930,11 @@ func refresh_now(changed_hint: Array = []):
                 for x in range(-1,2): affected[cell+Vector2i(x,y)] = true
     for cell in changed:
         var key = cell * tile_size if source_keys_are_pixels else cell
-        if source_tiles.has(key) and _is_beach_high_tide(source_tiles.tile(key)): frame_tidal_cells[cell] = true
+        # Only a *_tidalwater cell can be: a proxy for every changed cell
+        # (~10 us each) was a third of a day's dig sites.
+        var index: int = source_tiles.index_of(key)
+        if index >= 0 and not source_tiles.name_at(index).containsn("_tidalwater"): frame_tidal_cells.erase(cell)
+        elif source_tiles.has(key) and _is_beach_high_tide(source_tiles.tile(key)): frame_tidal_cells[cell] = true
         else: frame_tidal_cells.erase(cell)
     _redraw_cells(affected)
 

@@ -101,8 +101,7 @@ func tick() -> void:
             ghost.clear()
     if not ghost.is_empty(): update_ghost()
     if world.active_area_id == "OVERWORLD" and night and not protected_at(world.player.position,4,true):
-        var near := nearby_cacti(4)
-        if not near.is_empty():
+        if has_nearby_cacti(4):
             cacturne_countdown -= 1
             if cacturne_countdown <= 0:
                 cacturne_countdown = world.rng.randi_range(100,599)
@@ -215,20 +214,63 @@ func update_cacturne(actor: Dictionary, night: bool) -> void:
         actor.remaining=16.0
         break
 
+## The player's own check, kept for the frame: the night events and the
+## roaming ghosts both ask it on every tick (60 a second), and nothing it
+## reads changes between them.
+var _player_check_key: Array = []
+var _player_check_result := false
+
 func protected_at(position_value: Vector2, radius: int, player_check: bool) -> bool:
+    if not player_check: return _protected_at(position_value, radius, false)
+    var key := [Engine.get_process_frames(), position_value, radius]
+    if key != _player_check_key:
+        _player_check_key = key
+        _player_check_result = _protected_at(position_value, radius, true)
+    return _player_check_result
+
+func _protected_at(position_value: Vector2, radius: int, player_check: bool) -> bool:
     if world._flash_is_active() and (player_check or position_value.distance_squared_to(world.player.position)<4096): return true
     var cell := Vector2i(floori(position_value.x/16),floori(position_value.y/16))
+    # The cells are read from the tile store's arrays: a SourceTile proxy for
+    # each of the ~70 cells was ~1 ms a call on a desktop, 17-37 ms of every
+    # night frame on a phone.
+    var store = world.exact_world.tiles
     for y in range(-radius,radius):
         for x in range(-radius,radius+1):
             var at := cell+Vector2i(x,y)
-            var built: Dictionary=world.built_structures.get(at,{})
-            if String(built.get("name",""))=="CAMPFIRE": return true
-            if String(built.get("name",""))=="TORCH" and (player_check or position_value.distance_squared_to(world._cell_center(at))<1024): return true
-            var tile: SourceTile = world.exact_world.tile_at(at)
-            if tile==null: continue
-            if "campfire" in tile.name_upper: return true
-            if tile.item_snapshot().has("torch") and (player_check or position_value.distance_squared_to(world._cell_center(at))<1024): return true
+            var built = world.built_structures.get(at)
+            if built != null:
+                if String(built.get("name",""))=="CAMPFIRE": return true
+                if String(built.get("name",""))=="TORCH" and (player_check or position_value.distance_squared_to(world._cell_center(at))<1024): return true
+            var index: int = store.index_of(at*16) if store is WorldTileStore else -1
+            var upper: String
+            var items
+            if index >= 0:
+                upper = store.upper_at(index)
+                items = store.items_at(index,false)
+            else:
+                var tile: SourceTile = world.exact_world.tile_at(at)
+                if tile==null: continue
+                upper = tile.name_upper
+                items = tile.item_snapshot()
+            if "campfire" in upper: return true
+            if items != null and items.has("torch") and (player_check or position_value.distance_squared_to(world._cell_center(at))<1024): return true
             if not player_check and world.deployed_pokemon.has(at) and world._pokemon_has_field_move(world.deployed_pokemon[at],"FLASH"): return true
+    return false
+
+## Whether nearby_cacti(radius) finds any, read from the tile store's arrays.
+func has_nearby_cacti(radius: int) -> bool:
+    var store = world.exact_world.tiles
+    # Off the store's rectangle (none in practice) the tiles are objects.
+    if not store is WorldTileStore or not store.extra.is_empty(): return not nearby_cacti(radius).is_empty()
+    var cactus: int = store.string_ids.get("cactus2_cacturne", -1)
+    if cactus < 0: return false
+    var uppers: PackedInt32Array = store.upper_ids
+    var cell: Vector2i=world._player_cell()
+    for y in range(-radius,radius):
+        for x in range(-radius,radius+1):
+            var index: int = store.index_of((cell+Vector2i(x,y))*16)
+            if index >= 0 and uppers[index] == cactus: return true
     return false
 
 func nearby_cacti(radius: int) -> Array[SourceTile]:
@@ -251,7 +293,7 @@ func seed_cacti() -> void:
     var tile := store.new_cursor()
     for index in store.with_name(["desert4"]):
         if Time.get_ticks_usec()-slice_started>=1000:
-            if not SourceTile.resident_changed_cells.is_empty(): world._refresh_exact_tile_streams()
+            world._queue_exact_refresh()
             await world.get_tree().process_frame
             if generation!=seed_generation or not is_instance_valid(world) or world.exact_world==null or world.exact_world.tiles!=store: return
             slice_started=Time.get_ticks_usec()
@@ -267,20 +309,29 @@ func seed_cacti() -> void:
                 if other==null or other.name!="desert4" or other.name_upper!="" or other.is_solid or other.is_ledge or world.rng.randi_range(0,255)>=32: continue
                 other.set_names(other.name,"cactus2_cacturne")
                 placed+=1
-    world._refresh_exact_tile_streams()
+    # The layers take the cells a few at a time (off screen, all of them).
+    world._queue_exact_refresh()
 
 func clear_dormant_cacti() -> void:
     seed_generation+=1
     var generation:=seed_generation
     var slice_started:=Time.get_ticks_usec()
-    for tile: SourceTile in world.exact_world.tiles.with_upper(["cactus2_cacturne"]):
+    # One cactus at a time, found in the store's arrays: with_upper made a
+    # proxy for every cactus of the map in one frame, and the layers took
+    # each slice's cells in that same frame.
+    var store: WorldTileStore = world.exact_world.tiles
+    var cactus: int = store.string_ids.get("cactus2_cacturne", -1)
+    var index: int = -1 if cactus < 0 else store.upper_ids.find(cactus)
+    while index >= 0:
         if Time.get_ticks_usec()-slice_started>=1000:
-            if not SourceTile.resident_changed_cells.is_empty(): world._refresh_exact_tile_streams()
+            world._queue_exact_refresh()
             await world.get_tree().process_frame
-            if generation!=seed_generation or not is_instance_valid(world): return
+            if generation!=seed_generation or not is_instance_valid(world) or world.exact_world==null or world.exact_world.tiles!=store: return
             slice_started=Time.get_ticks_usec()
+        var tile: SourceTile = store.proxy(index)
         if tile.name_upper=="cactus2_cacturne": tile.set_names(tile.name,"")
-    world._refresh_exact_tile_streams()
+        index = store.upper_ids.find(cactus, index + 1)
+    world._queue_exact_refresh()
 
 func start_encounter(actor: Dictionary) -> void:
     if battle_pending>0: return

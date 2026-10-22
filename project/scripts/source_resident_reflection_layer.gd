@@ -43,7 +43,17 @@ func refresh_cells(cells: Array) -> void:
     # Each cell once: the cells of nearby changes overlap.
     var unique:={}
     for cell in cells: unique[cell]=true
+    # Only a palm's cell (tree6 above, tree5 ground) can hold one, or lose
+    # one: the others are told apart in the store's arrays. A proxy for each
+    # was 55 ms of the day's dig sites a player is sent.
+    var store: WorldTileStore = exact_world.tiles
+    var tree6: int = store.string_ids.get("tree6", -1)
+    var tree5: int = store.string_ids.get("tree5", -1)
+    var uppers := store.upper_ids
+    var names := store.name_ids
     for cell in unique:
+        var index := store.index_of(cell*16)
+        if index >= 0 and uppers[index] != tree6 and names[index] != tree5 and not palms_by_cell.has(cell): continue
         if _refresh_palm(cell): changed=true
     if changed: _sort_palms()
 
