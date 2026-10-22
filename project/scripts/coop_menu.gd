@@ -207,29 +207,46 @@ func _build_title()->void:
                 selection=i;refresh();activate();row.accept_event())
         title_rows.append(row)
     title_tick=main._source_texture_rect(title_box,"Tick",Vector2.ZERO,Vector2(5,7),main.source_command_cursor.texture)
-    title_notice=main._source_ui_label(title_box,"Notice",Vector2.ZERO,Vector2.ZERO,7,"")
+    # Why the last game ended, under the rows: on the version's dark tag, as wide as its lines.
+    title_notice=main._source_ui_label(title_box,"Notice",Vector2.ZERO,Vector2.ZERO,10,"")
     title_notice.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER;title_notice.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
-    title_notice.anchor_left=0.2;title_notice.anchor_right=0.8;title_notice.anchor_top=0.67;title_notice.anchor_bottom=0.67
-    title_notice.offset_left=0;title_notice.offset_right=0;title_notice.offset_top=0;title_notice.offset_bottom=22
+    _tag(title_notice,4,0)
+    # Lines 11 px apart; the glyphs sit at the top of their 13 px line, so the room goes above.
+    title_notice.add_theme_constant_override("line_spacing",-2)
+    title_notice.get_theme_stylebox("normal").content_margin_top=4
+    title_notice.anchor_left=0.5;title_notice.anchor_right=0.5;title_notice.anchor_top=0.68;title_notice.anchor_bottom=0.68
+    title_notice.grow_horizontal=Control.GROW_DIRECTION_BOTH
     # The build's version, small in the bottom right corner (CI writes build_version.txt).
     var version:=FileAccess.get_file_as_string("res://build_version.txt").strip_edges() if FileAccess.file_exists("res://build_version.txt") else ""
     if not version.is_empty():
         var tag:Label=main._source_ui_label(title_box,"Version",Vector2.ZERO,Vector2.ZERO,7,"v"+version)
-        # Light text (the white copy of the font: the bitmap glyphs are black) on
-        # a small dark tag, readable over trees or lake whatever the screen's shape;
-        # it grows left from the corner, clear of the screen's rounded edge.
-        tag.add_theme_font_override("font",load("res://assets/source_text_font_white.fnt"))
-        tag.add_theme_color_override("font_color",Color("f6f4e7"))
-        var back:=StyleBoxFlat.new();back.bg_color=Color(0.13,0.23,0.25,0.8);back.set_corner_radius_all(2)
-        back.content_margin_left=3;back.content_margin_right=3;back.content_margin_top=1;back.content_margin_bottom=1
-        tag.add_theme_stylebox_override("normal",back)
+        # It grows left from the corner, clear of the screen's rounded edge.
+        _tag(tag,3,1)
         tag.anchor_left=1.0;tag.anchor_right=1.0;tag.anchor_top=1.0;tag.anchor_bottom=1.0
         tag.grow_horizontal=Control.GROW_DIRECTION_BEGIN;tag.grow_vertical=Control.GROW_DIRECTION_BEGIN
         tag.offset_left=-12;tag.offset_right=-12;tag.offset_top=-8;tag.offset_bottom=-8
 
+## Light text (the white copy of the font: the bitmap glyphs are black) on a
+## small dark tag, readable over trees or lake whatever the screen's shape.
+func _tag(label:Label,side:int,band:int)->void:
+    label.add_theme_font_override("font",load("res://assets/source_text_font_white.fnt"))
+    label.add_theme_color_override("font_color",Color("f6f4e7"))
+    var back:=StyleBoxFlat.new();back.bg_color=Color(0.13,0.23,0.25,0.8);back.set_corner_radius_all(2)
+    back.content_margin_left=side;back.content_margin_right=side;back.content_margin_top=band;back.content_margin_bottom=band
+    label.add_theme_stylebox_override("normal",back)
+
+## The notice wraps within 75% of the screen; its tag is only as wide as the longest line.
+func _set_title_notice(text:String)->void:
+    title_notice.text=text;title_notice.visible=not text.is_empty()
+    var font:Font=title_notice.get_theme_font("font")
+    var width:=font.get_multiline_string_size(text,HORIZONTAL_ALIGNMENT_CENTER,roundf(title_box.get_viewport_rect().size.x*0.75),10,-1,
+        TextServer.BREAK_MANDATORY|TextServer.BREAK_WORD_BOUND|TextServer.BREAK_ADAPTIVE|TextServer.BREAK_TRIM_EDGE_SPACES).x
+    var half:=ceilf(width/2.0)+title_notice.get_theme_stylebox("normal").content_margin_left
+    title_notice.offset_left=-half;title_notice.offset_right=half;title_notice.offset_top=0;title_notice.offset_bottom=0
+
 ## Always starts at the start menu; nothing online is touched until MULTIPLAYER.
 func open()->void:
-    title_notice.text=String(main.coop_game.notice);main.coop_game.notice=""
+    _set_title_notice(String(main.coop_game.notice));main.coop_game.notice=""
     main.setup_panel.hide();show();_go("title")
 
 func close()->void:
