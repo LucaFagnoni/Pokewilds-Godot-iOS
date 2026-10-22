@@ -1526,6 +1526,22 @@ func _shared_key(key:String,actor:String)->bool:
 ## they watch (_watched), but for those of `kept`, which they hold already.
 ## With `going` (an area they have asked to go to) only that area's, which
 ## they then watch too, so it arrives as it is now.
+## The records a player may hold (_shared_key), each with its area and
+## whether every player may, in the order of state.records. Made again only
+## when a record comes or goes: asking every record of a long-played world
+## on each join and arrival took the host up to 90 ms.
+var _sharable:Array=[]
+var _sharable_epoch:=-1
+var _sharable_state:=0
+func _sharable_keys()->Array:
+    if _sharable_epoch!=state.key_epoch or _sharable_state!=state.get_instance_id():
+        _sharable_epoch=state.key_epoch;_sharable_state=state.get_instance_id();_sharable=[]
+        for key in state.records:
+            var text:=String(key)
+            var anyone:=_shared_key(text,"")
+            if anyone or text.begins_with("horde_reward/") or text.begins_with("private_box/"):_sharable.append([key,_key_area(text),anyone])
+    return _sharable
+
 func _send_state(peer:int,actor:String,going:String="",kept:String="")->void:
     var deadline=Time.get_ticks_msec()+10000
     while session.players.has(peer) and Time.get_ticks_msec()<deadline:
@@ -1533,10 +1549,10 @@ func _send_state(peer:int,actor:String,going:String="",kept:String="")->void:
         # commits always follow this complete snapshot in the ordered connection.
         var areas:=_watched(actor) if going.is_empty() else [going]
         var records:Dictionary={}
-        for key in state.records:
-            if _shared_key(String(key),actor):
-                var area:=_key_area(String(key))
-                if ((area.is_empty() and going.is_empty()) or area in areas) and (kept.is_empty() or area!=kept):records[key]=state.records[key]
+        for entry in _sharable_keys():
+            if entry[2] or _shared_key(String(entry[0]),actor):
+                var area:String=entry[1]
+                if ((area.is_empty() and going.is_empty()) or area in areas) and (kept.is_empty() or area!=kept):records[entry[0]]=state.records[entry[0]]
         var packet:={"kind":"state_snapshot","records":records,"kept":kept}
         if not going.is_empty():packet={"kind":"area_records","area":going,"records":records}
         var error:Error=session.send_to(peer,packet)
