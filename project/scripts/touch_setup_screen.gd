@@ -67,7 +67,7 @@ func configure(owner_main: Node, owner_ui: Node) -> void:
     new_tab.position = Vector2(84, 5)
     load_tab = ui.make_button(self, "LOAD GAME", Vector2(76, 20), 9)
     load_tab.position = Vector2(162, 5)
-    title = main._source_ui_label(self, "Title", Vector2(84, 9), Vector2(154, 14), 10, "JOIN GAME")
+    title = main._source_ui_label(self, "Title", Vector2(84, 9), Vector2(154, 14), 10, "JOIN A GAME")
     title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
     world_card = _card(Vector2(6, 30), Vector2(150, 112), "WORLD")

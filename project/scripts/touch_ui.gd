@@ -338,7 +338,8 @@ static func haptics_on() -> bool:
 func _tap(point: Vector2) -> void:
     if haptics_on(): Input.vibrate_handheld(10, 0.35)
     if close_button.visible and close_button.get_global_rect().grow(4).has_point(point):
-        surface.back.call()
+        # The X follows the screen a frame late: a quick second tap can land after its page went.
+        if surface.has("back"): surface.back.call()
         return
     var wanted: Array = surface.get("buttons", [])
     for i in mini(extra_buttons.size(), wanted.size()):

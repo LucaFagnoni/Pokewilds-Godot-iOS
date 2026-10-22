@@ -180,7 +180,7 @@ func open() -> void:
     if is_instance_valid(main.coop_game) and main.coop_game.active and main.coop_game.hosting:
         menu_rows.append(["horde_mode","HORDE MODE","Rare cooperative night hordes. Host sets this world option."])
         menu_rows.append(["raids_mode","RAIDS","ALL: each fighter catches. LAST: finishing player catches."])
-        menu_rows.append(["players","LOBBY","Friends find this world in MULTIPLAYER > JOIN GAME. Players, and the password of a private game."])
+        menu_rows.append(["players","LOBBY","Friends find this world in CO-OP > JOIN A GAME. Players, and the password of a private game."])
         menu_rows.append(["autosave","AUTOSAVE","OFF: the world is only written when you SAVE. Resets to ON each launch."])
     kick_index=0;players_page=false;kick_prompt.hide();action_prompt.hide();password_view.hide()
     controls_page=false;selection=0;first=0

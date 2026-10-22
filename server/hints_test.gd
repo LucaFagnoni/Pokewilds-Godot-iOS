@@ -45,7 +45,7 @@ func _initialize() -> void:
     var menu: Control = main.coop_menu
     menu.open()
     var shown := []
-    for page in ["title", "servers", "password_join", "password_set", "browse", "load"]:
+    for page in ["title", "multi", "host", "servers", "password_join", "password_set", "browse", "load"]:
         menu._go(page)
         menu._update_status()
         shown += await scan("co-op page " + page)
