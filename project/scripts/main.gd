@@ -5,6 +5,10 @@ const TexturePixels = preload("res://scripts/texture_pixels.gd")
 
 signal battle_party_chosen(index: int)
 signal battle_text_finished
+## Every battle line as it is shown, and how each battle ends: the hooks
+## server/battle_transcript_record.gd records battle transcripts with.
+signal battle_text_shown(message: String)
+signal battle_ended(outcome: String)
 signal mansion_switch_answered(pressed: bool)
 
 var adjacent_worlds: Dictionary = {}
@@ -3485,6 +3489,8 @@ func _start_battle_text(message: String) -> void:
     battle_text_busy = not message.is_empty()
     if message.is_empty():
         battle_status.visible_characters = -1
+    else:
+        battle_text_shown.emit(message)
 
 func _type_battle_text(message: String) -> void:
     if overworld_evolution_running:
@@ -8523,6 +8529,7 @@ func _end_battle(outcome: String = "") -> void:
     var ending_population=coop_game.active and not coop_game.population_battles.claim.is_empty()
     var ending_event=coop_game.active and coop_game.events.active
     if ending_pvp:outcome=""
+    battle_ended.emit(outcome)
     if is_instance_valid(source_boss):
         source_boss.set_palette_stage(0)
         source_boss.queue_free()

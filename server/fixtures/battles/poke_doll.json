@@ -1,0 +1,22 @@
+{
+"name": "poke_doll",
+"kind": "single",
+"seed": 26,
+"context": {"can_catch":true,"can_run":true,"fixed_level":true,"id":"wild","kind":"wild","party":[{"level":15.0,"moves":["TACKLE","TAIL_WHIP"],"species":"tauros"}],"terrain":"GRASSY"},
+"party": [{"ability":"","evs":{"attack":0.0,"defense":0.0,"hp":0.0,"sp_attack":0.0,"sp_defense":0.0,"speed":0.0},"exp":12500.0,"friendship":70.0,"gender":"female","generation":1.0,"happiness":70.0,"held_item":"","hp":60.0,"is_shiny":false,"ivs":{"attack":7.0,"defense":23.0,"hp":7.0,"sp_attack":28.0,"sp_defense":7.0,"speed":4.0},"level":25.0,"markings":0.0,"max_hp":60.0,"met_level":25.0,"met_location":"WILDERNESS","moves":["SCRATCH","WATER_GUN","CONFUSION","DISABLE"],"nature":"BASHFUL","nickname":"","original_trainer":"WILD","personality":1834410643.0,"pokeball":"POKE BALL","pokerus":0.0,"pp":{"CONFUSION":25.0,"DISABLE":20.0,"SCRATCH":35.0,"WATER_GUN":25.0},"ribbons":[],"shiny":false,"species":"psyduck","stages":{"accuracy":0.0,"attack":0.0,"defense":0.0,"evasion":0.0,"sp_attack":0.0,"sp_defense":0.0,"speed":0.0},"stats":{"attack":36.0,"defense":34.0,"hp":60.0,"sp_attack":42.0,"sp_defense":35.0,"speed":37.0},"status":"","status_counter":0.0,"toxic_counter":0.0,"trainer_id":0.0,"types":["WATER"],"volatile":{}}],
+"inventory": {"POKE DOLL":1.0},
+"world": {"indoors":false,"night":false,"surfing":false,"time_of_day":"day"},
+"log": [
+{"text":"Wild TAUROS\nappeared!"},
+{"text":"Wild TAUROS\nappeared!"},
+{"text":"What will\nPSYDUCK do?"},
+{"at":"command","input":{"move":3},"state":{"enemy":[["tauros",15.0,47.0,"",4218.0]],"field":["",0.0,0.0,0.0],"party":[["psyduck",25.0,60.0,"",12500.0]],"rng":"4371040578859540603","sha":"b5885c9cef106a69cf6b"}},
+{"text":"TAUROS used TAIL WHIP!"},
+{"text":"PSYDUCK's DEFENSE fell!"},
+{"text":"PSYDUCK used DISABLE!"},
+{"text":"It missed!"},
+{"text":"What will\nPSYDUCK do?"},
+{"at":"command","input":{"doll":true},"state":{"enemy":[["tauros",15.0,47.0,"",4218.0]],"field":["",0.0,0.0,0.0],"party":[["psyduck",25.0,60.0,"",12500.0]],"rng":"-372006934108725614","sha":"d07018e6cc74ce98fffc"}},
+{"text":"Used POKE DOLL! Got away safely."},
+{"end":"ran","state":{"enemy":[["tauros",15.0,47.0,"",4218.0]],"field":["",0.0,0.0,0.0],"party":[["psyduck",25.0,60.0,"",12500.0]],"rng":"-372006934108725614","sha":"19afe895bdc8e48d6e60"}}
+]}

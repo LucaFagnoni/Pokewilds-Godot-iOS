@@ -1,0 +1,19 @@
+{
+"name": "roar_ends",
+"kind": "single",
+"seed": 21,
+"context": {"can_catch":true,"can_run":true,"fixed_level":true,"id":"wild","kind":"wild","party":[{"level":28.0,"species":"rattata"}],"terrain":"GRASSY"},
+"party": [{"ability":"","evs":{"attack":0.0,"defense":0.0,"hp":0.0,"sp_attack":0.0,"sp_defense":0.0,"speed":0.0},"exp":33750.0,"friendship":70.0,"gender":"male","generation":1.0,"happiness":70.0,"held_item":"","hp":94.0,"is_shiny":false,"ivs":{"attack":7.0,"defense":31.0,"hp":23.0,"sp_attack":27.0,"sp_defense":28.0,"speed":23.0},"level":30.0,"markings":0.0,"max_hp":94.0,"met_level":30.0,"met_location":"WILDERNESS","moves":["ROAR","EMBER","BITE","LEER"],"nature":"BASHFUL","nickname":"","original_trainer":"WILD","personality":348548768.0,"pokeball":"POKE BALL","pokerus":0.0,"pp":{"BITE":25.0,"EMBER":25.0,"LEER":30.0,"ROAR":20.0},"ribbons":[],"shiny":false,"species":"arcanine","stages":{"accuracy":0.0,"attack":0.0,"defense":0.0,"evasion":0.0,"sp_attack":0.0,"sp_defense":0.0,"speed":0.0},"stats":{"attack":76.0,"defense":58.0,"hp":94.0,"sp_attack":70.0,"sp_defense":58.0,"speed":67.0},"status":"","status_counter":0.0,"toxic_counter":0.0,"trainer_id":0.0,"types":["FIRE"],"volatile":{}}],
+"inventory": {},
+"world": {"indoors":false,"night":false,"surfing":false,"time_of_day":"day"},
+"log": [
+{"text":"Wild RATTATA\nappeared!"},
+{"text":"Wild RATTATA\nappeared!"},
+{"text":"What will\nARCANINE do?"},
+{"at":"command","input":{"move":0},"state":{"enemy":[["rattata",28.0,54.0,"",17561.0]],"field":["",0.0,0.0,0.0],"party":[["arcanine",30.0,94.0,"",33750.0]],"rng":"8810948552149889102","sha":"1416266350fa5fe745e5"}},
+{"text":"RATTATA used CRUNCH!"},
+{"text":"ARCANINE's SP DEFENSE fell!"},
+{"text":"ARCANINE used ROAR!"},
+{"text":"RATTATA was blown away!"},
+{"end":"defeated","state":{"enemy":[["rattata",28.0,54.0,"",17561.0]],"field":["",0.0,0.0,0.0],"party":[["arcanine",30.0,78.0,"",33750.0]],"rng":"-4350354684986241801","sha":"8913cf29371bc33f4265"}}
+]}

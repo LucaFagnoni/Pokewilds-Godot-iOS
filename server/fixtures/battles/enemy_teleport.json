@@ -1,0 +1,17 @@
+{
+"name": "enemy_teleport",
+"kind": "single",
+"seed": 24,
+"context": {"can_catch":true,"can_run":true,"fixed_level":true,"id":"wild","kind":"wild","party":[{"level":10.0,"species":"abra"}],"terrain":"GRASSY"},
+"party": [{"ability":"","evs":{"attack":0.0,"defense":0.0,"hp":0.0,"sp_attack":0.0,"sp_defense":0.0,"speed":0.0},"exp":1250.0,"friendship":70.0,"gender":"male","generation":1.0,"happiness":70.0,"held_item":"","hp":31.0,"is_shiny":false,"ivs":{"attack":18.0,"defense":19.0,"hp":9.0,"sp_attack":4.0,"sp_defense":12.0,"speed":17.0},"level":10.0,"markings":0.0,"max_hp":31.0,"met_level":10.0,"met_location":"WILDERNESS","moves":["EMBER","LEER","BITE"],"nature":"NAUGHTY","nickname":"","original_trainer":"WILD","personality":892974379.0,"pokeball":"POKE BALL","pokerus":0.0,"pp":{"BITE":25.0,"EMBER":25.0,"LEER":30.0},"ribbons":[],"shiny":false,"species":"growlithe","stages":{"accuracy":0.0,"attack":0.0,"defense":0.0,"evasion":0.0,"sp_attack":0.0,"sp_defense":0.0,"speed":0.0},"stats":{"attack":24.0,"defense":19.0,"hp":31.0,"sp_attack":24.0,"sp_defense":20.0,"speed":22.0},"status":"","status_counter":0.0,"toxic_counter":0.0,"trainer_id":0.0,"types":["FIRE"],"volatile":{}}],
+"inventory": {},
+"world": {"indoors":false,"night":false,"surfing":false,"time_of_day":"day"},
+"log": [
+{"text":"Wild ABRA\nappeared!"},
+{"text":"Wild ABRA\nappeared!"},
+{"text":"What will\nGROWLITHE do?"},
+{"at":"command","input":{"move":1},"state":{"enemy":[["abra",10.0,25.0,"",560.0]],"field":["",0.0,0.0,0.0],"party":[["growlithe",10.0,31.0,"",1250.0]],"rng":"-4921042676050050967","sha":"3536fa45fe1c99371ef6"}},
+{"text":"ABRA used TELEPORT!"},
+{"text":"ABRA teleported away!"},
+{"end":"ran","state":{"enemy":[["abra",10.0,25.0,"",560.0]],"field":["",0.0,0.0,0.0],"party":[["growlithe",10.0,31.0,"",1250.0]],"rng":"-1922528656547221981","sha":"1c3f3e78d1807964355e"}}
+]}
