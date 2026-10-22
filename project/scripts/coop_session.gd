@@ -49,6 +49,22 @@ static func build_id() -> String:
     if _build.is_empty() and FileAccess.file_exists("res://build_id.txt"):
         _build = FileAccess.get_file_as_string("res://build_id.txt").strip_edges().left(40)
     return _build
+
+## The version players see (build_version.txt, also written by CI), "" in local builds.
+static func build_version() -> String:
+    if not OS.get_environment("POKEWILDS_BUILD_VERSION").is_empty(): return OS.get_environment("POKEWILDS_BUILD_VERSION") # tests
+    return FileAccess.get_file_as_string("res://build_version.txt").strip_edges().left(16) if FileAccess.file_exists("res://build_version.txt") else ""
+
+## Why this host refuses a player whose hello (or status request) names this
+## protocol, mods and build; "" when it would let them in. MY SERVERS shows the
+## same answer before joining (coop_server_ping.gd).
+func refusal(payload: Dictionary) -> String:
+    if str(payload.get("protocol",""))!=PROTOCOL:return "Game versions do not match." # str: any JSON value compares
+    if str(payload.get("mods",""))!=mod_digest:return "Enabled mods and their order must match the host."
+    var build:=str(payload.get("build",""))
+    if not build.is_empty() and not build_id().is_empty() and build!=build_id():
+        return "Different game build: host %s, yours %s." % [build_id().left(8),build.left(8)]
+    return ""
 ## Host only: true for a player this world's host has banned. A player is the
 ## identity their copy of the game made on first run, not a name or appearance.
 var blocked := Callable()
@@ -149,7 +165,7 @@ func _process(_delta:float)->void:
             _reject_pending.erase(peer)
 
 func _received(peer: int, payload: Dictionary) -> void:
-    var kind:=String(payload.get("kind",""))
+    var kind:=str(payload.get("kind",""))
     if kind=="loading" and payload.get("active") is bool:
         if (hosting and players.has(peer)) or (not hosting and trusted):
             transport.set_loading(peer,payload.active,true)
@@ -165,12 +181,14 @@ func _received(peer: int, payload: Dictionary) -> void:
     if hosting:
         if _reject_pending.has(peer):return
         if not players.has(peer):
+            # A status request comes before any hello: the version and whether this
+            # player would be let in, then the connection closes. Nothing about accounts.
+            if kind=="status":
+                transport.send(peer,{"kind":"status","protocol":PROTOCOL,"version":build_version(),"build":build_id(),"compatible":refusal(payload).is_empty()})
+                transport._write(peer,Transport.MAX_QUEUE);transport._drop(peer,"status");return
             if kind!="hello":_reject(peer,"Join handshake required.");return
-            if payload.get("protocol")!=PROTOCOL:_reject(peer,"Game versions do not match.");return
-            if payload.get("mods")!=mod_digest:_reject(peer,"Enabled mods and their order must match the host.");return
-            var build:=String(payload.get("build",""))
-            if not build.is_empty() and not build_id().is_empty() and build!=build_id():
-                _reject(peer,"Different game build: host %s, yours %s." % [build_id().left(8),build.left(8)]);return
+            var refused:=refusal(payload)
+            if not refused.is_empty():_reject(peer,refused);return
             var token:=String(payload.get("identity",""))
             if token.length()!=64 or not token.is_valid_hex_number():_reject(peer,"Invalid player identity.");return
             var id:=token.sha256_text()

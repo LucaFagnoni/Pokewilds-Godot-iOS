@@ -11,11 +11,18 @@ extends Control
 ## (the panel moves to the top so OK / BACK stay above it). A refused join returns to that form
 ## when the host names the PLAYER ID or PASSWORD, otherwise to the list. A LAN lobby that uses
 ## player accounts opens the form prefilled from the lobby; SAVE AND JOIN there joins it at once.
-## The saved list lives in coop_saved_servers.gd.
+## The saved list lives in coop_saved_servers.gd. Under each name: the server's version and ping,
+## green when it would let this copy in, red when not, grey while it does not answer
+## (coop_server_ping.gd; asked when the page opens and every few seconds, one at a time per server).
 signal chosen(action:String,value:String)
 const Settings=preload("res://scripts/game_options.gd")
 const Network=preload("res://scripts/coop_network.gd")
 const Saved=preload("res://scripts/coop_saved_servers.gd")
+const Ping=preload("res://scripts/coop_server_ping.gd")
+const PING_EVERY_MS:=6000
+const PING_COLORS:={"green":Color("2f9e44"),"red":Color("d9412f"),"grey":Color("8c8c8c")}
+## Dark mode inks the text light purple first (dark_mode.gd INK); these tints bring it back to green, red, grey.
+const PING_COLORS_DARK:={"green":Color(0.4,1.0,0.45),"red":Color(1.0,0.42,0.38),"grey":Color(0.75,0.75,0.68)}
 const EMPTY_LOBBIES:="No active public or private games at this time, go back and create a game if you want to play online."
 const EMPTY_SERVERS:="No saved servers yet. Choose ADD SERVER and type its address and your player ID."
 const VISIBLE_ROWS:=4
@@ -88,6 +95,10 @@ var _from_lobby:=false
 var _sure:=false
 var form_rows:Array[Label]=[]
 var edit_tags:Array[Label]=[]
+## MY SERVERS: "address:port" -> {"probe":Ping or null,"result":{},"next":msec}, and this copy's mods.
+var _pings:Dictionary={}
+var _mods:=""
+var ping_labels:Array[Label]=[]
 var page_up:Control
 var page_down:Control
 ## The game font plus the symbol font for what it lacks (* [ ] @ #), so typed text always shows.
@@ -121,6 +132,12 @@ func configure(game:Node)->void:
         tag.horizontal_alignment=HORIZONTAL_ALIGNMENT_RIGHT
         _tap(tag,func():selection=_scroll+i;_edit_selected())
         edit_tags.append(tag)
+        # MY SERVERS only: the server's version and ping under its name, coloured (see _ping_line).
+        # The white glyphs take any colour; modulate, so dark mode's ink keeps it too.
+        var ping:Label=main._source_ui_label(row,"Ping",Vector2(0,9),Vector2(172,9),7,"")
+        ping.add_theme_font_override("font",load("res://assets/source_text_font_white.fnt"))
+        ping.add_theme_color_override("font_color",Color.WHITE)
+        ping_labels.append(ping)
         # SAVED WORLDS only: a bin at the right end of the row.
         var bin:=TextureRect.new();bin.name="Trash";bin.texture=preload("res://scripts/touch_icons.gd").icon("TRASH")
         # Centred on the 8 px name, which sits at the row's top.
@@ -257,6 +274,7 @@ func close()->void:
 func _go(target:String,keep_selection:bool=false)->void:
     if _typing():_hide_keyboard()
     if page=="connecting":main.generation_panel.hide()
+    if target=="servers" and page!="servers" and page!="server_form":_pings.clear();_mods="" # fresh answers on opening
     page=target
     if not keep_selection:selection=0;_scroll=0
     _hint="";_sure=false
@@ -368,6 +386,8 @@ func refresh()->void:
         rows[i].text=names[index] if index<names.size() else ""
         rows[i].add_theme_font_size_override("font_size",8 if listing else 12)
         edit_tags[i].visible=page=="servers" and index<servers.size()
+        ping_labels[i].visible=edit_tags[i].visible
+        if ping_labels[i].visible:_ping_line(ping_labels[i],servers[index])
         trash_bins[i].visible=page=="load" and index<entries.size()
         trash_bins[i].modulate=Color(1.0,0.35,0.3) if index==_trash_armed else Color.WHITE
     _refresh_form()
@@ -421,7 +441,42 @@ func _update_status()->void:
     if not _hint.is_empty():lines[0]=_hint
     status.text="\n".join(lines)
 
+## "v0.10.214  23MS" in green (it would let you in) or red, "OLD VERSION" / "UNKNOWN SERVER" in red,
+## "OFFLINE" / "BUSY" in grey, "..." until the first answer.
+func _ping_line(label:Label,server:Dictionary)->void:
+    var found:Dictionary=_pings.get(_ping_key(server),{}).get("result",{})
+    var state:=String(found.get("state",""))
+    var text:=String({"old":"OLD VERSION","unknown":"UNKNOWN SERVER","offline":"OFFLINE","busy":"BUSY"}.get(state,"..."))
+    var color:String="red" if state in ["old","unknown"] else "grey"
+    if state=="ok":
+        var version:=String(found.version);var build:=String(found.build)
+        text="%s  %dMS"%["V"+version if not version.is_empty() else ("BUILD "+build.left(7) if not build.is_empty() else "DEV BUILD"),int(found.ms)]
+        color="green" if found.compatible else "red"
+    label.text=text.to_upper();label.modulate=(PING_COLORS_DARK if Settings.enabled("dark_mode") else PING_COLORS)[color]
+
+static func _ping_key(server:Dictionary)->String:
+    var target:=parse_address(String(server.get("address","")))
+    return "" if target.is_empty() else "%s:%d"%[target.address,int(target.port)]
+
+## Every frame on MY SERVERS: answers read as they come, a new question every PING_EVERY_MS.
+func _poll_pings()->void:
+    var now:=Time.get_ticks_msec()
+    var changed:=false
+    if _mods.is_empty():_mods=String(preload("res://scripts/coop_identity.gd").mods().get("digest","-"))
+    for server in servers:
+        var key:=_ping_key(server)
+        if key.is_empty():continue
+        var ping:Dictionary=_pings.get(key,{"probe":null,"result":{},"next":0})
+        _pings[key]=ping
+        if ping.probe==null and now>=int(ping.next):
+            var target:=parse_address(String(server.address))
+            ping.probe=Ping.new(String(target.address),int(target.port),_mods)
+        if ping.probe!=null and ping.probe.poll():
+            ping.result=ping.probe.result;ping.probe=null;ping.next=now+PING_EVERY_MS;changed=true
+    if changed:refresh()
+
 func _process(_delta:float)->void:
+    if visible and page=="servers":_poll_pings()
     if not visible or page in ["","title","load","connecting","loading"]:return
     var now:=Time.get_ticks_msec()
     if now<_refresh_at:return
