@@ -222,6 +222,7 @@ func committed(changes:Array,source_actor:String="",request_id:String="")->void:
     var prefix="world/"+game._area()+"/"
     applying=true
     var reusable:Dictionary={}
+    var vanished:=false
     var world=game.main.world
     # Retain sprites across a cell move; a move is one atomic old/new pair.
     for change in changes:
@@ -231,7 +232,13 @@ func committed(changes:Array,source_actor:String="",request_id:String="")->void:
         if coords.size()!=2:continue
         var cell=Vector2i(int(coords[0]),int(coords[1]))
         var old:Dictionary=world.deployed_pokemon.get(cell,{})
-        if old.is_empty():continue
+        if old.is_empty():
+            # Gone from a tile where this game no longer shows it: it walked on
+            # here first (this game moves the area's Pokemon itself and had not
+            # sent that step yet). That copy must go too, or it stays behind and
+            # is sent back as a second one, after being taken or fought.
+            if Delta.decode(change.after)==null:vanished=true
+            continue
         var identity=String(old.get("ecology_id",""))
         if identity.is_empty():continue
         reusable[identity]=old
@@ -292,6 +299,15 @@ func committed(changes:Array,source_actor:String="",request_id:String="")->void:
         var tween=data.get("ball_move_tween") as Tween
         if tween!=null and tween.is_valid():tween.kill()
         if is_instance_valid(data.get("sprite")):data.sprite.queue_free()
+    if vanished:
+        var records:Dictionary=game.state.records if game.hosting else game.shared_records
+        var recorded:Dictionary={}
+        for key in game.record_keys(prefix+"deployed_pokemon/"):
+            var record=Delta.decode(records.get(key))
+            if record is Dictionary:recorded[String(record.get("ecology_id",""))]=true
+        for cell in world.deployed_pokemon.keys():
+            var identity=String(world.deployed_pokemon[cell].get("ecology_id",""))
+            if not identity.is_empty() and not recorded.has(identity):remove("deployed_pokemon",cell)
     applying=false
 func deploy(slot:int,keep_surf:bool)->void:
     if busy or slot<0 or slot>=game.main.caught_pokemon.size():return
@@ -311,13 +327,42 @@ func deploy(slot:int,keep_surf:bool)->void:
     main.pokemon_menu_open=false;main.pokemon_menu.hide();main.game_menu_open=false;main.game_menu.hide()
     world.set_gameplay_enabled(true);main.touch_controls.set_game_active(true)
     main._show_message("The EGG was placed here." if entry.get("is_egg",false) else "%s was left in the habitat."%preload("res://scripts/pokemon_data.gd").battle_display_name(String(entry.species)))
-func recall(cell:Vector2i,group:String="deployed_pokemon")->void:
-    if busy:return
+## The record this game holds of the Pokemon asked for: by its ecology id
+## wherever it stands, else whatever is on that tile.
+func held_record(group:String,cell:Vector2i,identity:String)->String:
     var records:Dictionary=game.state.records if game.hosting else game.shared_records
-    var key=Records.key(game._area(),group,cell)
-    var encoded=String(records.get(key,Delta.encode(null)))
+    var encoded=String(records.get(Records.key(game._area(),group,cell),Delta.encode(null)))
     var held=Delta.decode(encoded)
-    if held==null:return
+    if identity.is_empty() or (held is Dictionary and String(held.get("ecology_id",""))==identity):return encoded
+    for key in game.record_keys("world/"+game._area()+"/"+group+"/"):
+        var candidate=Delta.decode(records.get(key))
+        if candidate is Dictionary and String(candidate.get("ecology_id",""))==identity:return String(records[key])
+    # This game moves the area's Pokemon itself and has not sent that step yet.
+    var shown:Dictionary=game.main.world.get(group).get(cell,{})
+    return Delta.encode(game.main.world._serializable_ecology_record(shown,cell)) if String(shown.get("ecology_id",""))==identity else Delta.encode(null)
+
+## What the player is told when a habitat Pokemon could not be taken, fought
+## or harvested. Nothing of this kind may fail without a word.
+static func refusal(reason:String,name:String)->String:
+    match reason:
+        "too_late","no_pokemon":return "Too late! %s is no longer here."%name
+        "too_far":return "%s wandered off. Get closer and try again."%name
+        "not_owner":return "%s belongs to another player."%name
+        "already_claimed":return "Someone else got to %s first."%name
+        "no_room":return "Your party and storage are full."
+        "already_fighting","already_in_encounter","in_battle":return "Finish your other battle first."
+        "busy","connection_busy","disconnected":return "Could not reach the server. Try again."
+    return "That did not work. Try again."
+
+func recall(cell:Vector2i,group:String="deployed_pokemon",identity:String="")->void:
+    # A second press while one is on its way: that one's answer will be shown.
+    if busy:return
+    var encoded:=held_record(group,cell,identity)
+    var held=Delta.decode(encoded)
+    var name="The EGG" if group=="wild_eggs" else preload("res://scripts/pokemon_state.gd").display_name(held).to_upper() if held is Dictionary else "It"
+    if held==null and identity.is_empty():game.main._show_message(refusal("too_late",name));return
+    if identity.is_empty() and held is Dictionary:identity=String(held.get("ecology_id",""))
+    var records:Dictionary=game.state.records if game.hosting else game.shared_records
     var box=""
     for candidate in game.main._built_storage_keys():
         var chest:Dictionary=records.get("chest/"+candidate,{})
@@ -325,34 +370,47 @@ func recall(cell:Vector2i,group:String="deployed_pokemon")->void:
         var destination=preload("res://scripts/coop_shared_items.gd").new().box_key(game.session.actor,chest)
         if records.get(destination,[]).size()<4096:box=candidate;break
     busy=true
-    var result:Dictionary=await game.command("recall_population",{"area":game._area(),"x":cell.x,"y":cell.y,"group":group,"expected":game.state.fingerprint(encoded),"box":box,"identity":String(held.get("ecology_id","")) if held is Dictionary else ""})
+    var world=game.main.world
+    # It stands still (where this game moves it) until the answer comes.
+    if group=="deployed_pokemon":world.recall_hold=identity
+    var result:Dictionary={"ok":false,"reason":"busy"}
+    if await game.wait_free():
+        result=await game.command("recall_population",{"area":game._area(),"x":cell.x,"y":cell.y,"group":group,"expected":game.state.fingerprint(encoded),"box":box,"identity":identity})
     last_result=result
     busy=false
+    if world.recall_hold==identity:world.recall_hold=""
     if result.get("ok",false):
-        game.main.world.play_source_sound("Berry_Get" if group=="wild_eggs" else "seed1")
+        world.play_source_sound("Berry_Get" if group=="wild_eggs" else "seed1")
         if group=="wild_eggs":game.main._show_message("You picked up the EGG.")
         else:
-            var pokemon:Dictionary=Delta.decode(encoded)
-            game.main.pokedex_progress.mark(pokemon,true)
-            if not String(pokemon.species) in game.main.caught_species:game.main.caught_species.append(String(pokemon.species))
-    else:game.main._show_message("Too late!" if result.get("reason")=="too_late" else "Your party and storage are full.")
+            # The copy this game shows may stand a step from the host's tile.
+            for shown in world.deployed_pokemon.keys():
+                if String(world.deployed_pokemon[shown].get("ecology_id",""))==identity:remove(group,shown)
+            if held is Dictionary:
+                game.main.pokedex_progress.mark(held,true)
+                if not String(held.species) in game.main.caught_species:game.main.caught_species.append(String(held.species))
+    else:
+        game.main._show_message(refusal(String(result.get("reason","")),name))
+        # What this player sees no longer matches the host; show the truth.
+        if result.get("reason")=="too_late":synchronize()
 
 func harvest(cell:Vector2i)->void:
     if busy:return
     var world=game.main.world
     var data:Dictionary=world.deployed_pokemon.get(cell,{})
     if String(data.get("held_item","")).is_empty():return
-    var records:Dictionary=game.state.records if game.hosting else game.shared_records
-    var encoded=records.get(Records.key(game._area(),"deployed_pokemon",cell),Delta.encode(null))
+    var identity=String(data.get("ecology_id",""))
+    var encoded=held_record("deployed_pokemon",cell,identity)
     var item=String(data.held_item)
     busy=true
-    var result:Dictionary=await game.command("harvest_population",{"area":game._area(),"x":cell.x,"y":cell.y,"expected":game.state.fingerprint(encoded),"identity":String(data.get("ecology_id",""))})
+    var result:Dictionary={"ok":false,"reason":"busy"}
+    if await game.wait_free():
+        result=await game.command("harvest_population",{"area":game._area(),"x":cell.x,"y":cell.y,"expected":game.state.fingerprint(encoded),"identity":identity})
     busy=false
     if not result.get("ok",false):
-        if result.get("reason")=="too_late":
-            game.main._show_message("Too late!")
-            # What this player sees no longer matches the host; show the truth.
-            synchronize()
+        game.main._show_message("Too late!" if result.get("reason")=="too_late" else refusal(String(result.get("reason","")),preload("res://scripts/pokemon_state.gd").display_name(data).to_upper()))
+        # What this player sees no longer matches the host; show the truth.
+        if result.get("reason")=="too_late":synchronize()
         return
     var current:Dictionary=world.deployed_pokemon.get(cell,{})
     world._show_ecology_emote(current.get("sprite") as Sprite2D,"uncomfortable" if not current.get("in_habitat",false) else "heart" if not String(current.get("mate_id","")).is_empty() else "happy")

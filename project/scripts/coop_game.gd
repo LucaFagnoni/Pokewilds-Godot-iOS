@@ -540,6 +540,14 @@ const BACKGROUND_COMMANDS:=["wild_motion","population_motion","event_motion","wi
 ## before every battle and catch.
 const NO_CHECKPOINT:=["trade_offer","trade_confirm","battle_action","battle_done","cancel","wild_claim","wild_release","wild_finish","raid_damage","raid_finish","population_finish","event_finish"]
 
+## Waits a few seconds at most for the one-at-a-time slot below. Something the
+## player pressed must not be dropped unseen because a save or another action
+## happened to be on its way.
+func wait_free(limit_ms:int=8000)->bool:
+    var until=Time.get_ticks_msec()+limit_ms
+    while _request_busy and active and Time.get_ticks_msec()<until:await get_tree().process_frame
+    return active and not _request_busy
+
 func command(operation:String,args:Dictionary,berry_pickup:bool=false)->Dictionary:
     var background:bool=operation in BACKGROUND_COMMANDS
     if (_request_busy and not background) or not active or not session.trusted:return {"ok":false,"reason":"busy"}

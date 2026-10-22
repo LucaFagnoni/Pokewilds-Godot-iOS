@@ -2,6 +2,10 @@ extends "res://scripts/world_base_m74_3_9_14.gd"
 
 signal dig_reward_collected(items: Dictionary)
 
+## Ecology id of the habitat Pokemon whose "take it back?" prompt is open or
+## whose recall is on its way: it does not wander off meanwhile.
+var recall_hold := ""
+
 func _attack_wild_egg(cell:Vector2i)->void:
     var coordinator=get_parent().get("coop_game")
     if is_instance_valid(coordinator) and coordinator.active:
@@ -70,7 +74,7 @@ func _interact_deployed_pokemon(cell:Vector2i)->void:
 func _recall_deployed_pokemon(cell:Vector2i,data:Dictionary)->void:
     var coordinator=get_parent().get("coop_game")
     if is_instance_valid(coordinator) and coordinator.active and not coordinator.population.applying:
-        coordinator.population.recall(cell)
+        coordinator.population.recall(cell,"deployed_pokemon",String(data.get("ecology_id","")))
         return
     super._recall_deployed_pokemon(cell,data)
 
@@ -971,6 +975,9 @@ func _update_deployed_pokemon(delta: float) -> void:
             continue
         var data = deployed_pokemon[old_cell]
         if data.has("house_door"):
+            continue
+        # The Pokemon the player is calling back waits for them.
+        if not recall_hold.is_empty() and String(data.get("ecology_id", "")) == recall_hold:
             continue
         _update_pokemon_water_visual(data)
         _update_friendly_passby(data, old_cell, true)

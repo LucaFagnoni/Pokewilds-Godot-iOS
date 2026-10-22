@@ -1174,6 +1174,7 @@ var wild_pokemon_prompt_id := -1
 var wild_pokemon_prompt_species := ""
 var wild_pokemon_prompt_kind := ""
 var deployed_prompt_cell := Vector2i.ZERO
+var deployed_prompt_id := ""
 # A wild-Pokemon prompt is opened synchronously by the same A/confirm event
 # that interacted with the overworld Pokemon. Do not allow that opening press
 # to also dismiss or advance the new prompt: arm confirmation only after the
@@ -11341,6 +11342,10 @@ func _on_deployed_recall_requested(cell: Vector2i, species: String, message: Str
     if not wild_pokemon_prompt_open or wild_pokemon_prompt_kind != "DEPLOYED":
         return
     deployed_prompt_cell = cell
+    # Online the Pokemon goes on walking while its prompt is open (the host or
+    # another player moves it): the answer is about this Pokemon, not this tile.
+    deployed_prompt_id = String(world.deployed_pokemon.get(cell, {}).get("ecology_id", ""))
+    world.recall_hold = deployed_prompt_id
     wild_dialogue_label.text = message
 
 func _on_pokemon_recalled(pokemon_data: Dictionary) -> void:
@@ -11438,6 +11443,8 @@ func _close_wild_pokemon_prompt(restore_gameplay: bool = true) -> void:
     wild_pokemon_prompt_species = ""
     wild_pokemon_prompt_kind = ""
     wild_pokemon_prompt_confirm_armed = false
+    if world != null and world.recall_hold == deployed_prompt_id:
+        world.recall_hold = ""
     if wild_dialogue_panel != null:
         wild_dialogue_panel.visible = false
     if wild_choice_panel != null:
@@ -11465,9 +11472,14 @@ func _recruit_friendly_wild(wild_id: int, species: String) -> void:
     var online: bool = is_instance_valid(coop_game) and coop_game.active
     if online:
         _close_wild_pokemon_prompt(false)
+        # A save or another action on its way must not swallow the answer.
+        await coop_game.wait_free()
+        coop_game.wild.refused = ""
         if not await coop_game.wild.reserve(wild_id):
             if coop_game.active and not battle_active:
                 world.set_gameplay_enabled(not _field_ui_blocks_gameplay(build_menu_open))
+                _show_message(coop_game.population.refusal(
+                    coop_game.wild.refused if not coop_game.wild.refused.is_empty() else "too_late", species.to_upper()))
             return
         coop_game.wild.applying = true
     var record = world.call("take_friendly_wild", wild_id)
@@ -11482,6 +11494,7 @@ func _recruit_friendly_wild(wild_id: int, species: String) -> void:
             if coop_game.active:
                 world.set_gameplay_enabled(not _field_ui_blocks_gameplay(build_menu_open))
         _close_wild_pokemon_prompt()
+        _show_message("Too late! %s is no longer here." % species.to_upper())
         return
     var source := (record as Dictionary).duplicate(true)
     var nested_source = source.get("source_record", {})
@@ -11555,9 +11568,23 @@ func _handle_wild_pokemon_prompt_input(event: InputEvent) -> void:
         if wild_pokemon_prompt_index == 0:
             if wild_pokemon_prompt_kind == "DEPLOYED":
                 var cell := deployed_prompt_cell
+                var identity := deployed_prompt_id
                 _close_wild_pokemon_prompt()
-                if world.deployed_pokemon.has(cell):
-                    world._recall_deployed_pokemon(cell, world.deployed_pokemon[cell])
+                # Where that Pokemon stands now: it may have walked on, and
+                # another may have stepped onto the tile it was asked on.
+                if not identity.is_empty():
+                    for shown in world.deployed_pokemon:
+                        if String(world.deployed_pokemon[shown].get("ecology_id", "")) == identity:
+                            cell = shown
+                            break
+                var data: Dictionary = world.deployed_pokemon.get(cell, {})
+                if not identity.is_empty() and String(data.get("ecology_id", "")) != identity:
+                    data = {"ecology_id": identity}
+                # Online the host finds it by its id even when this game no longer shows it.
+                if data.has("species") or (is_instance_valid(coop_game) and coop_game.active):
+                    world._recall_deployed_pokemon(cell, data)
+                else:
+                    _show_message("It went away.")
             else:
                 _recruit_friendly_wild(chosen_id, chosen_species)
         else:

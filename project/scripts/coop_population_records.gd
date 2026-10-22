@@ -71,23 +71,12 @@ func harvest(actor:String,id:String,area:String,cell:Vector2i,expected:String,id
     var args=[area,cell,expected]
     var previous=_prior(actor,"harvestpopulation/"+id,args)
     if not previous.is_empty():return previous
-    if not _near(actor,area,cell):return {"ok":false,"reason":"too_far"}
-    var record_key=key(area,"deployed_pokemon",cell)
-    var encoded=state.records.get(record_key,Delta.encode(null))
-    var record=Delta.decode(encoded)
-    if not record is Dictionary or state.fingerprint(encoded)!=expected:
-        # The item is what was asked for, not this exact copy of the record: a
-        # timer may have ticked, or the Pokemon may stand a step from where the
-        # player's game shows it. The same Pokemon holding an item still gives it.
-        record=null
-        if not identity.is_empty():
-            for dy in range(-2,3):
-                for dx in range(-2,3):
-                    var near_key=key(area,"deployed_pokemon",cell+Vector2i(dx,dy))
-                    var candidate=Delta.decode(state.records.get(near_key,Delta.encode(null)))
-                    if candidate is Dictionary and String(candidate.get("ecology_id",""))==identity:
-                        record=candidate;record_key=near_key
-        if not record is Dictionary:return {"ok":false,"reason":"too_late"}
+    # The item is what was asked for, not this exact copy of the record: a
+    # timer may have ticked, or the Pokemon may have walked on since.
+    var found=find(area,"deployed_pokemon",cell,expected,identity)
+    if found.is_empty():return {"ok":false,"reason":"too_late"}
+    var record_key:String=found[0];var record:Dictionary=found[1]
+    if not _reach(actor,area,Vector2i(int(record.get("x",cell.x)),int(record.get("y",cell.y)))):return {"ok":false,"reason":"too_far"}
     var item=String(record.get("held_item",""))
     if item.is_empty():return {"ok":false,"reason":"too_late"}
     var profile:Dictionary=state.records.get("player/"+actor,{}).duplicate(true)
@@ -101,6 +90,39 @@ func harvest(actor:String,id:String,area:String,cell:Vector2i,expected:String,id
 
 static func key(area:String,group:String,cell:Vector2i)->String:
     return "world/"+area+"/"+group+"/"+("%d,%d"%[cell.x,cell.y]).uri_encode()
+
+## How far (in tiles, either way) a player may stand from a habitat Pokemon
+## they take, harvest or fight. Wider than the tile in front of them: it walks
+## on while the player reads its prompt and while the request travels, and the
+## host's copy of the player's position is itself a moment old.
+const REACH:=5
+
+## [record key, record] of the Pokemon asked for, wherever it now stands. A
+## habitat Pokemon is found by its ecology id: it walks about, and the tile the
+## player's game shows it on is often a step or two behind (or ahead of) the
+## host's. An egg does not move: the one on that tile.
+func find(area:String,group:String,cell:Vector2i,expected:String,identity:String)->Array:
+    var record_key=key(area,group,cell)
+    var encoded=state.records.get(record_key,Delta.encode(null))
+    var record=Delta.decode(encoded)
+    if record is Dictionary:
+        if group=="wild_eggs":return [record_key,record]
+        if identity.is_empty() and (expected.is_empty() or state.fingerprint(encoded)==expected):return [record_key,record]
+        if not identity.is_empty() and String(record.get("ecology_id",""))==identity:return [record_key,record]
+    if group!="deployed_pokemon" or identity.is_empty():return []
+    # ponytail: walks every record; an id-to-tile index if this ever shows as a stall.
+    var prefix="world/"+area+"/deployed_pokemon/"
+    for candidate_key in state.records:
+        if not String(candidate_key).begins_with(prefix):continue
+        var candidate=Delta.decode(state.records[candidate_key])
+        if candidate is Dictionary and String(candidate.get("ecology_id",""))==identity:return [candidate_key,candidate]
+    return []
+
+## A Pokemon a player left in the world is theirs to take back or catch; one
+## from before the world went online, or never left by a player, is anyone's.
+static func owned_by_other(record:Dictionary,actor:String)->bool:
+    var identity=String(record.get("ecology_id",""))
+    return identity.begins_with("coop_owned:") and not identity.begins_with("coop_owned:"+actor+":")
 
 func place(actor:String,id:String,area:String,slot:int,record:Dictionary,base:String)->Dictionary:
     var args=[area,slot,record,base]
@@ -129,26 +151,19 @@ func place(actor:String,id:String,area:String,slot:int,record:Dictionary,base:St
     return state.transact(actor,"deploy/"+id,[state.change("player/"+actor,profile),state.change(key(area,group,cell),Delta.encode(stored))],state.fingerprint(args))
 
 func take(actor:String,id:String,area:String,cell:Vector2i,group:String,expected:String,box:String="",identity:String="")->Dictionary:
-    var args=[area,cell,group,expected,box]
+    var args=[area,cell,group,expected,box,identity]
     var previous=_prior(actor,"takepopulation/"+id,args)
     if not previous.is_empty():return previous
-    if group not in ["deployed_pokemon","wild_eggs"] or not _near(actor,area,cell):return {"ok":false,"reason":"too_far"}
-    var record_key=key(area,group,cell)
-    var encoded=state.records.get(record_key,Delta.encode(null))
-    var record=Delta.decode(encoded)
-    if not record is Dictionary or state.fingerprint(encoded)!=expected:
-        # As for harvest: the Pokemon asked for, not this exact copy of its
-        # record. Over a phone connection it has often taken a step or its
-        # timers have moved on by the time the request arrives.
-        record=null
-        if group=="deployed_pokemon" and not identity.is_empty():
-            for dy in range(-2,3):
-                for dx in range(-2,3):
-                    var near_key=key(area,group,cell+Vector2i(dx,dy))
-                    var candidate=Delta.decode(state.records.get(near_key,Delta.encode(null)))
-                    if candidate is Dictionary and String(candidate.get("ecology_id",""))==identity:
-                        record=candidate;record_key=near_key
-        if not record is Dictionary:return {"ok":false,"reason":"too_late"}
+    if group not in ["deployed_pokemon","wild_eggs"]:return {"ok":false,"reason":"invalid_target"}
+    # As for harvest: the Pokemon asked for, not this exact copy of its record
+    # on that exact tile. It has often walked on, or its timers moved, by the
+    # time the request arrives, and more so while its prompt was open.
+    var found=find(area,group,cell,expected,identity)
+    if found.is_empty():return {"ok":false,"reason":"too_late"}
+    var record_key:String=found[0];var record:Dictionary=found[1]
+    if group=="deployed_pokemon" and owned_by_other(record,actor):return {"ok":false,"reason":"not_owner"}
+    var at=Vector2i(int(record.get("x",cell.x)),int(record.get("y",cell.y)))
+    if not (_near(actor,area,cell) if group=="wild_eggs" else _reach(actor,area,at)):return {"ok":false,"reason":"too_far"}
     var profile:Dictionary=state.records.get("player/"+actor,{}).duplicate(true)
     if not profile.get("party") is Array or not profile.get("inventory") is Dictionary:return {"ok":false,"reason":"missing_profile"}
     var pokemon:Dictionary=record.duplicate(true)
@@ -190,6 +205,13 @@ func _near(actor:String,area:String,cell:Vector2i)->bool:
     if state.members.get(actor,{}).get("area")!=area:return false
     var player:Dictionary=presence.get(actor,{})
     return String(player.get("area","")).begins_with(area+"|") and Vector2i(int(player.get("x",-999999)),int(player.get("y",-999999))).distance_squared_to(cell)<=2
+
+func _reach(actor:String,area:String,cell:Vector2i)->bool:
+    if state.members.get(actor,{}).get("area")!=area:return false
+    var player:Dictionary=presence.get(actor,{})
+    if not String(player.get("area","")).begins_with(area+"|"):return false
+    var gap=Vector2i(int(player.get("x",-999999)),int(player.get("y",-999999)))-cell
+    return maxi(absi(gap.x),absi(gap.y))<=REACH
 
 func _prior(actor:String,id:String,args:Array)->Dictionary:
     if not state.members.has(actor):return {"ok":false,"reason":"not_admitted"}
