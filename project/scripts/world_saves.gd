@@ -5,7 +5,15 @@ extends RefCounted
 ## next to it, never over the player's SAVE; a SAVE removes the autosave it
 ## supersedes. A save is replaced atomically and the one before it kept as .bak
 ## (see write). Online worlds are stored elsewhere (coop_store.gd).
+##
+## A save is binary (BINARY_SAVES, see encode): the file name stays <world>.json
+## and the JSON saves of before (version 2, their .bak too) are still read.
 const DataPaths = preload("res://scripts/game_data_paths.gd")
+
+## Off: saves are written as the JSON of before again; both are always read.
+const BINARY_SAVES := true
+const MAGIC := "PWSV"
+const FORMAT := 1
 
 var directory: String
 var index_path: String
@@ -124,7 +132,7 @@ static func remove_unused_caches(save_dir: String, cache_dir: String, before: in
     for file_name in DirAccess.get_files_at(save_dir):
         if not file_name.to_lower().ends_with(".json"):
             continue
-        var data := read(save_dir.path_join(file_name))
+        var data := read_summary(save_dir.path_join(file_name))
         if data.is_empty():
             continue
         needed["%d_%d" % [absi(int(data.get("world_seed", 0))), int(data.get("world_size", 0))]] = true
@@ -140,6 +148,13 @@ static func remove_unused_caches(save_dir: String, cache_dir: String, before: in
             DirAccess.remove_absolute(path)
 
 static func read(save_path: String) -> Dictionary:
+    return _read_or_bak(save_path, true)
+
+## What the LOAD list shows of a save (see summary), without reading all of it.
+static func read_summary(save_path: String) -> Dictionary:
+    return _read_or_bak(save_path, false)
+
+static func _read_or_bak(save_path: String, whole: bool) -> Dictionary:
     if save_path.is_empty():
         return {}
     # A save left broken (by a game from before saves were written safely)
@@ -147,28 +162,89 @@ static func read(save_path: String) -> Dictionary:
     for candidate in [save_path, save_path + ".bak"]:
         if not FileAccess.file_exists(candidate):
             continue
-        var parsed = JSON.parse_string(FileAccess.get_file_as_string(candidate))
-        if parsed is Dictionary:
-            return parsed
+        var data := read_file(candidate, whole)
+        if not data.is_empty():
+            return data
     return {}
 
+## The little the LOAD list and the cache cleanup need, kept at the head of a
+## binary save. `adjacent_worlds` holds just each world's seed and size.
+static func summary(data: Dictionary) -> Dictionary:
+    var neighbors := {}
+    var adjacent = data.get("adjacent_worlds", {})
+    for key in (adjacent if adjacent is Dictionary else {}):
+        if adjacent[key] is Dictionary:
+            neighbors[key] = {"seed": adjacent[key].get("seed", 0), "size": adjacent[key].get("size", 0)}
+    var party = data.get("caught_pokemon", [])
+    return {"version": data.get("version", 0), "world_name": data.get("world_name", ""),
+        "player_name": data.get("player_name", ""), "world_seed": data.get("world_seed", 0),
+        "world_size": data.get("world_size", 0), "party_size": party.size() if party is Array else 0,
+        "adjacent_worlds": neighbors}
+
+## A save as written (BINARY_SAVES): "PWSV", u32 FORMAT, u32 length + the
+## summary (var_to_bytes), u32 length of the save's var_to_bytes, u32 length +
+## that zstd-compressed; numbers little-endian. Cell keys stay "x,y" strings,
+## as the world keeps them.
+static func encode(data: Dictionary) -> PackedByteArray:
+    if not BINARY_SAVES:
+        return JSON.stringify(data).to_utf8_buffer()
+    var head := var_to_bytes(summary(data))
+    var body := var_to_bytes(data)
+    var packed := body.compress(FileAccess.COMPRESSION_ZSTD)
+    var out := StreamPeerBuffer.new()
+    out.put_data(MAGIC.to_ascii_buffer())
+    out.put_u32(FORMAT)
+    out.put_u32(head.size())
+    out.put_data(head)
+    out.put_u32(body.size())
+    out.put_u32(packed.size())
+    out.put_data(packed)
+    return out.data_array
+
+## One save file, binary or JSON, without its .bak: the whole save or its
+## summary; {} if it cannot be read (cut, or from a newer game).
+static func read_file(path: String, whole := true) -> Dictionary:
+    var file := FileAccess.open(path, FileAccess.READ)
+    if file == null:
+        return {}
+    if file.get_buffer(MAGIC.length()) != MAGIC.to_ascii_buffer():
+        var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
+        if not parsed is Dictionary:
+            return {}
+        return parsed if whole else summary(parsed)
+    if file.get_32() > FORMAT:
+        return {}
+    var head_size := file.get_32()
+    if head_size > file.get_length() - file.get_position():
+        return {}
+    var head = bytes_to_var(file.get_buffer(head_size))
+    var body_size := file.get_32()
+    var packed_size := file.get_32()
+    # A cut file is told by its length, before anything is decoded.
+    if not head is Dictionary or file.get_position() + packed_size != file.get_length():
+        return {}
+    if not whole:
+        return head
+    var data = bytes_to_var(file.get_buffer(packed_size).decompress(body_size, FileAccess.COMPRESSION_ZSTD))
+    return data if data is Dictionary else {}
+
 ## Writes a world's save so that a kill at any moment leaves the old save or
-## the new one, never a cut one: the text goes to .pending and is read back,
+## the new one, never a cut one: the save goes to .pending and is read back,
 ## the old save is kept as .bak, then .pending takes its place. Runs on a
 ## thread for SAVE.
 static func write(save_path: String, data: Dictionary) -> Error:
-    var text := JSON.stringify(data)
+    var bytes := encode(data)
     var pending := save_path + ".pending"
     var file := FileAccess.open(pending, FileAccess.WRITE)
     if file == null:
         return FileAccess.get_open_error()
-    file.store_string(text)
+    file.store_buffer(bytes)
     file.flush()
     var error := file.get_error()
     file.close()
     if error != OK:
         return error
-    if FileAccess.get_file_as_string(pending) != text:
+    if FileAccess.get_file_as_bytes(pending) != bytes:
         return ERR_FILE_CORRUPT
     if FileAccess.file_exists(save_path):
         error = DirAccess.copy_absolute(save_path, save_path + ".bak")
@@ -248,7 +324,8 @@ func find(world_name: String) -> Dictionary:
 
     return find_newest()
 
-## Every save that can be read, {"path", "data", "autosave"}: the LOAD list.
+## Every save that can be read, {"path", "data", "autosave"}: the LOAD list,
+## "data" being the save's summary (read from just the head of a binary save).
 ## Worlds come newest first, each world's own save followed by its autosave
 ## (a world only ever autosaved has just that one).
 func entries() -> Array[Dictionary]:
@@ -268,7 +345,7 @@ func entries() -> Array[Dictionary]:
             paths["%s/%s" % [directory, file_name]] = true
     var worlds := {}
     for path in paths:
-        var data := read(path)
+        var data := read_summary(path)
         if data.is_empty():
             continue
         var world: Array = worlds.get_or_add(manual_path(path), [])

@@ -35,13 +35,15 @@ func _wait_started() -> void:
         await process_frame
         waited += 1
 
+## The save in that one file (no .bak), null if it cannot be read.
 func _parsed(path: String) -> Variant:
-    return JSON.parse_string(FileAccess.get_file_as_string(path)) if FileAccess.file_exists(path) else null
+    var data: Dictionary = main.saves.read_file(path)
+    return null if data.is_empty() else data
 
 func _cut(path: String) -> void:
-    var text := FileAccess.get_file_as_string(path)
+    var bytes := FileAccess.get_file_as_bytes(path)
     var file := FileAccess.open(path, FileAccess.WRITE)
-    file.store_string(text.left(text.length() / 2))
+    file.store_buffer(bytes.slice(0, bytes.size() / 2))
     file.close()
 
 func _initialize() -> void:
@@ -113,7 +115,7 @@ func _initialize() -> void:
 
     # Killed while writing: a cut .pending file is ignored.
     var expected_x := player.position.x
-    FileAccess.open(save + ".pending", FileAccess.WRITE).store_string(FileAccess.get_file_as_string(save).left(100))
+    FileAccess.open(save + ".pending", FileAccess.WRITE).store_buffer(FileAccess.get_file_as_bytes(save).slice(0, 100))
     check(float(main.saves.find("KillTest").get("data", {}).get("player_x", -1)) == expected_x, "a cut .pending file is ignored")
     # A save cut by a game from before (written in place) falls back to .bak.
     _cut(save)
