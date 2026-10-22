@@ -513,8 +513,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$TAG" PokeWilds-Server-win64.zip
 
-  # The Android APK: stock editor and official templates with the game's own
-  # Gradle wrapper (project/android/build) and libzt for ONLINE play, signed
+  # The Android APK (arm64): stock editor and official templates with the game's
+  # own Gradle wrapper (project/android/build), the IPA's stripped engine and
+  # libzt for ONLINE play, signed
   # with the release keystore (secrets ANDROID_KEYSTORE_BASE64 and
   # ANDROID_KEYSTORE_PASSWORD, alias "pokewilds"): every APK has the same
   # signature, so each one installs over the last.
@@ -575,12 +576,48 @@ jobs:
           cp -R "$RUNNER_TEMP/android_source/libs/." project/android/build/libs/
           # Where this Godot looks for the installed template's version.
           for f in project/android/.build_version project/android/build/.build_version; do printf '%s' "${GODOT_VERSION}.stable" > "$f"; done
+          echo "AAR=$PWD/project/android/build/libs/release/godot-lib.template_release.aar" >> "$GITHUB_ENV"
           # Where the editor finds the SDK and Java (no editor UI here).
           mkdir -p ~/.config/godot
           for name in editor_settings-4.tres "editor_settings-${GODOT_VERSION%.*}.tres"; do
             printf '[gd_resource type="EditorSettings" format=3]\n\n[resource]\nexport/android/android_sdk_path = "%s"\nexport/android/java_sdk_path = "%s"\n' \
               "$ANDROID_HOME" "$JAVA_HOME" > ~/.config/godot/$name
           done
+
+      # The same stripped engine as the IPA (.github/engine/custom.py), arm64,
+      # in place of the official one inside the template's godot-lib AAR.
+      - uses: actions/checkout@v4
+        with:
+          repository: godotengine/godot
+          ref: ${{ env.GODOT_VERSION }}-stable
+          path: godot-src
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.scons_cache
+          # The engine source is a fixed tag: one cache per build profile is enough.
+          key: scons-android-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py') }}
+
+      - name: Build stripped engine (Android arm64)
+        working-directory: godot-src
+        run: |
+          python3 -m venv "$RUNNER_TEMP/scons" && "$RUNNER_TEMP/scons/bin/pip" -q install scons
+          # Frame pacing (Swappy), as in the official template.
+          python3 misc/scripts/install_swappy_android.py
+          "$RUNNER_TEMP/scons/bin/scons" platform=android arch=arm64 target=template_release profile="$ENGINE_PROFILE" \
+            cache_path="$HOME/.scons_cache" -j"$(nproc)"
+
+      - name: Swap engine library into the AAR
+        run: |
+          so=godot-src/platform/android/java/lib/libs/release/arm64-v8a/libgodot_android.so
+          entry=jni/arm64-v8a/libgodot_android.so
+          unzip -l "$AAR" | grep -q " $entry$" || { unzip -l "$AAR"; exit 1; }
+          echo "::notice::official engine lib $(unzip -l "$AAR" "$entry" | awk 'NR==4{printf "%.1f MB", $1/1e6}')"
+          mkdir -p "$RUNNER_TEMP/aar/jni/arm64-v8a"
+          "$ANDROID_HOME/ndk/$NDK_VERSION/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" --strip-unneeded \
+            -o "$RUNNER_TEMP/aar/$entry" "$so"
+          (cd "$RUNNER_TEMP/aar" && zip -q "$AAR" "$entry")
+          echo "::notice::stripped engine lib $(du -h "$RUNNER_TEMP/aar/$entry" | cut -f1)"
 
       # Same data as the other builds, so the bundled mods (and their digest) match.
       - name: Minify JSON data
