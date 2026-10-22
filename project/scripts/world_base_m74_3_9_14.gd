@@ -6729,6 +6729,15 @@ func _refresh_ecology_relationships() -> Array[Dictionary]:
     # With no habitats out, only the player's square counts: most of the
     # world's wild Pokemon are settled by these two comparisons.
     var player_only := deployed_pokemon.is_empty()
+    # The cells near a habitat, once for this pass: asking every habitat about
+    # every wild Pokemon (_wild_ecology_is_active) was most of a pass that took
+    # the host 10 ms and more with a few dozen habitats out.
+    var near_habitat := {}
+    for raw_cell in deployed_pokemon:
+        var habitat_cell := Vector2i(raw_cell)
+        for y in range(-PokemonEcology.HABITAT_RADIUS, PokemonEcology.HABITAT_RADIUS + 1):
+            for x in range(-PokemonEcology.HABITAT_RADIUS, PokemonEcology.HABITAT_RADIUS + 1):
+                near_habitat[habitat_cell + Vector2i(x, y)] = true
     for raw_id in wild_pokemon:
         var wild_data: Dictionary = wild_pokemon[raw_id]
         if bool(wild_data.get("burrowed", false)):
@@ -6739,7 +6748,11 @@ func _refresh_ecology_relationships() -> Array[Dictionary]:
                 or absi(wild_cell.y - active_center.y) > ECOLOGY_ACTIVE_RADIUS
             ):
             continue
-        if not _wild_ecology_is_active(wild_cell, active_center):
+        if (
+                (absi(wild_cell.x - active_center.x) > ECOLOGY_ACTIVE_RADIUS
+                or absi(wild_cell.y - active_center.y) > ECOLOGY_ACTIVE_RADIUS)
+                and not near_habitat.has(wild_cell)
+            ):
             continue
         active_wild.append(wild_data)
         records.append({
