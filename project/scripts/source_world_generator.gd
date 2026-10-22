@@ -1,6 +1,8 @@
 class_name SourceWorldGenerator
 extends RefCounted
 
+const NativeWorldGen = preload("res://scripts/native_world_gen.gd")
+
 const CARDINALS: Array[Vector2i] = [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]
 const EIGHT_DIRECTIONS: Array[Vector2i] = [
     Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN,
@@ -36,6 +38,9 @@ static func generate_exact_source_world(
         size_index: int,
         used_dungeons: Array[String] = []
     ) -> Dictionary:
+    # The engine's native port when it has one: the same world, much faster.
+    if NativeWorldGen.enabled():
+        return NativeWorldGen.generate(seed_value, size_index, used_dungeons)
     return generate_validated(seed_value, size_index, used_dungeons)
 
 # Retry only rejected fresh worlds. Attempt zero preserves the existing RNGs.
