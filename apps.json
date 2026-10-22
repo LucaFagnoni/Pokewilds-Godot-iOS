@@ -19,6 +19,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "0.10.245",
+          "buildVersion": "245",
+          "date": "2026-10-22T13:52:36Z",
+          "localizedDescription": "Dark mode: touch buttons keep their own text colours (the X was light on white)",
+          "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0043/Pokewilds-unsigned.ipa",
+          "size": 63324214,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.10.236",
           "buildVersion": "236",
           "date": "2026-10-22T11:23:12Z",
@@ -98,15 +107,6 @@
           "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0031/Pokewilds-unsigned.ipa",
           "size": 57591924,
           "minOSVersion": "15.0"
-        },
-        {
-          "version": "0.10.189",
-          "buildVersion": "189",
-          "date": "2026-10-21T16:59:40Z",
-          "localizedDescription": "Title music: lake6, fading out as soon as a save loads or a server is joined\n\n- The menus play lake6 (the lofi one with OPTIONS > LOFI MUSIC on), fading in.\n- It fades out as soon as any loading screen goes up: a save loading, a\n  world being made, a server being joined or created. Cancelled back to the\n  menus, it fades in again; in a game the world's music takes over.",
-          "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0030/Pokewilds-unsigned.ipa",
-          "size": 57591636,
-          "minOSVersion": "15.0"
         }
       ],
       "appPermissions": {
@@ -117,11 +117,11 @@
           "NSPhotoLibraryUsageDescription": "Not used by the game (Godot's default key)."
         }
       },
-      "version": "0.10.236",
-      "versionDate": "2026-10-22T11:23:12Z",
-      "versionDescription": "Merge: cheaper weather drawing, deep forest shade loaded on a thread",
-      "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0042/Pokewilds-unsigned.ipa",
-      "size": 63305947
+      "version": "0.10.245",
+      "versionDate": "2026-10-22T13:52:36Z",
+      "versionDescription": "Dark mode: touch buttons keep their own text colours (the X was light on white)",
+      "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0043/Pokewilds-unsigned.ipa",
+      "size": 63324214
     }
   ],
   "news": []
