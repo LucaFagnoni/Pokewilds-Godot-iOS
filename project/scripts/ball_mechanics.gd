@@ -622,7 +622,12 @@ func capture(id: int, ball: String, direction: Vector2i, serial: int) -> void:
         return
     var online=is_instance_valid(main.coop_game) and main.coop_game.active
     if online:
-        if not await main.coop_game.wild.reserve(id):return
+        main.coop_game.wild.refused = ""
+        if not await main.coop_game.wild.reserve(id):
+            # Another player's battle or ball got there first: say so.
+            if main.coop_game.wild.refused in ["already_claimed", "no_pokemon"]:
+                main._show_message(main.coop_game.population.refusal(main.coop_game.wild.refused, Data.battle_display_name(str(record.species))))
+            return
     var saved = world()._serializable_ecology_record(record,cell)
     for key in record.get("source_record",{}):
         if not saved.has(key): saved[key] = record.source_record[key]

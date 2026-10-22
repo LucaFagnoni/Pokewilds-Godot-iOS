@@ -183,6 +183,9 @@ func contact()->void:
         begin_encounter(wild_id,false);return
 
 var claiming_id:=-1
+## Why the last claim was turned away, for words the player is shown
+## (coop_population_runtime.gd refusal).
+var refused:=""
 
 func reserve(wild_id:int,field_attack:bool=false)->bool:
     if encounter_pending or not encounter.is_empty() or game.main.battle_active:return false
@@ -198,6 +201,7 @@ func reserve(wild_id:int,field_attack:bool=false)->bool:
     var result:Dictionary=await game.command("wild_claim",{"area":area,"wild_id":wild_id})
     encounter_pending=false;claiming_id=-1
     data.erase("ball_reserved")
+    refused=String(result.get("reason",""))
     if not result.get("ok",false) or not game.active:
         if game.active:world.set_gameplay_enabled(was_enabled and not game.main._field_ui_blocks_gameplay(game.main.build_menu_open))
         return false

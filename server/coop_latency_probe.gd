@@ -255,19 +255,39 @@ func _actions(where: String) -> void:
 				return not main.world.built_structures.has(at))
 
 	if main.caught_pokemon.size() >= 2:
+		var left_at: Vector2i = main.world._player_cell() + main.world._facing_cell()
 		if await _try("leave a Pokemon here", func() -> bool:
 				await coop.population.deploy(main.caught_pokemon.size() - 1, false)
 				return coop.population.last_result.get("ok", false)):
-			await _try("call it back", func() -> bool:
-				# Wherever it has wandered to by now.
-				var prefix := "world/%s/deployed_pokemon/" % coop._area()
-				for key in coop.shared_records:
-					if String(key).begins_with(prefix):
-						var at := String(key).trim_prefix(prefix).uri_decode().split(",")
-						await coop.population.recall(Vector2i(int(at[0]), int(at[1])))
-						return coop.population.last_result.get("ok", false)
-				return false)
+			# As a player does: it is asked for on the tile it was seen on, after
+			# it has walked about for a while (and while the request travels).
+			var identity := ""
+			for key in coop.record_keys("world/%s/deployed_pokemon/" % coop._area()):
+				var record = preload("res://scripts/coop_world_delta.gd").decode(coop.shared_records.get(key))
+				if record is Dictionary and String(record.get("ecology_id", "")).begins_with("coop_owned:" + coop.session.actor + ":"): identity = String(record.ecology_id)
+			var steps := 0
+			var last := _where(identity)
+			for tick in 40:
+				await create_timer(0.25).timeout
+				if _where(identity) != last: steps += 1; last = _where(identity)
+			var before: int = main.caught_pokemon.size()
+			if await _try("call it back (%d steps, now %d away)" % [steps, maxi(absi(last.x - left_at.x), absi(last.y - left_at.y))], func() -> bool:
+					await coop.population.recall(left_at, "deployed_pokemon", identity)
+					return coop.population.last_result.get("ok", false)):
+				await _idle(3.0)
+				# Gone from the world for good: not left behind, not sent back as a second one.
+				if _where(identity).x != 999999 or main.caught_pokemon.size() != before + 1: over += 1; _skip("called back cleanly", "FAILED: still in the world or not in the party")
+				else: _skip("called back cleanly", "ok, one try, none left behind")
 	await _try("save (menu)", func() -> bool: return await coop.save_game(main._capture_game_save()))
+
+## Where the habitat Pokemon with this id stands, in this game or the records.
+func _where(identity: String) -> Vector2i:
+	for cell in main.world.deployed_pokemon:
+		if String(main.world.deployed_pokemon[cell].get("ecology_id", "")) == identity: return cell
+	for key in coop.record_keys("world/%s/deployed_pokemon/" % coop._area()):
+		var record = preload("res://scripts/coop_world_delta.gd").decode(coop.shared_records.get(key))
+		if record is Dictionary and String(record.get("ecology_id", "")) == identity: return Vector2i(int(record.x), int(record.y))
+	return Vector2i(999999, 999999)
 
 func _battle_start() -> bool:
 	var wild_id := _wild_near()

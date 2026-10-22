@@ -5,6 +5,7 @@ var game:Node
 var claim:Dictionary={}
 var original_profile:Dictionary={}
 var finishing:=false
+var begun:=false
 func configure(coordinator:Node)->void:
     game=coordinator
     game.session.departed.connect(func(_peer,actor):
@@ -31,11 +32,16 @@ func execute(actor:String,id:String,operation:String,args:Dictionary)->Dictionar
     var changes:Array=[]
     if operation=="population_battle":
         var cell=Vector2i(int(args.x),int(args.y))
-        if not game.population.model()._near(actor,args.area,cell):return {"ok":false,"reason":"too_far"}
         if game.state.records.has(prefix):return {"ok":false,"reason":"already_fighting"}
-        var key=Records.key(args.area,args.group,cell)
-        var encoded=game.state.records.get(key,Delta.encode(null))
-        if not Delta.decode(encoded) is Dictionary:return {"ok":false,"reason":"too_late"}
+        # The Pokemon attacked, by its id, wherever it has walked to since.
+        var model=game.population.model()
+        var found:Array=model.find(args.area,args.group,cell,"",String(args.get("identity","")))
+        if found.is_empty():return {"ok":false,"reason":"too_late"}
+        var key:String=found[0];var target:Dictionary=found[1]
+        if args.group=="deployed_pokemon" and Records.owned_by_other(target,actor):return {"ok":false,"reason":"not_owner"}
+        cell=Vector2i(int(target.get("x",cell.x)),int(target.get("y",cell.y)))
+        if not (model._near(actor,args.area,cell) if args.group=="wild_eggs" else model._reach(actor,args.area,cell)):return {"ok":false,"reason":"too_far"}
+        var encoded=game.state.records.get(key)
         var record={"actor":actor,"key":key,"record":encoded,"area":args.area,"group":args.group,"x":cell.x,"y":cell.y}
         changes=[game.state.change(key,Delta.encode(null)),game.state.change(prefix,record)]
     else:
@@ -53,9 +59,15 @@ func execute(actor:String,id:String,operation:String,args:Dictionary)->Dictionar
         result["pending"]=game.state.records.get("player/"+actor,{}).get("save",{}).get("coop_pending_pokemon",[])
     return result
 func begin(cell:Vector2i,group:String)->void:
-    if not claim.is_empty() or game._request_busy:return
-    var result:Dictionary=await game.command("population_battle",{"area":game._area(),"group":group,"x":cell.x,"y":cell.y})
-    if not result.get("ok",false):game.main._show_message("Too late!");return
+    if not claim.is_empty() or begun:return
+    var shown:Dictionary=game.main.world.get(group).get(cell,{})
+    var identity=String(shown.get("ecology_id",""))
+    var name="The EGG" if group=="wild_eggs" else preload("res://scripts/pokemon_state.gd").display_name(shown).to_upper() if not shown.is_empty() else "It"
+    begun=true
+    var result:Dictionary={"ok":false,"reason":"busy"}
+    if await game.wait_free():result=await game.command("population_battle",{"area":game._area(),"group":group,"x":cell.x,"y":cell.y,"identity":identity})
+    begun=false
+    if not result.get("ok",false):game.main._show_message(game.population.refusal(String(result.get("reason","")),name));return
     original_profile=game._personal_profile().duplicate(true);claim=result.claim
     var member:Dictionary=Delta.decode(claim.record)
     for key in ["x","y","cell","sprite","move_timer","anim_phase","behavior"]:member.erase(key)
