@@ -1,8 +1,10 @@
 extends RefCounted
 ## The single-player save files: one <world>.json per world in `directory`,
-## with index.cfg naming each world's file and the last one saved. A save is
-## replaced atomically and the one before it kept as .bak (see write). Online
-## worlds are stored elsewhere (coop_store.gd).
+## with index.cfg naming each world's file and the last one saved. The game's
+## own saves (the app going to the background) go to <world>.autosave.json
+## next to it, never over the player's SAVE; a SAVE removes the autosave it
+## supersedes. A save is replaced atomically and the one before it kept as .bak
+## (see write). Online worlds are stored elsewhere (coop_store.gd).
 const DataPaths = preload("res://scripts/game_data_paths.gd")
 
 var directory: String
@@ -30,6 +32,33 @@ static func safe_world_filename(world_name: String) -> String:
 func path_for_world(world_name: String) -> String:
     return "%s/%s.json" % [directory, safe_world_filename(world_name)]
 
+const AUTOSAVE_SUFFIX := ".autosave.json"
+
+## World file names have no dots (safe_world_filename): an autosave is never a world's own save.
+static func is_autosave(save_path: String) -> bool:
+    return save_path.ends_with(AUTOSAVE_SUFFIX)
+
+## The autosave next to a world's save (either of the two may be given).
+static func autosave_path(save_path: String) -> String:
+    return save_path if is_autosave(save_path) else save_path.trim_suffix(".json") + AUTOSAVE_SUFFIX
+
+## The world's own save next to an autosave (either of the two may be given).
+static func manual_path(save_path: String) -> String:
+    return save_path.trim_suffix(AUTOSAVE_SUFFIX) + ".json" if is_autosave(save_path) else save_path
+
+## When the file was last written, 0 if there is none.
+static func saved_time(save_path: String) -> int:
+    return int(FileAccess.get_modified_time(save_path)) if FileAccess.file_exists(save_path) else 0
+
+## Removes a save with its .bak (it would bring the save back, see read) and .pending.
+static func remove_save_files(save_path: String) -> Error:
+    if FileAccess.file_exists(save_path):
+        var error := DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path))
+        if error != OK: return error
+    for leftover in [save_path + ".bak", save_path + ".pending"]:
+        if FileAccess.file_exists(leftover): DirAccess.remove_absolute(ProjectSettings.globalize_path(leftover))
+    return OK
+
 func ensure_directory() -> bool:
     var absolute_dir = ProjectSettings.globalize_path(directory)
     var err = DirAccess.make_dir_recursive_absolute(absolute_dir)
@@ -44,24 +73,31 @@ func write_index(world_name: String, save_path: String) -> void:
     var cfg = ConfigFile.new()
     cfg.load(index_path)
     var key = safe_world_filename(world_name)
-    cfg.set_value("worlds", key, save_path.get_file())
+    # "worlds" names the player's own save; "last" may be the autosave (Continue).
+    if not is_autosave(save_path):
+        cfg.set_value("worlds", key, save_path.get_file())
+    # A SAVE removes the autosave: one still there was made after it.
+    var last := autosave_path(save_path) if FileAccess.file_exists(autosave_path(save_path)) else save_path
     cfg.set_value("last", "world_name", world_name)
-    cfg.set_value("last", "save_path", save_path.get_file())
+    cfg.set_value("last", "save_path", last.get_file())
     cfg.save(index_path)
 
-## Deletes a single-player world from the LOAD list's bin: its save file and
-## its lines in the save index. World caches no other save needs go after it.
-func delete(world_name: String, save_path: String) -> Error:
-    var error := DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path))
-    if error != OK: return error
-    # The kept copy would bring the world back (see read).
-    for leftover in [save_path + ".bak", save_path + ".pending"]:
-        if FileAccess.file_exists(leftover): DirAccess.remove_absolute(ProjectSettings.globalize_path(leftover))
+## Deletes a single-player world from the LOAD list's bin: its save, its
+## autosave and their lines in the save index; with `autosave_only`, just the
+## autosave. World caches no other save needs go after it.
+func delete(world_name: String, save_path: String, autosave_only := false) -> Error:
+    var removed := [autosave_path(save_path)] if autosave_only else [manual_path(save_path), autosave_path(save_path)]
+    if not removed.any(func(path): return FileAccess.file_exists(path) or FileAccess.file_exists(path + ".bak")):
+        return ERR_FILE_NOT_FOUND
+    for path in removed:
+        var error := remove_save_files(path)
+        if error != OK: return error
+    var names := removed.map(func(path): return String(path).get_file())
     var cfg := ConfigFile.new()
     if cfg.load(index_path) == OK:
         var key = safe_world_filename(world_name)
-        if String(cfg.get_value("worlds", key, "")) == save_path.get_file(): cfg.erase_section_key("worlds", key)
-        if String(cfg.get_value("last", "save_path", "")) == save_path.get_file(): cfg.erase_section("last")
+        if String(cfg.get_value("worlds", key, "")) in names: cfg.erase_section_key("worlds", key)
+        if String(cfg.get_value("last", "save_path", "")) in names: cfg.erase_section("last")
         cfg.save(index_path)
     start_cache_cleanup()
     return OK
@@ -140,6 +176,22 @@ static func write(save_path: String, data: Dictionary) -> Error:
             return error
     return DirAccess.rename_absolute(pending, save_path)
 
+## The player's SAVE: written as `write`, then the autosave it supersedes goes.
+## On the save's thread, so a background save made after it is never removed.
+static func write_manual(save_path: String, data: Dictionary) -> Error:
+    var error := write(save_path, data)
+    if error == OK:
+        remove_save_files(autosave_path(save_path))
+    return error
+
+## A world's save and its autosave (either may be given), the newer first. A
+## SAVE removes the autosave: one still there is newer, in the same second too.
+static func newer_first(save_path: String) -> Array:
+    var both := [autosave_path(save_path), manual_path(save_path)]
+    if saved_time(both[1]) > saved_time(both[0]):
+        both.reverse()
+    return both
+
 ## {"path", "data"} of the newest save that can be read, or {}.
 func find_newest() -> Dictionary:
     if not ensure_directory():
@@ -147,10 +199,12 @@ func find_newest() -> Dictionary:
 
     var cfg := ConfigFile.new()
     if cfg.load(index_path) == OK:
-        var indexed := indexed_path(String(cfg.get_value("last", "save_path", "")))
-        var indexed_data := read(indexed)
-        if not indexed_data.is_empty():
-            return {"path": indexed, "data": indexed_data}
+        # The world played last, from its save or its autosave if that is newer.
+        var last := indexed_path(String(cfg.get_value("last", "save_path", "")))
+        for indexed in ([] if last.is_empty() else newer_first(last)):
+            var indexed_data := read(indexed)
+            if not indexed_data.is_empty():
+                return {"path": indexed, "data": indexed_data}
 
     # Newest first: only saves that cannot be read are parsed before the answer.
     var candidates := []
@@ -170,10 +224,12 @@ func find(world_name: String) -> Dictionary:
     if not ensure_directory():
         return {}
 
-    var direct_file := path_for_world(world_name)
-    var data := read(direct_file)
-    if not data.is_empty():
-        return {"path": direct_file, "data": data}
+    # The world's save or its autosave, whichever is newer.
+    var data := {}
+    for direct_file in newer_first(path_for_world(world_name)):
+        data = read(direct_file)
+        if not data.is_empty():
+            return {"path": direct_file, "data": data}
 
     var cfg := ConfigFile.new()
     if cfg.load(index_path) == OK:
@@ -192,38 +248,38 @@ func find(world_name: String) -> Dictionary:
 
     return find_newest()
 
-## Every save that can be read, {"path", "data"}, newest first: the LOAD list.
+## Every save that can be read, {"path", "data", "autosave"}: the LOAD list.
+## Worlds come newest first, each world's own save followed by its autosave
+## (a world only ever autosaved has just that one).
 func entries() -> Array[Dictionary]:
     var result: Array[Dictionary] = []
-    var seen: Dictionary = {}
     if not ensure_directory():
         return result
+    var paths := {}
     var cfg := ConfigFile.new()
-    if cfg.load(index_path) == OK:
+    if cfg.load(index_path) == OK and cfg.has_section("worlds"):
         for raw_key in cfg.get_section_keys("worlds"):
             var indexed := indexed_path(String(cfg.get_value("worlds", String(raw_key), "")))
-            if seen.has(indexed):
-                continue
-            var indexed_data := read(indexed)
-            if indexed_data.is_empty():
-                continue
-            seen[indexed] = true
-            result.append({"path":indexed, "data":indexed_data})
-    var folder := DirAccess.open(directory)
-    if folder != null:
-        folder.list_dir_begin()
-        var file_name := folder.get_next()
-        while not file_name.is_empty():
-            if not folder.current_is_dir() and file_name.to_lower().ends_with(".json"):
-                var candidate := "%s/%s" % [directory, file_name]
-                if not seen.has(candidate):
-                    var candidate_data := read(candidate)
-                    if not candidate_data.is_empty():
-                        seen[candidate] = true
-                        result.append({"path":candidate, "data":candidate_data})
-            file_name = folder.get_next()
-        folder.list_dir_end()
-    result.sort_custom(func(first: Dictionary, second: Dictionary) -> bool:
-        return int(FileAccess.get_modified_time(String(first.path))) > \
-            int(FileAccess.get_modified_time(String(second.path))))
+            if not indexed.is_empty():
+                paths[indexed] = true
+                paths[autosave_path(indexed)] = true
+    for file_name in DirAccess.get_files_at(directory):
+        if file_name.to_lower().ends_with(".json"):
+            paths["%s/%s" % [directory, file_name]] = true
+    var worlds := {}
+    for path in paths:
+        var data := read(path)
+        if data.is_empty():
+            continue
+        var world: Array = worlds.get_or_add(manual_path(path), [])
+        var entry := {"path": path, "data": data, "autosave": is_autosave(path)}
+        # The world's own save first, its autosave under it.
+        if entry.autosave: world.append(entry)
+        else: world.push_front(entry)
+    var newest := func(world: Array) -> int:
+        return world.map(func(entry): return saved_time(entry.path)).max()
+    var ordered := worlds.values()
+    ordered.sort_custom(func(first: Array, second: Array) -> bool: return newest.call(first) > newest.call(second))
+    for world in ordered:
+        result.append_array(world)
     return result

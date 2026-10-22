@@ -2820,6 +2820,9 @@ func _build_m66_source_ui() -> void:
     setup_load_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     setup_load_name.clip_text = true
     setup_load_name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+    # When the save was made, and whether it is the world's autosave.
+    _source_ui_label(load_frame, "SaveInfo", Vector2(48, 80),
+        Vector2(192, 10), 7, "").horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     _source_ui_label(load_frame, "Next", Vector2(246, 65),
         Vector2(10, 12), 9, "▶", true)
     _source_ui_label(load_frame, "GoCursor", Vector2(108, 101),
@@ -5203,6 +5206,11 @@ func _refresh_setup_load_selector() -> void:
         world_name = "default"
     setup_load_name.text = "%s.sav" % world_name
     setup_load_name.tooltip_text = setup_load_name.text
+    # The autosave follows its world's save in the list (see WorldSaves.entries).
+    var entry := setup_load_entries[setup_load_index]
+    var saved := Time.get_datetime_string_from_unix_time(WorldSaves.saved_time(String(entry.path))).replace("T", "  ").left(17)
+    (setup_load_name.get_parent().get_node("SaveInfo") as Label).text = \
+        ("AUTOSAVE   " + saved) if entry.get("autosave", false) else saved
 
 func _handle_setup_load_input(event: InputEvent) -> void:
     if event.is_action_pressed("move_left") or event.is_action_pressed("move_up"):
@@ -10655,7 +10663,7 @@ func _write_single_player_save(data: Dictionary) -> Error:
     if save_path.is_empty():
         return ERR_CANT_CREATE
     save_thread = Thread.new()
-    save_thread.start(WorldSaves.write.bind(save_path, data.duplicate(true)))
+    save_thread.start(WorldSaves.write_manual.bind(save_path, data.duplicate(true)))
     while save_thread.is_alive():
         await get_tree().process_frame
     var error: Error = save_thread.wait_to_finish()
@@ -10680,7 +10688,7 @@ func _finish_single_player_save(data: Dictionary, save_path: String, error: Erro
     _save_setup()
     return OK
 
-## iOS may end a suspended app without warning: save when it goes to the
+## iOS may end a suspended app without warning: autosave when it goes to the
 ## background, whenever the SAVE menu could be opened, before returning (no
 ## thread). Online worlds keep their own journal.
 func _save_on_pause() -> void:
@@ -10690,8 +10698,10 @@ func _save_on_pause() -> void:
     _wait_for_save_thread()
     _sync_pokedex_owned()
     var data := _capture_game_save()
+    # The game's own save: the autosave, never the player's SAVE.
     var save_path := _prepare_single_player_save(data)
     if not save_path.is_empty():
+        save_path = WorldSaves.autosave_path(save_path)
         _finish_single_player_save(data, save_path, WorldSaves.write(save_path, data))
 
 ## A save being written lands before another starts or the game goes away.
