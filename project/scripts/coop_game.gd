@@ -278,6 +278,7 @@ func configure(game:Node)->void:
     session.departed.connect(func(_peer,_actor):_broadcast_authority.call_deferred())
     session.departed.connect(func(peer,_actor):_player_notice(peer,"","left"))
     session.departed.connect(func(peer,_actor):_join_records_sent.erase(peer))
+    session.departed.connect(func(_peer,actor):_travelling.erase(actor))
     visuals=Players.new();add_child(visuals);visuals.configure(main,session,state)
     visuals.presence_received.connect(_presence)
     commands=Commands.new();add_child(commands);commands.bind(session,state)
@@ -669,37 +670,87 @@ func _profile_shape_ok(profile:Variant)->bool:
 
 func _committed(commit:Dictionary)->void:
     var deltas:Dictionary={}
+    # Most commits (Pokemon moving about, builds, drops) read the same for
+    # every player who watches the same areas: worked out and encoded once
+    # for them all. Only one that touches a player's own records is made for
+    # each player.
+    var personal:=_personal(commit)
+    var encoded:Dictionary={}
     for peer in session.players:
         if peer==1:continue
         var actor=String(session.players[peer].actor)
-        var visible=Commands.visible_result(commit,actor)
-        # A world record the player holds goes to them as what changed in it
-        # (coop_world_delta.gd), checked there against its fingerprint.
-        for change in visible.get("changes",[]):
-            var key:=String(change.get("key",""))
-            var old:Array=state.replaced.get(key,[])
-            if not change.get("after") is String or old.is_empty() or old[0]!=change.get("before") or not _shared_key(key,actor):continue
-            if not deltas.has(key):deltas[key]=WorldDelta.entry_delta(old[1],change.after)
-            if deltas[key]==null:continue
-            change.erase("after");change["delta"]=deltas[key];change["print"]=state.print_of(key)
-        # A player's own record goes to them as what changed, not whole.
-        var own_edits=commit.get("player_edits",{}).get("player/"+actor)
-        if own_edits is Array:
-            for change in visible.get("changes",[]):
-                if String(change.get("key",""))=="player/"+actor and change.has("after"):
-                    change.erase("after");change["edits"]=own_edits
-        # A storage box too (Patch.diff_list), with its list of entries to check by.
-        var list_edits:Dictionary=commit.get("list_edits",{})
-        for change in visible.get("changes",[]):
-            var edits=list_edits.get(String(change.get("key","")))
-            if edits is Array and change.get("after") is Array:
-                change["entries"]=_entry_ids(change.after);change.erase("after");change["edits"]=edits
-        visible.erase("player_edits");visible.erase("list_edits")
-        visible["profile_base"]=state.print_of("player/"+actor,{})
-        session.send_to(peer,{"kind":"shared_commit","result":visible})
+        var areas:Array=_watched(actor)
+        var group:String=(actor if personal else "")+"|"+",".join(areas)
+        if not encoded.has(group):encoded[group]=_visible_bytes(commit,actor,areas,personal,deltas)
+        if not encoded[group].is_empty():session.send_bytes_to(peer,encoded[group])
     var own:Dictionary=Commands.visible_result(commit,session.actor)
     own["profile_base"]=state.print_of("player/"+session.actor,{})
     _apply_visible(own)
+
+## The shared_commit `actor` is sent: only the records of the areas they are
+## in or going to (records of the others are sent when they go there); empty
+## when nothing in it is theirs to see.
+func _visible_bytes(commit:Dictionary,actor:String,areas:Array,personal:bool,deltas:Dictionary)->PackedByteArray:
+    var started:=Time.get_ticks_usec()
+    var visible=Commands.visible_result(commit,actor)
+    if visible.get("changes") is Array:
+        var kept:Array=[]
+        for change in visible.changes:
+            var area:=_key_area(String(change.get("key","")))
+            if area.is_empty() or area in areas:kept.append(change)
+        if kept.is_empty() and not visible.changes.is_empty() and not visible.has("session"):return PackedByteArray()
+        visible.changes=kept
+    # A world record the player holds goes to them as what changed in it
+    # (coop_world_delta.gd), checked there against its fingerprint.
+    for change in visible.get("changes",[]):
+        var key:=String(change.get("key",""))
+        var old:Array=state.replaced.get(key,[])
+        if not change.get("after") is String or old.is_empty() or old[0]!=change.get("before") or not _shared_key(key,actor):continue
+        if not deltas.has(key):deltas[key]=WorldDelta.entry_delta(old[1],change.after)
+        if deltas[key]==null:continue
+        change.erase("after");change["delta"]=deltas[key];change["print"]=state.print_of(key)
+    # A player's own record goes to them as what changed, not whole.
+    var own_edits=commit.get("player_edits",{}).get("player/"+actor)
+    if own_edits is Array:
+        for change in visible.get("changes",[]):
+            if String(change.get("key",""))=="player/"+actor and change.has("after"):
+                change.erase("after");change["edits"]=own_edits
+    # A storage box too (Patch.diff_list), with its list of entries to check by.
+    var list_edits:Dictionary=commit.get("list_edits",{})
+    for change in visible.get("changes",[]):
+        var edits=list_edits.get(String(change.get("key","")))
+        if edits is Array and change.get("after") is Array:
+            change["entries"]=_entry_ids(change.after);change.erase("after");change["edits"]=edits
+    visible.erase("player_edits");visible.erase("list_edits")
+    # Read only with a change to the player's own record (_apply_visible).
+    if personal:visible["profile_base"]=state.print_of("player/"+actor,{})
+    var bytes:=JSON.stringify({"kind":"shared_commit","result":visible}).to_utf8_buffer()
+    Session.Transport.count("enc:shared_commit",bytes.size(),started)
+    return bytes
+
+## True when what a commit shows depends on who looks (Commands.visible_result).
+static func _personal(commit:Dictionary)->bool:
+    if commit.get("session") is Dictionary and commit.session.has("battle_inventory"):return true
+    for change in commit.get("changes",[]):
+        var key:=String(change.get("key",""))
+        if key.begins_with("player/") or key.begins_with("private_box/") or key.begins_with("horde_reward/"):return true
+    return false
+
+## The area a record belongs to; "" for those every player holds.
+static func _key_area(key:String)->String:
+    return key.get_slice("/",1) if key.begins_with("world/") or key.begins_with("wild_claim/") else ""
+
+## Host: the areas whose records `actor` is kept up to date with: the one
+## they are in, and the one they have asked to go to (from its records,
+## sent then, until they arrive). actor -> [area, whether it was saved then].
+var _travelling:Dictionary={}
+func _watched(actor:String)->Array:
+    var areas:Array=[]
+    var here:=String(state.members.get(actor,{}).get("area",""))
+    if not here.is_empty():areas.append(here)
+    var going:=String(_travelling.get(actor,[""])[0])
+    if not going.is_empty() and going!=here:areas.append(going)
+    return areas
 
 ## The ids of a box's entries in order, as one number: a box rebuilt from
 ## edits must come out with the same ones.
@@ -1114,6 +1165,17 @@ func game_started()->bool:
     _travelling_box_enter.call_deferred()
     return true
 
+## Dedicated server: true while no player is in the server's own area. Its
+## wild and habitat Pokemon then wait where they are, as they do in any area
+## no player is in, instead of being moved (and every move sent to every
+## player) for no one to see.
+func nobody_here()->bool:
+    if not Server.active or not hosting:return false
+    var area:=_area()
+    for actor in state.members:
+        if actor!=session.actor and String(state.members[actor].get("area",""))==area:return false
+    return true
+
 func _area()->String:
     return "%d,%d"%[main.current_world_grid.x,main.current_world_grid.y]
 
@@ -1316,14 +1378,23 @@ func _message(_peer:int,actor:String,packet:Dictionary)->void:
             session.send_to(_peer,{"kind":"command_result","id":packet.id,"result":{"ok":success}});return
         if packet.get("kind")=="profile_checkpoint":_checkpoint_request(_peer,actor,packet);return
         if packet.get("kind")=="state_request":_send_state(_peer,actor);return
+        # Going to another area: its records first (area_service.gd then sends the area).
+        if packet.get("kind")=="area_request" and packet.get("area") is String:
+            if preload("res://scripts/coop_areas.gd").valid_area(packet.area) and not packet.area in _watched(actor):_send_state(_peer,actor,packet.area)
+            return
         if packet.get("kind")=="entered" and packet.get("area") is String:
             _player_notice(_peer,"","joined")
             var entry=service.areas.enter(actor,packet.area)
-            # A player arriving from another area is sent the records again.
-            # One who is joining had them on being let in, and every change
-            # since: sending them twice was a second ~60 KB on every join.
+            # A player arriving from another area is sent the records again
+            # (theirs and this area's: some, like those made with the area,
+            # are not sent as changes). One who is joining had them on being
+            # let in: sending them twice was a second ~60 KB on every join.
+            # An area that was already made when they asked to go there is up
+            # to date with them since: it is not sent a second time.
             var joining:bool=_join_records_sent.erase(_peer)
-            if entry.get("ok",false) and not joining:await _send_state(_peer,actor)
+            var going:Array=_travelling.get(actor,["",false])
+            _travelling.erase(actor)
+            if entry.get("ok",false) and not joining:await _send_state(_peer,actor,"",String(going[0]) if going[0]==packet.area and going[1] else "")
             session.send_to(_peer,{"kind":"entered_reply","entry":entry})
             _broadcast_authority()
         return
@@ -1361,11 +1432,21 @@ func _message(_peer:int,actor:String,packet:Dictionary)->void:
         _apply_visible(packet.result);return
     if packet.get("kind")=="interaction_update" and packet.get("result") is Dictionary:
         interaction_ui.update(packet.result);return
+    # The area this player is going to, as it is now (_send_state `going`).
+    if packet.get("kind")=="area_records" and packet.get("area") is String and packet.get("records") is Dictionary:
+        for key in shared_records.keys():
+            if _key_area(String(key))==packet.area and _shared_key(String(key),session.actor):shared_records.erase(key)
+        for key in packet.records:
+            if _key_area(String(key))==packet.area and _shared_key(String(key),session.actor):shared_records[key]=packet.records[key]
+        shared_epoch+=1
+        return
     if packet.get("kind")=="state_snapshot" and packet.get("records") is Dictionary:
         _awaiting_state=false
         events.results_dirty=true
+        # The area this player was just sent (area_records) and kept up to date with stays.
+        var kept:=String(packet.get("kept","")) if packet.get("kept") is String else ""
         for key in shared_records.keys():
-            if _shared_key(String(key),session.actor):shared_records.erase(key)
+            if _shared_key(String(key),session.actor) and (kept.is_empty() or _key_area(String(key))!=kept):shared_records.erase(key)
         for key in packet.records:
             if _shared_key(String(key),session.actor):shared_records[key]=packet.records[key]
         shared_epoch+=1
@@ -1385,16 +1466,27 @@ func _broadcast_authority()->void:
 func _shared_key(key:String,actor:String)->bool:
     return events.shared_key(key) or key=="settings" or key.begins_with("boss/") or key.begins_with("raid/") or key.begins_with("horde/") or key.begins_with("horde_reward/"+actor+"/") or wild.shared_key(key) or population.shared_key(key) or building.is_build_key(key) or key.begins_with("beacon/") or key.begins_with("drop/") or key.begins_with("box/") or key.begins_with("chest/") or key=="private_box/"+actor
 
-func _send_state(peer:int,actor:String)->void:
+## The records `actor` holds: those every player holds and those of the areas
+## they watch (_watched), but for those of `kept`, which they hold already.
+## With `going` (an area they have asked to go to) only that area's, which
+## they then watch too, so it arrives as it is now.
+func _send_state(peer:int,actor:String,going:String="",kept:String="")->void:
     var deadline=Time.get_ticks_msec()+10000
     while session.players.has(peer) and Time.get_ticks_msec()<deadline:
         # Rebuild after backpressure: no await between capture and enqueue, so later
         # commits always follow this complete snapshot in the ordered connection.
+        var areas:=_watched(actor) if going.is_empty() else [going]
         var records:Dictionary={}
         for key in state.records:
-            if _shared_key(String(key),actor):records[key]=state.records[key]
-        var error:Error=session.send_to(peer,{"kind":"state_snapshot","records":records})
-        if error==OK:return
+            if _shared_key(String(key),actor):
+                var area:=_key_area(String(key))
+                if ((area.is_empty() and going.is_empty()) or area in areas) and (kept.is_empty() or area!=kept):records[key]=state.records[key]
+        var packet:={"kind":"state_snapshot","records":records,"kept":kept}
+        if not going.is_empty():packet={"kind":"area_records","area":going,"records":records}
+        var error:Error=session.send_to(peer,packet)
+        if error==OK:
+            if not going.is_empty():_travelling[actor]=[going,state.records.has("area/"+going)]
+            return
         if error!=ERR_BUSY:session.transport._drop(peer);return
         await get_tree().process_frame
     if session.players.has(peer):session.transport._drop(peer)

@@ -32,6 +32,11 @@ func send(peer:int,payload:Dictionary)->Error:
     var started:=Time.get_ticks_usec()
     var bytes=JSON.stringify(payload).to_utf8_buffer()
     Transport.count("enc:"+String(payload.get("kind","")),bytes.size(),started)
+    return send_bytes(peer,bytes,payload)
+
+## A message already encoded (JSON text), in order with the others: the same
+## bytes can go to several players without encoding them for each.
+func send_bytes(peer:int,bytes:PackedByteArray,payload:Dictionary={})->Error:
     if bytes.is_empty() or bytes.size()>MAX_MESSAGE:return ERR_INVALID_DATA
     if bytes.size()<=DIRECT_LIMIT and not blobs.outgoing.has(peer) and queues.get(peer,[]).is_empty():
         var error:Error=_send_bytes(peer,bytes,payload)

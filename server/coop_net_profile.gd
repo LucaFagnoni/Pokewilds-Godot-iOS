@@ -5,7 +5,7 @@
 # and the time spent encoding, decoding and applying (coop_transport.gd stats),
 # and ms per frame (Performance TIME_PROCESS, the netcode's own share). A player
 # walks in phases named walk*, travels east once in a phase named *split when
-# its --index is odd, and records where it draws each other player, every
+# its --index is odd (in *away whatever it is), and records where it draws each other player, every
 # frame, for the smoothness numbers (largest step, steps over 8 px).
 #   godot --headless --path project -s ../server/coop_net_profile.gd --server ... -- --phase=FILE
 #   godot --headless --path project -s ../server/coop_net_profile.gd --join HOST:PORT --data DIR -- --phase=FILE --index=N
@@ -27,6 +27,7 @@ var _walk_flip := 0
 var _seen: Dictionary = {}
 var _steps: Array = []
 var _last_frame := 0
+var _frame_ms: Array = []
 
 func _initialize() -> void:
 	for arg in OS.get_cmdline_user_args():
@@ -46,6 +47,7 @@ func _process(_delta: float) -> bool:
 		var ms := Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
 		process_ms += ms
 		max_frame_ms = maxf(max_frame_ms, ms)
+		_frame_ms.append(ms)
 	if now - _checked >= 200:
 		_checked = now
 		var next := FileAccess.get_file_as_string(phase_file).strip_edges() if FileAccess.file_exists(phase_file) else ""
@@ -54,7 +56,7 @@ func _process(_delta: float) -> bool:
 			phase = next
 			phase_started = now
 			frames = 0; process_ms = 0.0; max_frame_ms = 0.0
-			_steps.clear(); _seen.clear()
+			_steps.clear(); _seen.clear(); _frame_ms.clear()
 			Transport.stats = {}
 	if main != null and is_instance_valid(main) and main.started and not "--server" in OS.get_cmdline_args():
 		_play(now)
@@ -73,16 +75,25 @@ func _breakdown() -> void:
 		stack.append_array(node.get_children())
 		var path := String(node.get_script().resource_path) if node.get_script() != null else node.get_class()
 		if node.is_processing() or node.is_physics_processing(): groups.get_or_add(path, []).append(node)
+		if node.is_processing_internal() or node.is_physics_processing_internal(): groups.get_or_add("internal " + node.get_class(), []).append(node)
+	var census := {}
+	for path in groups: census[path] = groups[path].size()
+	print("PROFILE SERVER census ", census)
 	var costs: Array = []
 	for path in groups:
 		if not "--server" in OS.get_cmdline_args() or phase != "walk-breakdown": break
 		var on := await _average(0.75)
 		var nodes: Array = groups[path].filter(func(n): return is_instance_valid(n))
-		var physics: Array = nodes.map(func(n): return n.is_physics_processing())
-		for n in nodes: n.set_process(false); n.set_physics_process(false)
+		var internal := String(path).begins_with("internal ")
+		var physics: Array = nodes.map(func(n): return n.is_physics_processing_internal() if internal else n.is_physics_processing())
+		for n in nodes:
+			if internal: n.set_process_internal(false); n.set_physics_process_internal(false)
+			else: n.set_process(false); n.set_physics_process(false)
 		var off := await _average(0.75)
 		for i in nodes.size():
-			if is_instance_valid(nodes[i]): nodes[i].set_process(true); nodes[i].set_physics_process(physics[i])
+			if not is_instance_valid(nodes[i]): continue
+			if internal: nodes[i].set_process_internal(true); nodes[i].set_physics_process_internal(physics[i])
+			else: nodes[i].set_process(true); nodes[i].set_physics_process(physics[i])
 		costs.append([on - off, path, nodes.size()])
 	costs.sort_custom(func(a, b): return a[0] > b[0])
 	for c in costs: print("PROFILE SERVER breakdown %7.3f ms/frame %4d nodes %s" % [c[0], c[2], c[1]])
@@ -98,7 +109,7 @@ func _average(wait: float) -> float:
 
 func _play(now: int) -> void:
 	var walking := phase.begins_with("walk")
-	if walking and "split" in phase and index % 2 == 1 and not travelled:
+	if walking and (("split" in phase and index % 2 == 1) or "away" in phase) and not travelled:
 		travelled = true
 		_walk(false)
 		main.edge_travel_busy = true
@@ -144,5 +155,16 @@ func _report() -> void:
 		var big := 0
 		for s in _steps: if s > 8.0: big += 1
 		smooth = " remote steps %d, max %.1f px, p99 %.1f px, over 8 px %d" % [_steps.size(), sorted[-1], sorted[int(sorted.size() * 0.99)], big]
-	print("PROFILE %s %s SUMMARY %.1f s, up %.0f B/s, down %.0f B/s, frames %.1f/s, process %.3f ms/frame (max %.1f), netcode %.3f ms/frame%s" % [
-		_role(), phase, seconds, up / seconds, down / seconds, frames / seconds, process_ms / frames_n, max_frame_ms, net_us / 1000.0 / frames_n, smooth])
+	# Timings a test build adds with Engine.set_meta("t_NAME", microseconds summed)
+	# and "tmax_NAME" (the longest).
+	for meta in Engine.get_meta_list():
+		if String(meta).begins_with("tmax_"):
+			print("PROFILE %s %s time %-24s %8.3f ms longest" % [_role(), phase, meta, int(Engine.get_meta(meta)) / 1000.0])
+			Engine.set_meta(meta, 0)
+		if String(meta).begins_with("t_"):
+			print("PROFILE %s %s time %-24s %8.3f ms/frame" % [_role(), phase, meta, int(Engine.get_meta(meta)) / 1000.0 / frames_n])
+			Engine.set_meta(meta, 0)
+	var sorted_ms := _frame_ms.duplicate(); sorted_ms.sort()
+	var median: float = sorted_ms[sorted_ms.size() / 2] if not sorted_ms.is_empty() else 0.0
+	print("PROFILE %s %s SUMMARY %.1f s, up %.0f B/s, down %.0f B/s, frames %.1f/s, process %.3f ms/frame (median %.2f, max %.1f), netcode %.3f ms/frame%s" % [
+		_role(), phase, seconds, up / seconds, down / seconds, frames / seconds, process_ms / frames_n, median, max_frame_ms, net_us / 1000.0 / frames_n, smooth])

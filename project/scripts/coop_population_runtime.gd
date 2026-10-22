@@ -53,6 +53,7 @@ func local_scope()->String:
 func _process(delta:float)->void:
     if not is_instance_valid(game) or not game.active or not game.main.started or game.main.generating or game.main.edge_travel_busy:return
     if sync_pending:sync_pending=false;synchronize()
+    if game.nobody_here():return
     var world=game.main.world
     if world.is_processing() and (not world.gameplay_enabled or world.active_area_id!="OVERWORLD"):
         world._update_ecology(delta)

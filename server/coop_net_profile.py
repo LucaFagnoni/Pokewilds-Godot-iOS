@@ -7,6 +7,7 @@ kind by the server and by every player:
   idleN      N players standing still in the spawn area
   walkN      N players walking in the spawn area
   walkNsplit N players walking, the odd ones in the area east of it
+  walkNaway  N players walking, all in the area east (the server's own area empty)
 
     python server/coop_net_profile.py GODOT [--clients N] [--seconds S] [--breakdown] [--project DIR] [--keep]
 
@@ -85,6 +86,11 @@ try:
     while sum(text(f"client{i}").count("travelled to") for i in range(1, clients, 2)) < clients // 2 and time.time() < deadline: time.sleep(1)
     time.sleep(3)
     measure(f"walk{clients}split")
+    set_phase(f"walk{clients}away-travel")
+    deadline = time.time() + 600
+    while sum(text(f"client{i}").count("travelled to") for i in range(clients)) < clients and time.time() < deadline: time.sleep(1)
+    time.sleep(3)
+    measure(f"walk{clients}away")
     if "--breakdown" in sys.argv:
         set_phase("walk-breakdown")
         wait_for("server", "PROFILE SERVER breakdown", 900)
