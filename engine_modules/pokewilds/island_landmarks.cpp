@@ -11,12 +11,6 @@
 
 namespace pw {
 
-static Dictionary crystal() {
-	Dictionary extra;
-	extra["generation"] = "CRYSTAL";
-	return extra;
-}
-
 static Rect2i centered_rect(Vector2i p_center, Vector2i p_size) {
 	return Rect2i(p_center - p_size / 2, p_size);
 }
@@ -191,7 +185,7 @@ void Gen::ledgify_later_sweeps(TileMap &p_tiles, TileMap &p_next_island_tiles, i
 		}
 		return;
 	}
-	AHashMap<Vector2i, int32_t> key_index;
+	FlatMap<Vector2i, int32_t> key_index;
 	key_index.reserve((uint32_t)keys.size());
 	for (size_t index = 0; index < keys.size(); index++) {
 		key_index.insert(keys[index], (int32_t)index);
@@ -275,7 +269,7 @@ bool Gen::river_contains(Vector2i p_position) {
 
 void Gen::apply_source_rivers(const std::vector<TileRef> &p_desert_tiles) {
 	// The original object-identity test, not by position: tiles are replaced.
-	AHashMap<Tile *, bool, PtrHasher> desert_members;
+	FlatMap<Tile *, bool, PtrHasher> desert_members;
 	for (const TileRef &tile : p_desert_tiles) {
 		desert_members.insert(tile.get(), true);
 	}
@@ -430,15 +424,15 @@ void Gen::place_source_landmarks(const std::vector<TileRef> &p_desert_tiles, con
 }
 
 static bool mountain_near(const TileMap &p_mountains, Vector2i p_position, bool p_corners) {
-	static const Vector2i far[3] = { Vector2i(0, -368), Vector2i(-224, 0), Vector2i(144, -240) };
-	static const Vector2i near[4] = { Vector2i(32, 32), Vector2i(-32, 32), Vector2i(32, -32), Vector2i(-32, -32) };
-	for (const Vector2i &offset : far) {
+	static const Vector2i distant_offsets[3] = { Vector2i(0, -368), Vector2i(-224, 0), Vector2i(144, -240) };
+	static const Vector2i corner_offsets[4] = { Vector2i(32, 32), Vector2i(-32, 32), Vector2i(32, -32), Vector2i(-32, -32) };
+	for (const Vector2i &offset : distant_offsets) {
 		if (p_mountains.has(p_position + offset)) {
 			return true;
 		}
 	}
 	if (p_corners) {
-		for (const Vector2i &offset : near) {
+		for (const Vector2i &offset : corner_offsets) {
 			if (p_mountains.has(p_position + offset)) {
 				return true;
 			}

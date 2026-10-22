@@ -174,7 +174,7 @@ Data::Data(Object *p_object) :
 	mates_2 = constants[1];
 }
 
-const Traits &Data::traits(int p_source_base, int p_base, int p_upper) {
+Traits Data::traits(int p_source_base, int p_base, int p_upper) {
 	uint64_t key = ((uint64_t)p_source_base << 32) | ((uint64_t)p_base << 16) | (uint64_t)p_upper;
 	const Traits *known = traits_memo.getptr(key);
 	if (known) {
@@ -191,7 +191,7 @@ const Traits &Data::traits(int p_source_base, int p_base, int p_upper) {
 	traits.lava = values[6];
 	traits.ledge = values[7];
 	traits_memo.insert(key, traits);
-	return *traits_memo.getptr(key);
+	return traits;
 }
 
 const std::vector<String> &Data::allowed(int p_route_name) {
@@ -729,7 +729,7 @@ void Gen::generate_surface(std::vector<TileRef> &r_desert_tiles, std::vector<Til
 
 // --- The mountain (GenIsland1.ApplyBlotchMountain)
 
-typedef AHashMap<Tile *, std::pair<TileRef, int64_t>, PtrHasher> LevelMap;
+typedef FlatMap<Tile *, std::pair<TileRef, int64_t>, PtrHasher> LevelMap;
 
 static void set_level(LevelMap &p_levels, const TileRef &p_tile, int64_t p_level) {
 	std::pair<TileRef, int64_t> *found = p_levels.getptr(p_tile.get());
@@ -779,7 +779,7 @@ struct Walker {
 
 std::vector<TileRef> Gen::grow_mountain_skeleton(Tile *p_origin_tile, TileMap &r_all_tiles, LevelMap &r_tile_levels, TileMap &r_level_tiles, int64_t &r_current_level) {
 	TileRef origin_tile(p_origin_tile);
-	AHashMap<Tile *, Walker, PtrHasher> walkers;
+	FlatMap<Tile *, Walker, PtrHasher> walkers;
 	TileRef copy_tile = copy_at(p_origin_tile);
 	std::vector<TileRef> edge_tiles;
 	edge_tiles.push_back(origin_tile);
@@ -901,7 +901,7 @@ static LevelGraph mountain_level_graph(TileMap &p_all_tiles, LevelMap &p_tile_le
 	};
 	LevelGraph graph;
 	std::vector<Cell> values = p_all_tiles.values();
-	AHashMap<Tile *, int32_t, PtrHasher> slot_by_id;
+	FlatMap<Tile *, int32_t, PtrHasher> slot_by_id;
 	graph.order.resize(values.size());
 	for (size_t index = 0; index < values.size(); index++) {
 		Tile *tile = values[index].tile.get();

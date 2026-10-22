@@ -40,7 +40,7 @@ void Gen::postprocess_source_shores() {
 	std::vector<TileRef> mountain_water_tiles;
 	// The map is walked live; a cell replaced before its turn is seen as a
 	// values() snapshot had it: `replaced` keeps that (see GDScript).
-	AHashMap<Vector2i, Cell> replaced;
+	FlatMap<Vector2i, Cell> replaced;
 	tiles_to_add.live_for([&](const Vector2i &p_position) {
 		Cell raw_tile;
 		const Cell *saved = replaced.getptr(p_position);
@@ -765,7 +765,7 @@ static bool walkable(Tile *p_tile) {
 
 static void check_mine_paths(std::vector<LayerView> &p_layers, TypedArray<String> &r_errors) {
 	static const Vector2i steps[4] = { Vector2i(16, 0), Vector2i(-16, 0), Vector2i(0, 16), Vector2i(0, -16) };
-	AHashMap<Vector3i, bool> seen;
+	FlatMap<Vector3i, bool> seen;
 	std::vector<Vector3i> queue;
 	if (LayerView *top = view_of(p_layers, 99)) {
 		top->tiles.each([&](const Vector2i &, const TileRef &p_tile) {
@@ -850,7 +850,7 @@ static void check_rooms(Gen &p_gen, const std::string &p_kind, std::vector<Layer
 			add_error(r_errors, kind + " floor missing");
 		}
 	}
-	AHashMap<Vector3i, bool> bosses;
+	FlatMap<Vector3i, bool> bosses;
 	int64_t rewards = 0;
 	int64_t switches = 0;
 	int64_t stairs = 0;
@@ -970,7 +970,7 @@ Dictionary Gen::validate() {
 	counts["mine"] = 0;
 	counts["fossil_lab"] = 0;
 	Array biome_order;
-	AHashMap<int, bool> biomes;
+	FlatMap<int, bool> biomes;
 	auto add_biome = [&](int p_biome) {
 		if (!biomes.has(p_biome)) {
 			biomes.insert(p_biome, true);
@@ -1007,18 +1007,20 @@ Dictionary Gen::validate() {
 	if (keys == 0) {
 		errors.push_back("Mansion key missing");
 	}
-	AHashMap<Vector2i, std::string> exterior_owners;
-	AHashMap<Vector3i, std::string> interior_owners;
+	// Owners as interned kind names (a std::string can't live in a FlatMap).
+	FlatMap<Vector2i, int> exterior_owners;
+	FlatMap<Vector3i, int> interior_owners;
 	for (ValidationRecord &record : validation_records) {
 		const std::string &kind = record.kind;
+		const int kind_id = intern(kind);
 		String kind_text = String::utf8(kind.c_str());
 		counts[kind_text] = int64_t(counts[kind_text]) + 1;
 		record.exterior.each([&](const Vector2i &p_position, const Signature &p_signature) {
-			const std::string *owner = exterior_owners.getptr(p_position);
-			if (owner && *owner != kind) {
+			const int *owner = exterior_owners.getptr(p_position);
+			if (owner && *owner != kind_id) {
 				add_error(errors, "Landmark exterior overlap");
 			}
-			exterior_owners[p_position] = kind;
+			exterior_owners[p_position] = kind_id;
 			Tile *tile = peek_tile(p_position);
 			if (!tile || !(signature(tile) == p_signature)) {
 				add_error(errors, kind_text + " exterior overwritten or missing");
@@ -1032,11 +1034,11 @@ Dictionary Gen::validate() {
 			LayerView &view = layers.back();
 			recorded.second.each([&](const Vector2i &p_position, const Signature &p_signature) {
 				Vector3i cell(p_position.x, p_position.y, li);
-				const std::string *owner = interior_owners.getptr(cell);
-				if (owner && *owner != kind) {
+				const int *owner = interior_owners.getptr(cell);
+				if (owner && *owner != kind_id) {
 					add_error(errors, "Landmark interior overlap");
 				}
-				interior_owners[cell] = kind;
+				interior_owners[cell] = kind_id;
 				const Cell *found = final_layer ? final_layer->getp(p_position) : nullptr;
 				Tile *tile = found ? found->tile.get() : nullptr;
 				if (!tile || !(signature(tile) == p_signature)) {
@@ -1132,7 +1134,7 @@ struct Adapter {
 void Adapter::repair_regi_mansion_overlap() {
 	// Old v2 caches: the required cave over the mansion roof.
 	std::vector<Route *> group_order;
-	AHashMap<Route *, std::vector<std::pair<std::string, TileRef>>, PtrHasher> corners;
+	std::unordered_map<Route *, std::vector<std::pair<std::string, TileRef>>> corners;
 	std::vector<TileRef> cave_doors;
 	for (Cell &cell : tiles.values()) {
 		if (cell.is_int() || !cell.tile) {
@@ -1144,12 +1146,12 @@ void Adapter::repair_regi_mansion_overlap() {
 		}
 		if (tile->route && (tile->upper == NM("pkmnmansion_roof_NW") || tile->upper == NM("pkmnmansion_roof_NE") || tile->upper == NM("pkmnmansion_roof_SW") || tile->upper == NM("pkmnmansion_roof_SE"))) {
 			Route *key = tile->route.get();
-			if (!corners.has(key)) {
-				corners.insert(key, {});
+			if (!corners.count(key)) {
+				corners[key];
 				group_order.push_back(key);
 			}
 			std::string suffix = S(tile->upper).substr(strlen("pkmnmansion_roof_"));
-			auto &group = *corners.getptr(key);
+			auto &group = corners[key];
 			bool replaced = false;
 			for (auto &entry : group) {
 				if (entry.first == suffix) {
@@ -1163,7 +1165,7 @@ void Adapter::repair_regi_mansion_overlap() {
 		}
 	}
 	for (Route *key : group_order) {
-		auto &group = *corners.getptr(key);
+		auto &group = corners[key];
 		if (group.size() != 4) {
 			continue;
 		}
@@ -1320,7 +1322,7 @@ static bool is_facade(Tile *p_tile) {
 
 void Adapter::normalize_oasis_facades() {
 	std::vector<Route *> order;
-	AHashMap<Route *, std::vector<TileRef>, PtrHasher> facades;
+	std::unordered_map<Route *, std::vector<TileRef>> facades;
 	for (Cell &cell : tiles.values()) {
 		if (cell.is_int() || !cell.tile) {
 			continue;
@@ -1330,14 +1332,14 @@ void Adapter::normalize_oasis_facades() {
 			continue;
 		}
 		Route *key = tile->route.get();
-		if (!facades.has(key)) {
-			facades.insert(key, {});
+		if (!facades.count(key)) {
+			facades[key];
 			order.push_back(key);
 		}
-		facades.getptr(key)->push_back(cell.tile);
+		facades[key].push_back(cell.tile);
 	}
 	for (Route *key : order) {
-		std::vector<TileRef> &facade = *facades.getptr(key);
+		std::vector<TileRef> &facade = facades[key];
 		int32_t low = 2147483647;
 		int32_t high = -2147483647 - 1;
 		for (TileRef &tile : facade) {
@@ -1357,7 +1359,7 @@ void Adapter::normalize_oasis_facades() {
 void Adapter::repair_mansion_roof_grass() {
 	// GenIsland1.generateMansion: 31 columns, roof rows 3..28.
 	std::vector<Route *> order;
-	AHashMap<Route *, std::vector<std::pair<std::string, TileRef>>, PtrHasher> groups;
+	std::unordered_map<Route *, std::vector<std::pair<std::string, TileRef>>> groups;
 	for (Cell &cell : tiles.values()) {
 		if (cell.is_int() || !cell.tile) {
 			continue;
@@ -1370,12 +1372,12 @@ void Adapter::repair_mansion_roof_grass() {
 			continue;
 		}
 		Route *key = tile->route.get();
-		if (!groups.has(key)) {
-			groups.insert(key, {});
+		if (!groups.count(key)) {
+			groups[key];
 			order.push_back(key);
 		}
 		std::string suffix = S(tile->upper).substr(strlen("pkmnmansion_roof_"));
-		auto &group = *groups.getptr(key);
+		auto &group = groups[key];
 		bool replaced = false;
 		for (auto &entry : group) {
 			if (entry.first == suffix) {
@@ -1388,7 +1390,7 @@ void Adapter::repair_mansion_roof_grass() {
 		}
 	}
 	for (Route *key : order) {
-		auto &group = *groups.getptr(key);
+		auto &group = groups[key];
 		if (group.size() != 4) {
 			continue;
 		}
@@ -1437,7 +1439,7 @@ void Adapter::repair_mansion_roof_grass() {
 void Adapter::normalize_mansion_exterior() {
 	// The large non-oasis exterior: the route with most facade tiles.
 	std::vector<Route *> order;
-	AHashMap<Route *, std::pair<RouteRef, int64_t>, PtrHasher> route_counts;
+	FlatMap<Route *, std::pair<RouteRef, int64_t>, PtrHasher> route_counts;
 	for (Cell &cell : tiles.values()) {
 		if (cell.is_int() || !cell.tile) {
 			continue;
@@ -1537,7 +1539,7 @@ void Adapter::normalize_mansion_exterior() {
 
 // --- WorldTileStore.from_dictionary(...).to_record() and the result
 
-static Dictionary pack_store(Gen &p_gen, std::vector<RouteRef> &r_routes, AHashMap<Route *, int32_t, PtrHasher> &r_route_slots) {
+static Dictionary pack_store(Gen &p_gen, std::vector<RouteRef> &r_routes, FlatMap<Route *, int32_t, PtrHasher> &r_route_slots) {
 	TileMap &tiles = p_gen.tiles_to_add;
 	bool first = true;
 	Rect2i bounds;
@@ -1573,7 +1575,7 @@ static Dictionary pack_store(Gen &p_gen, std::vector<RouteRef> &r_routes, AHashM
 	int32_t *route_data = route_ids.ptrw();
 	PackedStringArray strings;
 	strings.push_back("");
-	AHashMap<int, int32_t> string_ids;
+	FlatMap<int, int32_t> string_ids;
 	string_ids.insert(0, 0);
 	auto sid = [&](int p_name) -> int32_t {
 		int32_t *known = string_ids.getptr(p_name);
@@ -1687,7 +1689,7 @@ static Dictionary pack_store(Gen &p_gen, std::vector<RouteRef> &r_routes, AHashM
 	return record;
 }
 
-static Array tile_record(Tile *p_tile, AHashMap<Route *, int32_t, PtrHasher> &p_route_slots, std::vector<RouteRef> &r_routes) {
+static Array tile_record(Tile *p_tile, FlatMap<Route *, int32_t, PtrHasher> &p_route_slots, std::vector<RouteRef> &r_routes) {
 	int32_t route_index = -1;
 	if (p_tile->route) {
 		int32_t *known = p_route_slots.getptr(p_tile->route.get());
@@ -1735,11 +1737,11 @@ static Dictionary finish_world(Gen &p_gen, const Dictionary &p_report) {
 	adapter.repair_mansion_roof_grass();
 	adapter.normalize_mansion_exterior();
 	std::vector<RouteRef> routes;
-	AHashMap<Route *, int32_t, PtrHasher> route_slots;
+	FlatMap<Route *, int32_t, PtrHasher> route_slots;
 	Dictionary store = pack_store(p_gen, routes, route_slots);
 	// Interior tiles: one record per object (a tile can sit under two keys).
 	Array tile_records;
-	AHashMap<Tile *, int32_t, PtrHasher> tile_ids;
+	FlatMap<Tile *, int32_t, PtrHasher> tile_ids;
 	Array interiors;
 	for (size_t index = 0; index < p_gen.interior_tiles_to_add.size(); index++) {
 		const Layer &layer = p_gen.interior_tiles_to_add[index];

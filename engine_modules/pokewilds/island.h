@@ -235,6 +235,21 @@ struct Tile {
 };
 typedef P<Tile> TileRef;
 
+// Godot's AHashMap grows by realloc(): its keys and values must survive a
+// byte copy. A libstdc++ std::string does not (its short-string buffer
+// points into itself: "free(): invalid pointer" on GCC and MinGW).
+template <typename T>
+struct Relocatable : std::bool_constant<std::is_trivially_copyable_v<T>> {};
+template <typename T>
+struct Relocatable<P<T>> : std::true_type {};
+template <typename A, typename B>
+struct Relocatable<std::pair<A, B>> : std::bool_constant<Relocatable<A>::value && Relocatable<B>::value> {};
+
+template <typename K, typename V, typename H = HashMapHasherDefault, typename C = HashMapComparatorDefault<K>>
+class FlatMap : public AHashMap<K, V, H, C> {
+	static_assert(Relocatable<K>::value && Relocatable<V>::value, "AHashMap moves its elements with realloc()");
+};
+
 // --- Dictionary semantics: insertion order, erase removes, re-adding appends.
 
 template <typename K, typename V, typename H = HashMapHasherDefault, typename C = HashMapComparatorDefault<K>>
@@ -246,7 +261,7 @@ public:
 		bool live = true;
 	};
 	std::vector<Entry> entries;
-	AHashMap<K, uint32_t, H, C> index;
+	FlatMap<K, uint32_t, H, C> index;
 	uint32_t dead = 0;
 	int iterating = 0;
 
@@ -387,13 +402,15 @@ struct Cell {
 	bool is_int() const { return ocean >= 0; }
 	bool is_null() const { return !tile && ocean < 0 && !mark; }
 };
+template <>
+struct Relocatable<Cell> : std::true_type {};
 typedef OMap<Vector2i, Cell> TileMap;
 typedef std::shared_ptr<TileMap> Layer;
 
 struct PtrHasher {
 	static _FORCE_INLINE_ uint32_t hash(const void *p_pointer) { return hash_one_uint64((uint64_t)p_pointer); }
 };
-typedef AHashMap<Vector2i, bool> PosSet;
+typedef FlatMap<Vector2i, bool> PosSet;
 
 // --- Data the GDScript side owns (one source of truth), asked once per key.
 
@@ -410,7 +427,7 @@ struct Traits {
 
 class Data {
 	Object *object = nullptr;
-	AHashMap<uint64_t, Traits> traits_memo;
+	FlatMap<uint64_t, Traits> traits_memo;
 	std::unordered_map<int, std::vector<String>> allowed_memo;
 	std::unordered_map<int, bool> dungeon_memo;
 	HashMap<String, Dictionary> species_memo;
@@ -424,7 +441,7 @@ public:
 	int warnings = 0;
 
 	explicit Data(Object *p_object);
-	const Traits &traits(int p_source_base, int p_base, int p_upper);
+	Traits traits(int p_source_base, int p_base, int p_upper);
 	const std::vector<String> &allowed(int p_route_name);
 	bool is_dungeon(int p_route_name);
 	const Dictionary &species(const String &p_name);
@@ -508,7 +525,7 @@ public:
 	JavaRandom global_random;
 	JavaRandom forest_biome_random;
 	JavaRandom pokemon_random;
-	AHashMap<Vector2i, int64_t> no_ice_here;
+	FlatMap<Vector2i, int64_t> no_ice_here;
 	PosSet bottom_mountain_layer;
 	TileMap mountain_tiles;
 	std::vector<Vector2i> trapinch_spawns;
@@ -570,11 +587,11 @@ public:
 	void qa_stage(const char *p_name);
 	String qa_sha256();
 	void stand_in_under_mountain();
-	std::vector<TileRef> grow_mountain_skeleton(Tile *p_origin_tile, TileMap &r_all_tiles, AHashMap<Tile *, std::pair<TileRef, int64_t>, PtrHasher> &r_tile_levels, TileMap &r_level_tiles, int64_t &r_current_level);
-	void add_mountain_layer(TileMap &p_level_tiles, AHashMap<Tile *, std::pair<TileRef, int64_t>, PtrHasher> &p_tile_levels, TileMap &p_all_mountain_tiles, int64_t p_new_level, int p_tile_name, const RouteRef &p_route, bool p_ice_allowed);
+	std::vector<TileRef> grow_mountain_skeleton(Tile *p_origin_tile, TileMap &r_all_tiles, FlatMap<Tile *, std::pair<TileRef, int64_t>, PtrHasher> &r_tile_levels, TileMap &r_level_tiles, int64_t &r_current_level);
+	void add_mountain_layer(TileMap &p_level_tiles, FlatMap<Tile *, std::pair<TileRef, int64_t>, PtrHasher> &p_tile_levels, TileMap &p_all_mountain_tiles, int64_t p_new_level, int p_tile_name, const RouteRef &p_route, bool p_ice_allowed);
 	std::vector<TileRef> apply_blotch_mountain(const TileRef &p_origin_tile, int64_t p_maximum_distance);
-	void smooth_mountain_levels(TileMap &p_all_tiles, AHashMap<Tile *, std::pair<TileRef, int64_t>, PtrHasher> &p_tile_levels);
-	void assign_mountain_ledges(TileMap &p_all_tiles, AHashMap<Tile *, std::pair<TileRef, int64_t>, PtrHasher> &p_tile_levels);
+	void smooth_mountain_levels(TileMap &p_all_tiles, FlatMap<Tile *, std::pair<TileRef, int64_t>, PtrHasher> &p_tile_levels);
+	void assign_mountain_ledges(TileMap &p_all_tiles, FlatMap<Tile *, std::pair<TileRef, int64_t>, PtrHasher> &p_tile_levels);
 	void apply_blotch(const char *p_type, const TileRef &p_origin_tile, int64_t p_maximum_distance, TileMap &p_tiles, int64_t p_is_maze, bool p_do_next, RouteRef p_route);
 	TileRef leaf_blotch_tile(const std::string &p_type, Vector2i p_position, double p_distance, int64_t p_maximum_distance, Tile *p_origin_tile, const RouteRef &p_route);
 	TileRef make_blotch_tile(const std::string &p_type, Tile *p_frontier, Vector2i p_edge, double p_distance, int64_t p_maximum_distance, Tile *p_origin_tile, const RouteRef &p_route, TileMap &p_tiles, BlotchState &p_state);
