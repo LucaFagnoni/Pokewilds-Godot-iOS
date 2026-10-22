@@ -13,12 +13,23 @@ const EXPIRE_MS:=7000
 const MAX_LOBBIES:=64
 const ANNOUNCE_INTERVAL_MS:=30000
 const LIST_INTERVAL_MS:=5000
+## Per request. A phone network's first lookup and TLS handshake can take seconds.
+const REQUEST_TIMEOUT:=10.0
+## A list request lost on the phone bridge is given up after this.
+const NATIVE_LIST_MS:=15000
+## Failed tries in a row before the list says it is unavailable; until then it
+## says it is still trying, and each try comes sooner (1, 2, 4, then 8 s).
+const FAILURES_SHOWN:=3
+const LOADING:="LOADING THE LIST..."
+const RETRYING:="STILL TRYING TO LOAD THE LIST..."
 ## Asks the directory to list dedicated servers too (older builds do not).
 const SERVERS:="?servers=1"
 var describe:Callable
 var browsing:=false
-## Shown in JOIN GAME when the lobby directory cannot be reached.
+## Shown in JOIN GAME while the lobby directory has not answered or cannot be reached.
 var list_error:=""
+## Failed list requests in a row. The last good list stays shown meanwhile.
+var _failures:=0
 var _found:Dictionary={}
 var _next_query:=0
 var _key:=""
@@ -31,6 +42,7 @@ var _remover:HTTPRequest
 var _native_list:=0
 var _native_announce:=0
 var _native_since:=0
+var _native_list_since:=0
 
 func _ready()->void:
     process_mode=Node.PROCESS_MODE_ALWAYS
@@ -45,7 +57,7 @@ func _headers(url:String,json:bool)->PackedStringArray:
     return headers
 
 func _requester()->HTTPRequest:
-    var request:=HTTPRequest.new();request.timeout=8.0;request.process_mode=Node.PROCESS_MODE_ALWAYS
+    var request:=HTTPRequest.new();request.timeout=REQUEST_TIMEOUT;request.process_mode=Node.PROCESS_MODE_ALWAYS
     add_child(request);return request
 
 func _endpoint()->String:
@@ -76,7 +88,8 @@ func stop_advertise()->void:
 
 func browse(enabled:bool)->void:
     if browsing==enabled:return
-    browsing=enabled;_found.clear();_next_query=0;list_error=""
+    browsing=enabled;_found.clear();_next_query=0;_failures=0
+    list_error=LOADING if enabled and Network.uses_directory() else ""
     if Network.uses_directory():
         if not enabled:_lister.cancel_request()
     elif enabled:Network.beacon_open()
@@ -145,7 +158,7 @@ func _directory(now:int)->void:
             _announcer.request(url,_headers(url,true),HTTPClient.METHOD_POST,JSON.stringify(record))
     if browsing and now>=_next_query and _idle(_lister):
         _next_query=now+LIST_INTERVAL_MS
-        if _lister.request(url+SERVERS,_headers(url,false))!=OK:list_error="LOBBY LIST UNAVAILABLE."
+        if _lister.request(url+SERVERS,_headers(url,false))!=OK:_listed(HTTPRequest.RESULT_CANT_CONNECT,0,PackedStringArray(),PackedByteArray())
 
 ## Same schedule as above, through the Android bridge instead of HTTPRequest.
 func _directory_native(now:int,url:String)->void:
@@ -159,12 +172,13 @@ func _directory_native(now:int,url:String)->void:
             _native_announce=Network.http_start(url,JSON.stringify(record));_native_since=now
     if _native_list>0:
         var answer:Dictionary=Network.http_take(_native_list)
+        if answer.is_empty() and now-_native_list_since>NATIVE_LIST_MS:answer={"code":0,"body":""} # its answer was lost
         if not answer.is_empty():
             _native_list=0
             _listed(HTTPRequest.RESULT_SUCCESS if int(answer.code)>0 else HTTPRequest.RESULT_CANT_CONNECT,int(answer.code),PackedStringArray(),String(answer.body).to_utf8_buffer())
     if browsing and now>=_next_query and _native_list==0:
         _next_query=now+LIST_INTERVAL_MS
-        _native_list=Network.http_start(url+SERVERS)
+        _native_list=Network.http_start(url+SERVERS);_native_list_since=now
 
 func _listed(result:int,code:int,_headers:PackedStringArray,body:PackedByteArray)->void:
     if not browsing:return
@@ -172,8 +186,13 @@ func _listed(result:int,code:int,_headers:PackedStringArray,body:PackedByteArray
     if code==401:list_error="THIS BUILD HAS NO ONLINE LOBBY LIST.";return
     var decoded=JSON.parse_string(body.get_string_from_utf8()) if result==HTTPRequest.RESULT_SUCCESS and code==200 else null
     if not decoded is Dictionary or not decoded.get("lobbies") is Array:
-        list_error="LOBBY LIST UNAVAILABLE. CHECK YOUR INTERNET.";return
-    list_error="";_found.clear()
+        # Try again soon, keeping what was listed: one lost request on a phone
+        # network is common and says little.
+        _failures+=1
+        _next_query=Time.get_ticks_msec()+(1000<<mini(_failures-1,3))
+        list_error="LOBBY LIST UNAVAILABLE. CHECK YOUR INTERNET." if _failures>=FAILURES_SHOWN else RETRYING
+        return
+    list_error="";_failures=0;_found.clear()
     var own:=String(Network.status().address) if Network.embedded() else "" # LAN test copies share an address.
     for entry in decoded.lobbies:
         if not entry is Dictionary or _found.size()>=MAX_LOBBIES:continue

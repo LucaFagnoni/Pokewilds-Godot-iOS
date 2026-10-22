@@ -520,8 +520,9 @@ public final class PokeWildsZeroTier {
                 HttpURLConnection connection = null;
                 try {
                     connection = (HttpURLConnection) new URL(address).openConnection();
-                    connection.setConnectTimeout(8000);
-                    connection.setReadTimeout(8000);
+                    // A phone network's first lookup and TLS handshake can take seconds (coop_lobby.gd REQUEST_TIMEOUT).
+                    connection.setConnectTimeout(10000);
+                    connection.setReadTimeout(10000);
                     connection.setUseCaches(false);
                     if (!key.isEmpty()) connection.setRequestProperty("X-Lobby-Key", key);
                     if (body != null && !body.isEmpty()) {
@@ -547,7 +548,9 @@ public final class PokeWildsZeroTier {
                 } finally {
                     if (connection != null) connection.disconnect();
                 }
-                if (httpResults.size() < 64) httpResults.put(id, result);
+                // Answers nobody took (a goodbye, a list the menu left) go once 64 newer requests started.
+                httpResults.keySet().removeIf(old -> old <= id - 64);
+                httpResults.put(id, result);
             }
         });
         return id;

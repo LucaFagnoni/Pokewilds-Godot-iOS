@@ -484,12 +484,17 @@ jobs:
 
       # The commit this build comes from and its compat id: the server refuses
       # players of a build with another compat id (a newer build that changed
-      # only client-only files still joins).
-      - name: Stamp build id
+      # only client-only files still joins). And the release's version, which
+      # phones show for this server in JOIN A GAME and MY SERVERS (without it:
+      # DEV BUILD); pull requests have none.
+      - name: Stamp build id and version
+        env:
+          VERSION: ${{ needs.draft.outputs.version }}
         run: |
           echo "$GITHUB_SHA" > project/build_id.txt
           python3 tools/compat_id.py project > project/compat_id.txt
-          echo "::notice::compat id $(cat project/compat_id.txt)"
+          if [ -n "$VERSION" ]; then echo "$VERSION" > project/build_version.txt; fi
+          echo "::notice::compat id $(cat project/compat_id.txt), version ${VERSION:-none}"
 
       # The lobby list's address and password (project/lobby_server.txt), as in
       # the phone builds: a server with listed=true shows in their JOIN GAME list.
@@ -514,6 +519,16 @@ jobs:
           "$GODOT" --headless --import
           "$GODOT" --headless --export-release "Windows Server" ../build/server/PokeWilds.exe
           ls -la ../build/server
+
+      # The stamps went into the pack: each file's text is stored there as is.
+      - name: Check the pack's stamps
+        run: |
+          stamps="build_id compat_id"
+          [ "$GITHUB_EVENT_NAME" = pull_request ] || stamps="$stamps build_version"
+          for stamp in $stamps; do
+            test -s "project/$stamp.txt" && grep -aqF "$(cat "project/$stamp.txt")" build/server/PokeWilds.pck \
+              || { echo "::error::$stamp.txt is missing from PokeWilds.pck"; exit 1; }
+          done
 
       # Only a server that a client could join and that saved goes into the release.
       - name: Server smoke test

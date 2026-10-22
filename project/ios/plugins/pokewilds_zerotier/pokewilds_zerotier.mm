@@ -453,26 +453,40 @@ static int http_start(const std::string &url, const std::string &body) {
 		http_results[id] = "0\n";
 		return id;
 	}
-	NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:where cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:8];
+	// A phone network's first lookup and TLS handshake can take seconds (coop_lobby.gd REQUEST_TIMEOUT).
+	NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:where cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:10];
+	NSURLSession *session;
 	{
 		std::lock_guard<std::mutex> guard(lock);
 		if (!lobby_key.empty()) [request setValue:@(lobby_key.c_str()) forHTTPHeaderField:@"X-Lobby-Key"];
+		session = http;
 	}
 	if (!body.empty()) {
 		request.HTTPMethod = @"POST";
 		[request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
 		request.HTTPBody = [NSData dataWithBytes:body.data() length:body.size()];
 	}
-	[[http dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+	[[session dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
 		std::string result = "0\n";
-		if (!error && [response isKindOfClass:NSHTTPURLResponse.class]) {
+		bool failed = error || ![response isKindOfClass:NSHTTPURLResponse.class];
+		if (!failed) {
 			result = std::to_string(((NSHTTPURLResponse *)response).statusCode) + "\n";
 			if (data) result.append((const char *)data.bytes, MIN(data.length, (NSUInteger)262144));
 		} else {
 			NSLog(@"PokeWildsZeroTier: lobby directory request failed: %@", error);
 		}
 		std::lock_guard<std::mutex> guard(lock);
-		if (http_results.size() < 64) http_results[id] = result;
+		// The session keeps one HTTP/2 connection to the directory. A mobile
+		// network can drop it without a word while it idles, and every later
+		// request would wait on it until it times out too: after a failure the
+		// next request opens a new connection.
+		if (failed && session == http) {
+			[http finishTasksAndInvalidate];
+			http = [NSURLSession sessionWithConfiguration:NSURLSessionConfiguration.ephemeralSessionConfiguration];
+		}
+		// Answers nobody took (a goodbye, a list the menu left) go once 64 newer requests started.
+		http_results.erase(http_results.begin(), http_results.lower_bound(id - 63));
+		http_results[id] = result;
 	}] resume];
 	return id;
 }

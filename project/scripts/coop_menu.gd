@@ -29,6 +29,7 @@ const PING_COLORS:={"green":Color("2f9e44"),"red":Color("d9412f"),"grey":Color("
 ## Dark mode inks the text light purple first (dark_mode.gd INK); these tints bring it back to green, red, grey.
 const PING_COLORS_DARK:={"green":Color(0.4,1.0,0.45),"red":Color(1.0,0.42,0.38),"grey":Color(0.75,0.75,0.68)}
 const EMPTY_LOBBIES:="Nothing to join right now. Go back and HOST A GAME, or add a server you know in MY SERVERS."
+const LOADING_LOBBIES:="Looking for games and servers..."
 const EMPTY_SERVERS:="No saved servers yet. Choose ADD SERVER and type its address and your player ID."
 const EMPTY_WORLDS:="No saved multiplayer worlds on this device yet. Go back and set WORLD to NEW."
 const VISIBLE_ROWS:=4
@@ -438,7 +439,11 @@ func refresh()->void:
     empty.visible=(listing and names.is_empty()) or no_servers
     # Set here, not when built: its first long text had widened it past the panel.
     empty.position.y=62.0 if page=="servers" else 36.0;empty.size=Vector2(196,48 if page=="servers" else 74)
-    empty.text=EMPTY_LOBBIES if page=="browse" else (EMPTY_SERVERS if page=="servers" else EMPTY_WORLDS)
+    if page=="browse":
+        # Until the online list first answers, "nothing to join" may not be true.
+        var lobby:Node=main.coop_game.lobby
+        empty.text=LOADING_LOBBIES if lobby.list_error in [lobby.LOADING,lobby.RETRYING] else EMPTY_LOBBIES
+    else:empty.text=EMPTY_SERVERS if page=="servers" else EMPTY_WORLDS
     tick.visible=not names.is_empty() and not _typing() and page not in ["connecting","loading"]
     if tick.visible:main._align_menu_tick(tick,form_rows[selection] if forming else rows[selection-_scroll])
     var scrolling:bool=listing and tick.visible and names.size()>VISIBLE_ROWS
