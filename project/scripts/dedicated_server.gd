@@ -153,7 +153,7 @@ func _ready()->void:
     print("SERVER world ready, listening on TCP port ",port,(" with a password" if coop.lobby_private else ""),
         {"open":", player IDs: a new ID is made on its first login","closed":", player IDs: only those made with `account add`","off":""}[accounts_mode])
     print("SERVER commands: ",COMMANDS)
-    _list_request=HTTPRequest.new();_list_request.timeout=8.0;add_child(_list_request)
+    _list_request=HTTPRequest.new();_list_request.timeout=main.coop_game.lobby.REQUEST_TIMEOUT;add_child(_list_request)
     _list_request.request_completed.connect(_list_reply)
     print("SERVER online games list: ",_list_state())
     _next_save=Time.get_ticks_msec()+int(autosave_minutes*60000)
@@ -428,6 +428,7 @@ func _save_setting(key:String,value:Variant)->String:
 ## when it stops. Phones then connect straight to its outside address, so the
 ## port must be reachable from outside (see show_addresses).
 const LIST_MS:=30000
+const LIST_RETRY_MS:=5000
 var listed:=false
 var _outside:=""
 var _list_request:HTTPRequest
@@ -461,6 +462,8 @@ func _announce()->void:
 func _list_reply(result:int,code:int,_headers:PackedStringArray,_body:PackedByteArray)->void:
     if _list_key.is_empty():return # the goodbye of _unlist
     var ok:=int(result==HTTPRequest.RESULT_SUCCESS and code==200)
+    # Not listed yet, or about to drop off: try again soon, not in LIST_MS.
+    if not ok:_list_next=Time.get_ticks_msec()+LIST_RETRY_MS
     if ok==_list_ok:return
     _list_ok=ok
     if ok:print("SERVER listed in the online games list",(" as "+String(_list_sent.address)+":"+str(port)) if _list_sent.get("address")!="auto" else ", at the address it sees this PC by")
