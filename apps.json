@@ -3,8 +3,8 @@
   "identifier": "com.bebo.pokewilds.source",
   "subtitle": "PokeWilds for iPhone",
   "description": "An iPhone port of PokeWilds, remade in Godot, with a Windows dedicated server for co-op.",
-  "iconURL": "https://raw.githubusercontent.com/LucaFagnoni/Pokewilds-Godot-iOS/main/project/assets/icon.png",
-  "website": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS",
+  "iconURL": "https://raw.githubusercontent.com/LucaFagnoni/pokewilds-mobile/main/project/assets/icon.png",
+  "website": "https://github.com/LucaFagnoni/pokewilds-mobile",
   "tintColor": "#3E8E41",
   "apps": [
     {
@@ -13,17 +13,26 @@
       "developerName": "LucaFagnoni",
       "subtitle": "Explore, catch and build in a wild open world.",
       "localizedDescription": "An iPhone port of PokeWilds, remade in Godot, with a Windows dedicated server for co-op.",
-      "iconURL": "https://raw.githubusercontent.com/LucaFagnoni/Pokewilds-Godot-iOS/main/project/assets/icon.png",
+      "iconURL": "https://raw.githubusercontent.com/LucaFagnoni/pokewilds-mobile/main/project/assets/icon.png",
       "tintColor": "#3E8E41",
       "category": "games",
       "screenshots": [],
       "versions": [
         {
+          "version": "0.10.228",
+          "buildVersion": "228",
+          "date": "2026-10-22T02:02:48Z",
+          "localizedDescription": "Merge server ping and version check",
+          "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0041/Pokewilds-unsigned.ipa",
+          "size": 63297288,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.10.214",
           "buildVersion": "214",
           "date": "2026-10-22T00:41:24Z",
           "localizedDescription": "APK like the IPA: arm64 only, same assets, the stripped engine\n\n- The Android preset leaves out what the iOS one does (the lofi pack too)\n  and armeabi-v7a, and compresses the native library in the APK.\n- The android job builds the engine from .github/engine/custom.py for\n  Android arm64 (with Swappy, cached like the other engine builds) and puts\n  it, stripped, in place of the official one in the template's godot-lib AAR.",
-          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0040/Pokewilds-unsigned.ipa",
+          "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0040/Pokewilds-unsigned.ipa",
           "size": 63274103,
           "minOSVersion": "15.0"
         },
@@ -32,7 +41,7 @@
           "buildVersion": "213",
           "date": "2026-10-22T00:23:28Z",
           "localizedDescription": "Android wrapper: gradlew is executable (Godot's export runs it)",
-          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0039/Pokewilds-unsigned.ipa",
+          "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0039/Pokewilds-unsigned.ipa",
           "size": 63274101,
           "minOSVersion": "15.0"
         },
@@ -41,7 +50,7 @@
           "buildVersion": "209",
           "date": "2026-10-21T23:48:10Z",
           "localizedDescription": "Merge ios-zerotier",
-          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0036/Pokewilds-unsigned.ipa",
+          "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0036/Pokewilds-unsigned.ipa",
           "size": 63274101,
           "minOSVersion": "15.0"
         },
@@ -50,7 +59,7 @@
           "buildVersion": "197",
           "date": "2026-10-21T22:04:53Z",
           "localizedDescription": "Typing: no stray iOS keyboard after SOLO, COPY and PASTE buttons\n\n- The classic setup panel's world-name LineEdit stays under the touch\n  setup screen (invisible, still tappable); with its own virtual keyboard\n  on, a tap landing there (choosing SOLO) opened the iOS keyboard. The\n  game opens its keyboard itself, so that one is off.\n- The names and the CO-OP text pages are not system text fields, so iOS\n  offers no paste: COPY and PASTE buttons while typing (setup screen and\n  the CO-OP typing pages), pasting as far as the field takes.",
-          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0034/Pokewilds-unsigned.ipa",
+          "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0034/Pokewilds-unsigned.ipa",
           "size": 62841158,
           "minOSVersion": "15.0"
         },
@@ -59,7 +68,7 @@
           "buildVersion": "196",
           "date": "2026-10-21T21:27:28Z",
           "localizedDescription": "Merge map-zoom-perf: the map opens at once, no dropped frames at minimum zoom",
-          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0033/Pokewilds-unsigned.ipa",
+          "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0033/Pokewilds-unsigned.ipa",
           "size": 57594779,
           "minOSVersion": "15.0"
         },
@@ -68,7 +77,7 @@
           "buildVersion": "191",
           "date": "2026-10-21T18:25:22Z",
           "localizedDescription": "Next-throw icon: on touch the throw button shows it; otherwise under the top row\n\nThe small picture of what the next throw sends out was anchored where the\nold HUD put it, and after the HUD cleanup it covered the menu button for its\neleven seconds. On touch the throw button already shows that ball or\nPokemon, so the icon now stays away there; with a controller or keyboard it\nsits at the top right, one row under the HUD's top row, in screen units\n(a FULL_SCREEN holder) like the rest of that row.",
-          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0032/Pokewilds-unsigned.ipa",
+          "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0032/Pokewilds-unsigned.ipa",
           "size": 57592086,
           "minOSVersion": "15.0"
         },
@@ -77,7 +86,7 @@
           "buildVersion": "190",
           "date": "2026-10-21T18:01:28Z",
           "localizedDescription": "Menus: live party strip, A HINT option at the bottom centre, OPTIONS blocks the field UI\n\n- The touch start menu's party strip walks and follows HP (sleeping bag,\n  bed, co-op campfire) while it stays open, on the party views' 0.3 s tick;\n  eggs show as eggs there (they keep their species). A co-op campfire heal\n  refreshes an open POKEMON list too.\n- OPTIONS > CONTROLS > A HINT (off by default, touch only): the \"A: ...\" chip\n  sits at the bottom centre; off, nothing polls what A would do.\n- An OPTIONS menu open without the game menu (back from MOVE BUTTONS) now\n  blocks the field UI, so the next-throw ball icon cannot come back over it.\n- status_hud_test: the game clock chip ticks once a second, up to four game\n  minutes behind the world, which the check now allows.",
-          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0031/Pokewilds-unsigned.ipa",
+          "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0031/Pokewilds-unsigned.ipa",
           "size": 57591924,
           "minOSVersion": "15.0"
         },
@@ -86,7 +95,7 @@
           "buildVersion": "189",
           "date": "2026-10-21T16:59:40Z",
           "localizedDescription": "Title music: lake6, fading out as soon as a save loads or a server is joined\n\n- The menus play lake6 (the lofi one with OPTIONS > LOFI MUSIC on), fading in.\n- It fades out as soon as any loading screen goes up: a save loading, a\n  world being made, a server being joined or created. Cancelled back to the\n  menus, it fades in again; in a game the world's music takes over.",
-          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0030/Pokewilds-unsigned.ipa",
+          "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0030/Pokewilds-unsigned.ipa",
           "size": 57591636,
           "minOSVersion": "15.0"
         },
@@ -95,17 +104,8 @@
           "buildVersion": "185",
           "date": "2026-10-21T16:50:06Z",
           "localizedDescription": "Title screen: trees bending in the wind, clouds, logo intro and shine, SOLO / CO-OP, version\n\n- title_background.png: six frames; the two trees bend with the wind\n  (0-3 pixels at the top down to none at the bottom row), leaves flutter\n  and the lake glitters, every 0.2 s while the title shows.\n- title_clouds.png: three pixel-art clouds that drift across the sky,\n  behind the logo, on the background's pixel grid.\n- The logo drops in with a bounce when the title first opens (the boot\n  splash is now the landscape alone) and catches the light every 6 s.\n- The choices read SOLO and CO-OP, with one trainer and two trainers left of\n  the words; the cursor sits by the chosen row's trainers. The mode labels\n  elsewhere follow (SOLO, CO-OP).\n- The version, small in the bottom right corner: CI and tools/ios_xtool\n  write build_version.txt next to build_id.txt.\n- title_screen.gd on StartupSplash runs all of it; coop_menu.gd only asks\n  for the intro.",
-          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0027/Pokewilds-unsigned.ipa",
+          "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0027/Pokewilds-unsigned.ipa",
           "size": 57577853,
-          "minOSVersion": "15.0"
-        },
-        {
-          "version": "0.10.184",
-          "buildVersion": "184",
-          "date": "2026-10-21T16:21:41Z",
-          "localizedDescription": "Title screen: pixel-art logo and background, never stretched, animated\n\nThe title artwork was one 1536x1024 picture stretched to fill the screen,\nlogo included, and the boot splash stretched it too (stretch_mode 5 is\nIgnore). Now:\n\n- title_logo.png: the PokeWilds logo alone, 167x58 pixels, three colours\n  plus transparency, taken off the old artwork's ~6.8 px grid.\n- title_background.png: the landscape widened for phones (2.25:1), 230x102\n  pixels in eight colours, as three frames side by side: leaves flutter and\n  the lake glitters (colour cycling, so it loops without a jump). The title\n  menu shows the next frame every 0.4 s while it is on screen.\n- The background covers the screen keeping its proportions, the logo sits\n  at the top keeping its own, both with nearest filtering.\n- title_splash.png: both together for the boot splash, shown with Cover and\n  no filtering, laid out like the title so nothing jumps when it appears.\n- The old 1.6 MB artwork and the unused pokewilds.png/title_bg1.png scene\n  references are gone; the title no longer loads a 6 MB texture.",
-          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0026/Pokewilds-unsigned.ipa",
-          "size": 57550117,
           "minOSVersion": "15.0"
         }
       ],
@@ -117,11 +117,11 @@
           "NSPhotoLibraryUsageDescription": "Not used by the game (Godot's default key)."
         }
       },
-      "version": "0.10.214",
-      "versionDate": "2026-10-22T00:41:24Z",
-      "versionDescription": "APK like the IPA: arm64 only, same assets, the stripped engine\n\n- The Android preset leaves out what the iOS one does (the lofi pack too)\n  and armeabi-v7a, and compresses the native library in the APK.\n- The android job builds the engine from .github/engine/custom.py for\n  Android arm64 (with Swappy, cached like the other engine builds) and puts\n  it, stripped, in place of the official one in the template's godot-lib AAR.",
-      "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0040/Pokewilds-unsigned.ipa",
-      "size": 63274103
+      "version": "0.10.228",
+      "versionDate": "2026-10-22T02:02:48Z",
+      "versionDescription": "Merge server ping and version check",
+      "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0041/Pokewilds-unsigned.ipa",
+      "size": 63297288
     }
   ],
   "news": []
