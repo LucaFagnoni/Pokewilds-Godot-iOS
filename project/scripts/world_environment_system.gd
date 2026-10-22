@@ -425,9 +425,8 @@ func _draw_lights() -> void:
 func _refresh_context(force: bool) -> void:
     var context := _environment_context()
     var next_weather := weather_for_context(context)
-    if force or next_weather != current_weather_name:
+    if (force or next_weather != current_weather_name) and _configure_weather_visuals(next_weather):
         current_weather_name = next_weather
-        _configure_weather_visuals(next_weather)
     if not bool(world.get("generated")):
         return
     var next_world_id: int = world.exact_world.get_instance_id() if world.exact_world != null else 0
@@ -477,7 +476,8 @@ func _refresh_context(force: bool) -> void:
     if not desired_track.is_empty() and (force or desired_track != current_track):
         _crossfade_to(desired_track)
 
-func _configure_weather_visuals(weather_name: String) -> void:
+## False while the weather's texture still loads: the context refresh asks again.
+func _configure_weather_visuals(weather_name: String) -> bool:
     var textures: Array = []
     var modulates := [Color.WHITE, Color.WHITE]
     match weather_name:
@@ -488,7 +488,17 @@ func _configure_weather_visuals(weather_name: String) -> void:
             textures = SMOKE_TEXTURES
             modulates = [Color(0.58, 0.50, 0.48, 0.34), Color(0.68, 0.58, 0.52, 0.24)]
         "deep_forest":
-            textures = [load(DEEP_FOREST_TEXTURE_PATH)]
+            # Not resident: decoded on a loader thread (a plain load() held up
+            # the frame the forest was entered on), shown once it is ready.
+            var status := ResourceLoader.load_threaded_get_status(DEEP_FOREST_TEXTURE_PATH)
+            if status == ResourceLoader.THREAD_LOAD_LOADED:
+                textures = [ResourceLoader.load_threaded_get(DEEP_FOREST_TEXTURE_PATH)]
+            elif ResourceLoader.has_cached(DEEP_FOREST_TEXTURE_PATH):
+                textures = [load(DEEP_FOREST_TEXTURE_PATH)]
+            else:
+                if status != ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+                    ResourceLoader.load_threaded_request(DEEP_FOREST_TEXTURE_PATH)
+                return false
             modulates = [Color(1, 1, 1, 0.4)]
         _:
             pass
@@ -498,6 +508,7 @@ func _configure_weather_visuals(weather_name: String) -> void:
         if rect.visible:
             rect.texture = textures[index] as Texture2D
             rect.modulate = modulates[index]
+    return true
 
 func _desired_track(context: Dictionary, _route_changed: bool) -> String:
     if source_unown_active: return "unown1"

@@ -122,11 +122,12 @@ func _process(delta: float) -> void:
     drew_last_frame = drawing
 
 func _update_ambience() -> void:
-    var tile: SourceTile = world.exact_world.tile_at(world._player_cell())
+    _check_cell_tests()
+    var cell: Vector2i = world._player_cell()
     var fade := clampf(minf(float(state.age)/3.0,float(state.remaining)/4.0),0.0,1.0)
     for kind in ambience:
         var sound: AudioStreamPlayer = ambience[kind]
-        var wanted: bool = float(state.remaining)>0.0 and (state.kind == kind or (kind == "wind" and bool(state.wind))) and allows(tile,kind)
+        var wanted: bool = float(state.remaining)>0.0 and (state.kind == kind or (kind == "wind" and bool(state.wind))) and _cell_test(cell,kind)
         if wanted:
             sound.volume_db = (-26.0 if kind == "wind" else -16.0) + linear_to_db(maxf(0.001,fade))
             if not sound.playing: sound.play()
@@ -171,17 +172,54 @@ func begin_event(kind: String) -> void:
     if kind == "fire": _choose_fires()
 
 func _safe_ground(cell: Vector2i) -> bool:
+    return not world.built_structures.has(cell) and _cell_test(cell, "safe")
+
+# allows() and _safe_ground()'s tile test, remembered per cell: tile_at()
+# builds a tile proxy (~10 us on a desktop, far more on a phone) and a rain,
+# snow or sand frame asks a few hundred times, mostly about the same cells.
+# An answer holds while its cell's store revision does (any edit bumps it).
+const CELL_TESTS := {"wind": 0, "sand": 1, "fire": 2, "snow": 3, "rain": 4, "safe": 5}
+var cell_tests: Dictionary = {}  # Vector3i(x, y, test) -> [store index, revision, answer]
+var cell_tests_store: WorldTileStore
+# New cells one frame's drawing may look up: the first frames of an event
+# (still all but transparent) or of a new view spread the lookups instead of
+# taking them all at once. What is not looked up yet is not drawn that frame.
+const DRAW_LOOKUPS := 48
+var draw_lookups := 0
+
+func _check_cell_tests() -> void:
+    var tiles = world.exact_world.tiles
+    var store: WorldTileStore = tiles if tiles is WorldTileStore else null
+    if store != cell_tests_store or cell_tests.size() > 16384:
+        cell_tests_store = store
+        cell_tests.clear()
+
+func _cell_test(cell: Vector2i, test: String, budgeted := false) -> bool:
+    var key := Vector3i(cell.x, cell.y, CELL_TESTS[test])
+    var known: Array = cell_tests.get(key, [])
+    if not known.is_empty() and cell_tests_store.revisions[known[0]] == known[1]: return known[2]
+    if budgeted:
+        if draw_lookups <= 0: return false
+        draw_lookups -= 1
     var tile: SourceTile = world.exact_world.tile_at(cell)
-    return tile != null and not world.built_structures.has(cell) and not tile.is_water and not tile.is_lava and not tile.is_ledge and tile.has_item.is_empty() and not "building" in tile.name and not "building" in tile.name_upper
+    var result := allows(tile, test) if test != "safe" else (tile != null and not tile.is_water and not tile.is_lava and not tile.is_ledge
+        and tile.has_item.is_empty() and not "building" in tile.name and not "building" in tile.name_upper)
+    if tile != null and tile._store != null and tile._store == cell_tests_store:
+        cell_tests[key] = [tile._index, cell_tests_store.revisions[tile._index], result]
+    return result
+
+func _allows_at(point: Vector2, kind: String) -> bool:
+    return _cell_test(Vector2i(floori(point.x / 16.0), floori(point.y / 16.0)), kind, true)
 
 func _choose_fires() -> void:
+    _check_cell_tests()
     var center: Vector2i = world._player_cell()
     var used := {}
     # One small patch, bounded work regardless of world size.
     var anchor := center + Vector2i(rng.randi_range(-5, 5), rng.randi_range(-4, 4))
     for attempt in range(64):
         var cell := anchor + Vector2i(rng.randi_range(-2, 2), rng.randi_range(-2, 2))
-        if used.has(cell) or not _safe_ground(cell) or not allows(world.exact_world.tile_at(cell), "fire"): continue
+        if used.has(cell) or not _safe_ground(cell) or not _cell_test(cell, "fire"): continue
         if cell.distance_squared_to(center) < 4: continue
         used[cell] = true
         state.fires.append([cell.x, cell.y, rng.randf()])
@@ -203,42 +241,45 @@ func _wrapped(seed: Vector3, motion: Vector2) -> Vector2:
     var start := view.position - Vector2(32, 48)
     return start + Vector2(fposmod(seed.x * span.x + motion.x - start.x, span.x), fposmod(seed.y * span.y + motion.y - start.y, span.y))
 
-func _tile(point: Vector2) -> SourceTile:
-    return world.exact_world.tile_at(Vector2i(floori(point.x / 16.0), floori(point.y / 16.0)))
-
 func _draw() -> void:
     if state.is_empty() or not visible or world == null or world.exact_world == null: return
+    _check_cell_tests()
+    draw_lookups = DRAW_LOOKUPS
     var age := float(state.age)
     var fade := clampf(minf(age / 3.0, float(state.remaining) / 4.0), 0.0, 1.0)
     if fade <= 0.0: return
     if state.kind == "rain":
         draw_rect(view, Color(0.14, 0.2, 0.3, 0.1 * fade))
+        # Splashes after all the drops: drawn in between, every splash cost a
+        # draw call or two (texture, then lines again).
+        var splashes: Array[Vector3] = []
         for seed in seeds:
             var phase := fposmod(age * (1.8 + seed.z * 0.6) + seed.z, 1.0)
             var ground := _wrapped(seed, Vector2.ZERO)
-            var drift := -18.0 if bool(state.wind) and allows(_tile(ground), "wind") else -4.0
+            var drift := -18.0 if bool(state.wind) and _allows_at(ground, "wind") else -4.0
             if phase < 0.88:
                 var drop := ground + Vector2(drift, -80.0) * (1.0 - phase / 0.88)
                 draw_line(drop, drop + Vector2(-drift * 0.08, 6), Color(0.7, 0.86, 0.93, 0.65 * fade), 1.0)
             elif _safe_ground(Vector2i(floori(ground.x / 16), floori(ground.y / 16))):
-                var frame := mini(2, int((phase - 0.88) / 0.12 * 3.0))
-                draw_texture_rect_region(SPLASH, Rect2(ground-Vector2(8, 12), Vector2(16,16)), Rect2(frame*16,0,16,16), Color(1,1,1,0.55*fade))
+                splashes.append(Vector3(ground.x, ground.y, mini(2, int((phase - 0.88) / 0.12 * 3.0))))
+        for splash in splashes:
+            draw_texture_rect_region(SPLASH, Rect2(Vector2(splash.x, splash.y)-Vector2(8, 12), Vector2(16,16)), Rect2(splash.z*16,0,16,16), Color(1,1,1,0.55*fade))
     if bool(state.wind):
         for index in range(14):
             var seed := seeds[index]
             var point := _wrapped(seed, Vector2(age * (24.0 + seed.z * 8), sin(age + seed.z * 6.0) * 3.0))
-            if not allows(_tile(point), "wind"): continue
+            if not _allows_at(point, "wind"): continue
             var alpha := fade * (0.3 + 0.25 * sin(age * 2.0 + seed.z * TAU))
             for strip in range(4):
                 var at := point + Vector2(-8, -32 + strip * 16)
-                if allows(_tile(at + Vector2(8,8)), "wind"):
+                if _allows_at(at + Vector2(8,8), "wind"):
                     draw_texture_rect_region(WIND, Rect2(at,Vector2(16,16)),Rect2(0,strip*16,16,16),Color(1,1,1,alpha))
     if state.kind == "sand":
         _draw_sandstorm(age, fade)
     if state.kind == "snow":
         for seed in seeds:
             var point := _wrapped(seed, Vector2(-age*(22+seed.z*18)+sin(age*1.5+seed.z*TAU)*5,age*(18+seed.z*10)))
-            if not allows(_tile(point),"snow"): continue
+            if not _allows_at(point,"snow"): continue
             # A flake is one or two pixels across. Drawn as a square of that
             # size: at this scale it looks the same as a circle, and 240
             # circles a frame took a device from 60 fps to the 20s.
@@ -247,7 +288,7 @@ func _draw() -> void:
     if state.kind == "fire":
         for record in state.fires:
             var cell := Vector2i(int(record[0]),int(record[1]))
-            if not _safe_ground(cell) or not allows(world.exact_world.tile_at(cell),"fire"): continue
+            if not _safe_ground(cell) or not _cell_test(cell,"fire"): continue
             var point := Vector2(cell)*16.0
             if not view.grow(32).has_point(point): continue
             var phase := float(record[2])
@@ -278,11 +319,12 @@ func _draw_sandstorm(age: float, fade: float) -> void:
         for y in range(first.y, last.y):
             var run := -2147483648
             for x in range(first.x, last.x + 1):
-                var desert := x < last.x and allows(world.exact_world.tile_at(Vector2i(x,y)), "sand")
+                var desert := x < last.x and _cell_test(Vector2i(x,y), "sand", true)
                 if desert and run == -2147483648: run = x
                 if not desert and run != -2147483648:
                     sand_haze.append(Rect2(run*16, y*16, (x-run)*16, 16))
                     run = -2147483648
+        if draw_lookups <= 0: sand_bounds = Rect2i()  # some cells left out: again next frame
     for patch in sand_haze:
         draw_rect(patch, Color(0.79, 0.61, 0.35, 0.20 * fade))
     # Small grains and soft clusters, not diagonal rain streaks. Fixed-size
@@ -290,13 +332,22 @@ func _draw_sandstorm(age: float, fade: float) -> void:
     var drift := Vector2(-age * 35.0, age * 10.0)
     var start := Vector2i(floori((view.position.x-drift.x)/128.0)-1, floori((view.position.y-drift.y)/128.0)-1)
     var finish := Vector2i(ceili((view.end.x-drift.x)/128.0), ceili((view.end.y-drift.y)/128.0))
+    var near := view.grow(5)
+    # The same 128 grains in every region: their offsets and sway once a frame.
+    var offsets: Array[Vector2] = []
+    var sway := PackedFloat64Array()
+    for index in range(128):
+        var seed := seeds[index]
+        offsets.append(Vector2(seed.x,seed.y)*128.0)
+        sway.append(sin(age*1.4 + seed.z*TAU)*2.0)
     for y in range(start.y, finish.y+1):
         for x in range(start.x, finish.x+1):
+            var region := Vector2(x,y)*128.0
             for index in range(128):
                 var seed := seeds[index]
-                var point := Vector2(x,y)*128.0 + Vector2(seed.x,seed.y)*128.0 + drift
-                point.y += sin(age*1.4 + seed.z*TAU)*2.0
-                if not view.grow(5).has_point(point) or not allows(_tile(point), "sand"): continue
+                var point := region + offsets[index] + drift
+                point.y += sway[index]
+                if not near.has_point(point) or not _allows_at(point, "sand"): continue
                 if index % 8 == 0:
                     draw_circle(point, 4.0, Color(0.74,0.53,0.28,0.025*fade))
                     draw_circle(point, 2.5, Color(0.74,0.53,0.28,0.045*fade))
