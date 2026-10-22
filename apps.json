@@ -19,6 +19,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "0.10.214",
+          "buildVersion": "214",
+          "date": "2026-10-22T00:41:24Z",
+          "localizedDescription": "APK like the IPA: arm64 only, same assets, the stripped engine\n\n- The Android preset leaves out what the iOS one does (the lofi pack too)\n  and armeabi-v7a, and compresses the native library in the APK.\n- The android job builds the engine from .github/engine/custom.py for\n  Android arm64 (with Swappy, cached like the other engine builds) and puts\n  it, stripped, in place of the official one in the template's godot-lib AAR.",
+          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0040/Pokewilds-unsigned.ipa",
+          "size": 63274103,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.10.213",
           "buildVersion": "213",
           "date": "2026-10-22T00:23:28Z",
@@ -98,15 +107,6 @@
           "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0026/Pokewilds-unsigned.ipa",
           "size": 57550117,
           "minOSVersion": "15.0"
-        },
-        {
-          "version": "0.10.183",
-          "buildVersion": "183",
-          "date": "2026-10-21T16:01:01Z",
-          "localizedDescription": "Merge hud-cleanup: one look and one grid for the field HUD",
-          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0025/Pokewilds-unsigned.ipa",
-          "size": 60057718,
-          "minOSVersion": "15.0"
         }
       ],
       "appPermissions": {
@@ -117,11 +117,11 @@
           "NSPhotoLibraryUsageDescription": "Not used by the game (Godot's default key)."
         }
       },
-      "version": "0.10.213",
-      "versionDate": "2026-10-22T00:23:28Z",
-      "versionDescription": "Android wrapper: gradlew is executable (Godot's export runs it)",
-      "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0039/Pokewilds-unsigned.ipa",
-      "size": 63274101
+      "version": "0.10.214",
+      "versionDate": "2026-10-22T00:41:24Z",
+      "versionDescription": "APK like the IPA: arm64 only, same assets, the stripped engine\n\n- The Android preset leaves out what the iOS one does (the lofi pack too)\n  and armeabi-v7a, and compresses the native library in the APK.\n- The android job builds the engine from .github/engine/custom.py for\n  Android arm64 (with Swappy, cached like the other engine builds) and puts\n  it, stripped, in place of the official one in the template's godot-lib AAR.",
+      "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0040/Pokewilds-unsigned.ipa",
+      "size": 63274103
     }
   ],
   "news": []
