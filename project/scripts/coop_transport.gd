@@ -64,7 +64,7 @@ func join_address(address: String, remote_port: int) -> Error:
 
 func _add(peer: int, socket: StreamPeerTCP) -> void:
     socket.set_no_delay(true)
-    peers[peer] = {"socket": socket, "rx": PackedByteArray(), "tx": PackedByteArray(),
+    peers[peer] = {"socket": socket, "rx": PackedByteArray(), "rx_at": 0, "tx": PackedByteArray(),
         "offset": 0, "queued": 0, "sent_total": 0, "holds": [], "ready": false,
         "seen": Time.get_ticks_msec(), "ping": Time.get_ticks_msec(), "heard": false,
         "local_loading_until": 0, "remote_loading_until": 0,
@@ -250,6 +250,12 @@ func _poll()->void:
             if data[0] != OK:
                 _drop(peer,"socket_read_failed")
                 continue
+            # Frames are read from rx_at on; what is before it goes once it
+            # is half the buffer, not with every frame read (a copy of the
+            # whole backlog per message under a burst).
+            if int(state.rx_at) * 2 >= state.rx.size():
+                state.rx = state.rx.slice(state.rx_at)
+                state.rx_at = 0
             state.rx.append_array(data[1])
             state.seen = now
             state.heard = true
@@ -259,16 +265,19 @@ func _poll()->void:
             _drop(peer,"receive_timeout")
             continue
         var read_count := 0
-        while peers.has(peer) and state.rx.size() >= 4 and read_count < 32:
-            var length := int(state.rx.decode_u32(0))
+        var rx: PackedByteArray = state.rx
+        var at := int(state.rx_at)
+        while peers.has(peer) and rx.size() - at >= 4 and read_count < 32:
+            var length := int(rx.decode_u32(at))
             if length <= 0 or length > MAX_FRAME:
                 _drop(peer,"invalid_frame_size_"+str(length))
                 break
-            if state.rx.size() < length + 4: break
+            if rx.size() - at < length + 4: break
             var started := Time.get_ticks_usec()
-            var frame: PackedByteArray = unpack(state.rx.slice(4, length + 4))
+            var frame: PackedByteArray = unpack(rx.slice(at + 4, at + length + 4))
             var decoded = null if frame.is_empty() else Remote.unpack(frame, state.bases) if frame[0] == Remote.WIRE_TAG or frame[0] == Remote.WIRE_DELTA else JSON.parse_string(frame.get_string_from_utf8())
-            state.rx = state.rx.slice(length + 4)
+            at += length + 4
+            state.rx_at = at
             read_count += 1
             if not decoded is Dictionary:
                 _drop(peer,"invalid_frame_json")
