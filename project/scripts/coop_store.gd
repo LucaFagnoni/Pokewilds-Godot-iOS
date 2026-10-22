@@ -17,6 +17,7 @@ static func valid_id(id: String) -> bool:
 
 func open(id: String) -> Error:
     if not valid_id(id): return ERR_INVALID_PARAMETER
+    sync()
     _close_journal()
     world_id = id
     last_error = DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(directory.path_join(id)))
@@ -26,32 +27,121 @@ func open(id: String) -> Error:
 ## commit cost more than the write itself on Android's shared storage.
 var _journal: FileAccess
 
+## Group commit. append() only turns a commit into text and queues it; once a
+## frame the queued lines are written and flushed together on a worker
+## (_write_lines), as one flush. `queued` counts the lines handed in, `written`
+## those known to be on disk. The host's transport holds back whatever it sends
+## after a commit until written reaches it (coop_transport.gd journal): no
+## player hears of a change a crash could still undo. A crash mid-batch leaves
+## whole lines and at most one torn last line, which load_state cuts off; none
+## of those commits had been answered.
+var queued := 0
+var written := 0
+var _lines := PackedStringArray()
+var _task := -1
+var _job := {}
+var _scheduled := false
+## Set when a batch could not be written: no more commits are taken (transact
+## answers save_failed) until a retry writes it; the journal is cut back to
+## `_good_end` first, so a half-written batch never sits mid-file.
+var _failed := false
+var _good_end := -1
+
 func _close_journal() -> void:
+    _wait()
     if _journal != null:
         _journal.close()
         _journal = null
 
+func _open_journal() -> bool:
+    var path := directory.path_join(world_id).path_join("journal.jsonl")
+    if _journal != null and _journal.get_path() == path and FileAccess.file_exists(path): return true
+    if _journal != null: _journal.close()
+    _journal = FileAccess.open(path, FileAccess.READ_WRITE if FileAccess.file_exists(path) else FileAccess.WRITE_READ)
+    if _journal == null:
+        last_error = FileAccess.get_open_error()
+        return false
+    if _good_end >= 0 and _good_end < _journal.get_length(): _journal.resize(_good_end)
+    _good_end = -1
+    _journal.seek_end()
+    return true
+
 ## `gap` is how many unjournaled movement commits came before this one.
 func append(commit: Dictionary, gap: int = 0) -> bool:
-    if not valid_id(world_id): return false
-    var path := directory.path_join(world_id).path_join("journal.jsonl")
-    if _journal == null or _journal.get_path() != path or not FileAccess.file_exists(path):
-        _close_journal()
-        _journal = FileAccess.open(path, FileAccess.READ_WRITE if FileAccess.file_exists(path) else FileAccess.WRITE_READ)
-        if _journal == null:
-            last_error = FileAccess.get_open_error()
-            return false
-        _journal.seek_end()
+    if not valid_id(world_id) or _failed: return false
     var line := commit
     if gap > 0:
         line = commit.duplicate()
         line["gap"] = gap
-    var text := JSON.stringify(line, "", true, true)
-    _journal.store_line(JSON.stringify({"payload":text,"sha256":text.sha256_text()}))
-    _journal.flush()
-    last_error = _journal.get_error()
-    if last_error != OK: _close_journal()
-    return last_error == OK
+    # Text now: the commit is the caller's and changes after this returns.
+    _lines.append(JSON.stringify(line, "", true, true))
+    queued += 1
+    if not _scheduled:
+        _scheduled = true
+        _pump.call_deferred()
+    return true
+
+## True once the first `count` commits appended are on disk.
+func has_written(count: int) -> bool:
+    if written < count: _settle()
+    return written >= count
+
+func _pump() -> void:
+    _scheduled = false
+    _settle()
+    _start(false)
+    # Again next frame while a batch is on disk or lines wait for it.
+    if (_task != -1 or not _lines.is_empty()) and not _scheduled:
+        _scheduled = true
+        (Engine.get_main_loop() as SceneTree).process_frame.connect(_pump, CONNECT_ONE_SHOT)
+
+func _start(here: bool) -> void:
+    if _lines.is_empty() or _task != -1 or not valid_id(world_id) or not _open_journal(): return
+    _job = {"file":_journal,"lines":_lines,"end":queued,"start":_journal.get_position(),"error":OK}
+    _lines = PackedStringArray()
+    if here:
+        _write_lines(_job)
+        _finish()
+    else:
+        _task = WorkerThreadPool.add_task(_write_lines.bind(_job), false, "Online journal")
+
+## On a worker: the batch's lines, then one flush. Touches only `job`.
+static func _write_lines(job: Dictionary) -> void:
+    var file: FileAccess = job.file
+    for text in job.lines: file.store_line(JSON.stringify({"payload":text,"sha256":text.sha256_text()}))
+    file.flush()
+    job.error = file.get_error()
+
+func _settle() -> void:
+    if _task != -1 and WorkerThreadPool.is_task_completed(_task): _wait()
+
+func _wait() -> void:
+    if _task == -1: return
+    WorkerThreadPool.wait_for_task_completion(_task)
+    _task = -1
+    _finish()
+
+func _finish() -> void:
+    if _job.error == OK:
+        written = _job.end
+        _failed = false
+    else:
+        last_error = _job.error
+        _failed = true
+        _good_end = _job.start
+        var lines: PackedStringArray = _job.lines
+        lines.append_array(_lines)
+        _lines = lines
+        _journal.close()
+        _journal = null
+    _job = {}
+
+## Everything appended so far written and flushed, here and now: before the
+## journal is read, rotated or left, and when the app is about to be suspended.
+func sync() -> bool:
+    _wait()
+    _start(true)
+    return written == queued
 
 ## A world save, in three steps so the slow one runs off the game thread
 ## (coop_game.gd save_checkpoint): prepare() takes what to write, on the game
@@ -62,6 +152,7 @@ func prepare(state, metadata: Dictionary) -> Dictionary:
     if not valid_id(world_id): return {}
     var home := directory.path_join(world_id)
     # The journal so far holds only commits the world below already has.
+    sync()
     _close_journal()
     var journal := home.path_join("journal.jsonl")
     return {"id":world_id,"home":home,
@@ -146,6 +237,7 @@ func backup() -> void:
 ## Bytes waiting to be replayed on the next load.
 func journal_size() -> int:
     if not valid_id(world_id): return 0
+    _wait()
     if _journal != null: return _journal.get_length()
     var file := FileAccess.open(directory.path_join(world_id).path_join("journal.jsonl"), FileAccess.READ)
     if file == null: return 0
@@ -168,6 +260,7 @@ static func _read_file(path: String, id: String) -> Dictionary:
     return data
 
 func load_state(state) -> Dictionary:
+    sync()
     _close_journal()
     var path := directory.path_join(world_id).path_join("world.json")
     var data := _read(path)

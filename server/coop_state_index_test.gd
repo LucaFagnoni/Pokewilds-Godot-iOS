@@ -78,6 +78,7 @@ func _init() -> void:
 	var restored := State.new()
 	restored.restore(state.snapshot())
 	same_indexes(restored, "after a restore")
+	check(store.sync(), "the journal written")
 	# No world save yet: replay the journal onto an empty world.
 	var empty := State.new()
 	var journal := Store.new(base)
