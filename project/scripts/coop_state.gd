@@ -27,6 +27,16 @@ var loose := 0
 var key_epoch := 0
 var _prints := {}
 var replaced := {}
+## Indexes over `records`, kept up to date by _index() wherever a record
+## changes (apply_committed, which journal replay also goes through, and
+## restore). They spare coop_wild_population.gd a walk over every record of
+## the world for each claim, namespace or unique Pokemon. Read-only to others.
+## actor -> {wild_claim key: true}
+var claims_by_actor := {}
+## area -> {"world/<area>/wild_pokemon/<id>" key: true}
+var wild_by_area := {}
+var _namespace_max := 0
+var _namespace_stale := false
 ## Host option: when false nothing is appended to the journal; the world is
 ## written only by an explicit save. For telling save cost apart from the rest.
 static var journal_enabled := true
@@ -181,17 +191,20 @@ func _journal_form(commit: Dictionary, player_edits: Dictionary) -> Dictionary:
 func apply_committed(commit: Dictionary, staged: Dictionary = {}) -> bool:
     if int(commit.get("revision", -1)) != revision + 1: return false
     for change in commit.get("changes", []):
-        _prints.erase(String(change.key))
+        var key := String(change.key)
+        _prints.erase(key)
+        var old: Variant = records.get(key)
         if change.has("edits"):
             # A record changed in place: only the edits were sent and journaled.
-            var edited = staged[change.key] if staged.has(change.key) else Patch.apply(records.get(String(change.key)), change.edits)
+            var edited = staged[key] if staged.has(key) else Patch.apply(old, change.edits)
             if edited == null: return false
-            records[String(change.key)] = edited
+            records[key] = edited
         elif change.after == null:
-            if records.erase(String(change.key)): key_epoch += 1
+            if records.erase(key): key_epoch += 1
         else:
-            if not records.has(String(change.key)): key_epoch += 1
-            records[String(change.key)] = change.after.duplicate(true) if change.after is Dictionary or change.after is Array else change.after
+            if not records.has(key): key_epoch += 1
+            records[key] = change.after.duplicate(true) if change.after is Dictionary or change.after is Array else change.after
+        _index(key, old, records.get(key))
     revision += 1
     var request_key:=String(commit.actor)+"/"+String(commit.id)
     var receipt:Dictionary=commit.duplicate(true)
@@ -232,6 +245,7 @@ func restore(data: Dictionary) -> bool:
     unwritten = 0; loose = 0; key_epoch += 1
     records = data.records.duplicate(true)
     _prints.clear()
+    reindex()
     # No request survives a restart of the host, so only receipts that still
     # carry their changes are worth keeping; stubs from earlier sessions go.
     outcomes = {}
@@ -244,3 +258,36 @@ func restore(data: Dictionary) -> bool:
     authority.clear()
     for actor in members: members[actor].erase("area")
     return true
+
+## Builds the indexes again from `records`; for code that sets records directly.
+func reindex() -> void:
+    claims_by_actor.clear(); wild_by_area.clear(); _namespace_max = 0; _namespace_stale = false
+    for key in records: _index(key, null, records[key])
+
+func _index(key: String, old: Variant, now: Variant) -> void:
+    if key.begins_with("wild_claim/"):
+        if old is Dictionary: _unlist(claims_by_actor, String(old.get("actor", "")), key)
+        if now is Dictionary: _list(claims_by_actor, String(now.get("actor", "")), key)
+    elif key.begins_with("wild_namespace/"):
+        if now != null and int(now) >= _namespace_max: _namespace_max = int(now)
+        elif old != null and int(old) >= _namespace_max: _namespace_stale = true
+    elif key.begins_with("world/") and key.get_slice("/", 2) == "wild_pokemon":
+        if old == null and now != null: _list(wild_by_area, key.get_slice("/", 1), key)
+        elif old != null and now == null: _unlist(wild_by_area, key.get_slice("/", 1), key)
+
+static func _list(index: Dictionary, group: String, key: String) -> void:
+    if not index.has(group): index[group] = {}
+    index[group][key] = true
+
+static func _unlist(index: Dictionary, group: String, key: String) -> void:
+    var keys: Dictionary = index.get(group, {})
+    keys.erase(key)
+    if keys.is_empty(): index.erase(group)
+
+## The highest wild namespace handed out so far; 0 when none.
+func namespace_max() -> int:
+    if _namespace_stale:
+        _namespace_stale = false; _namespace_max = 0
+        for key in records:
+            if String(key).begins_with("wild_namespace/"): _namespace_max = maxi(_namespace_max, int(records[key]))
+    return _namespace_max
