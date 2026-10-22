@@ -37,20 +37,20 @@ func answer(actor: String, accept: bool) -> Dictionary:
         # These are independent copies. PvP never writes into saved player records.
         session["battle_parties"]={session.a:first.get("party",[]).duplicate(true),session.b:second.get("party",[]).duplicate(true)}
         session["battle_inventory"]={session.a:first.get("inventory",{}).duplicate(true),session.b:second.get("inventory",{}).duplicate(true)}
-        var model=preload("res://scripts/coop_pvp_battle.gd").new()
-        if not model.start(session.a,session.b,session.battle_parties,Time.get_ticks_usec(),session.battle_inventory,battle_item_rules):return cancel(actor,"no_healthy_pokemon")
+        var model=preload("res://scripts/battle_session.gd").new()
+        if not model.pvp_start(session.a,session.b,session.battle_parties,Time.get_ticks_usec(),session.battle_inventory,battle_item_rules):return cancel(actor,"no_healthy_pokemon")
         battles[session.id]=model
-        session["battle_state"]=model.snapshot()
+        session["battle_state"]=model.pvp_snapshot()
         session["trainers"]={session.a:state.members.get(session.a,{}).duplicate(true),session.b:state.members.get(session.b,{}).duplicate(true)}
     return {"ok":true,"session":session.duplicate(true)}
 
 func battle_action(actor:String,turn:int,action:Dictionary)->Dictionary:
     var session=_session(actor)
     if session.is_empty() or not battles.has(session.id):return {"ok":false,"reason":"not_battling"}
-    var result:Dictionary=battles[session.id].submit(actor,turn,action)
+    var result:Dictionary=battles[session.id].pvp_submit(actor,turn,action)
     if not result.get("ok",false):return result
     session["battle_state"]=result.state
-    session["battle_inventory"]=battles[session.id].inventories.duplicate(true)
+    session["battle_inventory"]=battles[session.id].pvp_inventories.duplicate(true)
     session["battle_events"]=result.events
     session["battle_revision"]=int(session.get("battle_revision",0))+1
     result["session"]=session.duplicate(true)

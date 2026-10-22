@@ -9,14 +9,14 @@
 # unless --animations is given: headless, the moves that copy the screen wait
 # for a frame that never comes. The lines and states are the same either way,
 # so a windowed run with --animations checks against the same transcripts.
-# Run: godot --headless --path project -s <this file> -- [--check] [--only NAME]
+# Run: godot --headless --path project -s <this file> -- [--check] [--only NAME] [--pvp]
 extends SceneTree
 
 const Paths = preload("res://scripts/game_data_paths.gd")
 const Clock = preload("res://scripts/game_clock.gd")
 const Battle = preload("res://scripts/battle_engine.gd")
 const Events = preload("res://scripts/source_event_data.gd")
-const PvpBattle = preload("res://scripts/coop_pvp_battle.gd")
+const Session = preload("res://scripts/battle_session.gd")
 const Options = preload("res://scripts/game_options.gd")
 
 ## Animations and waits run this many times faster (they keep their order).
@@ -47,7 +47,7 @@ func _initialize() -> void:
     if args.has("--only"): only = String(args[args.find("--only") + 1])
     for scenario in pvp_scenarios():
         if only.is_empty() or only == scenario.name: _record_pvp(scenario)
-    var singles: Array = scenarios().filter(func(s): return only.is_empty() or only == s.name)
+    var singles: Array = [] if args.has("--pvp") else scenarios().filter(func(s): return only.is_empty() or only == s.name)
     if not singles.is_empty():
         var dir := OS.get_temp_dir().path_join("battle_transcripts_%d" % Time.get_ticks_usec())
         DirAccess.make_dir_recursive_absolute(dir)
@@ -330,20 +330,20 @@ func _record_pvp(scenario: Dictionary) -> void:
     for actor in ["A", "B"]:
         for spec in scenario[actor]: parties[actor].append(_make_member(spec, rng))
     var inventories: Dictionary = scenario.get("inventories", {"A": {}, "B": {}}).duplicate(true)
-    var rules: Dictionary = preload("res://scripts/main.gd").BATTLE_ITEM_RULES
+    var rules: Dictionary = Session.ITEM_RULES
     var transcript := {"name": scenario.name, "kind": "pvp", "seed": int(scenario.seed),
         "parties": _plain(parties), "inventories": _plain(inventories)}
-    var model = PvpBattle.new()
-    var started: bool = model.start("A", "B", parties.duplicate(true), int(scenario.seed), inventories.duplicate(true), rules)
-    var entries: Array = [{"start": started, "reply": reply_digest({"state": model.snapshot(), "events": model.events})}]
+    var model = Session.new()
+    var started: bool = model.pvp_start("A", "B", parties.duplicate(true), int(scenario.seed), inventories.duplicate(true), rules)
+    var entries: Array = [{"start": started, "reply": reply_digest({"state": model.pvp_snapshot(), "events": model.pvp_events})}]
     var picks: Dictionary = scenario.get("picks", {}).duplicate(true)
     for step in scenario.steps:
         if model.finished: break
         if step.has("raw"):
             var raw: Dictionary = step.raw
-            var turn := int(model.turn) + int(raw.get("turn_offset", 0))
+            var turn := int(model.pvp_turn) + int(raw.get("turn_offset", 0))
             entries.append({"submit": {"actor": raw.actor, "turn": turn, "action": raw.action},
-                "reply": reply_digest(model.submit(String(raw.actor), turn, raw.action))})
+                "reply": reply_digest(model.pvp_submit(String(raw.actor), turn, raw.action))})
             continue
         while not model.replacement.is_empty() and not model.finished:
             for actor in ["A", "B"]:
@@ -354,15 +354,15 @@ func _record_pvp(scenario: Dictionary) -> void:
                 healthy.erase(model.slots[actor])
                 if choice not in healthy: choice = int(healthy[0]) if not healthy.is_empty() else 0
                 var action := {"kind": "switch", "index": choice}
-                entries.append({"submit": {"actor": actor, "turn": model.turn, "action": action},
-                    "reply": reply_digest(model.submit(actor, model.turn, action))})
+                entries.append({"submit": {"actor": actor, "turn": model.pvp_turn, "action": action},
+                    "reply": reply_digest(model.pvp_submit(actor, model.pvp_turn, action))})
         for actor in ["A", "B"]:
             if model.finished: break
             var action: Dictionary = step.get(actor, {}).duplicate(true)
             if action.is_empty() or (action.get("kind") == "move" and not Battle.move_is_usable(model.current(actor), String(action.get("move", "")))):
                 action = {"kind": "move", "move": _first_usable(model.current(actor))}
-            entries.append({"submit": {"actor": actor, "turn": model.turn, "action": action},
-                "reply": reply_digest(model.submit(actor, model.turn, action))})
+            entries.append({"submit": {"actor": actor, "turn": model.pvp_turn, "action": action},
+                "reply": reply_digest(model.pvp_submit(actor, model.pvp_turn, action))})
     transcript["log"] = entries
     _finish(transcript)
 
