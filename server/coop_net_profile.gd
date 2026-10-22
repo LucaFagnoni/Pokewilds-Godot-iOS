@@ -21,6 +21,7 @@ var process_ms := 0.0
 var max_frame_ms := 0.0
 var main: Node
 var travelled := false
+var _back := false
 var _checked := 0
 var _walk_dir := 1
 var _walk_flip := 0
@@ -32,12 +33,19 @@ var _frame_ms: Array = []
 ## group) -> [changes, bytes as JSON].
 var _commits: Dictionary = {}
 var _listening := false
+## Frames over 16 ms: what took the time, from the sections a test build
+## times into Engine meta "probe_frame" (name -> microseconds this frame,
+## "_top" the outermost ones summed): name -> [frames it was the largest in,
+## its ms in all such frames, its longest ms].
+var _spikes: Dictionary = {}
 
 func _initialize() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--phase="): phase_file = arg.trim_prefix("--phase=")
 		if arg.begins_with("--index="): index = int(arg.trim_prefix("--index="))
 	Transport.stats = {}
+	# When this frame's resumed coroutines began (a test build's probe times them).
+	process_frame.connect(func(): Engine.set_meta("probe_t0", Time.get_ticks_usec()))
 	change_scene_to_file("res://scenes/main.tscn")
 
 func _role() -> String:
@@ -48,10 +56,12 @@ func _process(_delta: float) -> bool:
 	if main == null and current_scene != null and current_scene.get("started"): main = current_scene
 	if phase_started > 0:
 		frames += 1
-		var ms := Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+		var ms := (Performance.get_monitor(Performance.TIME_PROCESS) + Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)) * 1000.0
 		process_ms += ms
 		max_frame_ms = maxf(max_frame_ms, ms)
 		_frame_ms.append(ms)
+		if ms > 16.0: _spike(ms)
+	if Engine.has_meta("probe_frame"): Engine.get_meta("probe_frame").clear()
 	if now - _checked >= 200:
 		_checked = now
 		var next := FileAccess.get_file_as_string(phase_file).strip_edges() if FileAccess.file_exists(phase_file) else ""
@@ -60,7 +70,7 @@ func _process(_delta: float) -> bool:
 			phase = next
 			phase_started = now
 			frames = 0; process_ms = 0.0; max_frame_ms = 0.0
-			_steps.clear(); _seen.clear(); _frame_ms.clear(); _commits.clear()
+			_steps.clear(); _seen.clear(); _frame_ms.clear(); _commits.clear(); _spikes.clear()
 			Transport.stats = {}
 	if main != null and is_instance_valid(main) and main.started and not "--server" in OS.get_cmdline_args():
 		_play(now)
@@ -111,6 +121,28 @@ func _average(wait: float) -> float:
 		total += (Performance.get_monitor(Performance.TIME_PROCESS) + Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)) * 1000.0; n += 1
 	return total / maxi(1, n)
 
+func _spike(ms: float) -> void:
+	var sections: Dictionary = Engine.get_meta("probe_frame", {})
+	var top := 0.0
+	var largest := ""; var largest_ms := 0.0
+	for name in sections:
+		var section_ms: float = sections[name] / 1000.0
+		if name == "_top": top = section_ms; continue
+		if section_ms > largest_ms: largest = name; largest_ms = section_ms
+	# What no timed section accounts for (engine work, coroutines resumed).
+	if ms - top > largest_ms: largest = "(untimed)"; largest_ms = ms - top
+	# A section timed inside another ("@name") names it when it is most of it.
+	for name in sections:
+		if String(name).begins_with("@") and sections[name] / 1000.0 >= largest_ms * 0.5 and (not largest.begins_with("@") or sections[name] / 1000.0 > largest_ms):
+			largest = name; largest_ms = sections[name] / 1000.0
+	var entry: Array = _spikes.get_or_add(largest, [0, 0.0, 0.0])
+	entry[0] += 1; entry[1] += ms; entry[2] = maxf(entry[2], ms)
+	if ms > 33.0 and "--server" in OS.get_cmdline_args():
+		var parts: Array = []
+		for name in sections:
+			if name != "_top" and sections[name] >= 1000: parts.append("%s %.1f" % [name, sections[name] / 1000.0])
+		print("PROFILE %s %s spike %.1f ms: %s" % [_role(), phase, ms, ", ".join(parts)])
+
 func _play(now: int) -> void:
 	if not _listening:
 		_listening = true
@@ -129,6 +161,13 @@ func _play(now: int) -> void:
 		await main._travel_adjacent_world(Vector2i.RIGHT)
 		main.edge_travel_busy = false
 		print("PROFILE %s travelled to %s" % [_role(), main.coop_game._area()])
+	if walking and "long" in phase and travelled and not _back:
+		_back = true
+		_walk(false)
+		main.edge_travel_busy = true
+		await main._travel_adjacent_world(Vector2i.LEFT)
+		main.edge_travel_busy = false
+		print("PROFILE %s travelled back to %s" % [_role(), main.coop_game._area()])
 	if main.edge_travel_busy: return
 	if walking:
 		# Back and forth along a row, as a player looking around would.
@@ -181,5 +220,13 @@ func _report() -> void:
 			Engine.set_meta(meta, 0)
 	var sorted_ms := _frame_ms.duplicate(); sorted_ms.sort()
 	var median: float = sorted_ms[sorted_ms.size() / 2] if not sorted_ms.is_empty() else 0.0
+	if not sorted_ms.is_empty():
+		var over := [0, 0, 0]
+		for ms in sorted_ms:
+			for i in 3: if ms > [16.0, 33.0, 100.0][i]: over[i] += 1
+		print("PROFILE %s %s FRAMES n %d mean %.2f p50 %.2f p95 %.2f p99 %.2f max %.1f ms, over 16/33/100 ms: %d/%d/%d" % [_role(), phase, sorted_ms.size(),
+			process_ms / frames_n, median, sorted_ms[int(sorted_ms.size() * 0.95)], sorted_ms[int(sorted_ms.size() * 0.99)], sorted_ms[-1], over[0], over[1], over[2]])
+	for name in _spikes:
+		print("PROFILE %s %s SPIKES %-40s %4d frames, %8.1f ms, longest %.1f ms" % [_role(), phase, name, _spikes[name][0], _spikes[name][1], _spikes[name][2]])
 	print("PROFILE %s %s SUMMARY %.1f s, up %.0f B/s, down %.0f B/s, frames %.1f/s, process %.3f ms/frame (median %.2f, max %.1f), netcode %.3f ms/frame%s" % [
 		_role(), phase, seconds, up / seconds, down / seconds, frames / seconds, process_ms / frames_n, median, max_frame_ms, net_us / 1000.0 / frames_n, smooth])
