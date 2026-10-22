@@ -3,7 +3,8 @@
 # session, hostile packets cleaned, spam dropped by the rate limit); and the
 # chat on a touch screen in a real game, clear of the HUD: its button in the
 # top row between the battery and the menu button, with a red dot for unread
-# messages, at 320 and 390 px wide.
+# messages, and the newest message centred under the clock (or the notice) for
+# a few seconds, at 320 and 390 px wide.
 # Run: godot --headless --path project -s ../server/coop_chat_test.gd -- --touch-ui
 # Run it windowed (no --headless) to also save screenshots into CHAT_SHOTS
 # (an environment variable; the system temp folder's chat_ui otherwise).
@@ -301,9 +302,44 @@ func _touch_screen() -> void:
         chat.receive({"name": "MISTY", "text": "Over here!"})
         await _frames(2)
         check(chat.unread and chat._button.visible, "a message from someone else lights the dot at %d" % width)
+        # Only the newest message (no note of this game's own), centred under the notice.
+        var log: Control = chat._log
+        var clock: Rect2 = hud.clock
+        var at := "the message at %d" % width
+        check(log.visible and chat._log_text.text == "MISTY: Over here!", "%s: only the newest: %s" % [at, chat._log_text.text])
+        var rect := log.get_global_rect()
+        check(absf(rect.get_center().x - clock.get_center().x) <= 1.0 and is_equal_approx(rect.position.y, notice.end.y + Hud.GAP),
+            "%s centred under the notice: %s %s %s" % [at, rect, notice, clock])
+        clear_of(rect, hud.merged({"chat button": button, "notice": notice}), at)
         await shot("chat_button_badge_%d.png" % width)
+        # The notice goes: the message moves up under the clock.
         coop._notice_box.visible = false
-        chat._log.hide()
+        await _frames(2)
+        rect = log.get_global_rect()
+        check(absf(rect.get_center().x - clock.get_center().x) <= 1.0 and is_equal_approx(rect.position.y, clock.end.y + Hud.GAP),
+            "%s centred under the clock: %s %s" % [at, rect, clock])
+        # A long one replaces it, cut to LOG_LINES lines; the open chat keeps it whole.
+        var long := "Found a shiny Magikarp at the lake, come and see it before it swims off, it is golden!"
+        chat.receive({"name": "MISTY", "text": long})
+        await _frames(2)
+        rect = log.get_global_rect()
+        check(chat._log_text.text.begins_with("MISTY: Found") and chat._log_text.text.ends_with("...") and chat._log_text.get_line_count() == Chat.LOG_LINES,
+            "%s: a long one ends in ... after %d lines: %s (%d)" % [at, Chat.LOG_LINES, chat._log_text.text, chat._log_text.get_line_count()])
+        check(chat.history.back() == "MISTY: " + Chat.clean(long), "the history keeps it whole")
+        check(absf(rect.get_center().x - clock.get_center().x) <= 1.0 and is_equal_approx(rect.position.y, clock.end.y + Hud.GAP), "%s still under the clock: %s" % [at, rect])
+        clear_of(rect, hud.merged({"chat button": button}), at)
+        await shot("chat_message_%d.png" % width)
+        # One endless word is cut inside it.
+        chat.receive({"name": "MISTY", "text": "W".repeat(Chat.MAX_LENGTH)})
+        await _frames(2)
+        check(chat._log_text.text.begins_with("MISTY: WWW") and chat._log_text.text.ends_with("W...") and chat._log_text.get_line_count() == Chat.LOG_LINES,
+            "%s: one long word cut: %s (%d)" % [at, chat._log_text.text, chat._log_text.get_line_count()])
+        clear_of(log.get_global_rect(), hud.merged({"chat button": button}), at + " (one long word)")
+        chat.receive({"name": "MISTY", "text": long})
+        await _frames(2)
+        # Gone LOG_SECONDS later, after its fade.
+        await create_timer(Chat.LOG_SECONDS + 1.3).timeout
+        check(not log.visible, "%s hides after %d s" % [at, Chat.LOG_SECONDS])
     # Without a battery the button sits just left of the menu button.
     OS.set_environment(main.status_hud.BATTERY_ENV, "")
     main.status_hud.update()
@@ -345,20 +381,6 @@ func _touch_screen() -> void:
     # The X closes it.
     await tap_at(main.touch_ui.close_button.get_global_rect().get_center())
     check(not chat.visible and not main._field_ui_blocks_gameplay(), "the X closes the chat")
-
-    # A new line shows for a while beside the minimap.
-    chat.receive({"name": "MISTY", "text": "Found a shiny Magikarp at the lake, come and see it before it swims off!"})
-    await _frames(2)
-    var log: Control = chat._log
-    check(log.visible and chat._log_text.get_line_count() - chat._log_text.lines_skipped <= Chat.LOG_LINES, "the log shows the newest lines")
-    clear_of(log.get_global_rect(), hud.merged({"CHAT": button}), "chat log")
-    await shot("chat_log.png")
-    # Under a joined / left notice while one shows.
-    coop.show_notice("BROCK", "joined")
-    await _frames(2)
-    check(not log.get_global_rect().intersects(coop._notice_box.get_global_rect()), "the log under the notice: %s %s" % [log.get_global_rect(), coop._notice_box.get_global_rect()])
-    clear_of(log.get_global_rect(), hud.merged({"CHAT": button}), "chat log under a notice")
-    await shot("chat_log_notice.png")
 
     # A keyboard: T opens it, Escape closes it; a key bound to a game action still types.
     await key(KEY_T, "t".unicode_at(0))

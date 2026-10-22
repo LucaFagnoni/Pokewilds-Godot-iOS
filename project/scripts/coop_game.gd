@@ -1135,22 +1135,11 @@ func show_notice(player:String,event:String)->void:
     if not is_instance_valid(_notice_label):
         _notice_box=HudStyle.chip(chat.hud,"OnlineNotice");_notice_box.z_index=340
         _notice_label=_notice_box.get_node("Text")
-        _notice_label.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER;_notice_label.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
         _notice_label.add_theme_constant_override("line_spacing",NOTICE_LINE-roundi(HudStyle.FONT.get_height(HudStyle.FONT_SIZE)))
     var text:=String(NOTICE_TEXT[event]).replace("%s",player.strip_edges().left(24).to_upper())
-    var safe:Rect2=main.touch_controls.usable_rect
-    var clock:Control=main.status_hud.clock_chip
-    var centre:float=clock.position.x+clock.size.x/2.0 if is_instance_valid(clock) and clock.visible else main.get_viewport().get_visible_rect().size.x/2.0
-    # The room a 320 px screen has at most, so a wider phone wraps it the same way.
-    var room:float=2.0*(minf(centre-safe.position.x,160.0)-(HudStyle.MARGIN+main.M3924_MINIMAP_SIZE.x+HudStyle.GAP+HudStyle.PAD))
-    var ink:=HudStyle.FONT.get_multiline_string_size(text,HORIZONTAL_ALIGNMENT_CENTER,room,HudStyle.FONT_SIZE,-1,
-        TextServer.BREAK_MANDATORY|TextServer.BREAK_WORD_BOUND|TextServer.BREAK_ADAPTIVE|TextServer.BREAK_TRIM_EDGE_SPACES)
-    _notice_label.text=text;_notice_label.size=Vector2(ink.x,0)
-    # Ink PAD from every edge, as on the chips (glyphs leave their last column blank).
-    _notice_label.position=Vector2(HudStyle.PAD,HudStyle.PAD+HudStyle.INK_HEIGHT/2.0-HudStyle.INK_CENTRE)
-    _notice_box.size=Vector2(ink.x-1+2*HudStyle.PAD,2*HudStyle.PAD+HudStyle.INK_HEIGHT+(_notice_label.get_line_count()-1)*NOTICE_LINE)
-    _notice_box.position=Vector2(roundf(centre-_notice_box.size.x/2.0),safe.position.y+HudStyle.MARGIN+float(main.status_hud.row_height())+HudStyle.GAP)
-    _notice_box.queue_redraw()
+    # Wrapped and centred as the newest chat message (coop_chat.gd), which goes under it.
+    chat.fit(_notice_box,text,chat.room(),NOTICE_LINE)
+    _notice_box.position=Vector2(roundf(chat.centre()-_notice_box.size.x/2.0),main.touch_controls.usable_rect.position.y+HudStyle.MARGIN+float(main.status_hud.row_height())+HudStyle.GAP)
     _notice_box.modulate.a=1.0;_notice_box.visible=true
     if _notice_fade!=null and _notice_fade.is_valid():_notice_fade.kill()
     _notice_fade=create_tween();_notice_fade.set_speed_scale(1.0/maxf(Engine.time_scale,0.01))
