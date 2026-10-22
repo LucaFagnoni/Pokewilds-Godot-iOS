@@ -6,10 +6,13 @@ extends Control
 ## the sender, on the host before relaying and again on every receiver, and is
 ## only ever shown as the text of plain Labels: no BBCode, no translation
 ## lookup, never a format string, never parsed or evaluated.
-## This node is the open chat (T, or CHAT on a touch screen): the last HISTORY
-## lines over the line being typed, in the HUD's glass. New lines also show
-## for a few seconds in a chip beside the minimap.
+## This node is the open chat (T, or the chat button on a touch screen): the
+## last HISTORY lines over the line being typed, in the HUD's glass. New lines
+## also show for a few seconds in a chip beside the minimap, and light a red dot
+## on the chat button until the chat is opened.
 const HudStyle=preload("res://scripts/hud_style.gd")
+const Icons=preload("res://scripts/touch_icons.gd")
+const BADGE:=Color8(232,56,40)
 const Server=preload("res://scripts/dedicated_server.gd")
 const MAX_LENGTH:=80
 const NAME_LENGTH:=24
@@ -39,6 +42,13 @@ var _entry:Label
 var _log:Control
 var _log_text:Label
 var _log_fade:Tween
+## The online HUD (the log, the chat button, coop_game.gd's notice): placed on
+## the whole screen like the top row, not on the centred 320x180 area.
+var hud:Control
+var _button:Control
+## A message from someone else arrived while the chat was closed.
+var unread:=false
+var _button_look:=[]
 
 ## The one way chat text is made safe: anything but a String is "", control,
 ## bidi and zero-width characters go, a run of spaces becomes one, a character
@@ -65,7 +75,11 @@ static func clean_name(value:Variant)->String:
 func configure(owner_main:Node,coordinator:Node)->void:
     main=owner_main;game=coordinator;session=game.session;z_index=350
     _lines=_label(self);_entry=_label(self)
-    _log=HudStyle.chip(main.get_node("UI"),"ChatLog");_log.z_index=340;_log.hide()
+    hud=Control.new();hud.name="OnlineHud";hud.mouse_filter=Control.MOUSE_FILTER_IGNORE;main.get_node("UI").add_child(hud)
+    _log=HudStyle.chip(hud,"ChatLog");_log.z_index=340;_log.hide()
+    _button=Control.new();_button.name="ChatButton";_button.mouse_filter=Control.MOUSE_FILTER_IGNORE
+    _button.z_index=80;_button.texture_filter=CanvasItem.TEXTURE_FILTER_NEAREST;_button.hide();hud.add_child(_button)
+    _button.draw.connect(_draw_button);main.status_hud.chat_chip=_button
     _log_text=_log.get_node("Text");_text_settings(_log_text)
     _text_settings(_lines);_entry.auto_translate_mode=Node.AUTO_TRANSLATE_MODE_DISABLED
     hide()
@@ -109,16 +123,17 @@ func relay(peer:int,actor:String,text:Variant)->bool:
     if line.is_empty() or not session.players.has(peer) or not _allowed(actor):return false
     var name:=clean_name(session.players[peer].profile.get("name"))
     for other in session.players:
-        if other!=1:session.send_to(other,{"kind":"chat","name":name,"text":line})
+        if other!=1:session.send_to(other,{"kind":"chat","name":name,"text":line,"mine":other==peer})
     if Server.active:print("CHAT ",name,": ",line)
-    _add(name,line)
+    _add(name,line,peer==1)
     return true
 
-## Guest: the host's relay, cleaned again here.
+## Guest: the host's relay, cleaned again here. "mine": the echo of this
+## player's own message (it only keeps the red dot off).
 func receive(packet:Dictionary)->void:
     if not packet.get("name") is String or not packet.get("text") is String:return
     var line:=clean(packet.text)
-    if not line.is_empty():_add(clean_name(packet.name),line)
+    if not line.is_empty():_add(clean_name(packet.name),line,packet.get("mine")==true)
 
 func _allowed(key:String)->bool:
     var now:=Time.get_ticks_msec()
@@ -129,12 +144,13 @@ func _allowed(key:String)->bool:
     return allowed
 
 ## A line for the history: "NAME: text", or a note of this game's own without a name.
-func _add(name:String,line:String)->void:
+func _add(name:String,line:String,mine:bool=false)->void:
     history.append(line if name.is_empty() else name+": "+line)
     while history.size()>HISTORY:history.pop_front()
     if main==null or not main.started:return
-    if visible:_refresh()
-    else:_show_log()
+    if visible:_refresh();return
+    _show_log()
+    if not name.is_empty() and not mine:unread=true
 
 # --- the log beside the minimap -------------------------------------------------
 
@@ -159,14 +175,12 @@ func _show_log()->void:
     _log_fade.tween_callback(_log.hide)
 
 ## Right of the minimap, under the top row (and under a joined/left notice
-## while one shows); on a touch screen, clear of the CHAT button.
+## while one shows).
 func _log_left()->float:
     return main.touch_controls.usable_rect.position.x+HudStyle.MARGIN+main.M3924_MINIMAP_SIZE.x+HudStyle.GAP
 
 func _log_room()->float:
-    var right:float=main.touch_controls.usable_rect.end.x-HudStyle.MARGIN
-    if _touch():right=button_rect().position.x-HudStyle.GAP
-    return right-_log_left()-2*HudStyle.PAD
+    return main.touch_controls.usable_rect.end.x-HudStyle.MARGIN-_log_left()-2*HudStyle.PAD
 
 func _place_log()->void:
     var safe:Rect2=main.touch_controls.usable_rect
@@ -178,6 +192,32 @@ func _place_log()->void:
 
 func _process(_delta:float)->void:
     if is_instance_valid(_log) and _log.visible:_place_log()
+    if is_instance_valid(_button):_sync_button()
+
+# --- the chat button ----------------------------------------------------------------
+
+## On a touch screen while the field is up: in the top row between the battery
+## and the menu button (status_hud.gd places it), as big as the menu button.
+func _sync_button()->void:
+    var shown:bool=_touch() and available() and not visible and main.status_hud.top_free and main.touch_ui.surfaces._field_active()
+    var side:float=main.status_hud.row_height()
+    if _button.size!=Vector2(side,side):_button.size=Vector2(side,side)
+    if _button.visible!=shown:_button.visible=shown;main.status_hud._place()
+    var look:=[unread,HudStyle.dark,side]
+    if look!=_button_look:_button_look=look;_button.queue_redraw()
+
+## The menu button's glass and ring, a speech bubble, and the red dot on its corner.
+func _draw_button()->void:
+    HudStyle.draw_shape(_button,Rect2(Vector2.ZERO,_button.size),false,HudStyle.INK,false,HudStyle.STROKE,true)
+    var icon:=Icons.icon("CHAT")
+    _button.draw_texture(icon,((_button.size-icon.get_size())/2.0).round())
+    if unread:
+        _button.draw_circle(Vector2(_button.size.x-2.0,2.0),3.5,HudStyle.fill(false,true))
+        _button.draw_circle(Vector2(_button.size.x-2.0,2.0),2.5,BADGE)
+
+## Where a tap opens the chat; empty while the button is hidden.
+func button_rect()->Rect2:
+    return _button.get_global_rect() if is_instance_valid(_button) and _button.visible else Rect2()
 
 # --- the open chat ----------------------------------------------------------------
 
@@ -188,14 +228,8 @@ func _touch()->bool:
 func _phone()->bool:
     return OS.has_feature("mobile") or OS.get_cmdline_user_args().has("--touch-ui")
 
-## The CHAT button: right edge, under the menu button.
-func button_rect()->Rect2:
-    var safe:Rect2=main.touch_controls.usable_rect
-    var width:float=main.touch_ui._ink_width("CHAT")+2*HudStyle.PAD
-    return Rect2(Vector2(safe.end.x-HudStyle.MARGIN-width,safe.position.y+HudStyle.MARGIN+float(main.status_hud.row_height())+HudStyle.GAP),Vector2(width,HudStyle.ROW))
-
 func open()->void:
-    buffer="";scroll=0;_log.hide();show();_refresh();_show_keyboard()
+    buffer="";scroll=0;unread=false;_log.hide();show();_refresh();_show_keyboard()
 
 func close()->void:
     hide()

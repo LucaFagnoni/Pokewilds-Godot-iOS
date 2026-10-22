@@ -1,7 +1,9 @@
 # World chat (coop_chat.gd): the sanitiser on hostile text; a host and two
 # guests on this machine passing chat through real sessions (names from the
 # session, hostile packets cleaned, spam dropped by the rate limit); and the
-# chat on a touch screen in a real game, clear of the HUD.
+# chat on a touch screen in a real game, clear of the HUD: its button in the
+# top row between the battery and the menu button, with a red dot for unread
+# messages, at 320 and 390 px wide.
 # Run: godot --headless --path project -s ../server/coop_chat_test.gd -- --touch-ui
 # Run it windowed (no --headless) to also save screenshots into CHAT_SHOTS
 # (an environment variable; the system temp folder's chat_ui otherwise).
@@ -202,6 +204,7 @@ func hud_rects() -> Dictionary:
     var out := {}
     if main.m3924_minimap_root.is_visible_in_tree(): out["minimap"] = main.m3924_minimap_root.get_global_rect()
     if main.status_hud.clock_chip.is_visible_in_tree(): out["clock"] = main.status_hud.clock_chip.get_global_rect()
+    if main.status_hud.battery_chip.is_visible_in_tree(): out["battery"] = main.status_hud.battery_chip.get_global_rect()
     var pad: Control = main.touch_controls
     for name in ["Start", "A", "B", "L2", "R2", "LeftStick"]:
         out[name] = (pad.get_node(name) as Control).get_global_rect()
@@ -248,22 +251,70 @@ func _touch_screen() -> void:
     var surfaces = main.touch_ui.surfaces
     check(not chat.available() and not _has_chat_button(surfaces.build()), "playing alone: no chat")
 
-    # Online as a host (the session itself is not started: no other players).
+    # Online as a host (the session itself is not started: no other players),
+    # on a phone: the menu button in the top row, a battery beside it.
     coop.set_process(false)
     coop.active = true; coop.hosting = true
     coop.session.hosting = true; coop.session.trusted = true; coop.session.actor = "d".repeat(64)
     coop.session.players = {1: {"actor": coop.session.actor, "profile": {"name": "ASH"}}}
+    var pad: Control = main.touch_controls
+    pad.android_runtime = true
+    pad._refresh_visibility()
+    OS.set_environment(main.status_hud.BATTERY_ENV, "60,1")
+    main.status_hud.update()
     await _frames(3)
-    var hud := hud_rects()
-    var surface: Dictionary = surfaces.build()
-    check(_has_chat_button(surface), "online: the CHAT button: %s" % [surface.get("buttons", [])])
-    var button: Rect2 = chat.button_rect()
-    clear_of(button, hud, "CHAT button")
-    await shot("chat_button.png")
+    var hud := {}
+    var surface: Dictionary = {}
+    var button := Rect2()
+    for width in [320, 390]:
+        root.size = Vector2i(width * 4, 720)
+        # The phone's pad looks at the screen twice a second.
+        await create_timer(0.7).timeout
+        await _frames(4)
+        check(is_equal_approx(main.get_viewport().get_visible_rect().size.x, width), "%d px wide: %s" % [width, main.get_viewport().get_visible_rect().size])
+        hud = hud_rects()
+        surface = surfaces.build()
+        check(_has_chat_button(surface), "online at %d: the chat button: %s" % [width, surface.get("hotspots", [])])
+        button = chat.button_rect()
+        var menu: Rect2 = hud.Start
+        check(hud.has("battery"), "the battery shows at %d" % width)
+        check(button.size.x >= menu.size.x and button.size.y >= menu.size.y, "the chat button as big as the menu button: %s %s" % [button, menu])
+        check(is_equal_approx(button.get_center().y, menu.get_center().y), "on the menu button's line: %s %s" % [button, menu])
+        check(is_equal_approx(button.end.x, menu.position.x - Hud.GAP) and is_equal_approx(hud.battery.end.x, button.position.x - Hud.GAP),
+            "between the battery and the menu button, GAP apart: %s %s %s" % [hud.battery, button, menu])
+        clear_of(button, hud, "chat button at %d" % width)
+        # The notice centred under the clock, clear of the whole top row.
+        chat.unread = false
+        coop.show_notice("", "hosting")
+        await _frames(2)
+        var notice: Rect2 = coop._notice_box.get_global_rect()
+        check(absf(notice.get_center().x - Rect2(hud.clock).get_center().x) <= 1.0 and is_equal_approx(notice.position.y, Rect2(hud.clock).end.y + Hud.GAP),
+            "the notice centred under the clock at %d: %s %s" % [width, notice, hud.clock])
+        clear_of(notice, hud.merged({"chat button": button}), "notice at %d" % width)
+        await shot("chat_button_notice_%d.png" % width)
+        # A message from someone else lights the red dot; this player's own do not.
+        chat.send("my own line")
+        chat.receive({"name": "ASH", "text": "my echo", "mine": true})
+        chat._add("", "Too fast. Wait a moment.")
+        await _frames(2)
+        check(not chat.unread, "no dot for this player's own messages at %d" % width)
+        chat.receive({"name": "MISTY", "text": "Over here!"})
+        await _frames(2)
+        check(chat.unread and chat._button.visible, "a message from someone else lights the dot at %d" % width)
+        await shot("chat_button_badge_%d.png" % width)
+        coop._notice_box.visible = false
+        chat._log.hide()
+    # Without a battery the button sits just left of the menu button.
+    OS.set_environment(main.status_hud.BATTERY_ENV, "")
+    main.status_hud.update()
+    await _frames(3)
+    check(not main.status_hud.battery_chip.visible and chat.button_rect() == button, "no battery: still beside the menu button: %s" % chat.button_rect())
+    hud = hud_rects()
 
     # A tap opens the chat; typing goes in, Enter sends it under this player's name.
     await tap_at(button.get_center())
-    check(chat.visible and main._field_ui_blocks_gameplay(), "a tap on CHAT opens it and stops the player")
+    check(chat.visible and main._field_ui_blocks_gameplay(), "a tap on the chat button opens it and stops the player")
+    check(not chat.unread and not chat._button.visible, "opening clears the dot; the button steps aside")
     surface = surfaces.build()
     check(surface.has("back") and surface.get("hide_pad", false) and surface.buttons.size() == 2, "the X, PASTE and SEND: %s" % [surface.get("buttons", [])])
     await type("Hello [b]there[/b]")
@@ -320,9 +371,9 @@ func _touch_screen() -> void:
     coop.active = false; coop.hosting = false
     coop.session.hosting = false; coop.session.trusted = false; coop.session.players = {}
     await _frames(2)
-    check(not _has_chat_button(surfaces.build()), "offline again: no CHAT button")
+    check(not _has_chat_button(surfaces.build()) and not chat._button.visible, "offline again: no chat button")
 
 func _has_chat_button(surface: Dictionary) -> bool:
-    for entry in surface.get("buttons", []):
+    for entry in surface.get("hotspots", []):
         if entry[0] == "CHAT": return true
     return false

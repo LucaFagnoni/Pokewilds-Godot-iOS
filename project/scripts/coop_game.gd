@@ -1100,8 +1100,8 @@ func kick(peer:int,ban:bool=false)->bool:
 ## Without it a player can arrive in a public game and nobody would know.
 var _notice_names:Dictionary={}
 var _notice_label:Label
-## A HUD chip (hud_style.gd) under the top row: the same glass, ring and white
-## pixel font as the clock above it, the text wrapped to the room the minimap leaves.
+## A HUD chip (hud_style.gd) centred under the clock: the same glass, ring and
+## white pixel font as the clock above it, the text wrapped to the room the minimap leaves.
 var _notice_box:Control
 const HudStyle=preload("res://scripts/hud_style.gd")
 ## Line pitch: the capitals' 6 px of ink and a 4 px gap.
@@ -1133,14 +1133,16 @@ func _player_notice(peer:int,player:String,event:String)->void:
 func show_notice(player:String,event:String)->void:
     if not NOTICE_TEXT.has(event):return
     if not is_instance_valid(_notice_label):
-        _notice_box=HudStyle.chip(main.get_node("UI"),"OnlineNotice");_notice_box.z_index=340
+        _notice_box=HudStyle.chip(chat.hud,"OnlineNotice");_notice_box.z_index=340
         _notice_label=_notice_box.get_node("Text")
         _notice_label.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER;_notice_label.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
         _notice_label.add_theme_constant_override("line_spacing",NOTICE_LINE-roundi(HudStyle.FONT.get_height(HudStyle.FONT_SIZE)))
     var text:=String(NOTICE_TEXT[event]).replace("%s",player.strip_edges().left(24).to_upper())
     var safe:Rect2=main.touch_controls.usable_rect
-    var centre:float=main.get_viewport().get_visible_rect().size.x/2.0
-    var room:float=2.0*(centre-(safe.position.x+HudStyle.MARGIN+main.M3924_MINIMAP_SIZE.x+HudStyle.GAP+HudStyle.PAD))
+    var clock:Control=main.status_hud.clock_chip
+    var centre:float=clock.position.x+clock.size.x/2.0 if is_instance_valid(clock) and clock.visible else main.get_viewport().get_visible_rect().size.x/2.0
+    # The room a 320 px screen has at most, so a wider phone wraps it the same way.
+    var room:float=2.0*(minf(centre-safe.position.x,160.0)-(HudStyle.MARGIN+main.M3924_MINIMAP_SIZE.x+HudStyle.GAP+HudStyle.PAD))
     var ink:=HudStyle.FONT.get_multiline_string_size(text,HORIZONTAL_ALIGNMENT_CENTER,room,HudStyle.FONT_SIZE,-1,
         TextServer.BREAK_MANDATORY|TextServer.BREAK_WORD_BOUND|TextServer.BREAK_ADAPTIVE|TextServer.BREAK_TRIM_EDGE_SPACES)
     _notice_label.text=text;_notice_label.size=Vector2(ink.x,0)

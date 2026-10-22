@@ -40,6 +40,7 @@ var field_minimap_rect := Rect2()
 var field_minimap_shown := false
 var field_clock_rect := Rect2()
 var field_clock_shown := false
+var field_chat_rect := Rect2()
 var field_tap: Callable
 var field_clock_tap: Callable
 ## Frames refresh_visuals has found the plain field: after two (the backdrop trails the start menu
@@ -112,23 +113,23 @@ func _field() -> Dictionary:
     var minimap_shown := is_instance_valid(minimap) and minimap.is_visible_in_tree()
     var minimap_rect := minimap.get_global_rect() if minimap_shown else Rect2()
     var buttons: Array = field_hud.buttons()
-    # Online, the world chat (coop_chat.gd) under the menu button.
-    if is_instance_valid(m.coop_game) and is_instance_valid(m.coop_game.chat) and m.coop_game.chat.available():
-        buttons.append(["CHAT", func(): m.coop_game.chat.open(), m.coop_game.chat.button_rect()])
+    # Online, the world chat's button (coop_chat.gd draws it in the top row).
+    var chat_rect: Rect2 = m.coop_game.chat.button_rect() if is_instance_valid(m.coop_game) and is_instance_valid(m.coop_game.chat) else Rect2()
     # A tap on the clock switches real time and game time.
     var clock: Control = m.status_hud.clock_chip
     var clock_shown := is_instance_valid(clock) and clock.is_visible_in_tree()
     var clock_rect := grown(clock, Vector2(3, 6)) if clock_shown else Rect2()
-    # Without a field move the surface is just the minimap and the clock: reuse it
-    # while both stay where they were.
+    # Without a field move the surface is just the minimap, the clock and the chat
+    # button: reuse it while they stay where they were.
     if use_cache and buttons.is_empty() and field_key_valid \
             and minimap_shown == field_minimap_shown and minimap_rect == field_minimap_rect \
-            and clock_shown == field_clock_shown and clock_rect == field_clock_rect:
+            and clock_shown == field_clock_shown and clock_rect == field_clock_rect and chat_rect == field_chat_rect:
         return field_surface
     var rows := []
     if minimap_shown: rows.append(minimap_rect)
     var hotspots := []
     if clock_shown: hotspots.append(["CLOCK", field_clock_tap, clock_rect])
+    if chat_rect.has_area(): hotspots.append(["CHAT", func(): m.coop_game.chat.open(), chat_rect])
     var surface := {}
     if not (rows.is_empty() and buttons.is_empty() and hotspots.is_empty()):
         surface = {
@@ -146,6 +147,7 @@ func _field() -> Dictionary:
     field_minimap_rect = minimap_rect
     field_clock_shown = clock_shown
     field_clock_rect = clock_rect
+    field_chat_rect = chat_rect
     return surface
 
 func _finish_layout_edit() -> void:

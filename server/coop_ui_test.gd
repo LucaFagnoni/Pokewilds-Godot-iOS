@@ -1,7 +1,8 @@
 # The co-op boxes on a touch screen, in a real game on a throwaway data folder:
 # the title's notice on its dark tag, the TRADE / BATTLE / request boxes
 # (coop_interaction_ui.gd) clear of the HUD with rows a finger picks, and the
-# joined / left / hosting notice as a HUD chip under the top row.
+# joined / left / hosting notice as a HUD chip centred under the clock, on a
+# 320 and a 390 px wide screen.
 # Run: godot --headless --path project -s <this file> -- --touch-ui
 # Run it windowed (no --headless) to also save screenshots into SHOTS (the system temp folder).
 extends SceneTree
@@ -49,11 +50,12 @@ func key(action: String) -> void:
         await _frames(1)
     await _frames(2)
 
-## What the HUD shows in the field: minimap, clock and menu button.
+## What the HUD shows in the field: minimap, clock, battery and menu button.
 func hud_rects() -> Dictionary:
     var out := {}
     if main.m3924_minimap_root.is_visible_in_tree(): out["minimap"] = main.m3924_minimap_root.get_global_rect()
     if main.status_hud.clock_chip.is_visible_in_tree(): out["clock"] = main.status_hud.clock_chip.get_global_rect()
+    if main.status_hud.battery_chip.is_visible_in_tree(): out["battery"] = main.status_hud.battery_chip.get_global_rect()
     # The on-screen buttons where a phone has them (a PC with --touch-ui does not show them).
     var pad: Control = main.touch_controls
     for name in ["Start", "A", "B", "L2", "R2", "LeftStick"]:
@@ -129,21 +131,40 @@ func _initialize() -> void:
     check(hud.has("minimap") and hud.has("clock"), "the HUD is up: %s" % hud.keys())
 
     # --- the joined / left / hosting notice --------------------------------------
+    # Centred under the clock, GAP below it, on a 320 and a phone's 390 px wide
+    # screen, with a battery in the top row as on a phone.
     var coop: Node = main.coop_game
-    for event in [["", "hosting"], ["ASH", "joined"], ["ABCDEFGHIJKLMNOPQRSTUVWX", "away"]]:
-        coop.show_notice(event[0], event[1])
-        await _frames(2)
-        var box: Control = coop._notice_box
-        var text: Label = coop._notice_label
-        clear_of_hud(box.get_global_rect(), hud, "notice %s" % event[1])
-        var lines := text.get_line_count()
-        var ink := Rect2(text.position + Vector2(0, Hud.INK_CENTRE - Hud.INK_HEIGHT / 2.0), Vector2(text.size.x - 1.0, Hud.INK_HEIGHT + (lines - 1) * coop.NOTICE_LINE))
-        check(Rect2(Vector2.ZERO, box.size).grow(-Hud.PAD + 0.01).encloses(ink), "notice %s: the text %s fits its box %s" % [event[1], ink, box.size])
-        check(lines == planned_lines(text.text, Hud.FONT, Hud.FONT_SIZE, text.size.x), "notice %s wraps where measured: %d" % [event[1], lines])
-        check(text.get_theme_font("font") == Hud.FONT and text.get_theme_font_size("font_size") == Hud.FONT_SIZE, "notice %s in the HUD font" % event[1])
-        check(box.get_global_rect().position.y >= hud.clock.end.y + Hud.GAP - 0.01, "notice %s under the top row" % event[1])
-        await shot("notice_%s.png" % event[1])
+    OS.set_environment(main.status_hud.BATTERY_ENV, "60,1")
+    main.status_hud.update()
+    for width in [320, 390]:
+        root.size = Vector2i(width * 4, 720)
+        await create_timer(0.7).timeout
+        await _frames(4)
+        check(is_equal_approx(main.get_viewport().get_visible_rect().size.x, width), "%d px wide: %s" % [width, main.get_viewport().get_visible_rect().size])
+        hud = hud_rects()
+        check(hud.has("battery"), "the battery shows")
+        for event in [["", "hosting"], ["ASH", "joined"], ["ABCDEFGHIJKLMNOPQRSTUVWX", "away"]]:
+            coop.show_notice(event[0], event[1])
+            await _frames(2)
+            var box: Control = coop._notice_box
+            var text: Label = coop._notice_label
+            var where := "notice %s at %d" % [event[1], width]
+            clear_of_hud(box.get_global_rect(), hud, where)
+            var lines := text.get_line_count()
+            var ink := Rect2(text.position + Vector2(0, Hud.INK_CENTRE - Hud.INK_HEIGHT / 2.0), Vector2(text.size.x - 1.0, Hud.INK_HEIGHT + (lines - 1) * coop.NOTICE_LINE))
+            check(Rect2(Vector2.ZERO, box.size).grow(-Hud.PAD + 0.01).encloses(ink), "%s: the text %s fits its box %s" % [where, ink, box.size])
+            check(lines == planned_lines(text.text, Hud.FONT, Hud.FONT_SIZE, text.size.x), "%s wraps where measured: %d" % [where, lines])
+            check(text.get_theme_font("font") == Hud.FONT and text.get_theme_font_size("font_size") == Hud.FONT_SIZE, "%s in the HUD font" % where)
+            var rect := box.get_global_rect()
+            check(absf(rect.get_center().x - Rect2(hud.clock).get_center().x) <= 1.0, "%s centred under the clock: %s %s" % [where, rect, hud.clock])
+            check(is_equal_approx(rect.position.y, Rect2(hud.clock).end.y + Hud.GAP), "%s GAP under the clock: %s %s" % [where, rect, hud.clock])
+            await shot("notice_%s_%d.png" % [event[1], width])
     coop._notice_box.visible = false
+    root.size = Vector2i(1280, 720)
+    OS.set_environment(main.status_hud.BATTERY_ENV, "")
+    main.status_hud.update()
+    await _frames(4)
+    hud = hud_rects()
 
     # --- TRADE REQUEST ----------------------------------------------------------
     var ui: Control = coop.interaction_ui
