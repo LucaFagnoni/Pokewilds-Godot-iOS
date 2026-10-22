@@ -720,10 +720,87 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload --clobber "$TAG" build/android/Pokewilds.apk
 
+  # World generation must stay byte-identical per seed and size: saves, world
+  # caches and co-op peers all regenerate from it. 35 worlds (all five sizes) are
+  # hashed and compared with worldgen_check.gd and worldgen_hashes.json, four
+  # processes at once. Not tied to the draft: pull requests run it too.
+  worldgen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Godot editor
+        run: |
+          curl -sSL -o godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip
+          echo "GODOT=$PWD/Godot_v${GODOT_VERSION}-stable_linux.x86_64" >> "$GITHUB_ENV"
+
+      # The import cache the server job saves (same editor, same assets); this job only reads it.
+      - uses: actions/cache/restore@v4
+        with:
+          path: project/.godot
+          key: godot-import-server-${{ env.GODOT_VERSION }}-${{ hashFiles('project/assets/**/*.import') }}
+          restore-keys: godot-import-server-${{ env.GODOT_VERSION }}-
+
+      - name: Import
+        working-directory: project
+        run: |
+          "$GODOT" --headless --import
+
+      # A hash that differs, or a shard that died without its "checked" line, fails the job.
+      - name: Check the world hashes
+        working-directory: project
+        run: |
+          for k in 0 1 2 3; do
+            "$GODOT" --headless -s ../.github/engine/worldgen_check.gd -- --shard $k/4 > "$RUNNER_TEMP/worldgen$k.log" 2>&1 &
+            pids="$pids $!"
+          done
+          failed=0
+          for pid in $pids; do wait "$pid" || failed=1; done
+          cat "$RUNNER_TEMP"/worldgen?.log
+          grep -h "WORLDGEN FAIL" "$RUNNER_TEMP"/worldgen?.log | sed 's/^/::error::/' || true
+          grep -h "^WORLDGEN:" "$RUNNER_TEMP"/worldgen?.log | sed 's/^/::notice::/'
+          [ "$(cat "$RUNNER_TEMP"/worldgen?.log | grep -c '^WORLDGEN: checked')" = 4 ] || failed=1
+          exit $failed
+
+  # The quick headless tests of server/ (server/fast_tests.py: four at a time, a
+  # failure annotated, a flaky one run once more), the lobby directory's tests,
+  # and the saves of old games (server/fixtures) loaded by the current code.
+  # Pull requests run it too. The tests run with the Dummy 2D physics server, the
+  # one the phones have (the stock editor has another).
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Godot editor
+        run: |
+          curl -sSL -o godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip
+          echo "GODOT=$PWD/Godot_v${GODOT_VERSION}-stable_linux.x86_64" >> "$GITHUB_ENV"
+
+      - uses: actions/cache/restore@v4
+        with:
+          path: project/.godot
+          key: godot-import-server-${{ env.GODOT_VERSION }}-${{ hashFiles('project/assets/**/*.import') }}
+          restore-keys: godot-import-server-${{ env.GODOT_VERSION }}-
+
+      - name: Import
+        working-directory: project
+        run: |
+          "$GODOT" --headless --import
+          printf '[physics]\n2d/physics_engine="Dummy"\n' > override.cfg
+
+      - name: Lobby directory tests
+        run: node lobby-directory/test/directory.test.mjs
+
+      - name: Headless tests
+        run: python3 -u server/fast_tests.py "$GODOT" --jobs 4
+
   publish:
-    needs: [draft, smoke, ios_xtool, server, android]
+    needs: [draft, smoke, ios_xtool, server, android, worldgen, tests]
     # The IPA from the Mac or, failing that, from xtool: ios_xtool says which.
-    if: ${{ always() && needs.draft.result == 'success' && needs.smoke.result == 'success' && needs.server.result == 'success' && needs.android.result == 'success' && needs.ios_xtool.outputs.ipa == 'true' }}
+    if: ${{ always() && needs.draft.result == 'success' && needs.smoke.result == 'success' && needs.server.result == 'success' && needs.android.result == 'success' && needs.worldgen.result == 'success' && needs.tests.result == 'success' && needs.ios_xtool.outputs.ipa == 'true' }}
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}

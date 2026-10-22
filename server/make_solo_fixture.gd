@@ -1,6 +1,7 @@
 # Makes server/fixtures/solo: a single-player save as THIS game writes it, in a
 # world played a bit (party, box, bag, built structures, Pokemon left outside,
-# discovered cells), plus a "legacy" copy without the keys later versions added.
+# discovered cells) in the binary format 1, plus a "legacy" copy as a JSON save
+# without the keys later versions added.
 # fixture_load_test.gd loads both with the code of the day. Run it again only to
 # make a new fixture of the current format: keep the old ones, they are the point.
 # Run: godot --headless --path project -s ../server/make_solo_fixture.gd -- <folder>
@@ -52,7 +53,7 @@ func _initialize() -> void:
 
     # A party of four, a box with two, and a bag.
     var BattleEngine = preload("res://scripts/battle_engine.gd")
-    main.caught_pokemon = [main.caught_pokemon[0],
+    main.caught_pokemon = [main._make_starter_machop(),
         BattleEngine.make_pokemon("pikachu", 25), BattleEngine.make_pokemon("eevee", 12), BattleEngine.make_pokemon("onix", 30)]
     main.caught_pokemon[0].level = 14
     main.caught_species = ["machop", "pikachu", "eevee", "onix"]
@@ -92,9 +93,9 @@ func _initialize() -> void:
     print("FIXTURE discovered ", world.discovered_cells.size())
 
     await main._save_current_game()
-    var saved := FileAccess.get_file_as_string(path)
-    var data = JSON.parse_string(saved)
-    if not data is Dictionary or data.get("caught_pokemon", []).size() != 4: _fail("the save was not written")
+    var data: Dictionary = preload("res://scripts/world_saves.gd").read(path)
+    if data.get("caught_pokemon", []).size() != 4: _fail("the save was not written")
+    DirAccess.remove_absolute(path + ".bak")
     # The same save as an older game wrote it: none of what came later.
     for key in ["pokedex_shiny", "adjacent_worlds", "world_grid_x", "world_grid_y", "source_key_items_initialized",
             "next_party_ecology_id", "storage_shared", "storage_serial", "egg_step_timer", "friendship_step_timer",

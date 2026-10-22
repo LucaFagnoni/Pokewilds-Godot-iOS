@@ -11,6 +11,8 @@ import concurrent.futures, os, re, subprocess, sys, time
 
 # (script, arguments after "--"). Slowest first, so the last test does not start late.
 TESTS = [
+    ("fixture_load_test", ["--touch-ui"]),
+    ("save_format_test", ["--touch-ui"]),
     ("coop_ui_test", ["--touch-ui"]),
     ("coop_chat_test", ["--touch-ui"]),
     ("autosave_test", ["--touch-ui"]),
