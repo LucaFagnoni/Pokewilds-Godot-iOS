@@ -4,7 +4,7 @@
 # co-op store must keep these passing (or read them and say so): never edit a
 # fixture to make it pass, add a newer one.
 #   sp_v2   single-player JSON version 2 save + autosave + index (before binary saves)
-#   solo    single-player binary format 1 (a played world: party, box, bag, structures,
+#   solo_v1 single-player binary format 1 (a played world: party, box, bag, structures,
 #           Pokemon left outside, discovered cells) and the same as a JSON save without
 #           the keys later versions added ("legacy")
 #   online_v1.zip   an online world folder: world.json (+ .bak), journal.previous.jsonl,
@@ -157,7 +157,7 @@ func _initialize() -> void:
         check(old.crafting_state.deployed_pokemon.is_empty(), "sp_v2: nothing left outside")
 
     # The played world, binary and legacy JSON (the same world, so one world cache).
-    _install("solo/saves")
+    _install("solo_v1")
     _check_solo(await _load(saves_dir.path_join("fixturesolo.json")), "solo")
     _check_solo(await _load(saves_dir.path_join("fixturelegacy.json")), "legacy")
     main.saves.wait_for_cache_cleanup()

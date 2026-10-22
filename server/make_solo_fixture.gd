@@ -1,11 +1,11 @@
-# Makes server/fixtures/solo: a single-player save as THIS game writes it, in a
+# Makes server/fixtures/solo_v1: a single-player save as THIS game writes it, in a
 # world played a bit (party, box, bag, built structures, Pokemon left outside,
 # discovered cells) in the binary format 1, plus a "legacy" copy as a JSON save
 # without the keys later versions added.
 # fixture_load_test.gd loads both with the code of the day. Run it again only to
 # make a new fixture of the current format: keep the old ones, they are the point.
 # Run: godot --headless --path project -s ../server/make_solo_fixture.gd -- <folder>
-#   (the folder gets saves/ and is made from the seed below; ~1 minute)
+#   (the folder gets saves/: copy its files to server/fixtures/solo_v1; ~1 minute)
 extends SceneTree
 
 const Paths = preload("res://scripts/game_data_paths.gd")
