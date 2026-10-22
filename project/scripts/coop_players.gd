@@ -99,11 +99,13 @@ func _relay(sender_peer:int,actor:String,packet:Dictionary)->void:
     _last_received[actor]=Time.get_ticks_msec()
     last_packets[actor]=outgoing
     presence_received.emit(actor,outgoing)
+    var targets:Array=[]
     for peer in session.players:
         if peer==1 or peer==sender_peer:continue
         var other_actor=String(session.players[peer].actor)
-        if state!=null and state.members.get(other_actor,{}).get("area","")==packet.area:
-            session.send_to(peer,outgoing)
+        if state!=null and state.members.get(other_actor,{}).get("area","")==packet.area:targets.append(peer)
+    # Packed once for all of them (coop_transport.gd send_visual).
+    session.transport.send_visual(targets,outgoing)
     if actor!=session.actor and not Server.active:_show(actor,outgoing)
 
 func _show(actor:String,packet:Dictionary)->void:

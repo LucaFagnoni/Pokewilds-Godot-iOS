@@ -55,10 +55,12 @@ func join_address(address: String, remote_port: int) -> Error:
 
 func _add(peer: int, socket: StreamPeerTCP) -> void:
     socket.set_no_delay(true)
-    peers[peer] = {"socket": socket, "rx": PackedByteArray(), "tx": [],
+    peers[peer] = {"socket": socket, "rx": PackedByteArray(), "tx": PackedByteArray(),
         "offset": 0, "queued": 0, "ready": false,
         "seen": Time.get_ticks_msec(), "ping": Time.get_ticks_msec(), "heard": false,
-        "local_loading_until": 0, "remote_loading_until": 0}
+        "local_loading_until": 0, "remote_loading_until": 0,
+        # The last position sent and read here for each player (coop_remote_player.gd pack).
+        "sent": {}, "bases": {}}
 
 func set_loading(peer:int, loading:bool, remote:bool=false)->void:
     if not peers.has(peer):return
@@ -83,10 +85,52 @@ static func count(key:String,bytes:int,started_usec:int)->void:
 
 func send(peer: int, message: Dictionary) -> Error:
     var started:=Time.get_ticks_usec()
-    var bytes:=Remote.pack(message) if message.get("kind")=="player_visual" else PackedByteArray()
-    if bytes.is_empty():bytes=JSON.stringify(message).to_utf8_buffer()
+    if message.get("kind")=="player_visual" and peers.has(peer):
+        var sent:Dictionary=peers[peer].sent
+        var stream:=str(message.get("actor",""))
+        var packed:=Remote.pack(message,sent.get(stream),_slot(stream))
+        if not packed.is_empty():
+            count("enc:player_visual",packed.size(),started)
+            var error:=send_encoded(peer,packed)
+            if error==OK:sent[stream]=message
+            return error
+        sent.erase(stream)
+    var bytes:=JSON.stringify(message).to_utf8_buffer()
     count("enc:"+String(message.get("kind","")),bytes.size(),started)
     return send_encoded(peer,bytes)
+
+## One player's position to several players, packed once: as what changed
+## since the last one relayed for that player to those who had it, whole to
+## the others (just arrived, or a frame of theirs was dropped while busy).
+## Positions are observations: one that does not fit a full queue is dropped.
+var _relayed: Dictionary = {}
+func send_visual(targets: Array, message: Dictionary) -> void:
+    var stream := str(message.get("actor", ""))
+    var slot := _slot(stream)
+    var previous = _relayed.get(stream)
+    var whole := PackedByteArray()
+    var delta := PackedByteArray()
+    for peer in targets:
+        if not peers.has(peer): continue
+        var sent: Dictionary = peers[peer].sent
+        var started := Time.get_ticks_usec()
+        var bytes := PackedByteArray()
+        if previous != null and is_same(sent.get(stream), previous):
+            if delta.is_empty(): delta = Remote.pack(message, previous, slot); count("enc:player_visual", delta.size(), started)
+            bytes = delta
+        else:
+            if whole.is_empty(): whole = Remote.pack(message, null, slot); count("enc:player_visual", whole.size(), started)
+            bytes = whole
+        if bytes.is_empty(): send(peer, message)
+        elif send_encoded(peer, bytes) == OK: sent[stream] = message
+    _relayed[stream] = message
+
+## This sender's number for a player's positions, the same on every connection
+## so one packed delta serves them all; 255 (always whole) after 255 players.
+var _slots: Dictionary = {}
+func _slot(stream: String) -> int:
+    if not _slots.has(stream) and _slots.size() < 255: _slots[stream] = _slots.size()
+    return _slots.get(stream, 255)
 
 ## A frame this large or larger travels packed (zstd) when that saves a tenth:
 ## ZSTD_TAG, the unpacked size (u32), then the packed bytes. A storage box or a
@@ -96,7 +140,7 @@ const ZSTD_TAG := 2
 const COMPRESS_FROM := 2048
 
 static func pack(bytes:PackedByteArray)->PackedByteArray:
-    if bytes.size() < COMPRESS_FROM or bytes[0] == Remote.WIRE_TAG: return bytes
+    if bytes.size() < COMPRESS_FROM or bytes[0] == Remote.WIRE_TAG or bytes[0] == Remote.WIRE_DELTA: return bytes
     var started := Time.get_ticks_usec()
     var packed := bytes.compress(FileAccess.COMPRESSION_ZSTD)
     count("zstd", packed.size(), started)
@@ -121,15 +165,25 @@ func send_encoded(peer:int, bytes:PackedByteArray)->Error:
     if int(state.queued) + bytes.size() + 4 > MAX_QUEUE: return ERR_BUSY
     bytes = pack(bytes)
     if stats != null: count("tx", bytes.size() + 4, Time.get_ticks_usec())
-    var frame := PackedByteArray()
-    frame.resize(4)
-    frame.encode_u32(0, bytes.size())
-    frame.append_array(bytes)
-    state.tx.append(frame)
-    state.queued += frame.size()
+    var header := PackedByteArray([0, 0, 0, 0])
+    header.encode_u32(0, bytes.size())
+    state.tx.append_array(header)
+    state.tx.append_array(bytes)
+    state.queued += bytes.size() + 4
     # Anything sent keeps the connection alive; keepalives fill silences only.
     state.ping = Time.get_ticks_msec()
+    # Written once the frame's other nodes have sent theirs: everything sent
+    # in a frame leaves together, that same frame, not a frame later.
+    if not _flush_pending:
+        _flush_pending = true
+        _flush_frame.call_deferred()
     return OK
+
+var _flush_pending := false
+func _flush_frame() -> void:
+    _flush_pending = false
+    for peer in peers.keys():
+        if peers.has(peer) and peers[peer].ready: _write(peer, FRAME_BUDGET)
 
 func _process(_delta:float)->void:
     var frame_started := Time.get_ticks_usec()
@@ -199,7 +253,7 @@ func _poll()->void:
             if state.rx.size() < length + 4: break
             var started := Time.get_ticks_usec()
             var frame: PackedByteArray = unpack(state.rx.slice(4, length + 4))
-            var decoded = null if frame.is_empty() else Remote.unpack(frame) if frame[0] == Remote.WIRE_TAG else JSON.parse_string(frame.get_string_from_utf8())
+            var decoded = null if frame.is_empty() else Remote.unpack(frame, state.bases) if frame[0] == Remote.WIRE_TAG or frame[0] == Remote.WIRE_DELTA else JSON.parse_string(frame.get_string_from_utf8())
             state.rx = state.rx.slice(length + 4)
             read_count += 1
             if not decoded is Dictionary:
@@ -213,24 +267,26 @@ func _poll()->void:
         if not peers.has(peer): continue
         _write(peer, FRAME_BUDGET)
 
+## The frames queued for `peer`, up to `budget` bytes, in one write (one
+## packet on the wire for a frame's small messages, not one each).
 func _write(peer: int, budget: int) -> void:
     var state: Dictionary = peers[peer]
-    var socket: StreamPeerTCP = state.socket
-    while not state.tx.is_empty() and budget > 0:
-        var frame: PackedByteArray = state.tx[0]
-        var offset := int(state.offset)
-        var sent := socket.put_partial_data(frame.slice(offset, mini(frame.size(), offset + budget)))
-        if sent[0] != OK:
-            _drop(peer,"socket_write_failed")
-            break
-        var count := int(sent[1])
-        if count <= 0: break
-        budget -= count
-        state.offset += count
-        state.queued -= count
-        if int(state.offset) == frame.size():
-            state.tx.pop_front()
-            state.offset = 0
+    var offset := int(state.offset)
+    var pending: int = state.tx.size() - offset
+    if pending <= 0 or budget <= 0: return
+    var sent: Array = state.socket.put_partial_data(state.tx.slice(offset, offset + mini(pending, budget)))
+    if sent[0] != OK:
+        _drop(peer,"socket_write_failed")
+        return
+    var count := int(sent[1])
+    state.offset = offset + count
+    state.queued -= count
+    if int(state.offset) >= state.tx.size():
+        state.tx = PackedByteArray()
+        state.offset = 0
+    elif int(state.offset) * 2 >= state.tx.size():
+        state.tx = state.tx.slice(state.offset)
+        state.offset = 0
 
 ## Hands everything queued to the sockets now: the app is about to be
 ## suspended and _process will not run again until it comes back.
@@ -255,6 +311,8 @@ func stop() -> void:
     for pair in _turned_away: pair[0].disconnect_from_host()
     _turned_away.clear()
     peers.clear()
+    _relayed.clear()
+    _slots.clear()
     hosting = false
     joining = false
     _next_peer = 2

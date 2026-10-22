@@ -7,7 +7,7 @@ signal message(peer: int, actor: String, payload: Dictionary)
 signal rejected(reason: String)
 signal connection_lost
 const Transport = preload("res://scripts/coop_transport.gd")
-const PROTOCOL := "pokewilds-godot-coop-8"
+const PROTOCOL := "pokewilds-godot-coop-9"
 ## Most players one game can have, a phone host included (a dedicated server's
 ## own player does not count). The host relays every position update to each
 ## other player in the same area, so its upload grows with the square of the
@@ -314,6 +314,13 @@ func set_loading(value:bool)->void:
 func send_to(peer: int, payload: Dictionary) -> Error:
     if not hosting or not players.has(peer) or peer==1:return ERR_UNAVAILABLE
     return _send_reliable(peer,payload)
+
+## send_to for a message already encoded (coop_messages.gd send_bytes).
+func send_bytes_to(peer: int, bytes: PackedByteArray) -> Error:
+    if not hosting or not players.has(peer) or peer==1:return ERR_UNAVAILABLE
+    var error:Error=messages.send_bytes(peer,bytes)
+    if error!=OK:transport._drop(peer,"message_send_"+error_string(error))
+    return error
 
 func _send_reliable(peer:int,payload:Dictionary)->Error:
     var error:Error=messages.send(peer,payload)
