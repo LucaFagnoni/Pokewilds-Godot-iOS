@@ -2,8 +2,8 @@ extends RefCounted
 ## The HUD's top row, on one line MARGIN under the safe area's top edge (see
 ## hud_style.gd): the minimap at the left edge, the clock (OPTIONS > CLOCK) at
 ## the centre of the screen, and at the right edge the menu button, then the
-## battery (OPTIONS > BATTERY) and the FPS counter (OPTIONS > FPS COUNTER) to
-## its left, GAP apart. Chips are as tall as the menu button. The texts change
+## chat button (online, coop_chat.gd), the battery (OPTIONS > BATTERY) and the
+## FPS counter (OPTIONS > FPS COUNTER) to its left, GAP apart. Chips are as tall as the menu button. The texts change
 ## every few seconds at most (the FPS twice a second); on touch a tap on the
 ## clock switches between real time and game time.
 
@@ -28,6 +28,8 @@ var clock_chip: Control
 var battery_chip: Control
 var battery_fill: ColorRect
 var fps_chip: Control
+## Set by coop_chat.gd, which shows it; placed here with the chips.
+var chat_chip: Control
 var wait := 0.0
 var fps_wait := 0.0
 var top_free := false
@@ -96,8 +98,8 @@ func _place() -> void:
     var right := safe.end.x - HudStyle.MARGIN
     var menu := _menu()
     if menu != null: right = menu.position.x - HudStyle.GAP
-    for chip in [battery_chip, fps_chip]:
-        if not chip.visible: continue
+    for chip in [chat_chip, battery_chip, fps_chip]:
+        if chip == null or not chip.visible: continue
         _move(chip, Vector2(right - chip.size.x, top))
         right = chip.position.x - HudStyle.GAP
 

@@ -36,6 +36,10 @@ const ART := {
     "SAVE": [
         "kkkkkkkkkkk.", "kbbwwwwwbbbk", "kbbwwwwwbbbk", "kbbwwkwwbbbk", "kbbwwwwwbbbk", "kbbbbbbbbbbk",
         "kbbbbbbbbbbk", "kbwwwwwwwwbk", "kbwkkkkkkwbk", "kbwwwwwwwwbk", "kbwkkkkkkwbk", "kkkkkkkkkkkk"],
+    # A speech bubble: the world chat's button in the top row (coop_chat.gd).
+    "CHAT": [
+        "............", "..wwwwwwww..", ".wwwwwwwwww.", ".wwwwwwwwww.", ".wkkwkkwkkw.", ".wkkwkkwkkw.",
+        ".wwwwwwwwww.", "..wwwwwwww..", "..www.......", "..ww........", "..w.........", "............"],
     "EXIT": [
         "..kkkkkkk...", "..knnnnnk...", "..knnnnnk...", "..knnnnnk..k", "..knnnnnk.kk", "..knnnynkkkk",
         "..knnnnnk.kk", "..knnnnnk..k", "..knnnnnk...", "..knnnnnk...", "..knnnnnk...", ".kkkkkkkkk.."],
