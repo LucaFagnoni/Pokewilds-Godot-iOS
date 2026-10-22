@@ -52,13 +52,15 @@ func _new_world(world_name: String) -> void:
     check(main.started, "%s started" % world_name)
     await _frames(10)
 
+## The save in that one file (no .bak), null if it cannot be read.
 func _parsed(path: String) -> Variant:
-    return JSON.parse_string(FileAccess.get_file_as_string(path)) if FileAccess.file_exists(path) else null
+    var data: Dictionary = main.saves.read_file(path)
+    return null if data.is_empty() else data
 
 func _cut(path: String) -> void:
-    var text := FileAccess.get_file_as_string(path)
+    var bytes := FileAccess.get_file_as_bytes(path)
     var file := FileAccess.open(path, FileAccess.WRITE)
-    file.store_string(text.left(text.length() / 2))
+    file.store_buffer(bytes.slice(0, bytes.size() / 2))
     file.close()
 
 func _index(section: String, key: String) -> String:
@@ -114,7 +116,7 @@ func _initialize() -> void:
     player.position.x += 16.0
     main._notification(NOTIFICATION_APPLICATION_PAUSED)
     var latest_x := player.position.x
-    FileAccess.open(auto + ".pending", FileAccess.WRITE).store_string(FileAccess.get_file_as_string(auto).left(100))
+    FileAccess.open(auto + ".pending", FileAccess.WRITE).store_buffer(FileAccess.get_file_as_bytes(auto).slice(0, 100))
     check(float(main.saves.read(auto).get("player_x", -1)) == latest_x, "a cut autosave .pending is ignored")
     _cut(auto)
     check(_parsed(auto) == null and float(main.saves.read(auto).get("player_x", -1)) == auto_x, "a cut autosave falls back to its .bak")

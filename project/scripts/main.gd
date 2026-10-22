@@ -10659,8 +10659,8 @@ func _save_current_game() -> void:
         _show_message("GAME SAVED, but the STORAGE BOXES could not be saved.")
 
 ## The single-player save and what goes with it, for the SAVE menu and the save
-## before quitting. The save grows with play, so its text is made and written
-## on save_thread from a copy of `data`; one save at a time.
+## before quitting. The save grows with play, so it is encoded and written on
+## save_thread from a copy of `data` (_save_snapshot); one save at a time.
 func _write_single_player_save(data: Dictionary) -> Error:
     while save_thread != null:
         await get_tree().process_frame
@@ -10668,12 +10668,31 @@ func _write_single_player_save(data: Dictionary) -> Error:
     if save_path.is_empty():
         return ERR_CANT_CREATE
     save_thread = Thread.new()
-    save_thread.start(WorldSaves.write_manual.bind(save_path, data.duplicate(true)))
+    save_thread.start(WorldSaves.write_manual.bind(save_path, _save_snapshot(data)))
     while save_thread.is_alive():
         await get_tree().process_frame
     var error: Error = save_thread.wait_to_finish()
     save_thread = null
     return _finish_single_player_save(data, save_path, error)
+
+## `data` (_capture_game_save) as the save thread may read it while the game
+## goes on. Copying all of it held the game ~35 ms on a long-played save, and
+## var_to_bytes was slower still; only what the game keeps changing is copied.
+## crafting_state is made for this save, and a neighbouring world's state is
+## replaced, never changed, when travelling: only the world played now may
+## share records with the game (restore_crafting_save_state keeps them).
+func _save_snapshot(data: Dictionary) -> Dictionary:
+    var snapshot := {}
+    var here := _world_grid_key(current_world_grid)
+    for key in data:
+        var value = data[key]
+        if key == "adjacent_worlds":
+            value = (value as Dictionary).duplicate()
+            if value.has(here): value[here] = value[here].duplicate(true)
+        elif key != "crafting_state" and (value is Dictionary or value is Array):
+            value = value.duplicate(true)
+        snapshot[key] = value
+    return snapshot
 
 ## The save's path, once the folder is there and `data` carries the storage serial.
 func _prepare_single_player_save(data: Dictionary) -> String:
