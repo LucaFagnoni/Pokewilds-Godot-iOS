@@ -138,6 +138,49 @@ var begin_facts: Dictionary = {}
 var begin_party: Array = []
 var begin_bag: Dictionary = {}
 
+## Whether a replay_log() that came over the network has the shape a replay
+## needs (each input is still checked as it plays). Bounded in size.
+static func valid_report(report) -> bool:
+    if not report is Dictionary or not report.get("rng") is String or not String(report.rng).is_valid_int():
+        return false
+    var context = report.get("context")
+    var facts = report.get("facts")
+    var inputs = report.get("inputs")
+    if not (context is Dictionary and facts is Dictionary and inputs is Array) or inputs.size() > 4096 \
+            or JSON.stringify(report).length() > 256 * 1024:
+        return false
+    var members = context.get("party")
+    if not members is Array or members.is_empty() or members.size() > 6:
+        return false
+    for member in members:
+        if not member is Dictionary or not member.get("species") is String or \
+                PokemonData.info(String(member.species)).is_empty() or \
+                not (member.get("level") is int or member.get("level") is float):
+            return false
+    for key in ["time_of_day", "terrain", "requested"]:
+        if facts.has(key) and not facts[key] is String:
+            return false
+    if facts.has("wild_record") and not facts.wild_record is Dictionary:
+        return false
+    for input in inputs:
+        if not (input is Dictionary or input is int or input is float or input is bool):
+            return false
+    return true
+
+## JSON brings numbers back as floats: whole ones become ints again, as the
+## game holds them.
+static func whole_numbers(value) -> Variant:
+    if value is float and value == floorf(value) and absf(value) < 9.0e15:
+        return int(value)
+    if value is Array:
+        return (value as Array).map(whole_numbers)
+    if value is Dictionary:
+        var out := {}
+        for key in value:
+            out[key] = whole_numbers(value[key])
+        return out
+    return value
+
 ## Whether `input` fits what the battle waits for (a replay's check: every
 ## input of a report is checked before it plays).
 func valid_input(input) -> bool:
@@ -171,13 +214,13 @@ func valid_input(input) -> bool:
             return ITEM_RULES.has(item) and int(inventory.get(item, 0)) > 0 and item_refusal(item, int(index)).is_empty()
         "ball":
             var ball := String(action.get("ball", ""))
-            return not double and int(inventory.get(ball, 0)) > 0 and refusal(action).is_empty()
+            return int(inventory.get(ball, 0)) > 0 and refusal(action).is_empty()
         "run":
-            return not double and refusal(action).is_empty()
+            return refusal(action).is_empty()
         "silph_scope":
-            return not double and int(inventory.get("SILPH SCOPE", 0)) > 0 and bool(enemy.get("is_ghost", false))
+            return int(inventory.get("SILPH SCOPE", 0)) > 0 and bool(enemy.get("is_ghost", false))
         "poke_doll":
-            return not double and int(inventory.get("POKE DOLL", 0)) > 0 and refusal(action).is_empty()
+            return int(inventory.get("POKE DOLL", 0)) > 0 and refusal(action).is_empty()
         "double":
             return double and action.get("actions") is Array and _valid_double_actions(action.actions)
     return false
@@ -365,7 +408,7 @@ func begin(battle_context: Dictionary, player_party: Array, bag: Dictionary,
     }
     enemy = make_enemy(first_member)
     enemy_party[0] = enemy
-    enemy = _apply_wild_record(enemy, level)
+    enemy = apply_wild_record(enemy, level)
     enemy_party[0] = enemy
     Battle.reset_battle_state(enemy)
     party_index = _first_healthy_party_index()
@@ -426,7 +469,10 @@ func make_enemy(member: Dictionary) -> Dictionary:
         made["is_ghost"] = not bool(context.get("ghost_revealed", false))
     return made
 
-func _apply_wild_record(made: Dictionary, level: int) -> Dictionary:
+## A wild enemy takes the record of the overworld Pokemon fought
+## (world.wild_record): its shininess, gender, nature, IVs... and its moves,
+## unless the battle scaled its level.
+func apply_wild_record(made: Dictionary, level: int) -> Dictionary:
     if String(context.get("kind", "wild")) != "wild":
         return made
     var source_record: Dictionary = world.get("wild_record", {})

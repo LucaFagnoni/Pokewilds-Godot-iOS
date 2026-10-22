@@ -49,13 +49,7 @@ func _initialize() -> void:
 
 ## JSON numbers come back as floats: whole ones are ints again, as in the game.
 static func _ints(value) -> Variant:
-    if value is float and value == floorf(value) and absf(value) < 9.0e15: return int(value)
-    if value is Array: return (value as Array).map(_ints)
-    if value is Dictionary:
-        var out := {}
-        for key in value: out[key] = _ints(value[key])
-        return out
-    return value
+    return Session.whole_numbers(value)
 
 # --- PvP -----------------------------------------------------------------------------------
 
@@ -96,6 +90,8 @@ func _check_replay() -> String:
         return ""
     var end_state := _state()
     var report: Dictionary = JSON.parse_string(JSON.stringify(session.replay_log(true)))
+    if not Session.valid_report(report):
+        return "its replay log does not pass valid_report()"
     var again = Session.new()
     var fitted: bool = again.replay(String(report.rng).to_int(), _ints(report.context), _ints(report.party),
         _ints(report.bag), _ints(report.facts), _ints(report.inputs))
