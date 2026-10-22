@@ -2,6 +2,7 @@ extends Node
 ## Live transport adapter for source-created wild records and reservations.
 const Population=preload("res://scripts/coop_wild_population.gd")
 const Delta=preload("res://scripts/coop_world_delta.gd")
+const BattleSession=preload("res://scripts/battle_session.gd")
 var game:Node
 var applying:=false
 var pending_additions:Dictionary={}
@@ -230,7 +231,7 @@ func finish_encounter(outcome:String,aftermath:Dictionary={})->bool:
     finishing=true
     var profile:Dictionary=game._personal_profile()
     var sent_pending:Array=profile.save.get("coop_pending_pokemon",[]).duplicate(true)
-    var result:Dictionary=await game.command("wild_finish",{"area":encounter.area,"wild_id":encounter.wild_id,"outcome":outcome,"calm":bool(encounter.field_attack),"profile":profile,"base":game.profile_base,"aftermath":aftermath})
+    var result:Dictionary=await game.command("wild_finish",{"area":encounter.area,"wild_id":encounter.wild_id,"outcome":outcome,"calm":bool(encounter.field_attack),"profile":profile,"base":game.profile_base,"aftermath":aftermath,"battle":game.main.battle_report()})
     if not result.get("ok",false):
         finishing=false;game.end_session("ENCOUNTER RESULT COULD NOT BE SAVED.");return false
     game.storage.settle(sent_pending,result.get("pending",[]))
@@ -246,6 +247,7 @@ func resolve(actor:String,id:String,args:Dictionary)->Dictionary:
         var current:Dictionary=game.state.records.get("player/"+actor,{})
         return {"ok":true,"base":game.state.print_of("player/"+actor,{}),"pending":current.get("save",{}).get("coop_pending_pokemon",[])}
     if args.base!=game.state.print_of("player/"+actor,{}):return {"ok":false,"reason":"profile_changed"}
+    var battle_check:=check_battle(actor,args)
     var profile:Dictionary=args.profile.duplicate(true)
     var changes:Array=game.storage.profile_changes(actor,profile)
     var claim:Dictionary=game.state.records.get(Population.claim_key(args.area,int(args.wild_id)),{})
@@ -276,7 +278,33 @@ func resolve(actor:String,id:String,args:Dictionary)->Dictionary:
     if result.get("ok",false):
         result["base"]=game.state.print_of("player/"+actor,{})
         result["pending"]=profile.save.get("coop_pending_pokemon",[])
+        result["battle_check"]=battle_check
     return result
+
+## The reported battle played again on the host (battle_session.gd replay())
+## from the battle's own log, with the party and bag the host holds for the
+## player: "ok", or why it does not end as reported. For now this is only
+## reported (in the reply and the host's log), never refused: the player's
+## party may hold changes the host has not confirmed yet, and the context and
+## the wild Pokemon's record still come from the client. The netcode rewrite
+## takes both from the host's claim and makes this replay the result.
+func check_battle(actor:String,args:Dictionary)->String:
+    var report=args.get("battle")
+    if not report is Dictionary or report.is_empty():return "unreported"
+    if not BattleSession.valid_report(report):return "malformed"
+    var profile:Dictionary=game.state.records.get("player/"+actor,{})
+    var party=profile.get("party",[])
+    var bag=profile.get("inventory",{})
+    if not party is Array or not bag is Dictionary:return "no_profile"
+    var replay=BattleSession.new()
+    var fitted:bool=replay.replay(String(report.rng).to_int(),BattleSession.whole_numbers(report.context),
+        BattleSession.whole_numbers(party),BattleSession.whole_numbers(bag),
+        BattleSession.whole_numbers(report.facts),BattleSession.whole_numbers(report.inputs))
+    var verdict:="ok"
+    if not fitted:verdict="inputs_do_not_fit"
+    elif replay.outcome!=String(args.get("outcome","")):verdict="replay_"+replay.outcome
+    if verdict!="ok":print("ONLINE wild battle check: %s reported %s, the replay says %s"%[actor,args.get("outcome",""),verdict])
+    return verdict
 
 func initialize_ids()->bool:
     # Another request may be in flight at this instant (night events, hordes, a

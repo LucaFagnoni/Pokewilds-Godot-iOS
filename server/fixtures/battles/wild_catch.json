@@ -1,0 +1,24 @@
+{
+"name": "wild_catch",
+"kind": "single",
+"seed": 13,
+"context": {"can_catch":true,"can_run":true,"fixed_level":true,"id":"wild","kind":"wild","party":[{"level":14.0,"species":"scyther"}],"terrain":"GRASSY"},
+"party": [{"ability":"","evs":{"attack":0.0,"defense":0.0,"hp":0.0,"sp_attack":0.0,"sp_defense":0.0,"speed":0.0},"exp":4665.0,"friendship":70.0,"gender":"female","generation":1.0,"happiness":70.0,"held_item":"","hp":40.0,"is_shiny":false,"ivs":{"attack":14.0,"defense":14.0,"hp":31.0,"sp_attack":25.0,"sp_defense":18.0,"speed":19.0},"level":18.0,"markings":0.0,"max_hp":40.0,"met_level":18.0,"met_location":"WILDERNESS","moves":["THUNDER_WAVE","QUICK_ATTACK","THUNDERSHOCK","GROWL"],"nature":"SERIOUS","nickname":"","original_trainer":"WILD","personality":705182212.0,"pokeball":"POKE BALL","pokerus":0.0,"pp":{"GROWL":40.0,"QUICK_ATTACK":30.0,"THUNDERSHOCK":30.0,"THUNDER_WAVE":20.0},"ribbons":[],"shiny":false,"species":"pikachu","stages":{"accuracy":0.0,"attack":0.0,"defense":0.0,"evasion":0.0,"sp_attack":0.0,"sp_defense":0.0,"speed":0.0},"stats":{"attack":29.0,"defense":24.0,"hp":40.0,"sp_attack":28.0,"sp_defense":28.0,"speed":42.0},"status":"","status_counter":0.0,"toxic_counter":0.0,"trainer_id":0.0,"types":["ELECTRIC"],"volatile":{}}],
+"inventory": {"FRIEND BALL":2.0,"GREAT BALL":3.0,"HEAL BALL":2.0,"POKE BALL":3.0},
+"world": {"indoors":false,"night":false,"surfing":false,"time_of_day":"day"},
+"log": [
+{"text":"Wild SCYTHER\nappeared!"},
+{"text":"Wild SCYTHER\nappeared!"},
+{"text":"What will\nPIKACHU do?"},
+{"at":"command","input":{"move":0},"state":{"enemy":[["scyther",14.0,43.0,"",2195.0]],"field":["",0.0,0.0,0.0],"party":[["pikachu",18.0,40.0,"",4665.0]],"rng":"8536103679930626054","sha":"7297464d3c9a572d8e95"}},
+{"text":"PIKACHU used THUNDER WAVE!"},
+{"text":"SCYTHER was PARALYZED! It might not be able to attack!"},
+{"text":"SCYTHER is fully paralyzed!"},
+{"text":"What will\nPIKACHU do?"},
+{"at":"command","input":{"ball":"POKE BALL"},"state":{"enemy":[["scyther",14.0,43.0,"PARALYSIS",2195.0]],"field":["",0.0,0.0,0.0],"party":[["pikachu",18.0,40.0,"",4665.0]],"rng":"-7223450090908459403","sha":"c566b380e00dee10b983"}},
+{"text":"Threw POKE BALL!"},
+{"text":"Caught SCYTHER!"},
+{"text":"PIKACHU gained 1000 EXP. Points!"},
+{"text":"PIKACHU grew to level 19!"},
+{"end":"captured","state":{"enemy":[["scyther",14.0,43.0,"PARALYSIS",2195.0]],"field":["",0.0,0.0,0.0],"party":[["pikachu",19.0,42.0,"",5665.0],["scyther",14.0,43.0,"PARALYSIS",2195.0]],"rng":"-1346074148329510864","sha":"f67e6ffc7c51a437bb3d"}}
+]}

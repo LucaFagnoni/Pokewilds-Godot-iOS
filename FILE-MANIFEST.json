@@ -87992,16 +87992,6 @@
 "sha256": "fb1596ab88b156eef39d140c908d5785a718e06624d24768ac484b8882d12578"
 },
 {
-"path": "project/scripts/coop_pvp_battle.gd",
-"bytes": 10871,
-"sha256": "d98f9c1d626a625153381ee0194f16cac56ed240265fe3284b161280db01392a"
-},
-{
-"path": "project/scripts/coop_pvp_battle.gd.uid",
-"bytes": 20,
-"sha256": "1d3064b84d0e43a73040e47881c77917c9a68015e2832be897220cec6d31d996"
-},
-{
 "path": "project/scripts/coop_pvp_runtime.gd",
 "bytes": 6434,
 "sha256": "4c33fb6cc4c5785bf831467307d63b70ca31cebcfd945bd8514df4c1be76e55f"

@@ -5,6 +5,10 @@ const TexturePixels = preload("res://scripts/texture_pixels.gd")
 
 signal battle_party_chosen(index: int)
 signal battle_text_finished
+## Every battle line as it is shown, and how each battle ends: the hooks
+## server/battle_transcript_record.gd records battle transcripts with.
+signal battle_text_shown(message: String)
+signal battle_ended(outcome: String)
 signal mansion_switch_answered(pressed: bool)
 
 var adjacent_worlds: Dictionary = {}
@@ -28,6 +32,7 @@ const FieldMoveData = preload("res://scripts/field_move_data.gd")
 const PokemonData = preload("res://scripts/pokemon_data.gd")
 const PokemonEcology = preload("res://scripts/pokemon_ecology.gd")
 const BattleEngine = preload("res://scripts/battle_engine.gd")
+const BattleSession = preload("res://scripts/battle_session.gd")
 const PokemonState = preload("res://scripts/pokemon_state.gd")
 const SourceEventData = preload("res://scripts/source_event_data.gd")
 const FieldMoveRadial = preload("res://scripts/field_move_radial.gd")
@@ -642,31 +647,7 @@ const BATTLE_BALL_BONUS := {
     "MASTER BALL":999.0, "PARK BALL":999.0
 }
 
-const BATTLE_ITEM_RULES := {
-    "POTION":{"kind":"heal", "amount":20},
-    "SUPER POTION":{"kind":"heal", "amount":50},
-    "HYPER POTION":{"kind":"heal", "amount":200},
-    "MAX POTION":{"kind":"heal", "amount":99999},
-    "FULL RESTORE":{"kind":"full_restore", "amount":99999},
-    "RAGECANDYBAR":{"kind":"heal", "amount":20},
-    "FULL HEAL":{"kind":"status", "status":"ANY"},
-    "ANTIDOTE":{"kind":"status", "status":"POISON"},
-    "BURN HEAL":{"kind":"status", "status":"BURN"},
-    "ICE HEAL":{"kind":"status", "status":"FREEZE"},
-    "AWAKENING":{"kind":"status", "status":"SLEEP"},
-    "PARLYZ HEAL":{"kind":"status", "status":"PARALYSIS"},
-    "LUM BERRY":{"kind":"status", "status":"ANY"},
-    "PECHA BERRY":{"kind":"status", "status":"POISON"},
-    "CHERI BERRY":{"kind":"status", "status":"PARALYSIS"},
-    "ASPEAR BERRY":{"kind":"status", "status":"FREEZE"},
-    "CHESTO BERRY":{"kind":"status", "status":"SLEEP"},
-    "RAWST BERRY":{"kind":"status", "status":"BURN"},
-    "PERSIM BERRY":{"kind":"confusion"},
-    "BERRY JUICE":{"kind":"heal", "amount":20},
-    "MOOMOO MILK":{"kind":"heal", "amount":100},
-    "REVIVE":{"kind":"revive", "fraction":0.5},
-    "MAX REVIVE":{"kind":"revive", "fraction":1.0}
-}
+const BATTLE_ITEM_RULES := BattleSession.ITEM_RULES
 
 var sign_dialog: ConfirmationDialog
 var sign_edit: LineEdit
@@ -838,7 +819,6 @@ var battle_enemy: Dictionary = {}
 var battle_context: Dictionary = {}
 var battle_enemy_party: Array = []
 var battle_enemy_party_index := 0
-var battle_enemy_action_count := 0
 var battle_is_double := false
 var battle_player_partner: Dictionary = {}
 var battle_enemy_partner: Dictionary = {}
@@ -854,7 +834,8 @@ var battle_move_index := 0
 var battle_command_index := 0
 var battle_ui_mode := "INTRO"
 var battle_rng := RandomNumberGenerator.new()
-var battle_run_attempts := 0
+## The battle on screen (scripts/battle_session.gd): this file plays its events.
+var battle_session: BattleSession
 var battle_turn_count := 0
 var battle_field: Dictionary = {}
 var battle_submenu_mode := ""
@@ -868,8 +849,6 @@ var battle_item_menu_names: Array[String] = []
 var battle_item_menu_index := 0
 var source_effect_playing := false
 var source_boss: Control
-var source_boss_action_count := 0
-var source_boss_damage_finished := true
 var source_boss_move_type := "NORMAL"
 var source_mewtwo: Control
 var source_mewtwo_intro_seen := false
@@ -3485,6 +3464,8 @@ func _start_battle_text(message: String) -> void:
     battle_text_busy = not message.is_empty()
     if message.is_empty():
         battle_status.visible_characters = -1
+    else:
+        battle_text_shown.emit(message)
 
 func _type_battle_text(message: String) -> void:
     if overworld_evolution_running:
@@ -3494,15 +3475,6 @@ func _type_battle_text(message: String) -> void:
     _start_battle_text(message)
     if battle_text_busy:
         await battle_text_finished
-
-func _battle_message_parts(message: String) -> Array[String]:
-    var split_at := message.find("!")
-    if split_at < 0:
-        return [message.strip_edges(), ""]
-    return [
-        message.left(split_at + 1).strip_edges(),
-        message.substr(split_at + 1).strip_edges()
-    ]
 
 func _finish_battle_text() -> void:
     if not battle_text_busy:
@@ -3846,6 +3818,13 @@ func _choose_move_to_forget(pokemon: Dictionary,
             return selected_index
     return -1
 
+## A battle's experience screens are main.gd's own: the choices made on them
+## (a move to forget, an evolution let through or stopped) go in the battle's
+## history so a replay of it makes the same ones.
+func _note_battle_choice(choice: Variant) -> void:
+    if battle_active and battle_session != null and battle_session.running:
+        battle_session.history.append(choice)
+
 func _learn_level_moves(pokemon: Dictionary, moves_to_learn: Array) -> void:
     var display_name := PokemonState.display_name(pokemon).to_upper()
     for raw_move in moves_to_learn:
@@ -3862,6 +3841,7 @@ func _learn_level_moves(pokemon: Dictionary, moves_to_learn: Array) -> void:
             display_name, move_name.replace("_", " ")])
         await _type_battle_text("Which move should be forgotten?")
         var replace_index := await _choose_move_to_forget(pokemon, move_name)
+        _note_battle_choice(replace_index)
         if replace_index < 0:
             await _type_battle_text("%s did not learn %s." % [
                 display_name, move_name.replace("_", " ")])
@@ -4304,6 +4284,7 @@ func _run_evolution_sequence(pokemon: Dictionary, new_species: String,
     world.environment_system.resume_music_after_evolution(evolution_music_states)
     progression_mode = "EVOLUTION_DONE"
     progression_animation.texture = null
+    _note_battle_choice(not evolution_cancel_requested)
 
     if evolution_cancel_requested:
         _set_evolution_sprite_halves(old_texture, old_texture, {}, true)
@@ -5753,69 +5734,20 @@ func _on_battle_requested(context: Dictionary) -> void:
     _start_battle_context(context, source_alert)
 
 func _party_reference_level() -> int:
-    var levels: Array[int] = []
-    for raw_pokemon in caught_pokemon:
-        if typeof(raw_pokemon) != TYPE_DICTIONARY:
-            continue
-        var pokemon := raw_pokemon as Dictionary
-        if bool(pokemon.get("is_egg", false)):
-            continue
-        levels.append(maxi(1, int(pokemon.get("level", 1))))
-    if levels.is_empty():
-        return 5
-    levels.sort()
-    var middle := levels.size() / 2
-    if levels.size() % 2 == 1:
-        return levels[middle]
-    return roundi((levels[middle - 1] + levels[middle]) * 0.5)
+    return BattleSession.reference_level(caught_pokemon)
 
 func wild_level_for_player(source_level: int) -> int:
-    var reference_level := _party_reference_level()
-    return clampi(
-        maxi(1, source_level),
-        maxi(2, reference_level - 3),
-        mini(100, reference_level + 1)
-    )
-
-func _prepare_battle_context(context: Dictionary) -> Dictionary:
-    var prepared := context.duplicate(true)
-    if bool(prepared.get("fixed_level",false)) or bool(prepared.get("source_unown", false)) or String(prepared.get("id", "")).begins_with("source_night_"):
-        # SpawnGhost/Cacturnt supply authored levels, not scaled wild spawns.
-        return prepared
-    if String(prepared.get("kind", "wild")) != "wild":
-        return prepared
-    var raw_party = prepared.get("party", [])
-    if typeof(raw_party) != TYPE_ARRAY:
-        return prepared
-    var scaled_party: Array = []
-    var scaled_any := false
-    for raw_member in raw_party as Array:
-        if typeof(raw_member) != TYPE_DICTIONARY:
-            continue
-        var member := (raw_member as Dictionary).duplicate(true)
-        var source_level := maxi(1, int(member.get("level", 1)))
-        var scaled_level := wild_level_for_player(source_level)
-        member["level"] = scaled_level
-        if scaled_level != source_level:
-            # Let the battle engine rebuild a legal move set at the adjusted
-            # level rather than importing attacks from the high-level source.
-            member.erase("moves")
-            member.erase("pp")
-            member["met_level"] = scaled_level
-            scaled_any = true
-        scaled_party.append(member)
-    prepared["party"] = scaled_party
-    prepared["_wild_level_scaled"] = scaled_any
-    return prepared
+    return BattleSession.wild_level(caught_pokemon, source_level)
 
 func _start_battle_context(context: Dictionary, source_alert: bool = false) -> void:
     if battle_active or battle_entry_pending:
         return
 
-    var prepared_context = _prepare_battle_context(context)
+    var prepared_context = BattleSession.prepare_context(context, caught_pokemon)
     var raw_party = prepared_context.get("party", [])
     if typeof(raw_party) != TYPE_ARRAY or (raw_party as Array).is_empty():
         return
+    battle_session = null
     if caught_pokemon.is_empty():
         if coop_game.active and coop_game.raids.eligible(prepared_context):
             _show_message("You need a Pokemon to fight in this raid.")
@@ -5847,16 +5779,14 @@ func _start_battle_context(context: Dictionary, source_alert: bool = false) -> v
     if source_alert:
         world._show_ecology_emote(world.player.sprite, "!")
         await get_tree().create_timer(60.0 / 60.0).timeout
-    battle_exp_participants.clear()
     battle_context = prepared_context
     world.environment_system.prepare_battle_music(battle_context)
-    battle_enemy_party = (raw_party as Array).duplicate(true)
+    battle_enemy_party = []
     battle_enemy_party_index = 0
-    battle_enemy_action_count = 0
     battle_is_double = String(context.get("battle_format", "single")) == "double" and \
         (raw_party as Array).size() >= 2
-    battle_player_partner.clear()
-    battle_enemy_partner.clear()
+    battle_player_partner = {}
+    battle_enemy_partner = {}
     battle_partner_party_index = -1
     battle_enemy_partner_party_index = -1
     battle_double_command_slot = 0
@@ -5865,12 +5795,7 @@ func _start_battle_context(context: Dictionary, source_alert: bool = false) -> v
     battle_double_replacement_slot = -1
     battle_result_sent = false
     battle_player_cry_played = false
-    if bool(battle_context.get("requires_silph_scope", false)):
-        var revealed = bool(battle_context.get("ghost_revealed", false))
-        battle_context["ghost_revealed"] = revealed
-        if not revealed:
-            battle_context["can_catch"] = false
-    var first_member = battle_enemy_party[0] as Dictionary
+    var first_member = (raw_party as Array)[0] as Dictionary
     var species = String(first_member.get("species", "rattata")).to_lower()
     var level = maxi(1, int(first_member.get("level", 1)))
 
@@ -5881,7 +5806,6 @@ func _start_battle_context(context: Dictionary, source_alert: bool = false) -> v
     battle_command_index = 0
     battle_ui_mode = "INTRO"
     _update_battle_command_cursor()
-    battle_run_attempts = 0
     battle_turn_count = 0
     _close_battle_submenu()
     battle_pending_item = ""
@@ -5890,11 +5814,10 @@ func _start_battle_context(context: Dictionary, source_alert: bool = false) -> v
     battle_item_menu_names.clear()
     battle_item_menu_index = 0
     item_pocket_menu.visible = false
-    battle_field = {
-        "weather":"", "weather_turns":0,
+    # What the battle reads from the world, as it begins.
+    var battle_facts := {
         "time_of_day":"night" if world.environment_system.is_night_time() else "day",
-        "terrain":String(battle_context.get("terrain", _current_battle_terrain())),
-        "player_spikes":0, "enemy_spikes":0
+        "terrain":_current_battle_terrain()
     }
     current_species = species
     current_level = level
@@ -5932,63 +5855,24 @@ func _start_battle_context(context: Dictionary, source_alert: bool = false) -> v
         world.environment_system.music_players[music_index].volume_db=mewtwo_route_volumes[music_index]
     touch_config.visible = false
 
-    battle_enemy = _make_context_enemy(first_member)
-    battle_enemy_party[0] = battle_enemy
-    battle_enemy = _apply_pending_wild_record(battle_enemy, level)
-    battle_enemy_party[0] = battle_enemy
-    if coop_game.active and coop_game.raids.active:coop_game.raids.apply_hp()
-    BattleEngine.reset_battle_state(battle_enemy)
-    battle_party_index = _first_healthy_party_index()
+    if String(battle_context.get("kind", "wild")) == "wild" and world.has_method("take_pending_encounter_record"):
+        battle_facts["wild_record"] = world.call("take_pending_encounter_record")
     if is_instance_valid(ball_mechanics) and not ball_mechanics.requested_battler.is_empty():
-        for index in range(caught_pokemon.size()):
-            if str(caught_pokemon[index].get("party_ecology_id","")) == ball_mechanics.requested_battler and int(caught_pokemon[index].get("hp",0))>0:
-                battle_party_index = index
-                break
+        battle_facts["requested"] = ball_mechanics.requested_battler
         ball_mechanics.requested_battler = ""
-    if battle_party_index < 0:
+    battle_session = BattleSession.new()
+    battle_session.stepwise = true
+    # The battle draws from main's RNG, as it always has (a transcript seeds it).
+    battle_session.rng = battle_rng
+    var able_to_battle := battle_session.begin(battle_context, caught_pokemon, inventory, battle_facts)
+    _pull_battle_state()
+    if coop_game.active and coop_game.raids.active:coop_game.raids.apply_hp()
+    if not able_to_battle:
         battle_panel.visible = true
         await _type_battle_text("You have no Pokemon able to battle.")
         await get_tree().create_timer(0.4).timeout
         _end_battle("whiteout")
         return
-    battle_player = BattleEngine.ensure_pokemon(caught_pokemon[battle_party_index])
-    BattleEngine.reset_battle_state(battle_player)
-    caught_pokemon[battle_party_index] = battle_player
-    battle_exp_participants.append(battle_party_index)
-    if battle_is_double:
-        var partner_choices = _healthy_party_indices(true)
-        if partner_choices.is_empty():
-            battle_is_double = false
-        else:
-            battle_partner_party_index = partner_choices[0]
-            battle_exp_participants.append(battle_partner_party_index)
-            battle_player_partner = BattleEngine.ensure_pokemon(
-                caught_pokemon[battle_partner_party_index])
-            BattleEngine.reset_battle_state(battle_player_partner)
-            caught_pokemon[battle_partner_party_index] = battle_player_partner
-            battle_enemy_partner_party_index = 1
-            var enemy_partner_member = battle_enemy_party[1] as Dictionary
-            battle_enemy_partner = _make_context_enemy(enemy_partner_member)
-            BattleEngine.reset_battle_state(battle_enemy_partner)
-            battle_enemy_party[1] = battle_enemy_partner
-    var entry_messages: Array[String] = []
-    var player_actives: Array = [battle_player]
-    var enemy_actives: Array = [battle_enemy]
-    if battle_is_double:
-        player_actives.append(battle_player_partner)
-        enemy_actives.append(battle_enemy_partner)
-    var enemy_entry = BattleEngine.switch_in_message(battle_enemy, player_actives, battle_field)
-    var player_entry = BattleEngine.switch_in_message(battle_player, enemy_actives, battle_field)
-    if not enemy_entry.is_empty(): entry_messages.append(enemy_entry)
-    if not player_entry.is_empty(): entry_messages.append(player_entry)
-    if battle_is_double:
-        var enemy_partner_entry = BattleEngine.switch_in_message(
-            battle_enemy_partner, player_actives, battle_field)
-        var player_partner_entry = BattleEngine.switch_in_message(
-            battle_player_partner, enemy_actives, battle_field)
-        if not enemy_partner_entry.is_empty(): entry_messages.append(enemy_partner_entry)
-        if not player_partner_entry.is_empty(): entry_messages.append(player_partner_entry)
-    battle_context["_entry_messages"] = entry_messages.duplicate()
     _request_pokemon_cry(battle_enemy)
     _request_pokemon_cry(battle_player)
 
@@ -6053,7 +5937,6 @@ var source_boss_sendout_finished := false
 
 func _play_source_boss_intro() -> void:
     battle_turn_busy=true
-    source_boss_action_count=0
     _show_battle_intro_screen()
     _start_battle_text("")
     var kind := String(battle_context.source_boss)
@@ -6066,7 +5949,6 @@ func _play_source_boss_intro() -> void:
     battle_panel.add_child(source_boss)
     battle_panel.move_child(source_boss,1)
     source_boss.setup(self,kind,bool(battle_enemy.get("shiny",false)))
-    source_boss.special_damage_due.connect(_source_regigigas_damage)
     source_boss_sendout_finished=false
     source_boss.sendout_due.connect(_play_source_boss_sendout)
     await source_boss.play_intro()
@@ -6076,25 +5958,6 @@ func _play_source_boss_intro() -> void:
 func _play_source_boss_sendout() -> void:
     await _play_source_mewtwo_sendout(false)
     source_boss_sendout_finished=true
-
-func _source_regigigas_damage() -> void:
-    if not battle_active or int(battle_player.get("hp",0))<=0:return
-    source_boss_damage_finished=false
-    # Battle.java selects the impact cue using the preceding ordinary move's
-    # type, but computes special damage using Ground. Preserve that distinction.
-    var scale := BattleEngine.effectiveness(source_boss_move_type,battle_player.types)
-    var cue := "SUPER_EFFECTIVE" if scale>1.0 else "NOT_VERY_EFFECTIVE" if scale>0.0 and scale<1.0 else "NEUTRAL_EFFECTIVE"
-    await _play_source_battle_feedback(cue,false,{})
-    if not battle_active:
-        source_boss_damage_finished=true
-        return
-    var hp_before := int(battle_player.hp)
-    var damage := int(30.0*BattleEngine.effectiveness("GROUND",battle_player.types))
-    battle_player.hp=maxi(0,hp_before-damage)
-    caught_pokemon[battle_party_index]=battle_player
-    await _animate_visible_battle_hp(battle_player,hp_before,int(battle_player.hp))
-    _update_battle_hud()
-    source_boss_damage_finished=true
 
 func _play_source_mewtwo_intro() -> void:
     battle_turn_busy = true
@@ -6200,48 +6063,21 @@ func _play_battle_transition(source_frames: int = 28) -> void:
     battle_panel.visible = true
     overlay.queue_free()
 
-func _apply_pending_wild_record(enemy: Dictionary, level: int) -> Dictionary:
-    if String(battle_context.get("kind", "wild")) == "wild" and world.has_method("take_pending_encounter_record"):
-        var source_record: Dictionary = world.call("take_pending_encounter_record")
-        if not source_record.is_empty():
-            battle_context["overworld_record"] = source_record.duplicate(true)
-        var source_properties = [
-                "shiny", "is_shiny", "gender", "generation", "personality",
-                "nature", "ability", "ability_slot", "ivs", "evs", "held_item",
-                "friendship", "happiness", "nickname",
-                "original_trainer", "trainer_id", "met_location",
-                "pokeball", "ribbons", "markings", "pokerus"
-            ]
-        var wild_level_scaled = bool(
-            battle_context.get("_wild_level_scaled", false)
-        )
-        if not wild_level_scaled:
-            source_properties.append_array(["moves", "pp", "met_level"])
-        for property in source_properties:
-            if source_record.has(property):
-                enemy[property] = source_record[property]
-        if source_record.has("is_shiny") and not source_record.has("shiny"):
-            enemy["shiny"] = bool(source_record["is_shiny"])
-        if wild_level_scaled:
-            enemy["level"] = level
-            enemy["met_level"] = level
-            enemy.erase("moves")
-            enemy.erase("pp")
-        enemy = BattleEngine.ensure_pokemon(enemy)
-    return enemy
-
+## The Safari encounter's enemy (source_safari_encounter.gd), made and fitted
+## to the overworld Pokemon as a battle's would be (battle_session.gd).
 func _make_context_enemy(member: Dictionary) -> Dictionary:
-    var species := String(member.get("species", "rattata")).to_lower()
-    var level := maxi(1, int(member.get("level", 1)))
-    var prepared := member.duplicate(true)
-    prepared["original_trainer"] = String(prepared.get("original_trainer",
-        battle_context.get("trainer_name", "WILD")))
-    prepared["met_location"] = String(prepared.get("met_location",
-        battle_context.get("id", "WILDERNESS")))
-    var enemy := BattleEngine.make_pokemon(species, level, battle_rng, prepared)
-    if bool(battle_context.get("requires_silph_scope", false)):
-        enemy["is_ghost"] = not bool(battle_context.get("ghost_revealed", false))
-    return enemy
+    var maker := BattleSession.new()
+    maker.rng = battle_rng
+    maker.context = battle_context
+    return maker.make_enemy(member)
+
+func _apply_pending_wild_record(enemy: Dictionary, level: int) -> Dictionary:
+    if String(battle_context.get("kind", "wild")) != "wild" or not world.has_method("take_pending_encounter_record"):
+        return enemy
+    var maker := BattleSession.new()
+    maker.context = battle_context
+    maker.world = {"wild_record":world.call("take_pending_encounter_record")}
+    return maker.apply_wild_record(enemy, level)
 
 func _trainer_battle_texture() -> Texture2D:
     player_model_index = clampi(
@@ -6502,12 +6338,7 @@ func _show_battle_intro_screen() -> void:
     enemy_sprite.modulate = Color.WHITE
     if bool(battle_context.get("pvp",false)):
         enemy_sprite.texture = preload("res://scripts/coop_trainer_portraits.gd").texture(self,battle_context.get("trainer_visual",{}))
-    var intro = String(battle_context.get("intro", ""))
-    if bool(battle_enemy.get("is_ghost", false)):
-        intro = "Wild GHOST\nappeared!"
-    elif intro.is_empty():
-        intro = "Wild %s\nappeared!" % BattleEngine.display_name(battle_enemy)
-    _start_battle_text(intro)
+    _start_battle_text(BattleSession.intro_text(battle_context, battle_enemy))
 
 func _advance_battle_intro() -> void:
     if source_effect_playing: return
@@ -6550,8 +6381,7 @@ func _show_battle_command_screen() -> void:
         _play_pokemon_cry(battle_player)
     _update_battle_hud()
     _update_battle_command_cursor()
-    var command_actor := _command_pokemon()
-    _start_battle_text("What will\n%s do?" % PokemonState.display_name(command_actor))
+    _start_battle_text(BattleSession.command_text(_command_pokemon()))
 
 func _command_pokemon() -> Dictionary:
     if battle_is_double and battle_double_command_slot == 1 and \
@@ -6576,6 +6406,327 @@ func _show_battle_message_screen() -> void:
     battle_move_box.visible = false
     battle_message_arrow.visible = false
     _set_battle_message_width(true)
+
+# --- the battle screen plays the battle session's events -------------------------
+
+## The battle just fought as the co-op host can replay it (battle_session.gd
+## replay_log(); coop_wild_runtime.gd sends it with a wild battle's result),
+## or {} when no battle session fought it (the Safari encounter).
+func battle_report() -> Dictionary:
+    return battle_session.replay_log() if battle_session != null and battle_session.finished else {}
+
+## This screen's copies of what the battle session holds (the HUD, sprites,
+## menus and co-op read them).
+func _pull_battle_state() -> void:
+    var session := battle_session
+    battle_player = session.player
+    battle_enemy = session.enemy
+    battle_player_partner = session.partner
+    battle_enemy_partner = session.enemy_partner
+    battle_party_index = session.party_index
+    battle_partner_party_index = session.partner_index
+    battle_enemy_party = session.enemy_party
+    battle_enemy_party_index = session.enemy_index
+    battle_enemy_partner_party_index = session.enemy_partner_index
+    battle_field = session.field
+    battle_is_double = session.double
+    battle_turn_count = session.turn_count
+    battle_exp_participants = session.participants
+    current_species = String(battle_enemy.get("species", current_species))
+    current_level = int(battle_enemy.get("level", current_level))
+
+## Plays the session's events one at a time, the battle waiting for each; a
+## request (a Pokemon to send out) is answered from the party menu.
+func _battle_play(events: Array) -> void:
+    var session := battle_session
+    while true:
+        var answer = null
+        for event in events:
+            if session != battle_session or (not battle_active and not session.finished):
+                # The battle was ended from outside (a co-op game closing).
+                session.abandon()
+                return
+            _pull_battle_state()
+            answer = await _play_battle_event(event)
+        if not session.running:
+            return
+        events = session.resume(answer)
+
+func _play_battle_event(event: Dictionary) -> Variant:
+    match String(event.kind):
+        "text":
+            if bool(event.get("hud", false)):
+                _update_battle_hud()
+            await _type_battle_text(String(event.text))
+            if float(event.get("wait", 0.0)) > 0.0:
+                await get_tree().create_timer(float(event.wait)).timeout
+        "wait":
+            await get_tree().create_timer(float(event.seconds)).timeout
+        "message_screen":
+            _show_battle_message_screen()
+        "command":
+            if battle_is_double:
+                battle_double_actions.clear()
+                battle_double_command_slot = int(event.get("slot", 0))
+                battle_move_index = 0
+            battle_turn_busy = false
+            _show_battle_command_screen()
+        "end":
+            _end_battle(String(event.outcome))
+        "move":
+            await _play_move_event(event)
+        "double_move":
+            await _play_double_move_event(event)
+        "residual":
+            await _play_residual_event(event)
+        "end_turn":
+            await _play_end_turn_event(event)
+        "poison_check":
+            await _play_poison_status_feedback(event.pokemon, bool(event.player_side),
+                int(event.hp_before), bool(event.poisoned))
+        "double_end_turn":
+            _update_battle_field_visuals()
+            if not String(event.text).is_empty():
+                await _type_battle_text(String(event.text))
+                await get_tree().create_timer(0.1).timeout
+        "player_switch", "enemy_switch":
+            if bool(event.get("reset_move", false)):
+                battle_move_index = 0
+            _refresh_battle_sprites()
+            if bool(event.get("hud", false)):
+                _update_battle_hud()
+            _play_pokemon_cry(event.pokemon)
+            if not String(event.text).is_empty():
+                await _type_battle_text(String(event.text))
+                await get_tree().create_timer(float(event.wait)).timeout
+        "refresh":
+            _refresh_battle_sprites()
+            _update_battle_hud()
+        "victory_music":
+            world.environment_system.play_victory_music()
+        "throw":
+            _play_source_battle_sound("throw_pokeball1.ogg")
+            await _play_source_throw_animation(bool(event.captured), int(event.shakes))
+        "caught":
+            await _play_caught_event(event)
+        "experience":
+            await _run_experience_progression(event.pokemon, int(event.amount),
+                int(event.index), bool(event.defer_evolution))
+        "evolution_check":
+            await _check_reward_evolution(event.pokemon, int(event.index))
+        "boss_special":
+            await _play_boss_special(event)
+        "special_damage":
+            await _play_special_damage(event)
+        "silph_scope_fade":
+            await _play_silph_scope_fade()
+        "silph_scope_reveal":
+            await _play_silph_scope_reveal()
+        "switch":
+            # A Pokemon to send out: after a faint, Baton Pass or Roar.
+            if String(event.reason) == "DOUBLE_FORCED":
+                battle_double_replacement_slot = int(event.get("slot", 0))
+            _open_battle_party_menu(String(event.reason))
+            return int(await battle_party_chosen)
+    return null
+
+## A move: its first sentence, its animation, the HP bars, the rest of its
+## message and any status it caused.
+func _play_move_event(event: Dictionary) -> void:
+    var result: Dictionary = event.result
+    var player_attacks := bool(event.player_side)
+    var attacker: Dictionary = event.attacker
+    var defender: Dictionary = event.defender
+    var attacker_hp_before := int(event.attacker_hp_before)
+    var defender_hp_before := int(event.defender_hp_before)
+    if coop_game.active and coop_game.raids.active:await coop_game.raids.sync_damage(int(event.raid_hp_before))
+    if bool(event.weather):
+        _update_battle_field_visuals()
+    var message_parts := BattleSession.message_parts(String(result.message))
+    _start_battle_text(message_parts[0])
+    if battle_text_busy:
+        await battle_text_finished
+    if not bool(result.get("executed", false)):
+        await _play_blocked_status_feedback(attacker, player_attacks, String(result.get("message", "")))
+    else:
+        await _play_battle_feedback(String(result.get("animation_move", event.move)),
+            player_attacks, result, defender)
+    if battle_text_busy:
+        await battle_text_finished
+    _refresh_battle_sprites()
+    await _animate_visible_battle_hp(defender, int(defender.hp) if bool(result.get("hp_feedback_complete", false)) else defender_hp_before,
+        int(defender.get("hp", 0)))
+    if int(defender.hp) != defender_hp_before:
+        await get_tree().create_timer(13.0 / 60.0).timeout
+    await _animate_visible_battle_hp(attacker, attacker_hp_before,
+        int(attacker.get("hp", 0)))
+    if int(attacker.hp) != attacker_hp_before:
+        await get_tree().create_timer(13.0 / 60.0).timeout
+    _update_battle_hud()
+    if not message_parts[1].is_empty():
+        await _type_battle_text(message_parts[1])
+    await _play_new_status_feedback(defender, not player_attacks, event.status_before, result)
+    await get_tree().create_timer(0.1).timeout
+
+## A double battle's move on one of its targets.
+func _play_double_move_event(event: Dictionary) -> void:
+    var result: Dictionary = event.result
+    var player_side := bool(event.player_side)
+    var attacker: Dictionary = event.attacker
+    var defender: Dictionary = event.defender
+    var attacker_hp_before := int(event.attacker_hp_before)
+    var defender_hp_before := int(event.defender_hp_before)
+    var message_parts := BattleSession.message_parts(String(result.message))
+    _start_battle_text("Target %s: %s" % [
+        BattleEngine.display_name(defender),
+        message_parts[0]])
+    if battle_text_busy:
+        await battle_text_finished
+    if not bool(result.get("executed", false)):
+        await _play_blocked_status_feedback(attacker, player_side, String(result.get("message", "")))
+    else:
+        await _play_battle_feedback(String(result.get("animation_move", event.move)),
+            player_side, result, defender)
+    if battle_text_busy:
+        await battle_text_finished
+    _refresh_battle_sprites()
+    await _animate_visible_battle_hp(defender, int(defender.hp) if bool(result.get("hp_feedback_complete", false)) else defender_hp_before,
+        int(defender.get("hp", 0)))
+    if int(defender.hp) != defender_hp_before:
+        await get_tree().create_timer(13.0 / 60.0).timeout
+    await _animate_visible_battle_hp(attacker, attacker_hp_before,
+        int(attacker.get("hp", 0)))
+    if int(attacker.hp) != attacker_hp_before:
+        await get_tree().create_timer(13.0 / 60.0).timeout
+    _update_battle_hud()
+    if not message_parts[1].is_empty():
+        await _type_battle_text(message_parts[1])
+    await _play_new_status_feedback(defender, bool(event.target_player_side),
+        event.status_before, result)
+    await get_tree().create_timer(0.08).timeout
+
+## Burn, poison or a curse after a Pokemon's own action.
+func _play_residual_event(event: Dictionary) -> void:
+    var pokemon: Dictionary = event.pokemon
+    var player_side := bool(event.player_side)
+    var hp_before := int(event.hp_before)
+    if not player_side and coop_game.active and coop_game.raids.active:await coop_game.raids.sync_damage(hp_before)
+    var message := String(event.message)
+    if message.is_empty(): return
+    await _type_battle_text(message)
+    await _play_poison_status_feedback(pokemon, player_side, hp_before, bool(event.poisoned))
+    await _animate_visible_battle_hp(pokemon, hp_before, int(pokemon.hp))
+    _update_battle_hud()
+    await get_tree().create_timer(13.0 / 60.0).timeout
+
+## A single battle's end of turn: residual damage, the weather, its message.
+func _play_end_turn_event(event: Dictionary) -> void:
+    var player_hp_before := int(event.player_hp_before)
+    var enemy_hp_before := int(event.enemy_hp_before)
+    if coop_game.active and coop_game.raids.active:await coop_game.raids.sync_damage(enemy_hp_before)
+    if bool(event.weather_ended):
+        _update_battle_field_visuals()
+    await _play_poison_status_feedback(battle_player,true,player_hp_before,bool(event.player_poisoned))
+    await _play_poison_status_feedback(battle_enemy,false,enemy_hp_before,bool(event.enemy_poisoned))
+    await _animate_battle_hp_change(battle_player, player_hp_before,
+        int(battle_player.get("hp", 0)), true)
+    await _animate_battle_hp_change(battle_enemy, enemy_hp_before,
+        int(battle_enemy.get("hp", 0)), false)
+    _update_battle_hud()
+    if not String(event.text).is_empty():
+        await _type_battle_text(String(event.text))
+        await get_tree().create_timer(0.125).timeout
+
+## A caught Pokemon joins the party or storage; the Pokedex and caught list
+## learn of it.
+func _play_caught_event(event: Dictionary) -> void:
+    var captured: Dictionary = event.pokemon
+    if not caught_species.has(current_species):
+        caught_species.append(current_species)
+    if coop_game.active and coop_game.raids.active:coop_game.raids.normalize_capture(captured)
+    pokedex_progress.mark(captured, true)
+    var destination := _route_received_pokemon(captured)
+    _play_source_battle_sound("catch_fanfare.ogg")
+    await _type_battle_text("Caught %s!" % String(event.name))
+    var notice := _received_pokemon_notice(captured, destination)
+    if not notice.is_empty(): await _type_battle_text(notice)
+
+var regigigas_special_running := false
+
+## Mewtwo's psychic wave, or Regigigas's quake up to the moment it lands.
+func _play_boss_special(event: Dictionary) -> void:
+    await get_tree().create_timer(3.0 / 60.0).timeout
+    if String(event.boss) == "mewtwo":
+        await _type_battle_text("A wave of psychic power unleashes!")
+        await source_mewtwo.play_special()
+        return
+    await _type_battle_text("The ground is shaking violently!")
+    source_boss_move_type = String(event.move_type)
+    var damage_due := [false]
+    source_boss.special_damage_due.connect(func() -> void: damage_due[0] = true, CONNECT_ONE_SHOT)
+    regigigas_special_running = true
+    _run_regigigas_special()
+    while not damage_due[0]:
+        await get_tree().process_frame
+    if not battle_active or int(battle_player.get("hp",0)) <= 0:
+        return
+    # Battle.java selects the impact cue using the preceding ordinary move's
+    # type, but computes special damage using Ground (battle_session.gd).
+    var scale := BattleEngine.effectiveness(source_boss_move_type,battle_player.types)
+    var cue := "SUPER_EFFECTIVE" if scale>1.0 else "NOT_VERY_EFFECTIVE" if scale>0.0 and scale<1.0 else "NEUTRAL_EFFECTIVE"
+    await _play_source_battle_feedback(cue,false,{})
+
+func _run_regigigas_special() -> void:
+    await source_boss.play_special()
+    regigigas_special_running = false
+
+## The HP a boss special took, then the rest of its animation.
+func _play_special_damage(event: Dictionary) -> void:
+    var pokemon: Dictionary = event.pokemon
+    await _animate_visible_battle_hp(pokemon, int(event.hp_before), int(pokemon.hp))
+    _update_battle_hud()
+    if String(event.boss) == "regigigas":
+        while regigigas_special_running:
+            await get_tree().process_frame
+        if is_instance_valid(source_boss):source_boss.set_palette_stage(0)
+    await get_tree().create_timer(30.0/60.0).timeout
+
+var silph_scope_fade: TextureRect
+var silph_scope_started := 0
+
+## The SILPH SCOPE's fade up to the moment the ghost is revealed
+## (Battle.java: a 96-tick reveal alongside FadeAnim(slow=8), 144 ticks).
+func _play_silph_scope_fade() -> void:
+    source_effect_playing = true
+    silph_scope_fade = TextureRect.new()
+    silph_scope_fade.texture = preload("res://assets/events/source_fade.png")
+    silph_scope_fade.position = Vector2.ZERO
+    silph_scope_fade.size = Vector2(320, 180)
+    silph_scope_fade.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+    silph_scope_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    battle_panel.add_child(silph_scope_fade)
+    silph_scope_started = preload("res://scripts/game_clock.gd").ticks_usec()
+    await _play_silph_scope_frames(0, 96)
+
+## The revealed Pokemon, the rest of the fade and its intro.
+func _play_silph_scope_reveal() -> void:
+    await _play_silph_scope_frames(96, 144)
+    silph_scope_fade.queue_free()
+    await _play_source_ghost_intro(false)
+    source_effect_playing = false
+    await get_tree().create_timer(3.0 * SOURCE_FRAME_TIME).timeout
+
+func _play_silph_scope_frames(first: int, last: int) -> void:
+    for frame in range(first, last):
+        silph_scope_fade.modulate.a = (0.0 if frame < 16 else 0.25 if frame < 32 else
+            0.5 if frame < 48 else 1.0 if frame < 96 else
+            0.75 if frame < 112 else 0.5 if frame < 128 else 0.25)
+        if frame == 96:
+            pokedex_progress.mark(battle_enemy)
+            _refresh_battle_sprites()
+            _update_battle_hud()
+        while preload("res://scripts/game_clock.gd").ticks_usec() - silph_scope_started < int((frame + 1) * 1000000.0 / 60.0):
+            await get_tree().process_frame
 
 func _open_battle_move_menu() -> void:
     var command_actor := _command_pokemon()
@@ -6709,7 +6860,10 @@ func _activate_battle_command() -> void:
             2:
                 _open_battle_item_menu()
             3:
-                _start_battle_text("There is no running from this double battle!")
+                if is_instance_valid(coop_game.pvp) and coop_game.pvp.active:
+                    _battle_run()
+                else:
+                    _start_battle_text("There is no running from this double battle!")
         return
     match battle_command_index:
         0:
@@ -6755,7 +6909,7 @@ func _first_healthy_party_index() -> int:
     return -1
 
 func _battle_fight() -> void:
-    if is_instance_valid(coop_game.pvp) and coop_game.pvp.active:
+    if is_instance_valid(coop_game.pvp) and coop_game.pvp.active and not battle_is_double:
         if not battle_turn_busy:coop_game.pvp.submit({"kind":"move","move":_selected_player_move()})
         return
     if not battle_active or battle_turn_busy:
@@ -6765,51 +6919,7 @@ func _battle_fight() -> void:
         return
     battle_turn_busy = true
     _show_battle_message_screen()
-    var player_move := _selected_player_move()
-    var enemy_action := _choose_enemy_action()
-    if String(enemy_action.get("kind", "move")) != "move":
-        await _perform_enemy_tactical_action(enemy_action)
-        if not battle_active:
-            return
-        await _perform_battle_action(true, player_move)
-        if await _resolve_battle_faints():
-            return
-        await _apply_battle_end_turn()
-        if await _resolve_battle_faints():
-            return
-        battle_turn_busy = false
-        _show_battle_command_screen()
-        return
-    var enemy_move := String(enemy_action.get("move", _first_usable_move(battle_enemy)))
-    var player_first := BattleEngine.player_moves_first(
-        battle_player, player_move, battle_enemy, enemy_move, battle_rng, battle_field)
-    if player_first:
-        await _perform_battle_action(true, player_move)
-        if not battle_active:
-            return
-        if await _resolve_battle_faints():
-            return
-        await _perform_battle_action(false, enemy_move)
-        if not battle_active:
-            return
-        if await _resolve_battle_faints():
-            return
-    else:
-        await _perform_battle_action(false, enemy_move)
-        if not battle_active:
-            return
-        if await _resolve_battle_faints():
-            return
-        await _perform_battle_action(true, player_move)
-        if not battle_active:
-            return
-        if await _resolve_battle_faints():
-            return
-    await _apply_battle_end_turn()
-    if await _resolve_battle_faints():
-        return
-    battle_turn_busy = false
-    _show_battle_command_screen()
+    await _battle_play(battle_session.submit({"kind":"move", "move":_selected_player_move()}))
 
 func _queue_double_player_move() -> void:
     var actor := _command_pokemon()
@@ -6856,577 +6966,17 @@ func _advance_double_command_slot() -> void:
         battle_move_index = 0
         _show_battle_command_screen()
         return
+    if is_instance_valid(coop_game.pvp) and coop_game.pvp.active:
+        coop_game.pvp.submit({"kind":"double", "actions":battle_double_actions.duplicate(true)})
+        return
     battle_turn_busy = true
     _show_battle_message_screen()
-    await _resolve_double_turn()
+    await _battle_play(battle_session.submit({"kind":"double", "actions":battle_double_actions.duplicate(true)}))
 
 func _double_actor(side: String, slot: int) -> Dictionary:
     if side == "player":
         return battle_player if slot == 0 else battle_player_partner
     return battle_enemy if slot == 0 else battle_enemy_partner
-
-func _living_double_entries(side: String) -> Array[Dictionary]:
-    var result: Array[Dictionary] = []
-    for slot in range(2):
-        var pokemon := _double_actor(side, slot)
-        if not pokemon.is_empty() and int(pokemon.get("hp", 0)) > 0:
-            result.append({"slot":slot, "pokemon":pokemon})
-    return result
-
-func _resolve_double_turn() -> void:
-    var actions: Array[Dictionary] = battle_double_actions.duplicate(true)
-    var player_entries := _living_double_entries("player")
-    var player_targets: Array = []
-    for entry in player_entries: player_targets.append(entry.pokemon)
-    var enemy_entries := _living_double_entries("enemy")
-    var enemy_targets: Array = []
-    for entry in enemy_entries: enemy_targets.append(entry.pokemon)
-    var reserved_switches: Array[int] = []
-    var double_heal_available := String(battle_context.get("kind", "")) == "trainer" and \
-        int(battle_context.get("_trainer_heals_used", 0)) < int(
-            battle_context.get("trainer_heals", 1))
-    for enemy_entry in enemy_entries:
-        var actor := enemy_entry.pokemon as Dictionary
-        var choice := BattleEngine.choose_ai_action(actor, player_targets,
-            enemy_targets, battle_field, battle_rng,
-            int(battle_context.get("ai_level", 2)))
-        if double_heal_available and int(actor.hp) * 3 <= int(actor.max_hp):
-            actions.append({
-                "kind":"enemy_item", "side":"enemy", "slot":int(enemy_entry.slot),
-                "move":"", "target_slot":int(enemy_entry.slot), "spread":false
-            })
-            double_heal_available = false
-            continue
-        if String(battle_context.get("kind", "")) == "trainer" and \
-                float(choice.get("score", 0.0)) < 18.0:
-            _prepare_enemy_party_records()
-            var excluded := [battle_enemy_party_index, battle_enemy_partner_party_index]
-            excluded.append_array(reserved_switches)
-            var switch_index := BattleEngine.best_switch_index(battle_enemy_party,
-                excluded, battle_player, battle_field)
-            if switch_index >= 0:
-                reserved_switches.append(switch_index)
-                actions.append({
-                    "kind":"enemy_switch", "side":"enemy", "slot":int(enemy_entry.slot),
-                    "switch_index":switch_index, "move":"", "target_slot":-1,
-                    "spread":false
-                })
-                continue
-        var target_slot := 0
-        var target_pick := clampi(int(choice.get("target", 0)), 0,
-            maxi(0, player_entries.size() - 1))
-        if not player_entries.is_empty():
-            target_slot = int(player_entries[target_pick].slot)
-        actions.append({
-            "side":"enemy", "slot":int(enemy_entry.slot),
-            "move":String(choice.get("move", "STRUGGLE")),
-            "target_slot":target_slot, "spread":bool(choice.get("spread", false))
-        })
-        if BattleEngine.move_targets_self(String(choice.get("move", "STRUGGLE"))):
-            actions[-1]["target_side"] = "enemy"
-    for action in actions:
-        var actor := _double_actor(String(action.side), int(action.slot))
-        action["priority"] = 6 if String(action.get("kind", "move")) in [
-            "switch", "enemy_switch", "enemy_item"] else \
-            BattleEngine.pokemon_move_priority(actor, String(action.get("move", "")))
-        action["speed"] = BattleEngine.effective_stat(actor, "speed", battle_field)
-        action["tie"] = battle_rng.randf()
-    actions.sort_custom(func(first: Dictionary, second: Dictionary) -> bool:
-        if int(first.priority) != int(second.priority):
-            return int(first.priority) > int(second.priority)
-        if int(first.speed) != int(second.speed):
-            return int(first.speed) > int(second.speed)
-        return float(first.tie) < float(second.tie)
-    )
-    for action in actions:
-        if not battle_active:
-            return
-        var attacker := _double_actor(String(action.side), int(action.slot))
-        if attacker.is_empty() or int(attacker.get("hp", 0)) <= 0:
-            continue
-        if String(action.get("kind", "move")) == "switch":
-            await _execute_double_player_switch(int(action.slot), int(action.switch_index))
-            continue
-        if String(action.get("kind", "move")) == "enemy_switch":
-            await _execute_double_enemy_switch(int(action.slot), int(action.switch_index))
-            continue
-        if String(action.get("kind", "move")) == "enemy_item":
-            await _execute_double_enemy_item(int(action.slot))
-            continue
-        await _perform_double_move(action)
-    if not battle_active:
-        return
-    await _apply_double_end_turn()
-    if await _resolve_double_faints():
-        return
-    battle_double_actions.clear()
-    battle_double_command_slot = 0 if int(battle_player.get("hp", 0)) > 0 else 1
-    battle_move_index = 0
-    battle_turn_busy = false
-    _show_battle_command_screen()
-
-func _perform_double_move(action: Dictionary) -> void:
-    var side = String(action.side)
-    var attacker = _double_actor(side, int(action.slot))
-    var move_name = String(action.move)
-    var repeated_without_pp = not String(attacker.volatile.get("charge_move", "")).is_empty() or \
-        int(attacker.volatile.get("bide_turns", 0)) > 0 or \
-        int(attacker.volatile.get("locked_turns", 0)) > 0
-    if move_name != "STRUGGLE" and not repeated_without_pp:
-        attacker.pp[move_name] = maxi(0, int(attacker.pp.get(move_name, 1)) - 1)
-    var opposing_side = "enemy" if side == "player" else "player"
-    var targets: Array[Dictionary] = []
-    if bool(action.get("spread", false)):
-        for slot in range(2):
-            var spread_target = _double_actor(opposing_side, slot)
-            if not spread_target.is_empty() and int(spread_target.get("hp", 0)) > 0:
-                targets.append({"side":opposing_side, "slot":slot})
-        if BattleEngine.move_hits_all_adjacent(move_name):
-            var ally_slot = 1 - int(action.slot)
-            var ally_target = _double_actor(side, ally_slot)
-            if not ally_target.is_empty() and int(ally_target.get("hp", 0)) > 0:
-                targets.append({"side":side, "slot":ally_slot})
-    else:
-        var requested_slot = int(action.get("target_slot", 0))
-        var requested_side = String(action.get("target_side", opposing_side))
-        var requested = _double_actor(requested_side, requested_slot)
-        if not requested.is_empty() and int(requested.get("hp", 0)) > 0:
-            targets.append({"side":requested_side, "slot":requested_slot})
-        else:
-            var living = _living_double_entries(opposing_side)
-            if not living.is_empty(): targets.append({"side":opposing_side,
-                "slot":int(living[0].slot)})
-    if targets.is_empty():
-        return
-    var first_result: Dictionary = {}
-    var self_fainting_spread = "SELFDESTRUCT" in String(
-        PokemonData.move_info(move_name).get("effect", ""))
-    for target_index in range(targets.size()):
-        if int(attacker.get("hp", 0)) <= 0 and not self_fainting_spread:
-            break
-        var target_spec: Dictionary = targets[target_index]
-        var defender = _double_actor(String(target_spec.side), int(target_spec.slot))
-        var attacker_hp_before = int(attacker.get("hp", 0))
-        var defender_hp_before = int(defender.get("hp", 0))
-        var defender_status_before := _battle_status_snapshot(defender)
-        battle_field.attacker_is_player = side == "player"
-        battle_field.attacker_slot = int(action.slot)
-        if bool(action.get("spread", false)):
-            battle_field["spread_modifier"] = 0.75
-        if target_index > 0:
-            if not bool(first_result.get("executed", false)):
-                break
-            battle_field["skip_can_act"] = true
-        var result = BattleEngine.use_move(attacker, defender, move_name,
-            battle_rng, battle_field)
-        var action_log: Array = battle_field.get("action_log", [])
-        action_log.append(String(result.get("message", "")))
-        if action_log.size() > 40:
-            action_log.pop_front()
-        battle_field["action_log"] = action_log
-        if target_index == 0: first_result = result
-        battle_field.erase("skip_can_act")
-        battle_field.erase("attacker_slot")
-        battle_field.erase("spread_modifier")
-        if not String(result.get("weather", "")).is_empty():
-            battle_field.weather = String(result.weather)
-            battle_field.weather_turns = 5
-        if bool(result.get("heal_party", false)) and side == "player":
-            for party_index in range(caught_pokemon.size()):
-                if typeof(caught_pokemon[party_index]) == TYPE_DICTIONARY:
-                    caught_pokemon[party_index]["status"] = ""
-        if int(result.get("pay_day", 0)) > 0:
-            inventory["COINS"] = int(inventory.get("COINS", 0)) + int(result.pay_day)
-        var message_parts = _battle_message_parts(String(result.message))
-        _start_battle_text("Target %s: %s" % [
-            BattleEngine.display_name(defender),
-            message_parts[0]])
-        if battle_text_busy:
-            await battle_text_finished
-        if not bool(result.get("executed", false)):
-            await _play_blocked_status_feedback(attacker, side == "player", String(result.get("message", "")))
-        else:
-            await _play_battle_feedback(String(result.get("animation_move", move_name)),
-                side == "player", result, defender)
-        if battle_text_busy:
-            await battle_text_finished
-        _sync_double_records()
-        _refresh_battle_sprites()
-        await _animate_visible_battle_hp(defender, int(defender.hp) if bool(result.get("hp_feedback_complete", false)) else defender_hp_before,
-            int(defender.get("hp", 0)))
-        if int(defender.hp) != defender_hp_before:
-            await get_tree().create_timer(13.0 / 60.0).timeout
-        await _animate_visible_battle_hp(attacker, attacker_hp_before,
-            int(attacker.get("hp", 0)))
-        if int(attacker.hp) != attacker_hp_before:
-            await get_tree().create_timer(13.0 / 60.0).timeout
-        _update_battle_hud()
-        if not message_parts[1].is_empty():
-            await _type_battle_text(message_parts[1])
-        await _play_new_status_feedback(defender, String(target_spec.side) == "player",
-            defender_status_before, result)
-        await get_tree().create_timer(0.08).timeout
-    if int(attacker.get("hp", 0)) > 0:
-        await _apply_after_action_residual_feedback(attacker, side == "player")
-
-func _sync_double_records() -> void:
-    if battle_party_index >= 0 and battle_party_index < caught_pokemon.size():
-        caught_pokemon[battle_party_index] = battle_player
-    if battle_partner_party_index >= 0 and battle_partner_party_index < caught_pokemon.size():
-        caught_pokemon[battle_partner_party_index] = battle_player_partner
-    if battle_enemy_party_index >= 0 and battle_enemy_party_index < battle_enemy_party.size():
-        battle_enemy_party[battle_enemy_party_index] = battle_enemy
-    if battle_enemy_partner_party_index >= 0 and \
-            battle_enemy_partner_party_index < battle_enemy_party.size():
-        battle_enemy_party[battle_enemy_partner_party_index] = battle_enemy_partner
-
-func _apply_double_end_turn() -> void:
-    battle_turn_count += 1
-    battle_field["turn_count"] = battle_turn_count
-    var messages: Array[String] = []
-    for side in ["player", "enemy"]:
-        for entry in _living_double_entries(side):
-            var hp_before := int(entry.pokemon.get("hp",0))
-            var poisoned_before := String(entry.pokemon.get("status",""))=="POISON" and not bool(entry.pokemon.volatile.get("action_residual_applied", false))
-            var trap_side := "player" if bool(entry.pokemon.volatile.get("trap_source_player", side != "player")) else "enemy"
-            var trap_source := _double_actor(trap_side, int(entry.pokemon.volatile.get("trap_source_slot", 0)))
-            var message := BattleEngine.end_turn(entry.pokemon, battle_field, trap_source, battle_rng)
-            await _play_poison_status_feedback(entry.pokemon,side=="player",hp_before,poisoned_before)
-            if not message.is_empty(): messages.append(message)
-    if int(battle_field.get("weather_turns", 0)) > 0:
-        battle_field.weather_turns = int(battle_field.weather_turns) - 1
-        if int(battle_field.weather_turns) <= 0:
-            var old_weather := String(battle_field.get("weather", ""))
-            battle_field.weather = ""
-            messages.append("The %s subsided." % old_weather.replace("_", " ").to_lower())
-    _sync_double_records()
-    _update_battle_field_visuals()
-    if not messages.is_empty():
-        await _type_battle_text(" ".join(messages))
-        await get_tree().create_timer(0.1).timeout
-
-func _resolve_double_faints() -> bool:
-    var faint_messages: Array[String] = []
-    var progression_rewards: Array[Dictionary] = []
-    for slot in range(2):
-        var defeated := _double_actor("enemy", slot)
-        if defeated.is_empty() or int(defeated.get("hp", 0)) > 0 or \
-                bool(defeated.get("_double_faint_processed", false)):
-            continue
-        defeated["_double_faint_processed"] = true
-        faint_messages.append("%s fainted!" % BattleEngine.display_name(defeated))
-        _sync_double_records()
-        var recipients := BattleEngine.experience_recipients(caught_pokemon,
-            battle_exp_participants, battle_party_index)
-        var reward := BattleEngine.experience_reward(defeated, recipients.size())
-        for index in recipients:
-            var recipient: Dictionary = caught_pokemon[index]
-            PokemonState.grant_evs(recipient, defeated)
-            progression_rewards.append({
-                "pokemon": recipient,
-                "party_index": index,
-                "reward": reward
-            })
-        faint_messages.append("Participating Pokemon gained %d EXP." % reward)
-    if not faint_messages.is_empty():
-        _sync_double_records()
-        _update_battle_hud()
-        await _type_battle_text(" ".join(faint_messages))
-        await get_tree().create_timer(0.125).timeout
-        for progression_reward in progression_rewards:
-            await _run_experience_progression(
-                progression_reward.pokemon,
-                int(progression_reward.reward),
-                int(progression_reward.party_index))
-        _sync_double_records()
-        _refresh_battle_sprites()
-        _update_battle_hud()
-    for slot in range(2):
-        var defeated := _double_actor("enemy", slot)
-        if defeated.is_empty() or int(defeated.get("hp", 0)) > 0:
-            continue
-        var replacement_index := _next_double_enemy_bench_index()
-        if replacement_index >= 0:
-            await _replace_double_enemy(slot, replacement_index)
-    if _living_double_entries("enemy").is_empty():
-        _end_battle("victory" if String(battle_context.get("kind", "")) == "trainer" else "defeated")
-        return true
-    var player_faints: Array[String] = []
-    for slot in range(2):
-        var fallen := _double_actor("player", slot)
-        if fallen.is_empty() or int(fallen.get("hp", 0)) > 0 or \
-                bool(fallen.get("_double_faint_announced", false)):
-            continue
-        fallen["_double_faint_announced"] = true
-        player_faints.append("%s fainted!" % PokemonState.display_name(fallen))
-    if not player_faints.is_empty():
-        await _type_battle_text(" ".join(player_faints))
-        await get_tree().create_timer(0.1).timeout
-    for slot in range(2):
-        var defeated_player := _double_actor("player", slot)
-        if defeated_player.is_empty() or int(defeated_player.get("hp", 0)) > 0:
-            continue
-        var available := _healthy_double_player_bench_indices()
-        if available.is_empty():
-            continue
-        battle_double_replacement_slot = slot
-        _open_battle_party_menu("DOUBLE_FORCED")
-        var next_index = await battle_party_chosen
-        await _replace_double_player(slot, int(next_index))
-    if _living_double_entries("player").is_empty():
-        await _type_battle_text("You are out of usable Pokemon.")
-        await get_tree().create_timer(0.125).timeout
-        _end_battle("whiteout")
-        return true
-    _refresh_battle_sprites()
-    _update_battle_hud()
-    return false
-
-func _next_double_enemy_bench_index() -> int:
-    _prepare_enemy_party_records()
-    for index in range(battle_enemy_party.size()):
-        if index in [battle_enemy_party_index, battle_enemy_partner_party_index]:
-            continue
-        var record := battle_enemy_party[index] as Dictionary
-        if int(record.get("hp", 0)) > 0:
-            return index
-    return -1
-
-func _healthy_double_player_bench_indices() -> Array[int]:
-    var result: Array[int] = []
-    for index in range(caught_pokemon.size()):
-        if index in [battle_party_index, battle_partner_party_index] or \
-                typeof(caught_pokemon[index]) != TYPE_DICTIONARY:
-            continue
-        var pokemon := BattleEngine.ensure_pokemon(caught_pokemon[index])
-        caught_pokemon[index] = pokemon
-        if int(pokemon.hp) > 0 and not bool(pokemon.get("is_egg", false)):
-            result.append(index)
-    return result
-
-func _replace_double_enemy(slot: int, next_index: int) -> void:
-    var next_record := battle_enemy_party[next_index] as Dictionary
-    var replacement := BattleEngine.ensure_pokemon(next_record)
-    BattleEngine.reset_battle_state(replacement)
-    replacement.erase("_double_faint_processed")
-    var enemy_spikes := int(battle_field.get("enemy_spikes", 0))
-    if enemy_spikes > 0 and not (replacement.types as Array).has("FLYING") and \
-            String(replacement.get("ability", "")) != "LEVITATE":
-        replacement.hp = maxi(0, int(replacement.hp) -
-            maxi(1, int(int(replacement.max_hp) * enemy_spikes / 8.0)))
-    if slot == 0:
-        battle_enemy_party_index = next_index
-        battle_enemy = replacement
-        current_species = String(replacement.species)
-        current_level = int(replacement.level)
-    else:
-        battle_enemy_partner_party_index = next_index
-        battle_enemy_partner = replacement
-    battle_enemy_party[next_index] = replacement
-    _refresh_battle_sprites()
-    _play_pokemon_cry(replacement)
-    var entry := BattleEngine.switch_in_message(replacement,
-        _living_double_entries("player").map(func(value): return value.pokemon), battle_field)
-    var message := "%s sent out %s!" % [String(battle_context.get(
-        "trainer_name", "The opponent")), BattleEngine.display_name(replacement)]
-    if not entry.is_empty(): message += " " + entry
-    await _type_battle_text(message)
-    await get_tree().create_timer(0.1).timeout
-
-func _replace_double_player(slot: int, next_index: int) -> void:
-    if not battle_exp_participants.has(next_index): battle_exp_participants.append(next_index)
-    var replacement := BattleEngine.ensure_pokemon(caught_pokemon[next_index])
-    BattleEngine.reset_battle_state(replacement)
-    var player_spikes := int(battle_field.get("player_spikes", 0))
-    if player_spikes > 0 and not (replacement.types as Array).has("FLYING") and \
-            String(replacement.get("ability", "")) != "LEVITATE":
-        replacement.hp = maxi(0, int(replacement.hp) -
-            maxi(1, int(int(replacement.max_hp) * player_spikes / 8.0)))
-    if slot == 0:
-        battle_party_index = next_index
-        battle_player = replacement
-    else:
-        battle_partner_party_index = next_index
-        battle_player_partner = replacement
-    caught_pokemon[next_index] = replacement
-    _refresh_battle_sprites()
-    _play_pokemon_cry(replacement)
-    var entry := BattleEngine.switch_in_message(replacement,
-        _living_double_entries("enemy").map(func(value): return value.pokemon), battle_field)
-    var message := "Go, %s!" % BattleEngine.display_name(replacement)
-    if not entry.is_empty(): message += " " + entry
-    await _type_battle_text(message)
-    await get_tree().create_timer(0.1).timeout
-
-func _execute_double_player_switch(slot: int, next_index: int) -> void:
-    var outgoing := _double_actor("player", slot)
-    var outgoing_index := battle_party_index if slot == 0 else battle_partner_party_index
-    var out_message := BattleEngine.switch_out_message(outgoing)
-    BattleEngine.reset_battle_state(outgoing)
-    if outgoing_index >= 0 and outgoing_index < caught_pokemon.size():
-        caught_pokemon[outgoing_index] = outgoing
-    await _replace_double_player(slot, next_index)
-    if not out_message.is_empty():
-        await _type_battle_text(out_message)
-        await get_tree().create_timer(0.075).timeout
-
-func _execute_double_enemy_switch(slot: int, next_index: int) -> void:
-    var outgoing := _double_actor("enemy", slot)
-    var outgoing_index := battle_enemy_party_index if slot == 0 else \
-        battle_enemy_partner_party_index
-    var out_message := BattleEngine.switch_out_message(outgoing)
-    BattleEngine.reset_battle_state(outgoing)
-    if outgoing_index >= 0 and outgoing_index < battle_enemy_party.size():
-        battle_enemy_party[outgoing_index] = outgoing
-    await _replace_double_enemy(slot, next_index)
-    if not out_message.is_empty():
-        await _type_battle_text(out_message)
-        await get_tree().create_timer(0.075).timeout
-
-func _execute_double_enemy_item(slot: int) -> void:
-    var target := _double_actor("enemy", slot)
-    var restored := mini(50, int(target.max_hp) - int(target.hp))
-    target.hp = int(target.hp) + restored
-    battle_context["_trainer_heals_used"] = int(
-        battle_context.get("_trainer_heals_used", 0)) + 1
-    await _type_battle_text("%s used a SUPER POTION on %s. Restored %d HP!" % [
-        String(battle_context.get("trainer_name", "The Trainer")),
-        BattleEngine.display_name(target), restored])
-    await get_tree().create_timer(0.09).timeout
-
-func _perform_battle_action(player_attacks: bool, move_name: String) -> Dictionary:
-    if not player_attacks:
-        battle_enemy_action_count += 1
-        var special_every = int(battle_context.get("special_every", 0))
-        if String(battle_context.get("source_boss", "")).is_empty() and not bool(battle_context.get("source_mewtwo", false)) and special_every > 0 and battle_enemy_action_count % special_every == 0:
-            var special_move = String(battle_context.get("special_move", "")).to_upper()
-            if not special_move.is_empty() and not PokemonData.move_info(special_move).is_empty():
-                move_name = special_move
-                battle_field["move_power_override"] = int(battle_context.get("special_power", 0))
-                var special_pp = battle_enemy.get("pp", {}) as Dictionary
-                if not special_pp.has(special_move):
-                    special_pp[special_move] = int(PokemonData.move_info(special_move).get("pp", 35))
-                    battle_enemy["pp"] = special_pp
-                var special_message = String(battle_context.get("special_message", ""))
-                if not special_message.is_empty():
-                    await _type_battle_text(special_message)
-                    await get_tree().create_timer(0.1).timeout
-    var attacker = battle_player if player_attacks else battle_enemy
-    var defender = battle_enemy if player_attacks else battle_player
-    var attacker_hp_before = int(attacker.get("hp", 0))
-    var defender_hp_before = int(defender.get("hp", 0))
-    var defender_status_before := _battle_status_snapshot(defender)
-    var raid_enemy_hp_before=int(battle_enemy.hp)
-    var repeated_without_pp = not String(attacker.volatile.get("charge_move", "")).is_empty() or \
-        int(attacker.volatile.get("bide_turns", 0)) > 0 or \
-        int(attacker.volatile.get("locked_turns", 0)) > 0
-    if move_name != "STRUGGLE" and not repeated_without_pp:
-        var pp: Dictionary = attacker.get("pp", {})
-        pp[move_name] = maxi(0, int(pp.get(move_name, 1)) - 1)
-        attacker.pp = pp
-    battle_field.attacker_is_player = player_attacks
-    var result = BattleEngine.use_move(attacker, defender, move_name, battle_rng, battle_field)
-    if coop_game.active and coop_game.raids.active:await coop_game.raids.sync_damage(raid_enemy_hp_before)
-    battle_field.erase("move_power_override")
-    if not String(result.get("weather", "")).is_empty():
-        battle_field.weather = String(result.weather)
-        battle_field.weather_turns = 5
-        _update_battle_field_visuals()
-    if bool(result.get("heal_party", false)):
-        for index in range(caught_pokemon.size()):
-            if typeof(caught_pokemon[index]) == TYPE_DICTIONARY:
-                caught_pokemon[index]["status"] = ""
-                caught_pokemon[index]["status_counter"] = 0
-                caught_pokemon[index]["toxic_counter"] = 0
-        battle_player.status = ""
-    if int(result.get("pay_day", 0)) > 0:
-        inventory["COINS"] = int(inventory.get("COINS", 0)) + int(result.pay_day)
-    caught_pokemon[battle_party_index] = battle_player
-    var message_parts = _battle_message_parts(String(result.message))
-    _start_battle_text(message_parts[0])
-    if battle_text_busy:
-        await battle_text_finished
-    if not bool(result.get("executed", false)):
-        await _play_blocked_status_feedback(attacker, player_attacks, String(result.get("message", "")))
-    else:
-        await _play_battle_feedback(String(result.get("animation_move", move_name)),
-            player_attacks, result, defender)
-    if battle_text_busy:
-        await battle_text_finished
-    _refresh_battle_sprites()
-    await _animate_visible_battle_hp(defender, int(defender.hp) if bool(result.get("hp_feedback_complete", false)) else defender_hp_before,
-        int(defender.get("hp", 0)))
-    if int(defender.hp) != defender_hp_before:
-        await get_tree().create_timer(13.0 / 60.0).timeout
-    await _animate_visible_battle_hp(attacker, attacker_hp_before,
-        int(attacker.get("hp", 0)))
-    if int(attacker.hp) != attacker_hp_before:
-        await get_tree().create_timer(13.0 / 60.0).timeout
-    _update_battle_hud()
-    if not message_parts[1].is_empty():
-        await _type_battle_text(message_parts[1])
-    await _play_new_status_feedback(defender, not player_attacks, defender_status_before, result)
-    await get_tree().create_timer(0.1).timeout
-    var switch_effect = String(result.get("force_switch", ""))
-    if switch_effect == "BATON_PASS" and player_attacks:
-        await _request_baton_pass()
-    elif switch_effect == "FORCE_SWITCH":
-        if player_attacks:
-            await _type_battle_text("%s was blown away!" % BattleEngine.display_name(battle_enemy))
-            await get_tree().create_timer(0.1).timeout
-            _end_battle("victory" if String(battle_context.get("kind", "")) == "trainer" else "defeated")
-        else:
-            await _request_forced_player_switch()
-    elif switch_effect == "TELEPORT":
-        await _type_battle_text("%s teleported away!" % BattleEngine.display_name(attacker))
-        await get_tree().create_timer(0.1).timeout
-        _end_battle("ran")
-    if not player_attacks and is_instance_valid(source_mewtwo) and battle_active and \
-            battle_enemy_action_count % 3 == 0 and int(battle_enemy.hp) > 0 and int(battle_player.hp) > 0:
-        await get_tree().create_timer(3.0 / 60.0).timeout
-        await _type_battle_text("A wave of psychic power unleashes!")
-        await source_mewtwo.play_special()
-        var hp_before := int(battle_player.hp)
-        var damage := int(30.0 * BattleEngine.effectiveness("PSYCHIC", battle_player.types))
-        battle_player.hp = maxi(0, hp_before - damage)
-        caught_pokemon[battle_party_index] = battle_player
-        await _animate_visible_battle_hp(battle_player, hp_before, int(battle_player.hp))
-        _update_battle_hud()
-        await get_tree().create_timer(30.0 / 60.0).timeout
-    if not player_attacks and is_instance_valid(source_boss) and source_boss.kind=="regigigas" and battle_active and move_name not in ["AURORA_BEAM","CLAMP","SUPERSONIC","WITHDRAW","STRUGGLE","PSYCHIC","NIGHT_SHADE","SLASH","SHADOW_CLAW","LICK"]:
-        source_boss_action_count+=1
-        if source_boss_action_count>=3 and int(battle_enemy.hp)>0 and int(battle_player.hp)>0:
-            source_boss_action_count=0
-            await get_tree().create_timer(3.0/60.0).timeout
-            await _type_battle_text("The ground is shaking violently!")
-            source_boss_move_type=String(PokemonData.move_info(move_name).get("type","NORMAL"))
-            await source_boss.play_special()
-            while not source_boss_damage_finished:await get_tree().process_frame
-            if is_instance_valid(source_boss):source_boss.set_palette_stage(0)
-            await get_tree().create_timer(30.0/60.0).timeout
-    if battle_active and int(attacker.get("hp", 0)) > 0 and int(defender.get("hp", 0)) > 0:
-        await _apply_after_action_residual_feedback(attacker, player_attacks)
-    return result
-
-func _apply_after_action_residual_feedback(pokemon: Dictionary, player_side: bool) -> void:
-    var hp_before := int(pokemon.get("hp", 0))
-    var was_poisoned := String(pokemon.get("status", "")) == "POISON"
-    var message := BattleEngine.after_action_residual(pokemon)
-    if not player_side and coop_game.active and coop_game.raids.active:await coop_game.raids.sync_damage(hp_before)
-    if message.is_empty(): return
-    await _type_battle_text(message)
-    await _play_poison_status_feedback(pokemon, player_side, hp_before, was_poisoned)
-    await _animate_visible_battle_hp(pokemon, hp_before, int(pokemon.hp))
-    _update_battle_hud()
-    await get_tree().create_timer(13.0 / 60.0).timeout
-
-func _resolve_battle_faints() -> bool:
-    if int(battle_enemy.hp) <= 0:
-        await _finish_enemy_faint()
-        return true
-    if int(battle_player.hp) <= 0:
-        return await _handle_player_faint()
-    return false
 
 var battle_exp_participants: Array[int] = []
 
@@ -7444,234 +6994,12 @@ func _check_reward_evolution(pokemon: Dictionary, party_index: int) -> void:
         _refresh_battle_sprites()
         _update_battle_hud()
 
-func _award_source_experience(defeated: Dictionary, recipients: Array[int]) -> void:
-    var reward := BattleEngine.experience_reward(defeated, recipients.size())
-    for index in recipients:
-        var pokemon: Dictionary = caught_pokemon[index]
-        await _type_battle_text("%s gained %d EXP. Points!" % [
-            PokemonState.display_name(pokemon).to_upper(), reward])
-        await _run_experience_progression(pokemon, reward, index, true)
-    # Source queues every recipient's CheckEvo after all EXP animations.
-    for index in recipients:
-        await _check_reward_evolution(caught_pokemon[index], index)
-
-func _finish_enemy_faint() -> void:
-    if _next_healthy_enemy_index() < 0 and current_species != "mewtwo" and "unown" not in current_species:
-        world.environment_system.play_victory_music()
-    BattleEngine.reset_battle_state(battle_enemy)
-    BattleEngine.reset_battle_state(battle_player)
-    var effort := PokemonState.grant_evs(battle_player, battle_enemy)
-    caught_pokemon[battle_party_index] = battle_player
-    var recipients := BattleEngine.experience_recipients(caught_pokemon,
-        battle_exp_participants, battle_party_index)
-    var message := "%s fainted!" % BattleEngine.display_name(battle_enemy)
-    if int(effort.get("amount", 0)) > 0:
-        message += " +%d %s EV." % [int(effort.amount),
-            String(effort.stat).replace("_", " ").to_upper()]
-    _update_battle_hud()
-    await _type_battle_text(message)
-    await get_tree().create_timer(0.175).timeout
-    await _award_source_experience(battle_enemy, recipients)
-    battle_enemy_party[battle_enemy_party_index] = battle_enemy
-    var next_enemy_index := _next_healthy_enemy_index()
-    if next_enemy_index >= 0:
-        battle_enemy_party_index = next_enemy_index
-        var next_member := battle_enemy_party[next_enemy_index] as Dictionary
-        battle_enemy = BattleEngine.ensure_pokemon(next_member) if next_member.has("stats") else \
-            _make_context_enemy(next_member)
-        battle_enemy_party[next_enemy_index] = battle_enemy
-        BattleEngine.reset_battle_state(battle_enemy)
-        current_species = String(battle_enemy.get("species", "rattata"))
-        current_level = int(battle_enemy.get("level", 1))
-        battle_enemy_action_count = 0
-        _refresh_battle_sprites()
-        _update_battle_hud()
-        _play_pokemon_cry(battle_enemy)
-        var send_message := "%s sent out %s!" % [
-            String(battle_context.get("trainer_name", "The opponent")),
-            BattleEngine.display_name(battle_enemy)
-        ]
-        var entry_message := BattleEngine.switch_in_message(battle_enemy,
-            [battle_player], battle_field)
-        if not entry_message.is_empty(): send_message += " " + entry_message
-        await _type_battle_text(send_message)
-        await get_tree().create_timer(0.125).timeout
-        if int(battle_player.get("hp", 0)) <= 0:
-            await _handle_player_faint()
-            return
-        battle_turn_busy = false
-        _show_battle_command_screen()
-        return
-    var outcome := "victory" if String(battle_context.get("kind", "wild")) == "trainer" else "defeated"
-    _end_battle(outcome)
-
-func _next_healthy_enemy_index() -> int:
-    for index in range(battle_enemy_party.size()):
-        if index == battle_enemy_party_index or typeof(battle_enemy_party[index]) != TYPE_DICTIONARY:
-            continue
-        var record := battle_enemy_party[index] as Dictionary
-        if not record.has("stats"):
-            record = _make_context_enemy(record)
-            battle_enemy_party[index] = record
-        if int(record.get("hp", 0)) > 0:
-            return index
-    return -1
-
-func _handle_player_faint() -> bool:
-    caught_pokemon[battle_party_index] = battle_player
-    await _type_battle_text("%s fainted!" % PokemonState.display_name(battle_player))
-    await get_tree().create_timer(0.15).timeout
-    var available := _healthy_party_indices(true)
-    if available.is_empty():
-        await _type_battle_text("You are out of usable Pokemon.")
-        await get_tree().create_timer(0.175).timeout
-        _end_battle("whiteout")
-        return true
-    _open_battle_party_menu("FORCED")
-    var next_index = await battle_party_chosen
-    await _switch_battle_party(int(next_index), false, true)
-    if int(battle_player.hp) <= 0:
-        return await _handle_player_faint()
-    await get_tree().create_timer(0.5).timeout
-    battle_turn_busy = false
-    _show_battle_command_screen()
-    return true
-
-func _apply_battle_end_turn() -> void:
-    battle_turn_count += 1
-    battle_field["turn_count"] = battle_turn_count
-    var messages: Array[String] = []
-    var player_hp_before := int(battle_player.get("hp", 0))
-    var enemy_hp_before := int(battle_enemy.get("hp", 0))
-    var player_poisoned := String(battle_player.get("status",""))=="POISON" and not bool(battle_player.volatile.get("action_residual_applied", false))
-    var enemy_poisoned := String(battle_enemy.get("status",""))=="POISON" and not bool(battle_enemy.volatile.get("action_residual_applied", false))
-    var player_message := BattleEngine.end_turn(battle_player, battle_field, battle_enemy, battle_rng)
-    var enemy_message := BattleEngine.end_turn(battle_enemy, battle_field, battle_player, battle_rng)
-    if coop_game.active and coop_game.raids.active:await coop_game.raids.sync_damage(enemy_hp_before)
-    if not player_message.is_empty():
-        messages.append(player_message)
-    if not enemy_message.is_empty():
-        messages.append(enemy_message)
-    if int(battle_field.get("weather_turns", 0)) > 0:
-        battle_field.weather_turns = int(battle_field.weather_turns) - 1
-        if int(battle_field.weather_turns) <= 0:
-            var old_weather := String(battle_field.get("weather", ""))
-            battle_field.weather = ""
-            messages.append("The %s subsided." % old_weather.replace("_", " ").to_lower())
-            _update_battle_field_visuals()
-    caught_pokemon[battle_party_index] = battle_player
-    await _play_poison_status_feedback(battle_player,true,player_hp_before,player_poisoned)
-    await _play_poison_status_feedback(battle_enemy,false,enemy_hp_before,enemy_poisoned)
-    await _animate_battle_hp_change(battle_player, player_hp_before,
-        int(battle_player.get("hp", 0)), true)
-    await _animate_battle_hp_change(battle_enemy, enemy_hp_before,
-        int(battle_enemy.get("hp", 0)), false)
-    _update_battle_hud()
-    if not messages.is_empty():
-        await _type_battle_text(" ".join(messages))
-        await get_tree().create_timer(0.125).timeout
-
-func _first_usable_move(pokemon: Dictionary) -> String:
-    var forced := BattleEngine.forced_move(pokemon)
-    if not forced.is_empty():
-        return forced
-    for move_name in pokemon.get("moves", ["TACKLE"]):
-        if BattleEngine.move_is_usable(pokemon, String(move_name)):
-            return String(move_name)
-    return "STRUGGLE"
-
-func _prepare_enemy_party_records() -> void:
-    for index in range(battle_enemy_party.size()):
-        if typeof(battle_enemy_party[index]) != TYPE_DICTIONARY:
-            continue
-        var record := battle_enemy_party[index] as Dictionary
-        if not record.has("stats") or not record.has("ivs"):
-            battle_enemy_party[index] = _make_context_enemy(record)
-    if battle_enemy_party_index >= 0 and battle_enemy_party_index < battle_enemy_party.size():
-        battle_enemy_party[battle_enemy_party_index] = battle_enemy
-
-func _choose_enemy_action() -> Dictionary:
-    var choice := BattleEngine.choose_ai_action(battle_enemy, [battle_player],
-        [battle_enemy], battle_field, battle_rng,
-        int(battle_context.get("ai_level", 2 if String(battle_context.get("kind", "")) == "trainer" else 1)))
-    if String(battle_context.get("kind", "")) != "trainer":
-        choice["kind"] = "move"
-        return choice
-    var heal_limit := int(battle_context.get("trainer_heals", 1))
-    var heals_used := int(battle_context.get("_trainer_heals_used", 0))
-    if heals_used < heal_limit and int(battle_enemy.hp) > 0 and \
-            int(battle_enemy.hp) * 3 <= int(battle_enemy.max_hp):
-        return {"kind":"item", "item":"SUPER POTION"}
-    _prepare_enemy_party_records()
-    if battle_turn_count > 0 and int(battle_enemy.volatile.get("trap_turns", 0)) <= 0 and \
-            not bool(battle_enemy.volatile.get("mean_look", false)):
-        var switch_index := BattleEngine.best_switch_index(battle_enemy_party,
-            [battle_enemy_party_index], battle_player, battle_field)
-        if switch_index >= 0 and (float(choice.get("score", 0.0)) < 18.0 or \
-                int(battle_enemy.hp) * 4 <= int(battle_enemy.max_hp)):
-            return {"kind":"switch", "index":switch_index}
-    choice["kind"] = "move"
-    return choice
-
-func _perform_enemy_tactical_action(action: Dictionary) -> void:
-    match String(action.get("kind", "move")):
-        "item":
-            var amount := mini(50, int(battle_enemy.max_hp) - int(battle_enemy.hp))
-            battle_enemy.hp = int(battle_enemy.hp) + amount
-            battle_context["_trainer_heals_used"] = int(
-                battle_context.get("_trainer_heals_used", 0)) + 1
-            await _type_battle_text("%s used a SUPER POTION. %s restored %d HP!" % [
-                String(battle_context.get("trainer_name", "The Trainer")),
-                BattleEngine.display_name(battle_enemy), amount])
-            await get_tree().create_timer(0.1).timeout
-        "switch":
-            await _switch_enemy_party(int(action.get("index", -1)), true)
-
-func _switch_enemy_party(next_index: int, show_message: bool) -> void:
-    if next_index < 0 or next_index >= battle_enemy_party.size() or \
-            next_index == battle_enemy_party_index:
-        return
-    _prepare_enemy_party_records()
-    var out_message := BattleEngine.switch_out_message(battle_enemy)
-    BattleEngine.reset_battle_state(battle_enemy)
-    battle_enemy_party[battle_enemy_party_index] = battle_enemy
-    battle_enemy_party_index = next_index
-    battle_enemy = BattleEngine.ensure_pokemon(battle_enemy_party[next_index])
-    BattleEngine.reset_battle_state(battle_enemy)
-    battle_enemy_party[next_index] = battle_enemy
-    current_species = String(battle_enemy.species)
-    current_level = int(battle_enemy.level)
-    var spike_layers := int(battle_field.get("enemy_spikes", 0))
-    if spike_layers > 0 and not (battle_enemy.types as Array).has("FLYING") and \
-            String(battle_enemy.get("ability", "")) != "LEVITATE":
-        battle_enemy.hp = maxi(0, int(battle_enemy.hp) -
-            maxi(1, int(int(battle_enemy.max_hp) * spike_layers / 8.0)))
-    _refresh_battle_sprites()
-    _update_battle_hud()
-    _play_pokemon_cry(battle_enemy)
-    if show_message:
-        var message := "%s withdrew its Pokemon and sent out %s!" % [
-            String(battle_context.get("trainer_name", "The opponent")),
-            BattleEngine.display_name(battle_enemy)]
-        if not out_message.is_empty(): message = out_message + " " + message
-        var entry := BattleEngine.switch_in_message(battle_enemy, [battle_player], battle_field)
-        if not entry.is_empty(): message += " " + entry
-        await _type_battle_text(message)
-        await get_tree().create_timer(0.1).timeout
-
 func _selected_player_move() -> String:
     var command_actor := _command_pokemon()
-    var forced := BattleEngine.forced_move(command_actor)
-    if not forced.is_empty():
-        return forced
     var moves: Array = command_actor.get("moves", ["TACKLE"])
-    if moves.is_empty():
-        return "STRUGGLE"
-    battle_move_index = clampi(battle_move_index, 0, moves.size() - 1)
-    var selected := String(moves[battle_move_index])
-    if not BattleEngine.move_is_usable(command_actor, selected):
-        return _first_usable_move(command_actor)
-    return selected
+    if BattleEngine.forced_move(command_actor).is_empty() and not moves.is_empty():
+        battle_move_index = clampi(battle_move_index, 0, moves.size() - 1)
+    return BattleSession.chosen_move(command_actor, battle_move_index)
 
 func _battle_catch() -> void:
     if not battle_active or battle_turn_busy:
@@ -7707,115 +7035,14 @@ func _battle_throw_ball(ball: String) -> void:
         _start_battle_text("You cannot throw a POKE BALL here.")
         return
     _close_battle_submenu()
-    inventory[ball] = int(inventory.get(ball, 0)) - 1
     last_battle_ball = ball
     battle_turn_busy = true
     _show_battle_message_screen()
-    await _type_battle_text("Threw %s!" % ball)
-    _play_source_battle_sound("throw_pokeball1.ogg")
-    var capture_outcome := BattleEngine.capture_result(battle_enemy, battle_player,
-        ball, {"turn":battle_turn_count + 1, "night":_world_source_time_of_day() == "night",
+    # What a ball's odds read from the world, as it is thrown.
+    await _battle_play(battle_session.submit({"kind":"ball", "ball":ball,
+        "night":_world_source_time_of_day() == "night",
         "indoors":String(world.get("active_area_id")) != "OVERWORLD",
-        "surfing":String(world.get("active_field_move")) == "SURF",
-        "fishing":bool(battle_context.get("fishing", false))}, battle_rng)
-    var captured_successfully := capture_outcome == -1
-    await _play_source_throw_animation(captured_successfully, 3 if captured_successfully else capture_outcome)
-    if captured_successfully:
-        # Snapshot before routing the caught Pokemon: source excludes the new catch.
-        var capture_recipients := BattleEngine.experience_recipients(
-            caught_pokemon, battle_exp_participants, battle_party_index, true)
-        if not caught_species.has(current_species):
-            caught_species.append(current_species)
-        BattleEngine.reset_battle_state(battle_enemy)
-        var captured = battle_enemy.duplicate(true)
-        if coop_game.active and coop_game.raids.active:coop_game.raids.normalize_capture(captured)
-        pokedex_progress.mark(captured, true)
-        captured["pokeball"] = ball
-        if ball == "HEAL BALL":
-            captured.hp = captured.max_hp
-            captured.status = ""
-            captured.status_counter = 0
-            captured.toxic_counter = 0
-            BattleEngine.refill_pp(captured)
-        elif ball == "FRIEND BALL":
-            captured.friendship = 200
-        var destination := _route_received_pokemon(captured)
-        _play_source_battle_sound("catch_fanfare.ogg")
-        await _type_battle_text("Caught %s!" % BattleEngine.display_name(battle_enemy))
-        var notice := _received_pokemon_notice(captured, destination)
-        if not notice.is_empty(): await _type_battle_text(notice)
-        await _award_source_experience(battle_enemy, capture_recipients)
-    else:
-        await _type_battle_text("%s broke free!" % BattleEngine.display_name(battle_enemy))
-        await get_tree().create_timer(0.125).timeout
-        var retaliation = _choose_enemy_action()
-        await _perform_battle_action(false, String(retaliation.get("move",
-            _first_usable_move(battle_enemy))))
-        if await _resolve_battle_faints():
-            return
-        await _apply_battle_end_turn()
-        if await _resolve_battle_faints():
-            return
-        battle_turn_busy = false
-        _show_battle_command_screen()
-        return
-
-    await get_tree().create_timer(0.35).timeout
-    _end_battle("captured")
-
-func _pokemon_evolves_with_moon_stone(pokemon: Dictionary) -> bool:
-    var info: Dictionary = PokemonData.info(String(pokemon.get("species", "")))
-    for raw_evolution in info.get("evolutions", []):
-        if typeof(raw_evolution) != TYPE_DICTIONARY:
-            continue
-        var evolution: Dictionary = raw_evolution as Dictionary
-        if String(evolution.get("method", "")) not in ["EVOLVE_ITEM", "EVOLVE_TRADEITEM"]:
-            continue
-        var item: String = String(evolution.get("parameter", "")).to_upper().replace("_", " ")
-        if item == "MOON STONE":
-            return true
-    return false
-
-func _battle_ball_bonus(ball: String) -> float:
-    var bonus: float = float(BATTLE_BALL_BONUS.get(ball, 1.0))
-    var enemy_types: Array = battle_enemy.get("types", [])
-    match ball:
-        "MASTER BALL", "PARK BALL":
-            return 999.0
-        "LURE BALL":
-            if bool(battle_context.get("fishing", false)): bonus = 3.0
-        "DIVE BALL":
-            if String(battle_field.get("terrain", "")) == "AQUATIC": bonus = 3.0
-        "DUSK BALL":
-            if _world_source_time_of_day() == "night" or String(world.get("active_area_id")) != "OVERWORLD": bonus = 3.0
-        "NET BALL":
-            if enemy_types.has("WATER") or enemy_types.has("BUG"): bonus = 3.0
-        "QUICK BALL":
-            if battle_turn_count == 0: bonus = 5.0
-        "TIMER BALL":
-            bonus = minf(4.0, 1.0 + float(battle_turn_count) * 0.3)
-        "NEST BALL":
-            bonus = maxf(1.0, minf(4.0, (41.0 - float(battle_enemy.level)) / 10.0))
-        "DREAM BALL":
-            if String(battle_enemy.get("status", "")) == "SLEEP": bonus = 4.0
-        "FAST BALL":
-            if BattleEngine.effective_stat(battle_enemy, "speed") >= 100: bonus = 4.0
-        "HEAVY BALL":
-            var weight: float = float(PokemonData.info(String(battle_enemy.species)).get("weight_kg", 0.0))
-            bonus = 4.0 if weight >= 300.0 else 3.0 if weight >= 200.0 else 2.0 if weight >= 100.0 else 1.0
-        "MOON BALL":
-            if _pokemon_evolves_with_moon_stone(battle_enemy): bonus = 4.0
-        "LEVEL BALL":
-            var ratio: float = float(battle_player.level) / maxf(1.0, float(battle_enemy.level))
-            bonus = 8.0 if ratio >= 4.0 else 4.0 if ratio >= 2.0 else 2.0 if ratio > 1.0 else 1.0
-        "LOVE BALL":
-            var player_gender: String = _resolved_battle_gender(battle_player)
-            var enemy_gender: String = _resolved_battle_gender(battle_enemy)
-            if (String(battle_player.species) == String(battle_enemy.species) and
-                    player_gender in ["male", "female"] and enemy_gender in ["male", "female"] and
-                    player_gender != enemy_gender):
-                bonus = 8.0
-    return bonus
+        "surfing":String(world.get("active_field_move")) == "SURF"}))
 
 func _best_available_ball() -> String:
     for ball in ["QUICK BALL", "DREAM BALL", "DUSK BALL", "TIMER BALL",
@@ -7968,36 +7195,7 @@ func _battle_use_silph_scope() -> void:
         return
     battle_turn_busy = true
     _show_battle_message_screen()
-    await _type_battle_text("Used SILPH SCOPE!")
-    # Battle.java: 96-tick reveal runs alongside FadeAnim(slow=8), 144 ticks.
-    source_effect_playing = true
-    var fade := TextureRect.new()
-    fade.texture = preload("res://assets/events/source_fade.png")
-    fade.position = Vector2.ZERO
-    fade.size = Vector2(320, 180)
-    fade.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-    fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    battle_panel.add_child(fade)
-    var started := preload("res://scripts/game_clock.gd").ticks_usec()
-    for frame in range(144):
-        fade.modulate.a = (0.0 if frame < 16 else 0.25 if frame < 32 else
-            0.5 if frame < 48 else 1.0 if frame < 96 else
-            0.75 if frame < 112 else 0.5 if frame < 128 else 0.25)
-        if frame == 96:
-            battle_enemy["is_ghost"] = false
-            pokedex_progress.mark(battle_enemy)
-            battle_context["ghost_revealed"] = true
-            battle_context["can_catch"] = true
-            _refresh_battle_sprites()
-            _update_battle_hud()
-        while preload("res://scripts/game_clock.gd").ticks_usec() - started < int((frame + 1) * 1000000.0 / 60.0):
-            await get_tree().process_frame
-    fade.queue_free()
-    await _play_source_ghost_intro(false)
-    source_effect_playing = false
-    await get_tree().create_timer(3.0 * SOURCE_FRAME_TIME).timeout
-    await _type_battle_text("Enemy %s was revealed!" % BattleEngine.display_name(battle_enemy))
-    await _enemy_action_after_player_choice()
+    await _battle_play(battle_session.submit({"kind":"silph_scope"}))
 
 func _play_source_ghost_intro(hidden: bool) -> void:
     var timelines: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(
@@ -8027,12 +7225,9 @@ func _battle_use_poke_doll() -> void:
     if not bool(battle_context.get("can_run", true)):
         _start_battle_text("The POKE DOLL cannot end this battle.")
         return
-    inventory["POKE DOLL"] = int(inventory.get("POKE DOLL", 0)) - 1
     battle_turn_busy = true
     _show_battle_message_screen()
-    await _type_battle_text("Used POKE DOLL! Got away safely.")
-    await get_tree().create_timer(0.1).timeout
-    _end_battle("ran")
+    await _battle_play(battle_session.submit({"kind":"poke_doll"}))
 
 func _open_battle_party_menu(mode: String) -> void:
     if not battle_active:
@@ -8167,9 +7362,12 @@ func _confirm_battle_submenu() -> void:
         })
         _advance_double_command_slot()
         return
+    var forced_slot := battle_double_replacement_slot if battle_submenu_mode == "DOUBLE_FORCED" else -1
     _close_battle_submenu()
     if is_instance_valid(coop_game.pvp) and coop_game.pvp.active:
-        coop_game.pvp.submit({"kind":"switch","index":party_index})
+        var switch := {"kind":"switch","index":party_index}
+        if forced_slot >= 0: switch["slot"] = forced_slot
+        coop_game.pvp.submit(switch)
         return
     battle_party_chosen.emit(party_index)
 
@@ -8297,7 +7495,7 @@ func _activate_battle_party_action() -> void:
     battle_party_prompt.text = "That action cannot be used during battle."
 
 func _switch_from_battle_party_action(party_index: int) -> void:
-    if is_instance_valid(coop_game.pvp) and coop_game.pvp.active:
+    if is_instance_valid(coop_game.pvp) and coop_game.pvp.active and not battle_is_double:
         coop_game.pvp.submit({"kind":"switch","index":party_index})
         return
     if party_index in [battle_party_index, battle_partner_party_index] or \
@@ -8313,176 +7511,47 @@ func _switch_from_battle_party_action(party_index: int) -> void:
         battle_party_prompt.text = "%s cannot switch out!" % PokemonState.display_name(battle_player)
         return
     _close_battle_submenu()
+    if is_instance_valid(coop_game.pvp) and coop_game.pvp.active:
+        _queue_pvp_double_choice({"kind":"switch", "switch_index":party_index})
+        return
     battle_turn_busy = true
-    await _switch_battle_party(party_index, false, true)
-    if await _resolve_battle_faints():
-        return
-    await _enemy_action_after_player_choice()
+    await _battle_play(battle_session.submit({"kind":"switch", "index":party_index}))
 
-func _healthy_party_indices(exclude_active: bool) -> Array[int]:
-    var result: Array[int] = []
-    for index in range(caught_pokemon.size()):
-        if exclude_active and index == battle_party_index:
-            continue
-        var pokemon := BattleEngine.ensure_pokemon(caught_pokemon[index])
-        caught_pokemon[index] = pokemon
-        if int(pokemon.hp) > 0 and not bool(pokemon.get("is_egg", false)):
-            result.append(index)
-    return result
-
-func _switch_battle_party(next_index: int, preserve_state: bool,
-        show_message: bool) -> void:
-    if not battle_exp_participants.has(next_index): battle_exp_participants.append(next_index)
-    var passed_stages := (battle_player.get("stages", {}) as Dictionary).duplicate(true)
-    var passed_volatile := {}
-    if preserve_state:
-        for key in ["substitute_hp", "confuse_turns", "focus_energy"]:
-            if battle_player.volatile.has(key):
-                passed_volatile[key] = battle_player.volatile[key]
-    var out_message := BattleEngine.switch_out_message(battle_player)
-    BattleEngine.reset_battle_state(battle_player)
-    caught_pokemon[battle_party_index] = battle_player
-    battle_party_index = next_index
-    battle_player = BattleEngine.ensure_pokemon(caught_pokemon[next_index])
-    BattleEngine.reset_battle_state(battle_player)
-    if preserve_state:
-        battle_player.stages = passed_stages
-        for key in passed_volatile.keys():
-            battle_player.volatile[key] = passed_volatile[key]
-    caught_pokemon[next_index] = battle_player
-    battle_move_index = 0
-    var spike_layers := int(battle_field.get("player_spikes", 0))
-    if spike_layers > 0 and not (battle_player.types as Array).has("FLYING") and \
-            String(battle_player.get("ability", "")) != "LEVITATE":
-        var spike_damage := maxi(1, int(int(battle_player.max_hp) * spike_layers / 8.0))
-        battle_player.hp = maxi(0, int(battle_player.hp) - spike_damage)
-    _refresh_battle_sprites()
-    _update_battle_hud()
-    _play_pokemon_cry(battle_player)
-    if show_message:
-        var message := "Go, %s!" % PokemonState.display_name(battle_player)
-        if not out_message.is_empty(): message = out_message + " " + message
-        var entry := BattleEngine.switch_in_message(battle_player, [battle_enemy], battle_field)
-        if not entry.is_empty(): message += " " + entry
-        await _type_battle_text(message)
-        await get_tree().create_timer(0.1).timeout
-
-func _request_baton_pass() -> void:
-    if _healthy_party_indices(true).is_empty():
-        await _type_battle_text("But there was nobody to receive the pass!")
-        return
-    _open_battle_party_menu("BATON_PASS")
-    var next_index = await battle_party_chosen
-    await _switch_battle_party(int(next_index), true, true)
-
-func _request_forced_player_switch() -> void:
-    if _healthy_party_indices(true).is_empty():
-        await _type_battle_text("But it failed!")
-        return
-    _open_battle_party_menu("FORCED")
-    var next_index = await battle_party_chosen
-    await _switch_battle_party(int(next_index), false, true)
+## A PvP double battle's switch or item: the commanded slot's choice for the
+## turn (the host checks it with the rest).
+func _queue_pvp_double_choice(choice: Dictionary) -> void:
+    choice.merge({"side":"player", "slot":battle_double_command_slot, "move":"", "target_slot":-1, "spread":false})
+    battle_double_actions.append(choice)
+    _advance_double_command_slot()
 
 func _can_use_battle_item_on(item_name: String, party_index: int) -> bool:
     var pokemon := BattleEngine.ensure_pokemon(caught_pokemon[party_index])
     caught_pokemon[party_index] = pokemon
-    if bool(pokemon.get("is_egg", false)):
-        _start_battle_text("That item cannot be used on an EGG.")
-        return false
-    var rule: Dictionary = BATTLE_ITEM_RULES.get(item_name, {})
-    match String(rule.get("kind", "")):
-        "heal":
-            if int(pokemon.hp) <= 0 or int(pokemon.hp) >= int(pokemon.max_hp):
-                _start_battle_text("That Pokemon does not need HP restored.")
-                return false
-        "full_restore":
-            if int(pokemon.hp) <= 0 or (int(pokemon.hp) >= int(pokemon.max_hp) and String(pokemon.status).is_empty()):
-                _start_battle_text("That Pokemon does not need restoring.")
-                return false
-        "status":
-            var cures := String(rule.get("status", "ANY"))
-            if int(pokemon.hp) <= 0 or String(pokemon.status).is_empty() or (cures != "ANY" and String(pokemon.status) != cures):
-                _start_battle_text("That item will not help this Pokemon.")
-                return false
-        "confusion":
-            if not (pokemon.volatile as Dictionary).has("confuse_turns"):
-                _start_battle_text("That Pokemon is not confused.")
-                return false
-        "revive":
-            if int(pokemon.hp) > 0:
-                _start_battle_text("That Pokemon has not fainted.")
-                return false
-        _:
-            return false
-    return true
+    var refusal := BattleSession.pokemon_item_refusal(pokemon, item_name)
+    if refusal.is_empty():
+        return true
+    if refusal != "-":
+        _start_battle_text(refusal)
+    return false
 
 func _use_battle_item_on(item_name: String, party_index: int) -> void:
     if is_instance_valid(coop_game.pvp) and coop_game.pvp.active:
-        coop_game.pvp.submit({"kind":"item","item":item_name,"index":party_index})
+        if not battle_is_double:
+            coop_game.pvp.submit({"kind":"item","item":item_name,"index":party_index})
+            return
+        battle_pending_item = ""
+        _close_battle_submenu()
+        _queue_pvp_double_choice({"kind":"use_item", "item":item_name, "index":party_index})
         return
-    var pokemon := BattleEngine.ensure_pokemon(caught_pokemon[party_index])
-    var rule: Dictionary = BATTLE_ITEM_RULES[item_name]
-    var detail := ""
-    match String(rule.kind):
-        "heal":
-            var healed := mini(int(rule.amount), int(pokemon.max_hp) - int(pokemon.hp))
-            pokemon.hp = int(pokemon.hp) + healed
-            detail = "Restored %d HP!" % healed
-        "full_restore":
-            var healed := int(pokemon.max_hp) - int(pokemon.hp)
-            pokemon.hp = pokemon.max_hp
-            pokemon.status = ""
-            pokemon.status_counter = 0
-            pokemon.toxic_counter = 0
-            detail = "Restored %d HP and cured status!" % healed
-        "status":
-            pokemon.status = ""
-            pokemon.status_counter = 0
-            pokemon.toxic_counter = 0
-            detail = "Its status was cured!"
-        "confusion":
-            pokemon.volatile.erase("confuse_turns")
-            detail = "Its confusion was cured!"
-        "revive":
-            pokemon.hp = maxi(1, int(int(pokemon.max_hp) * float(rule.fraction)))
-            detail = "It returned with %d HP!" % int(pokemon.hp)
-    inventory[item_name] = maxi(0, int(inventory.get(item_name, 0)) - 1)
-    caught_pokemon[party_index] = pokemon
-    if party_index == battle_party_index:
-        battle_player = pokemon
-    elif party_index == battle_partner_party_index:
-        battle_player_partner = pokemon
     battle_pending_item = ""
     _close_battle_submenu()
     battle_turn_busy = true
     _show_battle_message_screen()
-    _update_battle_hud()
-    await _type_battle_text("Used %s on %s. %s" % [item_name,
-        PokemonState.display_name(pokemon), detail])
-    await get_tree().create_timer(0.1).timeout
-    if battle_is_double:
+    await _battle_play(battle_session.submit({"kind":"item", "item":item_name, "index":party_index}))
+    if battle_is_double and battle_active:
+        # In a double battle an item takes its Pokemon's place in the turn.
         battle_turn_busy = false
         _advance_double_command_slot()
-        return
-    await _enemy_action_after_player_choice()
-
-func _enemy_action_after_player_choice() -> void:
-    _show_battle_message_screen()
-    var action := _choose_enemy_action()
-    if String(action.get("kind", "move")) == "move":
-        await _perform_battle_action(false, String(action.get("move",
-            _first_usable_move(battle_enemy))))
-    else:
-        await _perform_enemy_tactical_action(action)
-    if not battle_active:
-        return
-    if await _resolve_battle_faints():
-        return
-    await _apply_battle_end_turn()
-    if await _resolve_battle_faints():
-        return
-    battle_turn_busy = false
-    _show_battle_command_screen()
 
 func _battle_run() -> void:
     if is_instance_valid(coop_game.pvp) and coop_game.pvp.active:
@@ -8490,32 +7559,13 @@ func _battle_run() -> void:
         return
     if not battle_active or battle_turn_busy:
         return
-
-    if not bool(battle_context.get("can_run", true)):
-        _start_battle_text("There is no running from this battle!")
-        return
-
-    if int(battle_player.volatile.get("trap_turns", 0)) > 0 or bool(battle_player.volatile.get("mean_look", false)):
-        _start_battle_text("%s cannot escape!" % PokemonState.display_name(battle_player))
+    var refusal := battle_session.refusal({"kind":"run"})
+    if not refusal.is_empty():
+        _start_battle_text(refusal)
         return
     battle_turn_busy = true
     _show_battle_message_screen()
-    battle_run_attempts += 1
-    var player_speed := BattleEngine.effective_stat(battle_player, "speed")
-    var enemy_speed := BattleEngine.effective_stat(battle_enemy, "speed")
-    var escaped := player_speed >= enemy_speed
-    if not escaped:
-        var threshold := int(float(player_speed) * 128.0 / maxf(1.0, float(enemy_speed)))
-        threshold += 30 * battle_run_attempts
-        escaped = battle_rng.randi_range(0, 255) < threshold
-    if escaped:
-        await _type_battle_text("Got away safely.")
-        await get_tree().create_timer(0.1).timeout
-        _end_battle("ran")
-        return
-    await _type_battle_text("Couldn't get away!")
-    await get_tree().create_timer(0.1).timeout
-    await _enemy_action_after_player_choice()
+    await _battle_play(battle_session.submit({"kind":"run"}))
 
 func _end_battle(outcome: String = "") -> void:
     var ending_pvp=is_instance_valid(coop_game.pvp) and coop_game.pvp.active
@@ -8523,11 +7573,13 @@ func _end_battle(outcome: String = "") -> void:
     var ending_population=coop_game.active and not coop_game.population_battles.claim.is_empty()
     var ending_event=coop_game.active and coop_game.events.active
     if ending_pvp:outcome=""
+    if battle_session != null and battle_session.running and not battle_session.finished:
+        battle_session.abandon()
+    battle_ended.emit(outcome)
     if is_instance_valid(source_boss):
         source_boss.set_palette_stage(0)
         source_boss.queue_free()
         source_boss=null
-    source_boss_action_count=0
     if is_instance_valid(source_mewtwo):
         source_mewtwo.queue_free()
         source_mewtwo = null
@@ -8577,7 +7629,6 @@ func _end_battle(outcome: String = "") -> void:
     battle_context = {}
     battle_enemy_party.clear()
     battle_enemy_party_index = 0
-    battle_enemy_action_count = 0
     battle_is_double = false
     battle_partner_party_index = -1
     battle_enemy_partner_party_index = -1
@@ -8649,23 +7700,11 @@ func _play_status_on_pokemon(animation: String, pokemon: Dictionary, player_side
     await _play_battle_feedback(animation, not player_side, {"damage":0})
     battle_move_animation.position = original_position
 
-func _battle_status_snapshot(pokemon: Dictionary) -> Dictionary:
-    var volatile: Dictionary = pokemon.get("volatile", {})
-    return {"status":String(pokemon.get("status", "")),
-        "confused":int(volatile.get("confuse_turns", 0)) > 0,
-        "attracted":bool(volatile.get("attract", false))}
-
 func _play_new_status_feedback(pokemon: Dictionary, player_side: bool,
         before: Dictionary, result: Dictionary) -> void:
     if int(pokemon.get("hp", 0)) <= 0 or not bool(result.get("executed", false)):
         return
-    var after := _battle_status_snapshot(pokemon)
-    var applied: Array[String] = []
-    if String(before.status).is_empty() and not String(after.status).is_empty():
-        applied.append(String(after.status))
-    if not bool(before.confused) and bool(after.confused): applied.append("CONFUSION")
-    if not bool(before.attracted) and bool(after.attracted): applied.append("ATTRACT")
-    for status in applied:
+    for status in BattleSession.new_statuses(before, BattleSession.status_snapshot(pokemon)):
         # Battle.getAttackAction: hit effects wait 49 frames, then the status
         # animation (except sleep/poison/attract), 30 frames, then the message.
         if int(result.get("damage", 0)) > 0:
@@ -8675,10 +7714,7 @@ func _play_new_status_feedback(pokemon: Dictionary, player_side: bool,
         if not animation.is_empty():
             await _play_status_on_pokemon(animation, pokemon, player_side)
         await get_tree().create_timer(30.0 / 60.0).timeout
-        var description := String({"BURN":"was burned!", "FREEZE":"was frozen solid!",
-            "PARALYSIS":"was PARALYZED! It might not be able to attack!",
-            "SLEEP":"fell asleep!", "POISON":"was poisoned!",
-            "CONFUSION":"became confused!", "ATTRACT":"fell in love!"}.get(status, ""))
+        var description := String(BattleSession.STATUS_TEXT.get(status, ""))
         if not description.is_empty():
             await _type_battle_text("%s %s" % [BattleEngine.display_name(pokemon), description])
 

@@ -1,0 +1,26 @@
+{
+"name": "wild_run",
+"kind": "single",
+"seed": 12,
+"context": {"can_catch":true,"can_run":true,"fixed_level":true,"id":"wild","kind":"wild","party":[{"level":14.0,"species":"pikachu"}],"terrain":"GRASSY"},
+"party": [{"ability":"","evs":{"attack":0.0,"defense":0.0,"hp":0.0,"sp_attack":0.0,"sp_defense":0.0,"speed":0.0},"exp":2195.0,"friendship":70.0,"gender":"male","generation":1.0,"happiness":70.0,"held_item":"","hp":49.0,"is_shiny":false,"ivs":{"attack":6.0,"defense":21.0,"hp":30.0,"sp_attack":3.0,"sp_defense":23.0,"speed":13.0},"level":14.0,"markings":0.0,"max_hp":49.0,"met_level":14.0,"met_location":"WILDERNESS","moves":["TACKLE","CURSE","GROWL","WATER_GUN"],"nature":"IMPISH","nickname":"","original_trainer":"WILD","personality":691856383.0,"pokeball":"POKE BALL","pokerus":0.0,"pp":{"CURSE":10.0,"GROWL":40.0,"TACKLE":35.0,"WATER_GUN":25.0},"ribbons":[],"shiny":false,"species":"slowpoke","stages":{"accuracy":0.0,"attack":0.0,"defense":0.0,"evasion":0.0,"sp_attack":0.0,"sp_defense":0.0,"speed":0.0},"stats":{"attack":28.0,"defense":28.0,"hp":49.0,"sp_attack":21.0,"sp_defense":21.0,"speed":14.0},"status":"","status_counter":0.0,"toxic_counter":0.0,"trainer_id":0.0,"types":["WATER","PSYCHIC"],"volatile":{}}],
+"inventory": {},
+"world": {"indoors":false,"night":false,"surfing":false,"time_of_day":"day"},
+"log": [
+{"text":"Wild PIKACHU\nappeared!"},
+{"text":"Wild PIKACHU\nappeared!"},
+{"text":"What will\nSLOWPOKE do?"},
+{"at":"command","input":{"run":true},"state":{"enemy":[["pikachu",14.0,33.0,"",2195.0]],"field":["",0.0,0.0,0.0],"party":[["slowpoke",14.0,49.0,"",2195.0]],"rng":"-5333309984378945539","sha":"b82e9fa24557baa9c4c7"}},
+{"text":"Couldn't get away!"},
+{"text":"PIKACHU used THUNDER WAVE!"},
+{"text":"SLOWPOKE was PARALYZED! It might not be able to attack!"},
+{"text":"What will\nSLOWPOKE do?"},
+{"at":"command","input":{"run":true},"state":{"enemy":[["pikachu",14.0,33.0,"",2195.0]],"field":["",0.0,0.0,0.0],"party":[["slowpoke",14.0,49.0,"PARALYSIS",2195.0]],"rng":"3665032858074620480","sha":"a6bc16d1cad05d76ee39"}},
+{"text":"Couldn't get away!"},
+{"text":"PIKACHU used QUICK ATTACK!"},
+{"text":"SLOWPOKE recovered 3 HP from the terrain!"},
+{"text":"What will\nSLOWPOKE do?"},
+{"at":"command","input":{"run":true},"state":{"enemy":[["pikachu",14.0,33.0,"",2195.0]],"field":["",0.0,0.0,0.0],"party":[["slowpoke",14.0,44.0,"PARALYSIS",2195.0]],"rng":"4450739290170928849","sha":"af7991a9654980bd240e"}},
+{"text":"Got away safely."},
+{"end":"ran","state":{"enemy":[["pikachu",14.0,33.0,"",2195.0]],"field":["",0.0,0.0,0.0],"party":[["slowpoke",14.0,44.0,"PARALYSIS",2195.0]],"rng":"4061605544870079580","sha":"9dcd2fd0e1b9c0532cb5"}}
+]}

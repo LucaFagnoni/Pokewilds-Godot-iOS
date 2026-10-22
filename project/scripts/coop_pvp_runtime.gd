@@ -1,5 +1,6 @@
 extends Node
 ## Plays host-resolved PvP through the existing battle UI and animation system.
+const BattleSession=preload("res://scripts/battle_session.gd")
 var game:Node
 var main:Node
 var active:=false
@@ -44,10 +45,12 @@ func start(session:Dictionary)->void:
     game.interaction_ui.hide()
     var context={"id":"pvp/"+id,"kind":"trainer","pvp":true,"fixed_level":true,"can_catch":false,"can_run":false,
         "trainer_visual":trainer.duplicate(true),"trainer_name":String(trainer.get("name","PLAYER")),"intro":String(trainer.get("name","PLAYER"))+" wants to battle!",
-        "party":session.battle_state.parties[opponent].duplicate(true),"trainer_heals":0}
+        "party":session.battle_state.parties[opponent].duplicate(true),"trainer_heals":0,
+        "battle_format":"double" if session.battle_state.slots[actor] is Array else "single"}
     await main._start_battle_context(context)
     if not active:return
     apply_state(session.battle_state)
+    main._set_double_battle_layout()
     main.battle_context["_entry_messages"]=[]
     starting=false
     if not queue.is_empty():play_queue()
@@ -56,10 +59,19 @@ func apply_state(next:Dictionary)->void:
     state=next.duplicate(true)
     main.caught_pokemon=state.parties[actor].duplicate(true)
     main.battle_enemy_party=state.parties[opponent].duplicate(true)
-    main.battle_party_index=int(state.slots[actor])
-    main.battle_enemy_party_index=int(state.slots[opponent])
+    # A double battle's slots hold both active Pokemon of each player.
+    var mine:Array=state.slots[actor] if state.slots[actor] is Array else [state.slots[actor]]
+    var theirs:Array=state.slots[opponent] if state.slots[opponent] is Array else [state.slots[opponent]]
+    main.battle_is_double=mine.size()==2
+    main.battle_party_index=int(mine[0])
+    main.battle_enemy_party_index=int(theirs[0])
     main.battle_player=main.caught_pokemon[main.battle_party_index]
     main.battle_enemy=main.battle_enemy_party[main.battle_enemy_party_index]
+    if main.battle_is_double:
+        main.battle_partner_party_index=int(mine[1])
+        main.battle_enemy_partner_party_index=int(theirs[1])
+        main.battle_player_partner=main.caught_pokemon[main.battle_partner_party_index]
+        main.battle_enemy_partner=main.battle_enemy_party[main.battle_enemy_partner_party_index]
     main.battle_field=state.field.duplicate(true)
     if actor!=String(game.interaction_ui.interaction.get("a",actor)):
         var player_spikes=int(main.battle_field.get("player_spikes",0))
@@ -77,7 +89,25 @@ func submit(action:Dictionary)->void:
     if not active:return
     if not result.get("ok",false):
         await main._type_battle_text(String(result.get("reason","COULD NOT COMPLETE ACTION")).replace("_"," "))
-        main.battle_turn_busy=false;main._show_battle_command_screen()
+        _next_choice()
+
+## What this player does next: send out a Pokemon, wait for the other player,
+## or choose (a double battle's choices start again from its first slot).
+func _next_choice()->void:
+    main.battle_turn_busy=false
+    if state.replacement.has(actor):
+        if main.battle_is_double:
+            main.battle_double_replacement_slot=int(state.replacement[actor].slots[0])
+            main._open_battle_party_menu("DOUBLE_FORCED")
+        else:main._open_battle_party_menu("FORCED")
+    elif not state.replacement.is_empty():
+        main.battle_turn_busy=true;main._start_battle_text("WAITING FOR PLAYER...")
+    else:
+        if main.battle_is_double:
+            main.battle_double_actions.clear()
+            main.battle_double_command_slot=0 if int(main.battle_player.get("hp",0))>0 else 1
+            main.battle_move_index=0
+        main._show_battle_command_screen()
 
 func play_queue()->void:
     playing=true
@@ -89,8 +119,11 @@ func play_queue()->void:
         main.battle_turn_busy=true;main._close_battle_submenu();main._show_battle_message_screen()
         for event in events:
             if not active:break
-            var player_hp=int(main.battle_player.hp);var enemy_hp=int(main.battle_enemy.hp)
             var player_side=event.actor==actor
+            if main.battle_is_double:
+                await _play_double_event(event,player_side)
+                continue
+            var player_hp=int(main.battle_player.hp);var enemy_hp=int(main.battle_enemy.hp)
             apply_state(event.state)
             var message=String(event.get("message",""))
             if event.kind=="move":
@@ -114,13 +147,34 @@ func play_queue()->void:
             main._end_battle("")
             await game.command("battle_done",{})
             break
-        main.battle_turn_busy=false
-        if state.replacement.has(actor):
-            main._open_battle_party_menu("FORCED")
-        elif not state.replacement.is_empty():
-            main.battle_turn_busy=true;main._start_battle_text("WAITING FOR PLAYER...")
-        else:main._show_battle_command_screen()
+        _next_choice()
     playing=false
+
+## A double battle's event: a move as a single-player double battle shows it
+## (main._play_double_move_event), anything else as its line; then the bars.
+func _play_double_event(event:Dictionary,player_side:bool)->void:
+    var shown:Array=[main.battle_player,main.battle_player_partner,main.battle_enemy,main.battle_enemy_partner]
+    var hp_before:Array=shown.map(func(pokemon):return int(pokemon.get("hp",0)))
+    if event.kind=="move":
+        var side:="player" if player_side else "enemy"
+        var target_side:="player" if event.target_actor==actor else "enemy"
+        var defender:Dictionary=main._double_actor(target_side,int(event.target_slot))
+        var move:={"result":event.result.duplicate(true),"move":event.move,"player_side":player_side,
+            "target_player_side":target_side=="player","status_before":BattleSession.status_snapshot(defender),
+            "attacker_hp_before":int(main._double_actor(side,int(event.slot)).get("hp",0)),"defender_hp_before":int(defender.get("hp",0))}
+        apply_state(event.state)
+        move["attacker"]=main._double_actor(side,int(event.slot))
+        move["defender"]=main._double_actor(target_side,int(event.target_slot))
+        await main._play_double_move_event(move)
+        return
+    apply_state(event.state)
+    var message=String(event.get("message",""))
+    if not message.strip_edges().is_empty():await main._type_battle_text(message)
+    if not active:return
+    main._refresh_battle_sprites()
+    var now:Array=[main.battle_player,main.battle_player_partner,main.battle_enemy,main.battle_enemy_partner]
+    for i in range(now.size()):await main._animate_visible_battle_hp(now[i],hp_before[i],int(now[i].get("hp",0)))
+    main._update_battle_hud()
 
 func restore()->void:
     if not active:return
