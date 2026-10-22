@@ -20,10 +20,30 @@ static func forest_tile(tile: SourceTile) -> bool:
         and tile.route_belongs_to.name.to_lower() in ["forest1", "deep_forest"]
 
 static func walkable(world: Node, cell: Vector2i) -> bool:
+    # The store's flags where it has the cell: a proxy for each cell looked at
+    # made the search for a clearing (select_cell), which runs again at every
+    # dusk and dawn while none is found, 10-30 ms on a desktop.
+    var store = world.exact_world.tiles
+    var index: int = store.index_of(cell * 16) if store is WorldTileStore else -1
+    if index >= 0:
+        if store.flags[index] & (WorldTileStore.SOLID | WorldTileStore.WATER | WorldTileStore.LAVA | WorldTileStore.TIDAL | WorldTileStore.LEDGE): return false
+    else:
+        var tile: SourceTile = world.exact_world.tile_at(cell)
+        if tile == null or tile.is_solid or tile.is_water or tile.is_lava or tile.is_tidal or tile.is_ledge: return false
+    return not world.blocked.has(cell) and not world.interior_interactables.has(cell)
+
+## forest_tile with nothing on it (no upper name, no item). The store's
+## arrays rule out most cells first: a proxy for each cell select_cell looked
+## at was most of its time.
+static func _bare_forest(world: Node, cell: Vector2i) -> bool:
+    var store = world.exact_world.tiles
+    var index: int = store.index_of(cell * 16) if store is WorldTileStore else -1
+    if index >= 0:
+        if store.upper_ids[index] != 0 or store.has_item_ids[index] != 0: return false
+        var biome: String = store.biome_at(index)
+        if not biome.is_empty() and biome.to_lower() not in ["forest", "deep_forest"]: return false
     var tile: SourceTile = world.exact_world.tile_at(cell)
-    return tile != null and not tile.is_solid and not tile.is_water \
-        and not tile.is_lava and not tile.is_tidal and not tile.is_ledge \
-        and not world.blocked.has(cell) and not world.interior_interactables.has(cell)
+    return forest_tile(tile) and tile.name_upper.is_empty() and tile.has_item.is_empty() and tile.item_snapshot().is_empty()
 
 static func select_cell(world: Node) -> Variant:
     var occupied: Dictionary = {world._player_cell(): true}
@@ -39,11 +59,9 @@ static func select_cell(world: Node) -> Variant:
         var cell := queue[index]
         index += 1
         if walkable(world, cell):
-            var tile: SourceTile = world.exact_world.tile_at(cell)
-            if forest_tile(tile) \
+            if _bare_forest(world, cell) \
                     and cell.distance_squared_to(world.spawn_cell) >= 64 \
-                    and tile.name_upper.is_empty() and tile.has_item.is_empty() \
-                    and tile.item_snapshot().is_empty() and not occupied.has(cell) \
+                    and not occupied.has(cell) \
                     and not world.source_plant_farms.has(world._cell_key(cell)):
                 # A clear ring keeps all four approaches open and prevents a
                 # solid boss from cutting off a one-cell path.
