@@ -1,0 +1,82 @@
+# Client-only files of project/: tools/compat_id.py leaves them out of the
+# compat id, so a build that changed only these still plays with the servers
+# and hosts of an older one (coop_session.gd refusal). Everything else under
+# project/, a new file included, is shared: changing it makes builds refuse
+# each other, as a new commit always did before compat ids.
+#
+# One glob per line, relative to project/ ("*" also crosses "/"), with why it
+# cannot change what players share: the world (generation, tiles, state), the
+# Pokemon, battle and item rules, the co-op protocol and commands, saves, or
+# anything the dedicated server reads. When unsure, leave a file out of here.
+# A file that mixes drawing with game logic (main.gd, world.gd, coop_menu.gd,
+# options_menu.gd, ...) stays shared. server/compat_id_test.py checks that
+# every entry still matches a file.
+
+# Written by each build: the commit, the visible version, this id, the lobby list's address.
+build_id.txt              # per-build stamp; compared on its own (old builds)
+build_version.txt         # shown on the title screen and in refusal messages
+compat_id.txt             # this id itself
+lobby_server.txt          # the JOIN GAME directory's address, a CI secret
+# Export settings: each CI job rewrites its own preset's version.
+export_presets.cfg        # icons, signing, versions, pack filters per platform
+# Platform shells and native plugins (ZeroTier transport, battery reading for the HUD).
+ios/*                     # Xcode-side plugins; game state is all in the pack
+android/*                 # Gradle template, libzt; CI copies libs and versions in
+# Documentation and dev tools that the game never loads.
+*.md                      # credits and guides (also excluded from export)
+game.ini.example          # sample settings file for players
+credits/*                 # attribution pictures; no script loads res://credits
+tools/*                   # asset import scripts run by hand, not by the game
+
+# HUD, touch controls and menus that only draw and turn input into calls on shared code.
+scripts/status_hud.gd*            # HUD top row: minimap spot, clock, battery, menu button
+scripts/hud_style.gd*             # the HUD's glass look and colours
+scripts/minimap_frame.gd*         # minimap ring texture
+scripts/minimap_north.gd*         # minimap N marker
+scripts/touch_controls.gd*        # on-screen stick and buttons, layout saved on the device
+scripts/touch_glyph.gd*           # drawing of one on-screen button
+scripts/touch_icons.gd*           # 12x12 icons drawn in code
+scripts/touch_field_hud.gd*       # field chips (what A does, active move)
+scripts/touch_surfaces.gd*        # tap targets; every action calls the game's own functions
+scripts/touch_ui.gd*              # turns taps and drags into those calls
+scripts/touch_setup_screen.gd*    # touch NEW/LOAD screen; drives main's setup state
+scripts/title_screen.gd*          # title art, clouds, logo and title music
+scripts/button_skin.gd*           # button theme
+scripts/menu_symbol_palette.gd*   # menu symbol recolouring
+scripts/radial_frame.gdshader*    # radial menu frame shader
+scripts/field_move_radial.gd*     # field move wheel drawing; entries come from ball_mechanics
+scripts/ball_wheel_ring.gd*       # LT/RT tap/hold timing of the wheel (input only)
+scripts/proportional_ui_layout.gd*  # scales the 320x180 menus to the screen
+scripts/pokedex_menu.gd*          # POKEDEX screen; reads progress, writes nothing
+scripts/game_files_menu.gd*       # Android folder-sync help screen
+scripts/coop_saved_servers.gd*    # MY SERVERS list kept on this device
+# Presentation that the game logic never reads back.
+scripts/ball_capture_screen.gd*   # catch animation; odds and results stay in the caller
+scripts/world_travel_view.gd*     # travel picture; generation stays in main/world
+scripts/emote_style.gd*           # emote sheet choice (HD or original)
+scripts/held_item_emote.gd*       # held-item balloon over a Pokemon
+scripts/shiny_sparkles.gd*        # shiny sparkle effect
+scripts/dark_mode.gd*             # UI-only palette conversion
+data/dark_mode_assets.json        # read only by dark_mode.gd
+assets/dark_mode/*                # dark mode recolours of UI art
+scripts/audio_balance.gd*         # volume per sound
+data/audio_levels.json            # read only by audio_balance.gd
+data/pokedex_roster.json          # read only by pokedex_menu.gd
+
+# Sound and music: heard, never read by game logic.
+assets/lofi/*                     # LOFI MUSIC option (excluded from export)
+assets/source_audio/*             # cries and sounds
+assets/battle_audio/*             # battle sounds
+assets/weather/*.wav*             # weather loops
+assets/environment/*.ogg*         # area music and ambience (the folder's pictures stay shared)
+
+# UI art and fonts.
+assets/touch_ui/*                 # on-screen button art and its font
+assets/menu_frames/*              # OPTIONS > FRAME menu borders
+assets/title_*                    # title screen pictures
+assets/icon.png*                  # app icon
+assets/ios_launch.png*            # iPhone launch screen
+assets/fonts.ttf*                 # menu font
+assets/fonts_clean.*              # menu bitmap font
+assets/source_text_font*          # text fonts (white, gray)
+assets/font_*_symbol.png*         # gender symbols in text

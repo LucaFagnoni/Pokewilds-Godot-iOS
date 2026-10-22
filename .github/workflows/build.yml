@@ -211,7 +211,8 @@ jobs:
         if: env.SKIP != 'true'
         run: python3 .github/engine/minify_json.py project
 
-      # The commit this build comes from: hosts refuse players of another build.
+      # The commit this build comes from, and its compat id (after minifying, as
+      # every build does): hosts refuse players of a build with another compat id.
       # The IPA's visible and internal versions go up with every build.
       - name: Stamp build id and IPA version
         if: env.SKIP != 'true'
@@ -220,6 +221,7 @@ jobs:
           BUNDLE: ${{ needs.draft.outputs.bundle }}
         run: |
           echo "$GITHUB_SHA" > project/build_id.txt
+          python3 tools/compat_id.py project > project/compat_id.txt
           # The title screen shows it in its corner.
           echo "$VERSION" > project/build_version.txt
           python3 - <<'EOF'
@@ -471,14 +473,23 @@ jobs:
           ls -la "$tpl"
           echo "GODOT=$PWD/Godot_v${GODOT_VERSION}-stable_linux.x86_64" >> "$GITHUB_ENV"
 
+      # The compat id's client-only list (tools/client_only_paths.txt) still
+      # matches the project, and the id ignores only what it lists.
+      - name: Compat id test
+        run: python3 server/compat_id_test.py
+
       # Same data as the iOS build, so the bundled mods (and their digest) match.
       - name: Minify JSON data
         run: python3 .github/engine/minify_json.py project
 
-      # The commit this build comes from: the server refuses players of another
-      # build, which is why both files share one release.
+      # The commit this build comes from and its compat id: the server refuses
+      # players of a build with another compat id (a newer build that changed
+      # only client-only files still joins).
       - name: Stamp build id
-        run: echo "$GITHUB_SHA" > project/build_id.txt
+        run: |
+          echo "$GITHUB_SHA" > project/build_id.txt
+          python3 tools/compat_id.py project > project/compat_id.txt
+          echo "::notice::compat id $(cat project/compat_id.txt)"
 
       # Godot's import cache (.godot): only assets that changed since are imported again.
       - uses: actions/cache@v4
@@ -623,14 +634,15 @@ jobs:
       - name: Minify JSON data
         run: python3 .github/engine/minify_json.py project
 
-      # Same build id and version as the IPA: the APK plays with this release's
-      # IPA and server. Its versionCode is the commit count, so it only goes up.
+      # Same build id, compat id and version as the IPA: the APK plays with this
+      # release's IPA and server. Its versionCode is the commit count, so it only goes up.
       - name: Stamp build id and APK version
         env:
           VERSION: ${{ needs.draft.outputs.version }}
           BUNDLE: ${{ needs.draft.outputs.bundle }}
         run: |
           echo "$GITHUB_SHA" > project/build_id.txt
+          python3 tools/compat_id.py project > project/compat_id.txt
           echo "$VERSION" > project/build_version.txt
           python3 - <<'EOF'
           import os, re

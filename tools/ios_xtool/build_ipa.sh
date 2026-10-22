@@ -94,8 +94,10 @@ python3 "$repo/.github/engine/minify_json.py" "$work/project"
 # The lobby list's address and password are never committed (see coop_network.gd).
 [ ! -f "$repo/project/lobby_server.txt" ] || cp "$repo/project/lobby_server.txt" "$work/project/"
 
-# The commit this build comes from: hosts refuse players of another build.
+# The commit this build comes from and its compat id (the same as the CI jobs'):
+# hosts refuse players of a build with another compat id.
 git -C "$repo" rev-parse HEAD > "$work/project/build_id.txt"
+python3 "$repo/tools/compat_id.py" "$work/project" > "$work/project/compat_id.txt"
 [ "$(git -C "$repo" rev-parse --is-shallow-repository)" = false ] \
   || { echo "Shallow clone: the version is the commit count, run git fetch --unshallow" >&2; exit 1; }
 count=$(git -C "$repo" rev-list --count HEAD)

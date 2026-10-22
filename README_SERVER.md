@@ -38,13 +38,15 @@ Il server apre da solo la porta sul router (UPnP) e la richiude quando si
 spegne, apre da solo il firewall di Windows e tiene sveglio il PC finché è
 acceso (lo schermo può spegnersi): di solito non serve toccare nient'altro.
 
-Server e telefoni devono essere **della stessa build** e avere le stesse mod
-attive. Ogni release contiene l'IPA e il server costruiti dallo stesso commit:
-scarica entrambi dalla stessa release. Altrimenti il telefono viene rifiutato con
-"DIFFERENT GAME BUILD: HOST ..., YOURS ...": i due codici dicono quale build
-ha il server e quale il telefono. Aggiorna il server ogni volta che installi
-una nuova build iOS (e viceversa). Le build fatte in locale non hanno codice e
-non vengono controllate.
+Server e telefoni devono essere **compatibili** e avere le stesse mod attive.
+Ogni release contiene l'IPA e il server costruiti dallo stesso commit: scaricare
+entrambi dalla stessa release funziona sempre. Una build più nuova che ha
+cambiato solo la parte del telefono (HUD, comandi touch, menu, suoni: l'elenco è
+in tools/client_only_paths.txt) entra anche nel server vecchio, e in MY SERVERS
+il server resta verde. Altrimenti il telefono viene rifiutato con
+"DIFFERENT GAME VERSION: HOST ..., YOURS ...": le due versioni dicono quale
+build ha il server e quale il telefono, e va aggiornato il server (o il
+telefono). Le build fatte in locale non hanno codice e non vengono controllate.
 
 ## Se "From outside" dice altro
 

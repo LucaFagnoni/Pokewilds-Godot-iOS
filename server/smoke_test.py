@@ -22,7 +22,8 @@ logs = {}
 def start(name, args, build="smoke-a"):
     logs[name] = os.path.join(work, name + ".log")
     out = open(logs[name], "wb")
-    env = dict(os.environ, POKEWILDS_BUILD_ID=build)
+    # The compat id too: CI's project/compat_id.txt would make every "build" here compatible.
+    env = dict(os.environ, POKEWILDS_BUILD_ID=build, POKEWILDS_COMPAT_ID=build)
     return subprocess.Popen(command + ["--headless"] + args, stdin=subprocess.PIPE, stdout=out, stderr=subprocess.STDOUT, env=env)
 
 
@@ -118,7 +119,7 @@ def device_actor(device):
 try:
     # --- 1: no player IDs, the shared password ---------------------------------
     run = start_server("server1", ["--accounts", "off", "--password", "smoke"])
-    join("stranger", ["--password", "smoke"], "DIFFERENT GAME BUILD", build="smoke-b")
+    join("stranger", ["--password", "smoke"], "DIFFERENT GAME VERSION", build="smoke-b")
     print("another build refused")
     join("intruder", ["--password", "wrong"], "WRONG PASSWORD")
     print("wrong shared password refused")
