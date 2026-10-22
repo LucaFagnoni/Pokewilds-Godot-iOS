@@ -7,7 +7,7 @@ extends RefCounted
 ## texture. A block is drawn again, by the minimap's drawing, when ground in it
 ## is discovered or its tiles or buildings change (the boxes the world keeps).
 const CHUNK := 32
-## Tall art reaches 3 tiles past its own tile (see main._m3924_minimap_paint).
+## Tall art reaches 3 tiles past its own tile (see main._minimap_paint).
 const MARGIN := 3
 const PIXELS := 4
 
@@ -130,7 +130,7 @@ func draw_dirty(budget_usec: int) -> bool:
 
 func _draw_chunk(chunk: Vector2i) -> void:
     var cells := Rect2i(bounds.position + chunk * CHUNK, Vector2i(CHUNK, CHUNK)).intersection(bounds)
-    var drawn: Image = main._m3924_minimap_render(cells.grow(MARGIN), bounds, main.world.exact_world)
+    var drawn: Image = main._minimap_render(cells.grow(MARGIN), bounds, main.world.exact_world)
     var pixels := drawn.get_region(Rect2i(Vector2i(MARGIN, MARGIN) * PIXELS, cells.size * PIXELS))
     var texture: ImageTexture = chunks.get(chunk)
     if texture != null:

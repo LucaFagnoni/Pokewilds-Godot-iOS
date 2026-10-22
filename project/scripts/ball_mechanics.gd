@@ -377,7 +377,7 @@ func launch(ball: String, member: Dictionary) -> void:
         if not member.is_empty() and "CUT" in moves and choice in ["AUTO","CUT"] and ground!=null and ground.is_cuttable and not world().built_structures.has(cell):
             blocked_cell=cell
             break
-        if not member.is_empty() and "DIG" in moves and choice in ["AUTO","DIG"] and ground!=null and (world()._dig_is_mountain(ground) or world()._m3924_dig_tile_is_fossil_site(ground) or not ground.has_item.is_empty()):
+        if not member.is_empty() and "DIG" in moves and choice in ["AUTO","DIG"] and ground!=null and (world()._dig_is_mountain(ground) or world()._dig_tile_is_fossil_site(ground) or not ground.has_item.is_empty()):
             blocked_cell=cell
             break
         # A wild Mega stands on a closed tile as a special encounter. A ball or
@@ -864,7 +864,7 @@ func party_landing(member: Dictionary, cell: Vector2i, target_cell: Vector2i, wi
         elif "SMASH" in moves and choice in ["AUTO","SMASH"]: action = "SMASH"
     elif str(world().interior_interactables.get(target_cell,"")).begins_with("ITEM:") and choice=="AUTO": action = "FETCH"
     elif world().interior_interactables.get(target_cell,"")=="FOSSIL_MACHINE" and "POWER" in moves and choice in ["AUTO","POWER"]: action = "POWER"
-    elif tile!=null and "DIG" in moves and choice in ["AUTO","DIG"] and (choice=="DIG" or world()._dig_is_mountain(tile) or world()._m3924_dig_tile_is_fossil_site(tile) or not tile.has_item.is_empty()): action = "DIG"
+    elif tile!=null and "DIG" in moves and choice in ["AUTO","DIG"] and (choice=="DIG" or world()._dig_is_mountain(tile) or world()._dig_tile_is_fossil_site(tile) or not tile.has_item.is_empty()): action = "DIG"
     var mounted = world().active_field_move in ["SURF","RIDE"]
     var mount = ""
     if action.is_empty() and not mounted and world().active_area_id=="OVERWORLD":

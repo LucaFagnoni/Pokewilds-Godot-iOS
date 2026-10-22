@@ -86,7 +86,7 @@ func _layout(names:Array)->void:
     var screen:=get_viewport_rect().size
     var top:=safe.position.y+HudStyle.MARGIN+float(main.status_hud.row_height())+HudStyle.GAP
     var centre:=screen.x/2.0
-    var widest:float=2.0*(centre-(safe.position.x+HudStyle.MARGIN+main.M3924_MINIMAP_SIZE.x+HudStyle.GAP))
+    var widest:float=2.0*(centre-(safe.position.x+HudStyle.MARGIN+main.MINIMAP_SIZE.x+HudStyle.GAP))
     # TRADE / BATTLE needs no title, but shows why an action failed.
     title.visible=not title.text.is_empty()
     # Keyboard and controller hints; a touch screen has the rows and the X instead.

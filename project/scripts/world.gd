@@ -1305,9 +1305,9 @@ func _update_normal_grass_front_overlay(_cell: Vector2i) -> void:
     var used := _place_normal_grass_fronts()
     if used == 0:
         normal_grass_front_sprite.hide()
-    for k in range(m257_grass_fronts.size()):
-        if k + 1 >= used and is_instance_valid(m257_grass_fronts[k]):
-            m257_grass_fronts[k].hide()
+    for k in range(grass_front_sprites.size()):
+        if k + 1 >= used and is_instance_valid(grass_front_sprites[k]):
+            grass_front_sprites[k].hide()
 
 func _setup_savanna_tree_front_overlay() -> void:
     if savanna_tree_front_sprite != null and is_instance_valid(savanna_tree_front_sprite):
@@ -2078,7 +2078,7 @@ func _process(delta: float) -> void:
     if generated and building != camera_build_centered:
         camera_build_centered = building
         _configure_camera()
-    m257_frame_delta = delta
+    frame_delta = delta
     _update_world_frame(delta)
     if generated and gameplay_enabled:
         source_dig_water_elapsed += delta
@@ -2460,15 +2460,15 @@ func clear_active_field_move(show_message: bool = true) -> void:
     # User-requested FLY cancellation plays the authored landing sequence. Internal
     # cleanup (show_message=false) remains immediate so battles/map transitions
     # cannot be delayed by a field-move animation.
-    if active_field_move == "FLY" and show_message and m3922_fly_phase != "LANDING":
+    if active_field_move == "FLY" and show_message and fly_phase != "LANDING":
         if not _valid_fly_landing(_player_cell()):
             world_message.emit("You cannot land here.")
             return
         player.position = _cell_center(_player_cell())
-        m3922_fly_phase = "LANDING"
-        m3922_fly_phase_elapsed = 0.0
-        m3922_fly_landing_start_height = m3922_fly_height
-        m3922_fly_landing_show_message = show_message
+        fly_phase = "LANDING"
+        fly_phase_elapsed = 0.0
+        fly_landing_start_height = fly_height
+        fly_landing_show_message = show_message
         if player.has_method("set_field_fixed_speed_pixels_per_frame"):
             player.call("set_field_fixed_speed_pixels_per_frame", 0.0)
         play_source_sound("fly_landing1")
@@ -2487,9 +2487,9 @@ func clear_active_field_move(show_message: bool = true) -> void:
     if active_field_move == "FLY":
         player.collision_mask = field_previous_collision_mask
         _set_fly_shadow_active(false)
-        m3922_fly_phase = ""
-        m3922_fly_phase_elapsed = 0.0
-        m3922_fly_height = 0.0
+        fly_phase = ""
+        fly_phase_elapsed = 0.0
+        fly_height = 0.0
     if active_field_move == "SURF":
         _set_water_collision_enabled(true)
     if (
@@ -2519,26 +2519,26 @@ func clear_active_field_move(show_message: bool = true) -> void:
 func _set_fly_shadow_active(active: bool) -> void:
     # Use the authored PokeWilds shadow1 asset instead of the fabricated polygon.
     if active:
-        if not is_instance_valid(m3922_fly_shadow_sprite):
-            m3922_fly_shadow_sprite = Sprite2D.new()
-            m3922_fly_shadow_sprite.name = "SourceFlyShadow"
-            m3922_fly_shadow_sprite.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
-            m3922_fly_shadow_sprite.texture = M3922_SOURCE_FLY_SHADOW
-            m3922_fly_shadow_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-            m3922_fly_shadow_sprite.z_as_relative = false
-            add_child(m3922_fly_shadow_sprite)
-        m3922_fly_shadow_sprite.visible = true
+        if not is_instance_valid(fly_shadow_sprite):
+            fly_shadow_sprite = Sprite2D.new()
+            fly_shadow_sprite.name = "SourceFlyShadow"
+            fly_shadow_sprite.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+            fly_shadow_sprite.texture = FLY_SHADOW_TEXTURE
+            fly_shadow_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+            fly_shadow_sprite.z_as_relative = false
+            add_child(fly_shadow_sprite)
+        fly_shadow_sprite.visible = true
         _update_fly_shadow()
-    elif is_instance_valid(m3922_fly_shadow_sprite):
-        m3922_fly_shadow_sprite.visible = false
+    elif is_instance_valid(fly_shadow_sprite):
+        fly_shadow_sprite.visible = false
     if is_instance_valid(fly_shadow):
         fly_shadow.visible = false
 
 func _update_fly_shadow() -> void:
-    if not is_instance_valid(m3922_fly_shadow_sprite):
+    if not is_instance_valid(fly_shadow_sprite):
         return
-    m3922_fly_shadow_sprite.global_position = (player.global_position + Vector2(0, 7)).round()
-    m3922_fly_shadow_sprite.z_index = player.z_index - 2
+    fly_shadow_sprite.global_position = (player.global_position + Vector2(0, 7)).round()
+    fly_shadow_sprite.z_index = player.z_index - 2
 
 func _repel_blocks(opponent_level: int) -> bool:
     if active_field_move == "REPEL":
@@ -2733,31 +2733,31 @@ func _place_field_helper_live() -> void:
     var rider_lift = 3.0
 
     if active_field_move == "FLY":
-        m3922_fly_phase_elapsed += m257_frame_delta
-        if m3922_fly_phase == "TAKEOFF":
-            var takeoff_progress = clampf(m3922_fly_phase_elapsed / M3922_FLY_TAKEOFF_SECONDS, 0.0, 1.0)
-            m3922_fly_height = 32.0 * takeoff_progress
+        fly_phase_elapsed += frame_delta
+        if fly_phase == "TAKEOFF":
+            var takeoff_progress = clampf(fly_phase_elapsed / FLY_TAKEOFF_SECONDS, 0.0, 1.0)
+            fly_height = 32.0 * takeoff_progress
             if takeoff_progress >= 1.0:
-                m3922_fly_phase = "HOVER"
-                m3922_fly_phase_elapsed = 0.0
-        elif m3922_fly_phase == "LANDING":
-            var landing_progress = clampf(m3922_fly_phase_elapsed / M3922_FLY_LANDING_SECONDS, 0.0, 1.0)
-            m3922_fly_height = lerpf(m3922_fly_landing_start_height, 0.0, landing_progress)
+                fly_phase = "HOVER"
+                fly_phase_elapsed = 0.0
+        elif fly_phase == "LANDING":
+            var landing_progress = clampf(fly_phase_elapsed / FLY_LANDING_SECONDS, 0.0, 1.0)
+            fly_height = lerpf(fly_landing_start_height, 0.0, landing_progress)
             if landing_progress >= 1.0:
                 # Phase is already LANDING, so this call performs final cleanup
                 # instead of recursively starting another landing.
-                clear_active_field_move(m3922_fly_landing_show_message)
+                clear_active_field_move(fly_landing_show_message)
                 return
         else:
-            m3922_fly_phase = "HOVER"
+            fly_phase = "HOVER"
             # Player.Flying updates height every four source ticks and resets
             # its counter at 255. Keep the existing rider/mount offsets intact.
-            var tick := posmod(int(floor(m3922_fly_phase_elapsed * 60.0 + 0.000001)), 255)
+            var tick := posmod(int(floor(fly_phase_elapsed * 60.0 + 0.000001)), 255)
             var phase := posmod(tick, 32)
-            m3922_fly_height = float([32, 31, 30, 29, 30, 31, 32, 33][phase / 4])
+            fly_height = float([32, 31, 30, 29, 30, 31, 32, 33][phase / 4])
             if phase == 31:
-                m3922_fly_height = 32.0
-        mount_lift = m3922_fly_height
+                fly_height = 32.0
+        mount_lift = fly_height
         if player.has_method("set_field_visual_offset"):
             player.call("set_field_visual_offset", Vector2(0, -mount_lift - rider_lift))
     else:
@@ -2915,11 +2915,11 @@ func _field_helper_can_use_work_target(cell: Vector2i) -> bool:
             return false
         # Visible exact-world resources keep ownership of their tile; fossil
         # cracks are ground overlays and intentionally do not resolve as resources.
-        if not _m3924_dig_tile_is_fossil_site(tile) and not tile.name_upper.begins_with("hole1"):
+        if not _dig_tile_is_fossil_site(tile) and not tile.name_upper.begins_with("hole1"):
             var resource_anchor: Vector2i = _exact_resource_anchor(cell)
             if resource_anchor.x > -2147483648:
                 return false
-        return _m3924_dig_tile_is_surface(tile) or _dig_target_accepts_soil(cell)
+        return _dig_tile_is_surface(tile) or _dig_target_accepts_soil(cell)
     return _in_bounds(cell) and terrain_kind_at(cell) != 0 and not blocked.has(cell)
 
 func _non_dig_work_target_allowed(cell: Vector2i) -> bool:
@@ -4112,10 +4112,10 @@ func _dig_surface(cell: Vector2i) -> void:
         world_message.emit("DIG can't break that tile.")
         return
     if exact_world != null:
-        if exact_tile == null or not _m3924_dig_tile_is_surface(exact_tile):
+        if exact_tile == null or not _dig_tile_is_surface(exact_tile):
             world_message.emit("DIG can't break that tile.")
             return
-        if not _m3924_dig_tile_is_fossil_site(exact_tile):
+        if not _dig_tile_is_fossil_site(exact_tile):
             var exact_resource: Vector2i = _exact_resource_anchor(cell)
             if exact_resource.x > -2147483648:
                 world_message.emit("DIG can't break that tile.")
@@ -4157,7 +4157,7 @@ func _dig_surface(cell: Vector2i) -> void:
         found = String(loot[rng.randi_range(0, loot.size() - 1)])
         rewards[found] = int(rewards.get(found, 0)) + 1
     dig_reward_collected.emit(rewards)
-    _m3924_refresh_dig_farms(cell)
+    _refresh_dig_farms(cell)
 
 func _apply_dig_choice(cell: Vector2i, choice: String) -> bool:
     if active_area_id == "HOUSE":
@@ -4182,10 +4182,10 @@ func _apply_dig_choice(cell: Vector2i, choice: String) -> bool:
         return false
     if exact_world != null:
         var tile: SourceTile = exact_world.tile_at(cell)
-        if tile == null or not (_m3924_dig_tile_is_surface(tile) or _dig_target_accepts_soil(cell)):
+        if tile == null or not (_dig_tile_is_surface(tile) or _dig_target_accepts_soil(cell)):
             world_message.emit("DIG can't change that tile.")
             return false
-        if not _m3924_dig_tile_is_fossil_site(tile) and not tile.name_upper.begins_with("hole1"):
+        if not _dig_tile_is_fossil_site(tile) and not tile.name_upper.begins_with("hole1"):
             var exact_resource: Vector2i = _exact_resource_anchor(cell)
             if exact_resource.x > -2147483648:
                 world_message.emit("DIG can't change that tile.")
@@ -4203,7 +4203,7 @@ func _apply_dig_choice(cell: Vector2i, choice: String) -> bool:
     _connect_source_dig_holes(cell)
     _recoastify_exact_cells([cell])
     _refresh_exact_tile_streams()
-    _m3924_refresh_dig_farms(cell)
+    _refresh_dig_farms(cell)
     play_source_sound("dig1")
     world_message.emit("DIG changed the ground to %s." % choice)
     return true
@@ -11697,17 +11697,17 @@ func _private_chest_texture(source:Texture2D)->Texture2D:
         coop_private_chest_cache[key]=ImageTexture.create_from_image(image)
     return coop_private_chest_cache[key]
 
-const M3922_SOURCE_FLY_SHADOW = preload("res://assets/source_exact/global/shadow1.png")
+const FLY_SHADOW_TEXTURE = preload("res://assets/source_exact/global/shadow1.png")
 const SOURCE_TIDAL_FRONT_SPLASH = preload("res://assets/source_exact/global/splash_anim4.png")
-const M3922_FLY_TAKEOFF_SECONDS = 96.0 / 60.0
-const M3922_FLY_LANDING_SECONDS = 80.0 / 60.0
-var m3922_fly_shadow_sprite: Sprite2D
-var m3922_fly_phase: String = ""
-var m3922_fly_phase_elapsed: float = 0.0
-var m3922_fly_height: float = 0.0
-var m3922_fly_landing_start_height: float = 0.0
-var m3922_fly_landing_show_message: bool = true
-var m3922_ice_slide_direction: Vector2 = Vector2.ZERO
+const FLY_TAKEOFF_SECONDS = 96.0 / 60.0
+const FLY_LANDING_SECONDS = 80.0 / 60.0
+var fly_shadow_sprite: Sprite2D
+var fly_phase: String = ""
+var fly_phase_elapsed: float = 0.0
+var fly_height: float = 0.0
+var fly_landing_start_height: float = 0.0
+var fly_landing_show_message: bool = true
+var ice_slide_direction: Vector2 = Vector2.ZERO
 var ice_blocked_direction := Vector2.ZERO
 var tidal_front_splash_frames: SpriteFrames
 var tidal_front_splash_phase_known := false
@@ -11715,8 +11715,8 @@ var tidal_front_splash_phase_known := false
 
 var tidal_puddle_splashes: Array[AnimatedSprite2D] = []
 var tidal_puddle_shader: Shader
-var m257_frame_delta := 1.0 / 60.0
-var m257_grass_fronts: Array[Sprite2D] = []
+var frame_delta := 1.0 / 60.0
+var grass_front_sprites: Array[Sprite2D] = []
 
 var source_night_events
 var roaming_ghosts
@@ -11919,15 +11919,15 @@ func _place_normal_grass_fronts() -> int:
                 continue
             var front := normal_grass_front_sprite
             if index > 0:
-                while m257_grass_fronts.size() < index:
+                while grass_front_sprites.size() < index:
                     var extra := Sprite2D.new()
                     extra.centered = false
                     extra.region_enabled = true
                     extra.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
                     extra.z_as_relative = false
                     add_child(extra)
-                    m257_grass_fronts.append(extra)
-                front = m257_grass_fronts[index - 1]
+                    grass_front_sprites.append(extra)
+                front = grass_front_sprites[index - 1]
             front.texture = spec.get("texture")
             front.region_rect = Rect2(region.position + clipped.position - origin, clipped.size)
             # Neither setter skips an unchanged value.
@@ -12018,10 +12018,10 @@ func set_active_field_move(pokemon_data: Dictionary, move: String, ball_landing:
         player.collision_mask = 0
         if player.has_method("set_field_fixed_speed_pixels_per_frame"):
             player.call("set_field_fixed_speed_pixels_per_frame", 2.0)
-        m3922_fly_phase = "TAKEOFF"
-        m3922_fly_phase_elapsed = 0.0
-        m3922_fly_height = 0.0
-        m3922_fly_landing_start_height = 0.0
+        fly_phase = "TAKEOFF"
+        fly_phase_elapsed = 0.0
+        fly_height = 0.0
+        fly_landing_start_height = 0.0
         if player.has_method("set_field_visual_offset"):
             player.call("set_field_visual_offset", Vector2(0, -3))
         _set_fly_shadow_active(true)
@@ -12102,7 +12102,7 @@ func tick_dig_motion(input_direction: Vector2, speed: float, delta: float) -> vo
         _use_dig(_player_cell() + _facing_cell())
 
 func field_movement_direction(input_direction: Vector2) -> Vector2:
-    if active_field_move == "FLY" and m3922_fly_phase in ["TAKEOFF", "LANDING"]:
+    if active_field_move == "FLY" and fly_phase in ["TAKEOFF", "LANDING"]:
         return Vector2.ZERO
     if active_field_move in ["CUT", "BUILD", "DIG", "HEADBUTT", "SMASH"] and input_direction.length_squared() > 0.0001:
         # Work Pokemon steer on the same cardinal axes as D-pad input.
@@ -12121,34 +12121,34 @@ func field_movement_direction(input_direction: Vector2) -> Vector2:
     # releasing/turning the stick does not stop or turn the player until the
     # slide leaves ice or meets an obstruction.
     if exact_world == null or active_area_id != "OVERWORLD" or active_field_move in ["FLY", "DIG"]:
-        m3922_ice_slide_direction = Vector2.ZERO
+        ice_slide_direction = Vector2.ZERO
         return input_direction
     var cell = _player_cell()
     var tile = exact_world.tile_at(cell)
     var on_ice = tile != null and _source_tile_key(tile.name) == "ice2"
     if not on_ice:
-        m3922_ice_slide_direction = Vector2.ZERO
+        ice_slide_direction = Vector2.ZERO
         ice_blocked_direction = Vector2.ZERO
         return input_direction
     if ice_blocked_direction != Vector2.ZERO:
         if input_direction.dot(ice_blocked_direction) > 0.7:
             return Vector2.ZERO
         ice_blocked_direction = Vector2.ZERO
-    if m3922_ice_slide_direction == Vector2.ZERO:
+    if ice_slide_direction == Vector2.ZERO:
         if input_direction.length_squared() <= 0.0001:
             return input_direction
         if absf(input_direction.x) > absf(input_direction.y):
-            m3922_ice_slide_direction = Vector2(1 if input_direction.x > 0.0 else -1, 0)
+            ice_slide_direction = Vector2(1 if input_direction.x > 0.0 else -1, 0)
         else:
-            m3922_ice_slide_direction = Vector2(0, 1 if input_direction.y > 0.0 else -1)
-    return m3922_ice_slide_direction
+            ice_slide_direction = Vector2(0, 1 if input_direction.y > 0.0 else -1)
+    return ice_slide_direction
 
 func field_motion_completed(before: Vector2, after: Vector2, movement_direction: Vector2) -> void:
     if active_field_move == "DIG" and _is_walkable(_player_cell()):
         dig_return_position = _cell_center(_player_cell())
     _animate_walked_gates(before, after)
     _update_source_surf_wake(before, after, movement_direction)
-    if m3922_ice_slide_direction == Vector2.ZERO or exact_world == null:
+    if ice_slide_direction == Vector2.ZERO or exact_world == null:
         return
     var after_cell = Vector2i(floori(after.x / TILE), floori(after.y / TILE))
     var after_tile = exact_world.tile_at(after_cell)
@@ -12157,11 +12157,11 @@ func field_motion_completed(before: Vector2, after: Vector2, movement_direction:
     if not stopped and still_on_ice:
         _align_ice_slide(after_cell)
     for normal in player.slide_normals:
-        if normal.dot(m3922_ice_slide_direction) < -0.5:
+        if normal.dot(ice_slide_direction) < -0.5:
             stopped = true
-    if stopped: ice_blocked_direction = m3922_ice_slide_direction
+    if stopped: ice_blocked_direction = ice_slide_direction
     if not still_on_ice or stopped:
-        m3922_ice_slide_direction = Vector2.ZERO
+        ice_slide_direction = Vector2.ZERO
 
 ## Slides on ice run along a row or column of tiles, as in the source game,
 ## where the player is always on one tile. Here a player can be a pixel or two
@@ -12171,11 +12171,11 @@ func field_motion_completed(before: Vector2, after: Vector2, movement_direction:
 ## through anything solid.
 func _align_ice_slide(cell: Vector2i) -> void:
     var centre := _cell_center(cell)
-    var offset := Vector2(0.0, centre.y - player.position.y) if m3922_ice_slide_direction.x != 0.0 else Vector2(centre.x - player.position.x, 0.0)
+    var offset := Vector2(0.0, centre.y - player.position.y) if ice_slide_direction.x != 0.0 else Vector2(centre.x - player.position.x, 0.0)
     if offset.length_squared() < 0.0001:
         return
     # 1 px per 60th of a second, whatever the frame rate.
-    var step := offset.limit_length(60.0 * m257_frame_delta)
+    var step := offset.limit_length(60.0 * frame_delta)
     if not player.test_move(player.transform, step):
         player.position += step
 
@@ -12384,16 +12384,16 @@ func _update_tidal_front_splash_frame(splash: AnimatedSprite2D) -> void:
 # M74.3.9.24 â€” DIG scope only.  Keep the frozen base implementation for every
 # other field move; DIG explicitly recognizes authored soil/fossil surfaces so
 # collision bookkeeping cannot make valid ground impossible to dig.
-func _m3924_dig_tile_is_fossil_site(tile: SourceTile) -> bool:
+func _dig_tile_is_fossil_site(tile: SourceTile) -> bool:
     if tile == null:
         return false
     var names: String = (tile.name + " " + tile.name_upper).to_lower()
     return "_cracked" in names
 
-func _m3924_dig_tile_is_surface(tile: SourceTile) -> bool:
+func _dig_tile_is_surface(tile: SourceTile) -> bool:
     if tile == null or tile.is_water or tile.is_lava:
         return false
-    if _m3924_dig_tile_is_fossil_site(tile):
+    if _dig_tile_is_fossil_site(tile):
         return true
     var names: String = (tile.name + " " + tile.name_upper).to_lower()
     if "_tidaloff" in names:
@@ -12410,7 +12410,7 @@ func _m3924_dig_tile_is_surface(tile: SourceTile) -> bool:
         return true
     return "mountain" in names or "ledges3" in names
 
-func _m3924_refresh_dig_farms(changed_cell: Vector2i) -> void:
+func _refresh_dig_farms(changed_cell: Vector2i) -> void:
     # Deployed-Pokemon farming/habitat records use a 7x7 neighborhood. Refresh
     # only records whose habitat window includes the changed soil cell.
     var ecology_name_cache: Dictionary = {}
@@ -12424,7 +12424,7 @@ func _m3924_refresh_dig_farms(changed_cell: Vector2i) -> void:
     # Habitat data is stored back into deployed_pokemon above; no party-ecology
     # signal is emitted because that signal carries a specific Pokemon record.
 
-func _m3924_dig_material_at(cell: Vector2i) -> String:
+func _dig_material_at(cell: Vector2i) -> String:
     if exact_world != null:
         var tile: SourceTile = exact_world.tile_at(cell)
         if tile == null:
@@ -12437,17 +12437,17 @@ func _m3924_dig_material_at(cell: Vector2i) -> String:
         return ""
     return "SOFT SAND" if terrain_kind_at(cell) == 1 else "GRASS"
 
-func _m3924_dig_surface_name_at(cell: Vector2i) -> String:
+func _dig_surface_name_at(cell: Vector2i) -> String:
     if exact_world != null:
         var tile: SourceTile = exact_world.tile_at(cell)
         if tile == null:
             return "GROUND"
-        if _m3924_dig_tile_is_fossil_site(tile):
+        if _dig_tile_is_fossil_site(tile):
             return "FOSSIL SOIL"
         var biome_name: String = _source_biome_for_tile(tile).replace("_", " ")
         if not biome_name.is_empty():
             return biome_name
-    var material: String = _m3924_dig_material_at(cell)
+    var material: String = _dig_material_at(cell)
     return material if not material.is_empty() else "GROUND"
 
 func _dig_target_accepts_soil(cell: Vector2i) -> bool:
@@ -12475,13 +12475,13 @@ func get_dig_hud_state() -> Dictionary:
         _player_cell() + _facing_cell(), "DIG")
     var choice := _dig_action_choice(target)
     if choice == "HOLE":
-        var material: String = _m3924_dig_material_at(target)
+        var material: String = _dig_material_at(target)
         var fossil_site: bool = false
         if exact_world != null:
-            fossil_site = _m3924_dig_tile_is_fossil_site(exact_world.tile_at(target))
+            fossil_site = _dig_tile_is_fossil_site(exact_world.tile_at(target))
         return {
             "choice": choice,
-            "left": "DIG\n%s" % _m3924_dig_surface_name_at(target),
+            "left": "DIG\n%s" % _dig_surface_name_at(target),
             "right": "GET\n%s  x1%s" % [
                 material if not material.is_empty() else "--",
                 "\nFOSSIL SITE" if fossil_site else ""

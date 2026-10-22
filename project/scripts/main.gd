@@ -1075,18 +1075,18 @@ const DEFAULT_MAP_ZOOM := 3.0 / SOURCE_MAP_TILE_PIXELS
 const MAP_MARKER_DISPLAY_SIZE := Vector2(13.0, 9.0)
 const MAP_SLEEPING_BAG_DISPLAY_SIZE := Vector2(12.0, 8.0)
 const MAP_SLEEPING_BAG_TEXTURE := preload("res://assets/source_ui/sleeping_bag1.png")
-const M3924_MINIMAP_SIZE := Vector2(64.0, 64.0)
-const M3924_MINIMAP_MAP_SIZE := Vector2i(64, 64)
-const M3924_MINIMAP_MAP_OFFSET := Vector2.ZERO
-const M3924_MINIMAP_MAP_RADIUS := 26.4
-const M3924_MINIMAP_WINDOW_CELLS := Vector2(24.0, 24.0)
+const MINIMAP_SIZE := Vector2(64.0, 64.0)
+const MINIMAP_MAP_SIZE := Vector2i(64, 64)
+const MINIMAP_MAP_OFFSET := Vector2.ZERO
+const MINIMAP_MAP_RADIUS := 26.4
+const MINIMAP_WINDOW_CELLS := Vector2(24.0, 24.0)
 # Idle refresh period. (At 0.0 the 20 Hz moving throttle below never applied
 # and the minimap was re-rasterised every frame.)
-const M3924_MINIMAP_REFRESH_SECONDS := 0.25
+const MINIMAP_REFRESH_SECONDS := 0.25
 ## Size, in tiles, of the picture the minimap samples from. The view plus the 3
 ## tiles tall art reaches in from every side is 30 or 31 tiles; the rest is slack
 ## the view can move in before the picture has to follow it.
-const M3924_MINIMAP_REGION_CELLS := Vector2i(35, 35)
+const MINIMAP_REGION_CELLS := Vector2i(35, 35)
 const MAP_VIEWPORT_CENTER := Vector2(160.0, 78.0)
 const MAP_VIEWPORT_SIZE := Vector2(320.0, 156.0)
 var map_zoom := DEFAULT_MAP_ZOOM
@@ -1094,38 +1094,38 @@ var map_pan := Vector2.ZERO
 var map_view_node: TextureRect
 var map_marker_node: TextureRect
 var map_sleeping_bag_node: TextureRect
-var m3924_dig_panel: Panel
-var m3924_dig_right_panel: Panel
-var m3924_dig_left_label: Label
-var m3924_dig_right_label: Label
+var dig_panel: Panel
+var dig_right_panel: Panel
+var dig_left_label: Label
+var dig_right_label: Label
 var dig_reward_panel: Panel
 var dig_reward_label: Label
 var dig_reward_seconds := 0.0
 var minimap_angle := 0.0
 var minimap_north: Control
-var m3924_minimap_root: Control
-var m3924_minimap_map: TextureRect
-var m3924_minimap_player: TextureRect
-var m3924_minimap_respawn: TextureRect
-var m3924_minimap_last_player_cell := Vector2i(-2147483648, -2147483648)
-var m3924_minimap_last_player_position := Vector2(-2147483648.0, -2147483648.0)
-var m3924_minimap_last_bounds := Rect2i()
-var m3924_minimap_last_respawn := Vector2i(-2147483648, -2147483648)
-var m3924_minimap_refresh_accumulator := M3924_MINIMAP_REFRESH_SECONDS
-var m3924_minimap_draw_size := Vector2i.ZERO
-var m3924_minimap_draw_offset := Vector2i.ZERO
-var m3924_minimap_texture_images := {}
-var m3924_minimap_tile_previews := {}
-var m3924_minimap_source_cache := {}
-var m3924_minimap_cache_world_id := 0
-var m3924_minimap_cache_discovered := -1
-var m3924_minimap_cache_until := 0
+var minimap_root: Control
+var minimap_map: TextureRect
+var minimap_player: TextureRect
+var minimap_respawn: TextureRect
+var minimap_last_player_cell := Vector2i(-2147483648, -2147483648)
+var minimap_last_player_position := Vector2(-2147483648.0, -2147483648.0)
+var minimap_last_bounds := Rect2i()
+var minimap_last_respawn := Vector2i(-2147483648, -2147483648)
+var minimap_refresh_accumulator := MINIMAP_REFRESH_SECONDS
+var minimap_draw_size := Vector2i.ZERO
+var minimap_draw_offset := Vector2i.ZERO
+var minimap_texture_images := {}
+var minimap_tile_previews := {}
+var minimap_source_cache := {}
+var minimap_cache_world_id := 0
+var minimap_cache_discovered := -1
+var minimap_cache_until := 0
 ## What the source picture was drawn from (tile edits, map art, structures),
 ## and a number bumped whenever the picture itself changes.
-var m3924_minimap_cache_revision: Array = []
-var m3924_minimap_source_serial := 0
-var m257_minimap_raster_key: Array = []
-var m257_minimap_recipes: Dictionary = {}
+var minimap_cache_revision: Array = []
+var minimap_source_serial := 0
+var minimap_raster_key: Array = []
+var minimap_recipes: Dictionary = {}
 var teleport_map_mode := false
 var teleport_destinations: Array = []
 var teleport_destination_index := 0
@@ -1339,8 +1339,8 @@ func _ready() -> void:
     shared_save_folder.start_exports.call_deferred(self)
     _setup_options.call_deferred()
     _setup_generation_clouds()
-    _build_m66_source_ui()
-    _build_m3924_dig_minimap_ui()
+    _build_source_ui()
+    _build_dig_minimap_ui()
     world.visible = false
     setup_panel.visible = false
     generation_panel.visible = false
@@ -1649,97 +1649,97 @@ func _create_wild_pokemon_prompt_ui() -> void:
     wild_yes.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
     wild_no.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 
-func _build_m3924_dig_minimap_ui() -> void:
+func _build_dig_minimap_ui() -> void:
     # DIG uses the same two-box source UI geometry as BUILD/CRAFTING.
-    m3924_dig_panel = Panel.new()
-    m3924_dig_panel.name = "DigPanel"
-    m3924_dig_panel.position = Vector2(2.0, 2.0)
-    m3924_dig_panel.size = Vector2(140.0, 48.0)
-    m3924_dig_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    m3924_dig_panel.add_theme_stylebox_override("panel", _classic_dialogue_style())
-    m3924_dig_panel.visible = false
-    $UI.add_child(m3924_dig_panel)
+    dig_panel = Panel.new()
+    dig_panel.name = "DigPanel"
+    dig_panel.position = Vector2(2.0, 2.0)
+    dig_panel.size = Vector2(140.0, 48.0)
+    dig_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    dig_panel.add_theme_stylebox_override("panel", _classic_dialogue_style())
+    dig_panel.visible = false
+    $UI.add_child(dig_panel)
 
-    m3924_dig_right_panel = Panel.new()
-    m3924_dig_right_panel.name = "DigGetPanel"
-    m3924_dig_right_panel.position = Vector2(176.0, 0.0)
-    m3924_dig_right_panel.size = m3924_dig_panel.size
-    m3924_dig_right_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    m3924_dig_right_panel.add_theme_stylebox_override("panel", _classic_dialogue_style())
-    m3924_dig_panel.add_child(m3924_dig_right_panel)
+    dig_right_panel = Panel.new()
+    dig_right_panel.name = "DigGetPanel"
+    dig_right_panel.position = Vector2(176.0, 0.0)
+    dig_right_panel.size = dig_panel.size
+    dig_right_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    dig_right_panel.add_theme_stylebox_override("panel", _classic_dialogue_style())
+    dig_panel.add_child(dig_right_panel)
 
-    m3924_dig_left_label = _source_ui_label(
-        m3924_dig_panel, "DigSoil", Vector2(14.0, 8.0), Vector2(114.0, 34.0), 8, "DIG")
-    m3924_dig_left_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    m3924_dig_right_label = _source_ui_label(
-        m3924_dig_right_panel, "DigResult", Vector2(14.0, 8.0), Vector2(114.0, 34.0), 8, "GET")
-    m3924_dig_right_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    dig_left_label = _source_ui_label(
+        dig_panel, "DigSoil", Vector2(14.0, 8.0), Vector2(114.0, 34.0), 8, "DIG")
+    dig_left_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    dig_right_label = _source_ui_label(
+        dig_right_panel, "DigResult", Vector2(14.0, 8.0), Vector2(114.0, 34.0), 8, "GET")
+    dig_right_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     dig_reward_panel = Panel.new()
     dig_reward_panel.name = "DigRewardPanel"
-    dig_reward_panel.position = m3924_dig_right_panel.position
-    dig_reward_panel.size = m3924_dig_right_panel.size
+    dig_reward_panel.position = dig_right_panel.position
+    dig_reward_panel.size = dig_right_panel.size
     dig_reward_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
     dig_reward_panel.add_theme_stylebox_override("panel", _classic_dialogue_style())
     dig_reward_panel.hide()
-    m3924_dig_panel.add_child(dig_reward_panel)
+    dig_panel.add_child(dig_reward_panel)
     dig_reward_label = _source_ui_label(dig_reward_panel, "Reward",
-        m3924_dig_right_label.position, m3924_dig_right_label.size, 8)
+        dig_right_label.position, dig_right_label.size, 8)
     dig_reward_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
     # Independent static compass/minimap. It never reuses/reparents the full map.
-    m3924_minimap_root = Control.new()
-    m3924_minimap_root.name = "WorldMiniMap"
-    m3924_minimap_root.position = Vector2(2.0, 2.0)
-    m3924_minimap_root.size = M3924_MINIMAP_SIZE
-    m3924_minimap_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    m3924_minimap_root.z_index = 80
-    m3924_minimap_root.visible = false
-    $UI.add_child(m3924_minimap_root)
+    minimap_root = Control.new()
+    minimap_root.name = "WorldMiniMap"
+    minimap_root.position = Vector2(2.0, 2.0)
+    minimap_root.size = MINIMAP_SIZE
+    minimap_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    minimap_root.z_index = 80
+    minimap_root.visible = false
+    $UI.add_child(minimap_root)
 
-    m3924_minimap_map = _source_texture_rect(
-        m3924_minimap_root, "Map", M3924_MINIMAP_MAP_OFFSET,
-        Vector2(M3924_MINIMAP_MAP_SIZE), null)
-    m3924_minimap_map.stretch_mode = TextureRect.STRETCH_SCALE
-    m3924_minimap_map.z_index = 1
+    minimap_map = _source_texture_rect(
+        minimap_root, "Map", MINIMAP_MAP_OFFSET,
+        Vector2(MINIMAP_MAP_SIZE), null)
+    minimap_map.stretch_mode = TextureRect.STRETCH_SCALE
+    minimap_map.z_index = 1
 
     # The HUD's ring (hud_style.gd) around the map, with the north marker on it.
     var ring := Control.new()
     ring.name = "Ring"
-    ring.size = M3924_MINIMAP_SIZE
+    ring.size = MINIMAP_SIZE
     ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
     ring.z_index = 5
     ring.draw.connect(func():
-        var centre := M3924_MINIMAP_SIZE * 0.5
-        var outer := M3924_MINIMAP_SIZE.x * 0.5 - HudStyle.STROKE * 0.5
-        ring.draw_arc(centre, (outer + M3924_MINIMAP_MAP_RADIUS) * 0.5, 0.0, TAU, 64, HudStyle.fill(false, true), outer - M3924_MINIMAP_MAP_RADIUS + 0.5, true)
+        var centre := MINIMAP_SIZE * 0.5
+        var outer := MINIMAP_SIZE.x * 0.5 - HudStyle.STROKE * 0.5
+        ring.draw_arc(centre, (outer + MINIMAP_MAP_RADIUS) * 0.5, 0.0, TAU, 64, HudStyle.fill(false, true), outer - MINIMAP_MAP_RADIUS + 0.5, true)
         ring.draw_arc(centre, outer, 0.0, TAU, 64, HudStyle.INK, HudStyle.STROKE, true))
-    m3924_minimap_root.add_child(ring)
+    minimap_root.add_child(ring)
     minimap_north = preload("res://scripts/minimap_north.gd").new()
     minimap_north.name="North"
-    m3924_minimap_root.add_child(minimap_north)
-    m3924_minimap_player = _source_texture_rect(
-        m3924_minimap_root, "Player", Vector2.ZERO, Vector2(7.0, 5.0), null)
+    minimap_root.add_child(minimap_north)
+    minimap_player = _source_texture_rect(
+        minimap_root, "Player", Vector2.ZERO, Vector2(7.0, 5.0), null)
     var appearance_texture: Texture2D = _player_appearance_texture(false)
-    if appearance_texture != null and (not m3924_minimap_player.texture is AtlasTexture or (m3924_minimap_player.texture as AtlasTexture).atlas != appearance_texture):
+    if appearance_texture != null and (not minimap_player.texture is AtlasTexture or (minimap_player.texture as AtlasTexture).atlas != appearance_texture):
         var marker_frame: AtlasTexture = AtlasTexture.new()
         marker_frame.atlas = appearance_texture
         marker_frame.region = Rect2(0.0, 0.0, 16.0, 11.0)
-        m3924_minimap_player.texture = marker_frame
-    m3924_minimap_player.z_index = 4
+        minimap_player.texture = marker_frame
+    minimap_player.z_index = 4
 
-    m3924_minimap_respawn = _source_texture_rect(
-        m3924_minimap_root, "Respawn", Vector2.ZERO, Vector2(6.0, 4.0), MAP_SLEEPING_BAG_TEXTURE)
-    m3924_minimap_respawn.z_index = 3
-    m3924_minimap_respawn.visible = false
+    minimap_respawn = _source_texture_rect(
+        minimap_root, "Respawn", Vector2.ZERO, Vector2(6.0, 4.0), MAP_SLEEPING_BAG_TEXTURE)
+    minimap_respawn.z_index = 3
+    minimap_respawn.visible = false
 
-func _m3924_minimap_top_box_visible(ignore_dig: bool = false) -> bool:
+func _minimap_top_box_visible(ignore_dig: bool = false) -> bool:
     if not started or generating or battle_active or progression_active:
         return true
     if setup_panel.visible or touch_config.visible or game_menu_open or quit_prompt_open:
         return true
     if craft_menu_open or build_menu_open or resource_popup.visible:
         return true
-    if not ignore_dig and m3924_dig_panel != null and m3924_dig_panel.visible:
+    if not ignore_dig and dig_panel != null and dig_panel.visible:
         return true
     # Dynamically-created storage/sign/etc. top panels should also hide it. Keep
     # the explicitly approved bottom egg/wild dialogue and normal message boxes.
@@ -1747,7 +1747,7 @@ func _m3924_minimap_top_box_visible(ignore_dig: bool = false) -> bool:
         if not (raw_child is Control):
             continue
         var child: Control = raw_child as Control
-        if not child.visible or child == m3924_minimap_root or (ignore_dig and child == m3924_dig_panel):
+        if not child.visible or child == minimap_root or (ignore_dig and child == dig_panel):
             continue
         if child == message_panel or child == egg_dialogue_panel or child == egg_choice_panel or child == wild_dialogue_panel or child == wild_choice_panel:
             continue
@@ -1757,28 +1757,28 @@ func _m3924_minimap_top_box_visible(ignore_dig: bool = false) -> bool:
             return true
     return false
 
-func _update_m3924_dig_hud_and_minimap(delta: float) -> void:
-    if m3924_dig_panel == null or m3924_minimap_root == null:
+func _update_dig_hud_and_minimap(delta: float) -> void:
+    if dig_panel == null or minimap_root == null:
         return
     var dig_selected := String(world.get("active_field_move")) == "DIG"
-    var dig_active: bool = started and world.visible and dig_selected and not _m3924_minimap_top_box_visible(true)
+    var dig_active: bool = started and world.visible and dig_selected and not _minimap_top_box_visible(true)
     dig_active = dig_active and not storage_menu_open and not storage_menu.visible and not trainer_tip_open and not field_move_wheel_open and not sign_dialog.visible
     if not dig_selected:
         dig_reward_seconds = 0.0
     elif dig_active:
         dig_reward_seconds = maxf(0.0, dig_reward_seconds - delta)
     dig_reward_panel.visible = dig_reward_seconds > 0.0
-    m3924_dig_right_panel.visible = not dig_reward_panel.visible
-    m3924_dig_panel.visible = dig_active
+    dig_right_panel.visible = not dig_reward_panel.visible
+    dig_panel.visible = dig_active
     if dig_active and world.has_method("get_dig_hud_state"):
         var state: Dictionary = world.call("get_dig_hud_state")
-        m3924_dig_left_label.text = String(state.get("left", "DIG"))
-        m3924_dig_right_label.text = String(state.get("right", ""))
-        _fit_compact_dig_label(m3924_dig_right_label)
-        m3924_dig_left_label.modulate = Color.WHITE if bool(state.get("diggable", false)) else Color(0.55, 0.55, 0.55, 1.0)
-    var top_free: bool = started and world.visible and not _m3924_minimap_top_box_visible()
+        dig_left_label.text = String(state.get("left", "DIG"))
+        dig_right_label.text = String(state.get("right", ""))
+        _fit_compact_dig_label(dig_right_label)
+        dig_left_label.modulate = Color.WHITE if bool(state.get("diggable", false)) else Color(0.55, 0.55, 0.55, 1.0)
+    var top_free: bool = started and world.visible and not _minimap_top_box_visible()
     var minimap_should_show: bool = GameOptions.enabled("minimap") and top_free
-    m3924_minimap_root.visible = minimap_should_show
+    minimap_root.visible = minimap_should_show
     status_hud.refresh(delta, top_free)
     if not minimap_should_show:
         return
@@ -1792,64 +1792,64 @@ func _update_m3924_dig_hud_and_minimap(delta: float) -> void:
     if world.has_method("get_map_bounds"):
         bounds = world.call("get_map_bounds")
     var respawn_cell: Vector2i = world.get("respawn_cell")
-    var bounds_changed: bool = bounds != m3924_minimap_last_bounds
-    var respawn_changed: bool = respawn_cell != m3924_minimap_last_respawn
-    var player_position_changed: bool = player_position != m3924_minimap_last_player_position
-    m3924_minimap_refresh_accumulator += delta
+    var bounds_changed: bool = bounds != minimap_last_bounds
+    var respawn_changed: bool = respawn_cell != minimap_last_respawn
+    var player_position_changed: bool = player_position != minimap_last_player_position
+    minimap_refresh_accumulator += delta
     if (
             bounds_changed
             or respawn_changed
             # While moving, 20 times a second is as smooth as the minimap's
             # few pixels can show; every frame cost about 4 ms.
-            or (player_position_changed and m3924_minimap_refresh_accumulator >= 0.05)
-            or m3924_minimap_map.texture == null
-            or m3924_minimap_refresh_accumulator >= M3924_MINIMAP_REFRESH_SECONDS
+            or (player_position_changed and minimap_refresh_accumulator >= 0.05)
+            or minimap_map.texture == null
+            or minimap_refresh_accumulator >= MINIMAP_REFRESH_SECONDS
         ):
         # Keep the remainder: zeroing it made 20 Hz into 15 Hz at 30 FPS.
-        m3924_minimap_refresh_accumulator = fmod(m3924_minimap_refresh_accumulator, 0.05)
-        m3924_minimap_last_bounds = bounds
-        m3924_minimap_last_respawn = respawn_cell
-        m3924_minimap_last_player_position = player_position
-        _refresh_m3924_minimap(bounds, player_position)
+        minimap_refresh_accumulator = fmod(minimap_refresh_accumulator, 0.05)
+        minimap_last_bounds = bounds
+        minimap_last_respawn = respawn_cell
+        minimap_last_player_position = player_position
+        _refresh_minimap(bounds, player_position)
         # Frame, north marker and waypoints only move with a refresh.
         _apply_minimap_rotation(delta)
-    m3924_minimap_last_player_cell = player_cell
+    minimap_last_player_cell = player_cell
 
 func _apply_minimap_rotation(delta: float = 1.0) -> void:
     minimap_angle = 0.0
     var angle:=minimap_angle
-    m3924_minimap_map.pivot_offset = m3924_minimap_map.size * 0.5
-    m3924_minimap_map.rotation = angle
+    minimap_map.pivot_offset = minimap_map.size * 0.5
+    minimap_map.rotation = angle
     # On the ring, inside its outer edge.
-    minimap_north.position = (M3924_MINIMAP_SIZE * 0.5 + Vector2(0,-27).rotated(angle) - minimap_north.size * 0.5).round()
-    if m3924_minimap_respawn.visible:
-        var center := M3924_MINIMAP_MAP_OFFSET + Vector2(M3924_MINIMAP_MAP_SIZE) * 0.5
-        var unrotated: Vector2 = m3924_minimap_respawn.get_meta("unrotated_position", m3924_minimap_respawn.position)
-        m3924_minimap_respawn.position = center + (unrotated + m3924_minimap_respawn.size * 0.5 - center).rotated(angle) - m3924_minimap_respawn.size * 0.5
+    minimap_north.position = (MINIMAP_SIZE * 0.5 + Vector2(0,-27).rotated(angle) - minimap_north.size * 0.5).round()
+    if minimap_respawn.visible:
+        var center := MINIMAP_MAP_OFFSET + Vector2(MINIMAP_MAP_SIZE) * 0.5
+        var unrotated: Vector2 = minimap_respawn.get_meta("unrotated_position", minimap_respawn.position)
+        minimap_respawn.position = center + (unrotated + minimap_respawn.size * 0.5 - center).rotated(angle) - minimap_respawn.size * 0.5
     if is_instance_valid(waypoint_ui):waypoint_ui.update_minimap(angle)
 
-func _refresh_m3924_minimap(bounds: Rect2i, player_position: Vector2) -> void:
+func _refresh_minimap(bounds: Rect2i, player_position: Vector2) -> void:
     if bounds.size.x <= 0 or bounds.size.y <= 0:
         return
     var appearance_texture: Texture2D = _player_appearance_texture(false)
-    var current_marker := m3924_minimap_player.texture as AtlasTexture
+    var current_marker := minimap_player.texture as AtlasTexture
     if appearance_texture != null and (current_marker == null or current_marker.atlas != appearance_texture):
         var marker_frame: AtlasTexture = AtlasTexture.new()
         marker_frame.atlas = appearance_texture
         marker_frame.region = Rect2(0.0, 0.0, 16.0, 11.0)
-        m3924_minimap_player.texture = marker_frame
-    var canvas_size: Vector2i = M3924_MINIMAP_MAP_SIZE
+        minimap_player.texture = marker_frame
+    var canvas_size: Vector2i = MINIMAP_MAP_SIZE
     var map_center: Vector2 = Vector2(float(canvas_size.x) * 0.5, float(canvas_size.y) * 0.5)
-    var map_diameter: float = M3924_MINIMAP_MAP_RADIUS * 2.0
-    var map_left: float = map_center.x - M3924_MINIMAP_MAP_RADIUS
-    var map_top: float = map_center.y - M3924_MINIMAP_MAP_RADIUS
+    var map_diameter: float = MINIMAP_MAP_RADIUS * 2.0
+    var map_left: float = map_center.x - MINIMAP_MAP_RADIUS
+    var map_top: float = map_center.y - MINIMAP_MAP_RADIUS
     var player_cell_position: Vector2 = player_position / 16.0
     var interior_image: Image = world.interior_map_image(bounds)
     var indoor := interior_image != null
     # Fit the floor's diagonal in the circular view, preserving centered-player
     # panning and uniform scale. Outdoors retain the approved 24-cell window.
     var centered := indoor
-    var window_cells := M3924_MINIMAP_WINDOW_CELLS
+    var window_cells := MINIMAP_WINDOW_CELLS
     if indoor:
         window_cells = Vector2.ONE * maxf(24.0, Vector2(bounds.size).length() + 2.0)
     var half_window: Vector2 = window_cells * 0.5
@@ -1875,22 +1875,22 @@ func _refresh_m3924_minimap(bounds: Rect2i, player_position: Vector2) -> void:
         view_origin = player_cell_position - half_window
         view_origin = (view_origin / cells_per_pixel).round() * cells_per_pixel
     var exact = world.get("exact_world")
-    m3924_minimap_map.set_meta("view_origin",view_origin)
-    m3924_minimap_map.set_meta("window_cells",window_cells)
+    minimap_map.set_meta("view_origin",view_origin)
+    minimap_map.set_meta("window_cells",window_cells)
     # The picture is redrawn only when what it samples changed: the view, the
     # source picture (rebuilt on tile edits, patched on discovery) or, without
     # one, the tiles themselves. It used to be redrawn every 2 s regardless.
-    var source_region: Dictionary = _m3924_minimap_source_region(bounds, view_origin)
+    var source_region: Dictionary = _minimap_source_region(bounds, view_origin)
     var source_image: Image = source_region.get("image")
     var raster_key: Array = [bounds, view_origin, window_cells, indoor, centered,
         0 if exact == null else exact.get_instance_id(),
-        (world.get("discovered_cells") as Dictionary).size() if Time.get_ticks_msec() - m3924_minimap_cache_built >= 400 else m3924_minimap_cache_discovered,
-        0 if source_image == null else source_image.get_instance_id(), m3924_minimap_source_serial,
-        _m3924_minimap_world_revision() if source_image == null else []]
-    if raster_key == m257_minimap_raster_key and m3924_minimap_map.texture != null:
-        _position_m3924_minimap_markers(bounds, player_position, view_origin, window_cells)
+        (world.get("discovered_cells") as Dictionary).size() if Time.get_ticks_msec() - minimap_cache_built >= 400 else minimap_cache_discovered,
+        0 if source_image == null else source_image.get_instance_id(), minimap_source_serial,
+        _minimap_world_revision() if source_image == null else []]
+    if raster_key == minimap_raster_key and minimap_map.texture != null:
+        _position_minimap_markers(bounds, player_position, view_origin, window_cells)
         return
-    m257_minimap_raster_key = raster_key
+    minimap_raster_key = raster_key
     var image := Image.create(canvas_size.x, canvas_size.y, false, Image.FORMAT_RGBA8)
     image.fill(Color(0, 0, 0, 0))
     var source_origin: Vector2i = source_region.get("origin", Vector2i.ZERO)
@@ -1917,7 +1917,7 @@ func _refresh_m3924_minimap(bounds: Rect2i, player_position: Vector2) -> void:
             var dy := float(py) + 0.5 - map_center.y
             for px in range(canvas_size.x):
                 var dx := float(px) + 0.5 - map_center.x
-                if dx * dx + dy * dy <= M3924_MINIMAP_MAP_RADIUS * M3924_MINIMAP_MAP_RADIUS:
+                if dx * dx + dy * dy <= MINIMAP_MAP_RADIUS * MINIMAP_MAP_RADIUS:
                     if centered and (sample_columns[px] < 0 or sample_y < bounds.position.y or sample_y >= bounds.end.y):
                         image.set_pixel(px, py, Color(0.025, 0.035, 0.03, 1.0))
                     else:
@@ -1927,7 +1927,7 @@ func _refresh_m3924_minimap(bounds: Rect2i, player_position: Vector2) -> void:
             for px in range(canvas_size.x):
                 var pixel_center: Vector2 = Vector2(float(px) + 0.5, float(py) + 0.5)
                 var distance: float = pixel_center.distance_to(map_center)
-                if distance > M3924_MINIMAP_MAP_RADIUS:
+                if distance > MINIMAP_MAP_RADIUS:
                     continue
                 var sample_u: float = clampf((float(px) + 0.5 - map_left) / map_diameter, 0.0, 1.0)
                 var sample_v: float = clampf((float(py) + 0.5 - map_top) / map_diameter, 0.0, 1.0)
@@ -1951,23 +1951,23 @@ func _refresh_m3924_minimap(bounds: Rect2i, player_position: Vector2) -> void:
                 elif (px + py) % 2 != 0:
                     color = Color(0.045, 0.055, 0.05, 1.0)
                 image.set_pixel(px, py, color)
-    if m3924_minimap_map.texture is ImageTexture and m3924_minimap_map.texture.get_size() == Vector2(canvas_size):
-        (m3924_minimap_map.texture as ImageTexture).update(image)
+    if minimap_map.texture is ImageTexture and minimap_map.texture.get_size() == Vector2(canvas_size):
+        (minimap_map.texture as ImageTexture).update(image)
     else:
-        m3924_minimap_map.texture = ImageTexture.create_from_image(image)
-    m3924_minimap_draw_size = canvas_size
-    m3924_minimap_draw_offset = Vector2i.ZERO
-    _position_m3924_minimap_markers(bounds, player_position, view_origin, window_cells)
+        minimap_map.texture = ImageTexture.create_from_image(image)
+    minimap_draw_size = canvas_size
+    minimap_draw_offset = Vector2i.ZERO
+    _position_minimap_markers(bounds, player_position, view_origin, window_cells)
 
 ## Changes whenever anything the minimap draws from changed: a tile edit
 ## (tide, digging, building, pickups...), the map art, or the structures.
-func _m3924_minimap_world_revision() -> Array:
+func _minimap_world_revision() -> Array:
     var exact = world.get("exact_world")
     var store = null if exact == null else exact.get("tiles")
     return [store.edit_count if store is WorldTileStore else 0,
         int(world.get("map_art_revision")), (world.get("built_structures") as Dictionary).size()]
 
-func _m3924_minimap_source_region(bounds: Rect2i, view_origin: Vector2) -> Dictionary:
+func _minimap_source_region(bounds: Rect2i, view_origin: Vector2) -> Dictionary:
     var interior: Image = world.interior_map_image(bounds)
     if interior != null:
         return {"image": interior, "origin": bounds.position, "bounds": bounds, "region": bounds}
@@ -1977,54 +1977,54 @@ func _m3924_minimap_source_region(bounds: Rect2i, view_origin: Vector2) -> Dicti
     # Use the full MAP screen's source tile recipes in a small window around
     # the player. The margin preserves tall art crossing the window edge.
     var origin := Vector2i(floori(view_origin.x), floori(view_origin.y)) - Vector2i(3, 3)
-    var end := Vector2i(ceili(view_origin.x + M3924_MINIMAP_WINDOW_CELLS.x),
-        ceili(view_origin.y + M3924_MINIMAP_WINDOW_CELLS.y)) + Vector2i(3, 3)
+    var end := Vector2i(ceili(view_origin.x + MINIMAP_WINDOW_CELLS.x),
+        ceili(view_origin.y + MINIMAP_WINDOW_CELLS.y)) + Vector2i(3, 3)
     var needed := Rect2i(origin, end - origin)
     var world_id: int = exact_world.get_instance_id()
     var discovered_count: int = (world.get("discovered_cells") as Dictionary).size()
     var now: int = Time.get_ticks_msec()
-    if world_id != m3924_minimap_cache_world_id:
-        m3924_minimap_texture_images.clear()
-        m3924_minimap_tile_previews.clear()
-        m257_minimap_recipes.clear()
+    if world_id != minimap_cache_world_id:
+        minimap_texture_images.clear()
+        minimap_tile_previews.clear()
+        minimap_recipes.clear()
     # The picture covers a little more than the view and is kept while the view
     # stays inside it. When the view runs out of it the picture slides along
     # (the part it still has is moved and only the new cells are drawn), and
     # newly discovered ground is painted in at once, but only the patch that
     # changed. Other changes (tide, digs, builds) rebuild it, at most every
     # 2 s, as the 2 s refresh it replaces did.
-    var revision := _m3924_minimap_world_revision()
-    var cache := m3924_minimap_source_cache
+    var revision := _minimap_world_revision()
+    var cache := minimap_source_cache
     var cache_ok: bool = not cache.is_empty() and \
-            world_id == m3924_minimap_cache_world_id and \
-            (revision == m3924_minimap_cache_revision or now < m3924_minimap_cache_until) and \
+            world_id == minimap_cache_world_id and \
+            (revision == minimap_cache_revision or now < minimap_cache_until) and \
             cache["bounds"] == bounds
     if cache_ok and not (cache["region"] as Rect2i).encloses(needed):
-        cache_ok = _m3924_minimap_slide(needed, bounds, exact_world)
+        cache_ok = _minimap_slide(needed, bounds, exact_world)
     if cache_ok:
-        cache_ok = _m3924_minimap_paint_discovered(discovered_count, bounds, exact_world)
+        cache_ok = _minimap_paint_discovered(discovered_count, bounds, exact_world)
     if cache_ok:
         return cache
-    var region := Rect2i(needed.position - (M3924_MINIMAP_REGION_CELLS - needed.size) / 2, M3924_MINIMAP_REGION_CELLS)
-    var image := _m3924_minimap_render(region, bounds, exact_world)
-    m3924_minimap_cache_discovered = discovered_count
-    m3924_minimap_cache_added = world.discovered_added
+    var region := Rect2i(needed.position - (MINIMAP_REGION_CELLS - needed.size) / 2, MINIMAP_REGION_CELLS)
+    var image := _minimap_render(region, bounds, exact_world)
+    minimap_cache_discovered = discovered_count
+    minimap_cache_added = world.discovered_added
     world.discovered_dirty = Rect2i()
-    m3924_minimap_cache_world_id = world_id
-    m3924_minimap_cache_until = now + 2000
-    m3924_minimap_cache_revision = revision
-    m3924_minimap_source_serial += 1
-    m3924_minimap_source_cache = {
+    minimap_cache_world_id = world_id
+    minimap_cache_until = now + 2000
+    minimap_cache_revision = revision
+    minimap_source_serial += 1
+    minimap_source_cache = {
         "image": image, "origin": region.position, "region": region, "bounds": bounds, "spare": null
     }
-    return m3924_minimap_source_cache
+    return minimap_source_cache
 
 ## Moves the picture's region along so that it holds `needed` again, keeping
 ## what is drawn of the part both regions cover. The cells that came into it
 ## are drawn fresh (with the 3 tiles inside the old edge that tall art from
 ## those cells reaches). False if the move is too far to be worth it.
-func _m3924_minimap_slide(needed: Rect2i, bounds: Rect2i, exact_world) -> bool:
-    var cache := m3924_minimap_source_cache
+func _minimap_slide(needed: Rect2i, bounds: Rect2i, exact_world) -> bool:
+    var cache := minimap_source_cache
     var old_region: Rect2i = cache["region"]
     var target := old_region.position
     # Leave the slack ahead of the view, and one tile behind it.
@@ -2047,65 +2047,65 @@ func _m3924_minimap_slide(needed: Rect2i, bounds: Rect2i, exact_world) -> bool:
     cache["region"] = region
     cache["origin"] = region.position
     if region.position.x < old_region.position.x:
-        _m3924_minimap_paint(Rect2i(region.position, Vector2i(old_region.position.x - region.position.x, region.size.y)), bounds, exact_world)
+        _minimap_paint(Rect2i(region.position, Vector2i(old_region.position.x - region.position.x, region.size.y)), bounds, exact_world)
     elif region.end.x > old_region.end.x:
-        _m3924_minimap_paint(Rect2i(Vector2i(old_region.end.x, region.position.y), Vector2i(region.end.x - old_region.end.x, region.size.y)), bounds, exact_world)
+        _minimap_paint(Rect2i(Vector2i(old_region.end.x, region.position.y), Vector2i(region.end.x - old_region.end.x, region.size.y)), bounds, exact_world)
     if region.position.y < old_region.position.y:
-        _m3924_minimap_paint(Rect2i(region.position, Vector2i(region.size.x, old_region.position.y - region.position.y)), bounds, exact_world)
+        _minimap_paint(Rect2i(region.position, Vector2i(region.size.x, old_region.position.y - region.position.y)), bounds, exact_world)
     elif region.end.y > old_region.end.y:
-        _m3924_minimap_paint(Rect2i(Vector2i(region.position.x, old_region.end.y), Vector2i(region.size.x, region.end.y - old_region.end.y)), bounds, exact_world)
+        _minimap_paint(Rect2i(Vector2i(region.position.x, old_region.end.y), Vector2i(region.size.x, region.end.y - old_region.end.y)), bounds, exact_world)
     return true
 
 ## Paints in the ground discovered since the picture was last up to date. The
 ## world records a box around the cells it added; if its count of them does not
 ## explain the change in discovered_cells, or the box is most of the picture,
 ## this returns false and the picture is redrawn whole.
-func _m3924_minimap_paint_discovered(discovered_count: int, bounds: Rect2i, exact_world) -> bool:
+func _minimap_paint_discovered(discovered_count: int, bounds: Rect2i, exact_world) -> bool:
     var added: int = world.discovered_added
-    if discovered_count == m3924_minimap_cache_discovered and added == m3924_minimap_cache_added:
+    if discovered_count == minimap_cache_discovered and added == minimap_cache_added:
         return true
-    var known := discovered_count - m3924_minimap_cache_discovered == added - m3924_minimap_cache_added
+    var known := discovered_count - minimap_cache_discovered == added - minimap_cache_added
     var dirty: Rect2i = world.discovered_dirty
-    m3924_minimap_cache_discovered = discovered_count
-    m3924_minimap_cache_added = added
+    minimap_cache_discovered = discovered_count
+    minimap_cache_added = added
     world.discovered_dirty = Rect2i()
     if not known:
         return false
-    var kept: Rect2i = m3924_minimap_source_cache["region"]
+    var kept: Rect2i = minimap_source_cache["region"]
     var changed := dirty.intersection(kept)
     if changed.size.x <= 0 or changed.size.y <= 0:
         return true
     if changed.grow(3).intersection(kept).get_area() * 2 >= kept.get_area():
         return false
-    _m3924_minimap_paint(changed, bounds, exact_world)
+    _minimap_paint(changed, bounds, exact_world)
     return true
 
 ## Redraws the part of the picture that the tiles in `changed` can touch: art
 ## reaches up to 3 tiles past its own tile, so `changed` and 3 tiles around it
 ## are replaced, from a drawing that has 3 more tiles around that for the art
 ## reaching in from outside.
-func _m3924_minimap_paint(changed: Rect2i, bounds: Rect2i, exact_world) -> void:
-    var cache := m3924_minimap_source_cache
+func _minimap_paint(changed: Rect2i, bounds: Rect2i, exact_world) -> void:
+    var cache := minimap_source_cache
     var kept: Rect2i = cache["region"]
     var patch := changed.grow(3).intersection(kept)
     if patch.size.x <= 0 or patch.size.y <= 0:
         return
     var drawn := patch.grow(3).intersection(kept)
-    var fresh := _m3924_minimap_render(drawn, bounds, exact_world)
+    var fresh := _minimap_render(drawn, bounds, exact_world)
     (cache["image"] as Image).blit_rect(fresh,
         Rect2i((patch.position - drawn.position) * SOURCE_MAP_TILE_PIXELS, patch.size * SOURCE_MAP_TILE_PIXELS),
         (patch.position - kept.position) * SOURCE_MAP_TILE_PIXELS)
-    m3924_minimap_source_serial += 1
+    minimap_source_serial += 1
 
 ## What to draw for a tile, found by its name, upper name and colour: the
 ## lower and the upper drawing, each [image, rect, offset x, offset y] or null
 ## if the tile draws nothing there. `sig` is the key it is kept under.
-func _m3924_minimap_recipe_pair(sig: Variant, base_name: String, upper_name: String, color: bool) -> Array:
-    var known: Variant = m257_minimap_recipes.get(sig)
+func _minimap_recipe_pair(sig: Variant, base_name: String, upper_name: String, color: bool) -> Array:
+    var known: Variant = minimap_recipes.get(sig)
     if known != null:
         return known
-    if m257_minimap_recipes.size() >= 4096:
-        m257_minimap_recipes.clear()
+    if minimap_recipes.size() >= 4096:
+        minimap_recipes.clear()
     var tile := {"base": base_name, "upper": upper_name, "color": color}
     var pair: Array = []
     for upper_pass in [false, true]:
@@ -2120,12 +2120,12 @@ func _m3924_minimap_recipe_pair(sig: Variant, base_name: String, upper_name: Str
             var offset := Vector2i((Vector2(spec.get("offset",Vector2.ZERO)) / 4.0).round())
             recipe = [preview, Rect2i(Vector2i.ZERO, preview.get_size()), offset.x, offset.y]
         pair.append(recipe)
-    m257_minimap_recipes[sig] = pair
+    minimap_recipes[sig] = pair
     return pair
 
 ## Draws the minimap's source picture for `region` (in tiles): every
 ## discovered tile, the buildings on them, and the checker over the rest.
-func _m3924_minimap_render(region: Rect2i, bounds: Rect2i, exact_world) -> Image:
+func _minimap_render(region: Rect2i, bounds: Rect2i, exact_world) -> Image:
     var image := Image.create(region.size.x * SOURCE_MAP_TILE_PIXELS,
         region.size.y * SOURCE_MAP_TILE_PIXELS, false, Image.FORMAT_RGBA8)
     image.fill(Color(0.025, 0.035, 0.03, 1.0))
@@ -2189,14 +2189,14 @@ func _m3924_minimap_render(region: Rect2i, bounds: Rect2i, exact_world) -> Image
                         var name_id := name_ids[index]
                         var upper_id := upper_ids[index]
                         var sig := name_id | (upper_id << 24) | ((bits & WorldTileStore.COLOR) << 47)
-                        pair = m257_minimap_recipes.get(sig)
+                        pair = minimap_recipes.get(sig)
                         if pair == null:
-                            pair = _m3924_minimap_recipe_pair(sig, strings[name_id], strings[upper_id],
+                            pair = _minimap_recipe_pair(sig, strings[name_id], strings[upper_id],
                                 bits & WorldTileStore.COLOR != 0)
             if not in_store and (store_extra or not packed):
                 var tile: SourceTile = exact_world.tile_at(Vector2i(cx, cy))
                 if tile != null:
-                    pair = _m3924_minimap_recipe_pair("%s|%s|%s" % [tile.name, tile.name_upper, tile.color],
+                    pair = _minimap_recipe_pair("%s|%s|%s" % [tile.name, tile.name_upper, tile.color],
                         tile.name, tile.name_upper, tile.color)
             if pair != null:
                 draw_x.append(x)
@@ -2221,9 +2221,9 @@ func _m3924_minimap_render(region: Rect2i, bounds: Rect2i, exact_world) -> Image
     return image
 
 var built_map_art_cache: Dictionary = {}
-var m3924_minimap_cache_built := 0
+var minimap_cache_built := 0
 ## world.discovered_added when the source picture was last up to date.
-var m3924_minimap_cache_added := 0
+var minimap_cache_added := 0
 
 func _paint_built_structures_on_map(image: Image, origin: Vector2i) -> void:
     var structures: Dictionary = world.get("built_structures")
@@ -2252,32 +2252,32 @@ func _paint_built_structures_on_map(image: Image, origin: Vector2i) -> void:
         if actor.centered: at -= Vector2(recipe.size) * 0.5
         image.blend_rect(pixels, Rect2i(Vector2i.ZERO, pixels.get_size()), Vector2i((at / 4.0).round()) - origin * SOURCE_MAP_TILE_PIXELS)
 
-func _position_m3924_minimap_markers(
+func _position_minimap_markers(
         bounds: Rect2i, player_position: Vector2, view_origin: Vector2,
-        window_cells: Vector2 = M3924_MINIMAP_WINDOW_CELLS) -> void:
+        window_cells: Vector2 = MINIMAP_WINDOW_CELLS) -> void:
     if bounds.size.x <= 0 or bounds.size.y <= 0:
         return
-    var canvas_size: Vector2 = Vector2(M3924_MINIMAP_MAP_SIZE)
-    var map_center: Vector2 = M3924_MINIMAP_MAP_OFFSET + canvas_size * 0.5
-    var map_diameter: float = M3924_MINIMAP_MAP_RADIUS * 2.0
-    var map_left: float = map_center.x - M3924_MINIMAP_MAP_RADIUS
-    var map_top: float = map_center.y - M3924_MINIMAP_MAP_RADIUS
-    m3924_minimap_player.position = map_center - m3924_minimap_player.size * 0.5
+    var canvas_size: Vector2 = Vector2(MINIMAP_MAP_SIZE)
+    var map_center: Vector2 = MINIMAP_MAP_OFFSET + canvas_size * 0.5
+    var map_diameter: float = MINIMAP_MAP_RADIUS * 2.0
+    var map_left: float = map_center.x - MINIMAP_MAP_RADIUS
+    var map_top: float = map_center.y - MINIMAP_MAP_RADIUS
+    minimap_player.position = map_center - minimap_player.size * 0.5
     var respawn: Vector2i = world.get("respawn_cell")
-    m3924_minimap_respawn.visible = false
+    minimap_respawn.visible = false
     if respawn.x > -2147483648 and bounds.has_point(respawn):
         var respawn_center: Vector2 = Vector2(
             map_left + ((float(respawn.x) + 0.5 - view_origin.x) / window_cells.x) * map_diameter,
             map_top + ((float(respawn.y) + 0.5 - view_origin.y) / window_cells.y) * map_diameter)
-        var inside_circle: bool = respawn_center.distance_to(map_center) <= M3924_MINIMAP_MAP_RADIUS
-        m3924_minimap_respawn.visible = inside_circle
-        if m3924_minimap_respawn.visible:
-            m3924_minimap_respawn.position = respawn_center - m3924_minimap_respawn.size * 0.5
-            m3924_minimap_respawn.set_meta("unrotated_position", m3924_minimap_respawn.position)
+        var inside_circle: bool = respawn_center.distance_to(map_center) <= MINIMAP_MAP_RADIUS
+        minimap_respawn.visible = inside_circle
+        if minimap_respawn.visible:
+            minimap_respawn.position = respawn_center - minimap_respawn.size * 0.5
+            minimap_respawn.set_meta("unrotated_position", minimap_respawn.position)
     _position_minimap_other_players(map_left, map_top, map_diameter, map_center, view_origin, window_cells)
 
 ## Other players in this area, drawn like the local player's own marker.
-var m3924_minimap_others: Dictionary = {}
+var minimap_others: Dictionary = {}
 var map_other_markers: Array = []
 
 func _coop_players_here() -> Dictionary:
@@ -2310,11 +2310,11 @@ func _position_minimap_other_players(map_left: float, map_top: float, map_diamet
     var here := _coop_players_here()
     for actor in here:
         var packet: Dictionary = here[actor]
-        var marker: TextureRect = m3924_minimap_others.get(actor)
+        var marker: TextureRect = minimap_others.get(actor)
         if not is_instance_valid(marker):
-            marker = _source_texture_rect(m3924_minimap_root, "OtherPlayer", Vector2.ZERO, Vector2(7.0, 5.0), null)
+            marker = _source_texture_rect(minimap_root, "OtherPlayer", Vector2.ZERO, Vector2(7.0, 5.0), null)
             marker.z_index = 4
-            m3924_minimap_others[actor] = marker
+            minimap_others[actor] = marker
         var visual: Dictionary = packet.visual
         var look := "%d:%d" % [int(visual.get("model", 0)), int(visual.get("color", 0))]
         if marker.texture == null or marker.texture.get_meta("look", "") != look:
@@ -2323,13 +2323,13 @@ func _position_minimap_other_players(map_left: float, map_top: float, map_diamet
         var center := Vector2(
             map_left + ((cell.x - view_origin.x) / window_cells.x) * map_diameter,
             map_top + ((cell.y - view_origin.y) / window_cells.y) * map_diameter)
-        marker.visible = center.distance_to(map_center) <= M3924_MINIMAP_MAP_RADIUS
+        marker.visible = center.distance_to(map_center) <= MINIMAP_MAP_RADIUS
         marker.position = center - marker.size * 0.5
-    for actor in m3924_minimap_others.keys():
+    for actor in minimap_others.keys():
         if not here.has(actor):
-            if is_instance_valid(m3924_minimap_others[actor]):
-                m3924_minimap_others[actor].queue_free()
-            m3924_minimap_others.erase(actor)
+            if is_instance_valid(minimap_others[actor]):
+                minimap_others[actor].queue_free()
+            minimap_others.erase(actor)
 
 func _add_map_other_players(map_view: Control, bounds: Rect2i, image_size: Vector2i, marker_size: Vector2) -> void:
     map_other_markers.clear()
@@ -2391,7 +2391,7 @@ func _apply_game_options() -> void:
         world.camera_zoom_level = 1.0
         world.player.camera.zoom = Vector2.ONE
         map_zoom = DEFAULT_MAP_ZOOM
-    if not GameOptions.enabled("minimap") and is_instance_valid(m3924_minimap_root): m3924_minimap_root.hide()
+    if not GameOptions.enabled("minimap") and is_instance_valid(minimap_root): minimap_root.hide()
     if is_instance_valid(waypoint_ui):
         if not GameOptions.enabled("map_waypoint") and waypoint_ui.naming: waypoint_ui.cancel_name()
         waypoint_ui.rebuild_markers()
@@ -2787,7 +2787,7 @@ func _update_party_sprite_animation(delta: float) -> void:
     if start_strip_visible:
         touch_ui.surfaces._refresh_start_details()
 
-func _build_m66_source_ui() -> void:
+func _build_source_ui() -> void:
     _configure_clean_item_pocket_layout()
     _configure_wide_single_battle_layout()
     setup_go_cursor = _source_texture_rect(setup_panel, "GoCursor",
@@ -3190,7 +3190,7 @@ func _process(delta: float) -> void:
             world._configure_camera()
         edge_sky.visible = flying_overworld
     _update_field_move_wheel_input()
-    _update_m3924_dig_hud_and_minimap(delta)
+    _update_dig_hud_and_minimap(delta)
     _update_party_sprite_animation(delta)
     _update_battle_sprite_animation(delta)
     _stop_fainted_active_field_move()
@@ -11099,7 +11099,7 @@ func _on_dig_reward_collected(items: Dictionary, grant_items: bool = true) -> vo
     dig_reward_label.text = "\n".join(lines)
     _fit_compact_dig_label(dig_reward_label)
     dig_reward_seconds = 1.8
-    _update_m3924_dig_hud_and_minimap(0.0)
+    _update_dig_hud_and_minimap(0.0)
 
 func _on_material_collected(item_name: String, amount: int) -> void:
     if is_instance_valid(coop_game) and coop_game.active and coop_game.building.collect({ItemData.normalize_name(item_name):amount}):return
@@ -13021,8 +13021,8 @@ func _travel_adjacent_world(direction: Vector2i) -> void:
             clampi(cell.y,bounds.position.y,bounds.end.y-1)))
         world.player.facing = -Vector2(direction)
         # Failed preflight retains the existing mount along with the world.
-        world.m3922_fly_phase = "HOVER"
-        world.m3922_fly_height = 32.0
+        world.fly_phase = "HOVER"
+        world.fly_height = 32.0
         world._place_field_helper_live()
         if is_instance_valid(travel_view): travel_view.queue_free()
         generation_panel.hide()
@@ -13055,8 +13055,8 @@ func _travel_adjacent_world(direction: Vector2i) -> void:
             if found: break
         if found: world.player.position=world._cell_center(water_cell)
     world.set_active_field_move(mount, travel_move, travel_move=="SURF")
-    world.m3922_fly_phase = "HOVER"
-    world.m3922_fly_height = 32.0
+    world.fly_phase = "HOVER"
+    world.fly_height = 32.0
     world._place_field_helper_live()
     world.begin_encounter_grace()
     # Generating a new area uncovers the map around wherever the player
@@ -13079,15 +13079,15 @@ func _travel_adjacent_world(direction: Vector2i) -> void:
 
 func _invalidate_travel_maps() -> void:
     map_raster.forget()
-    m257_minimap_raster_key.clear()
-    m3924_minimap_source_cache.clear()
-    m3924_minimap_cache_world_id = 0
-    m3924_minimap_cache_until = 0
-    m3924_minimap_texture_images.clear()
-    m3924_minimap_tile_previews.clear()
-    m257_minimap_recipes.clear()
+    minimap_raster_key.clear()
+    minimap_source_cache.clear()
+    minimap_cache_world_id = 0
+    minimap_cache_until = 0
+    minimap_texture_images.clear()
+    minimap_tile_previews.clear()
+    minimap_recipes.clear()
     _clear_map_canvas()
-    _refresh_m3924_minimap(world.get_map_bounds(), world.player.position)
+    _refresh_minimap(world.get_map_bounds(), world.player.position)
 
 func _planting_bag_item_allowed(item: String) -> bool:
     if planting_bag_target == null or item == "MANURE": return false

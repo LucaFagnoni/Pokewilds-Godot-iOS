@@ -109,7 +109,7 @@ func _field_active() -> bool:
 func _field() -> Dictionary:
     var m := main
     if not _field_active(): return {}
-    var minimap: Control = m.m3924_minimap_root
+    var minimap: Control = m.minimap_root
     var minimap_shown := is_instance_valid(minimap) and minimap.is_visible_in_tree()
     var minimap_rect := minimap.get_global_rect() if minimap_shown else Rect2()
     var buttons: Array = field_hud.buttons()
@@ -746,7 +746,7 @@ func _refresh_start_details() -> void:
     start_subtitles[2].text = "%d ITEMS" % bag
     # The lead Pokemon and the live minimap stand in for two of the icons.
     start_icons[1].texture = _party_icon(party[0]) if not party.is_empty() else Icons.icon("POKEMON")
-    var minimap := m.m3924_minimap_root.get_node_or_null("Map") as TextureRect if is_instance_valid(m.m3924_minimap_root) else null
+    var minimap := m.minimap_root.get_node_or_null("Map") as TextureRect if is_instance_valid(m.minimap_root) else null
     start_icons[4].texture = minimap.texture if minimap != null and minimap.texture != null else Icons.icon("MAP")
     for i in party_slots.size():
         var slot := party_slots[i]

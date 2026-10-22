@@ -53,7 +53,7 @@ func key(action: String) -> void:
 ## What the HUD shows in the field: minimap, clock, battery and menu button.
 func hud_rects() -> Dictionary:
     var out := {}
-    if main.m3924_minimap_root.is_visible_in_tree(): out["minimap"] = main.m3924_minimap_root.get_global_rect()
+    if main.minimap_root.is_visible_in_tree(): out["minimap"] = main.minimap_root.get_global_rect()
     if main.status_hud.clock_chip.is_visible_in_tree(): out["clock"] = main.status_hud.clock_chip.get_global_rect()
     if main.status_hud.battery_chip.is_visible_in_tree(): out["battery"] = main.status_hud.battery_chip.get_global_rect()
     # The on-screen buttons where a phone has them (a PC with --touch-ui does not show them).

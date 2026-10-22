@@ -41,7 +41,7 @@ func _shown() -> Image:
 
 func _same_as_whole(what: String) -> void:
     var bounds: Rect2i = main.map_raster.bounds
-    var whole: Image = main._m3924_minimap_render(bounds, bounds, world.exact_world)
+    var whole: Image = main._minimap_render(bounds, bounds, world.exact_world)
     var shown := _shown()
     var same := shown.get_data() == whole.get_data()
     if not same:
