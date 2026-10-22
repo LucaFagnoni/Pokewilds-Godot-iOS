@@ -195,7 +195,7 @@ func finish_travel()->bool:
     population.sync_pending=true
     _refresh_drops()
     rest.apply_on_entry()
-    if hosting and not save_checkpoint(main._capture_game_save()):return false
+    if hosting and not await save_checkpoint(main._capture_game_save()):return false
     return await checkpoint_player()
 
 func _generation_requested(actor:String,area:String,token:String)->void:
@@ -927,13 +927,11 @@ func _process(delta:float)->void:
             _clock_sent=now;_clock_sent_speed=Engine.time_scale
             for peer in session.players:
                 if peer!=1:session.send_to(peer,{"kind":"world_clock","seconds":clock_seconds,"speed":Engine.time_scale})
-    if hosting and now-_journal_checked>=20000 and not _checkpoint_running and not _request_busy and not _publishing and not interaction_ui.visible and not main.generating and not main.edge_travel_busy and not main.battle_active:
+    if hosting and now-_journal_checked>=20000 and not _checkpoint_running and not _request_busy and not _publishing and not _world_writing and not interaction_ui.visible and not main.generating and not main.edge_travel_busy and not main.battle_active:
         _journal_checked=now
         if _world_saved_at==0:_world_saved_at=now
         var fold:bool=State.journal_enabled and (store.journal_size()>JOURNAL_COMPACT_BYTES or (state.loose>0 and now-_world_saved_at>=MOTION_SAVE_MS))
-        var captured:Dictionary=main._capture_game_save() if fold else {}
-        if fold and not save_checkpoint(captured):
-            print("ONLINE journal could not be folded into a world save")
+        if fold:_fold_journal(main._capture_game_save())
     if now-_last_checkpoint>=750 and not _checkpoint_running and not _request_busy and not interaction_ui.visible and not main.generating and not main.edge_travel_busy:
         _last_checkpoint=now
         # The full record is large, and position updates share its connection.
@@ -949,6 +947,9 @@ func _process(delta:float)->void:
         var saved:bool=await checkpoint_player()
         if saved:_saved_stamp=stamp
         _checkpoint_running=false
+
+func _fold_journal(captured:Dictionary)->void:
+    if not await save_checkpoint(captured):print("ONLINE journal could not be folded into a world save")
 
 func _identity()->bool:
     var token=Identity.token()
@@ -1154,7 +1155,7 @@ func game_started()->bool:
     if not _create_service():_failure("ONLINE CACHE COULD NOT OPEN");return false
     if not await publish_current():return false
     var checkpoint:Dictionary=main._capture_game_save()
-    if not save_checkpoint(checkpoint):_failure("ONLINE SAVE FAILED");return false
+    if not await save_checkpoint(checkpoint):_failure("ONLINE SAVE FAILED");return false
     var error:Error=session.host(world_id,host_port)
     if error!=OK:_failure("HOST COULD NOT START: "+error_string(error));return false
     # Connections at once: everyone but a hosting player, who is already in.
@@ -1221,12 +1222,44 @@ func publish_current()->bool:
     var registered:bool=bool(result.get("ok",false)) and storage.register_objects(_area(),parts.shared)
     return registered
 
+## Runs `work` on a worker thread and waits for it a frame at a time.
+## `work` must touch nothing the game changes meanwhile.
+var _workers:Array=[]
+func _off_thread(work:Callable)->Variant:
+    var out:=[null]
+    var task:=WorkerThreadPool.add_task(func():out[0]=work.call())
+    _workers.append(task)
+    while not WorkerThreadPool.is_task_completed(task):await get_tree().process_frame
+    WorkerThreadPool.wait_for_task_completion(task)
+    _workers.erase(task)
+    return out[0]
+
+## The world and the host's own save. The game thread only takes a copy of
+## what to write; the writing (megabytes of text, read back and checked, the
+## .bak copies) runs on a worker. Doing it all here stalled the host for
+## about 400 ms on every save, a stall every player saw. One at a time, each
+## with everything up to the moment it starts.
+var _world_writing:=false
 func save_checkpoint(data:Dictionary)->bool:
     if not active or not hosting:return false
-    if store.save(state,{"world_name":String(data.get("world_name","WORLD")),"owner":session.actor})!=OK:return false
-    state.loose=0;_world_saved_at=Time.get_ticks_msec()
-    var saved:bool=saves.save_host(world_id,session.actor,data)==OK
-    return saved
+    while _world_writing:await get_tree().process_frame
+    if not active or not hosting:return false
+    _world_writing=true
+    var job:Dictionary=store.prepare(state,{"world_name":String(data.get("world_name","WORLD")),"owner":session.actor})
+    var loose:int=state.loose
+    # The crafting state is made afresh for each save (main._capture_game_save);
+    # the party, bag and boxes are the game's own and are copied.
+    var host:Dictionary=data.duplicate()
+    for key in host:
+        if key!="crafting_state" and (host[key] is Dictionary or host[key] is Array):host[key]=host[key].duplicate(true)
+    var path:String=saves.path_for(world_id);var id:String=world_id;var actor:String=session.actor
+    var written:Array=await _off_thread(func():
+        var world:Error=Store.write(job) if not job.is_empty() else ERR_INVALID_PARAMETER
+        return [world,Saves.write(path,id,actor,host) if world==OK else ERR_SKIP])
+    var saved:bool=written[0]==OK and store.rotate(job)==OK
+    if saved:state.loose=maxi(0,state.loose-loose);_world_saved_at=Time.get_ticks_msec()
+    _world_writing=false
+    return saved and written[1]==OK
 
 func save_game(data:Dictionary)->bool:
     while building.busy or _request_busy or _checkpoint_running:
@@ -1235,7 +1268,7 @@ func save_game(data:Dictionary)->bool:
     if not await checkpoint_player():return false
     if not hosting:return true # Host's journal has durably acknowledged this player.
     if not await publish_current():return false
-    return save_checkpoint(data)
+    return await save_checkpoint(data)
 
 func _ready_session(id:String,_actor:String)->void:
     if hosting:return
@@ -1556,4 +1589,7 @@ func _notification(what:int)->void:
 
 func _exit_tree()->void:
     if _area_cleanup!=null:_area_cleanup.wait_to_finish();_area_cleanup=null
+    # A save being written is finished, not cut off.
+    for task in _workers:WorkerThreadPool.wait_for_task_completion(task)
+    _workers.clear()
     Network.host_close();Network.join_close()

@@ -10,8 +10,9 @@ func _init(directory:String="")->void:
 func path_for(id:String)->String:
     return root.path_join(id).path_join("host.save") if Store.valid_id(id) else ""
 
-func save_host(id:String,actor:String,data:Dictionary)->Error:
-    var path=path_for(id)
+## The host's own save (path_for). Touches only its files, so it runs on a
+## worker thread (coop_game.gd save_checkpoint).
+static func write(path:String,id:String,actor:String,data:Dictionary)->Error:
     if path.is_empty() or actor.is_empty():return ERR_INVALID_PARAMETER
     var error=DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path.get_base_dir()))
     if error!=OK:return error
@@ -27,7 +28,7 @@ func save_host(id:String,actor:String,data:Dictionary)->Error:
         if error!=OK:return error
     return DirAccess.rename_absolute(path+".pending",path)
 
-func _read(path:String,id:String,actor:String)->Dictionary:
+static func _read(path:String,id:String,actor:String)->Dictionary:
     if not FileAccess.file_exists(path):return {}
     var parser=JSON.new()
     if parser.parse(FileAccess.get_file_as_string(path))!=OK:return {}
