@@ -226,9 +226,7 @@ func _initialize() -> void:
     # --- HOST A GAME -----------------------------------------------------------
     var coop: Node = main.coop_game
     var cap: int = menu.max_players_cap()
-    var declared = (Session as Script).get_script_constant_map().get("MAX_PLAYERS")
-    check(cap == (int(declared) if declared != null else 8), "the cap is coop_session.gd's MAX_PLAYERS (8 without it): %d" % cap)
-    check(cap >= 4, "the cap allows at least the old 4: %d" % cap)
+    check(cap == Session.MAX_PLAYERS and cap == 8, "the cap is coop_session.gd's MAX_PLAYERS: %d" % cap)
     coop.max_players = 4
     coop.lobby_private = true; coop.lobby_password = "stale"
     await reopen("host")
@@ -341,26 +339,37 @@ func _initialize() -> void:
     menu.selection = 3; menu.refresh()
     await key(KEY_E)
     check(Saved.load_all().size() == 2 and menu.edit_tags[3].text == "SAVED", "E saves the selected server")
-    # A server is joined directly at its address and port, like MY SERVERS.
-    chosen.clear()
+    # A server is joined directly at its address and port, like MY SERVERS (coop_game.join_listed_server).
+    menu._joining = 0 # a stale saved-server index must not survive
     await tap(menu.rows[2])
     var joining: Dictionary = coop.join_lobby
-    check(chosen == [["JOIN_SETUP", "203.0.113.5"]], "tapping a server joins it: %s" % [chosen])
-    check(joining.get("direct") == true and int(joining.port) == 54600 and joining.account_id == "" and joining.kind == "server", "a listed server is joined directly: %s" % [joining])
-    # A refusal returns to the list, never to MY SERVERS.
+    check(menu._joining == -1, "joining a listed server forgets the saved one")
+    check(not menu.visible and coop.join_setup_code == "203.0.113.5", "tapping a server goes to the join setup: %s %s" % [menu.visible, coop.join_setup_code])
+    check(joining.get("direct") == true and int(joining.port) == 54600 and joining.account_id == "" and joining.kind == "server" and coop.join_password == "", "a listed server is joined directly: %s" % [joining])
+    # A refusal, even one naming the password, returns to the list, never to MY SERVERS or a saved form.
     await reopen("browse")
     stub_lobbies(found)
+    menu._joining = 0
     menu.show_connecting("CONNECTING...")
-    menu.connecting_failed("SERVER IS FULL")
-    check(menu.page == "browse" and "SERVER IS FULL" in menu.status.text, "a refused listed server returns to the list: %s" % menu.page)
+    menu.connecting_failed("WRONG PASSWORD")
+    check(menu.page == "browse" and "WRONG PASSWORD" in menu.status.text, "a refused listed server returns to the list: %s" % menu.page)
     # A private server asks for its password; back returns to the list.
     stub_lobbies(found)
     await tap(menu.rows[3])
-    check(menu.page == "password_join" and coop.join_lobby.get("direct") == true, "a private server asks for the password: %s" % menu.page)
+    check(menu.page == "password_join", "a private server asks for the password: %s" % menu.page)
     await page_checks("ENTER PASSWORD")
     await shot_page("password_join")
     await back()
     check(menu.page == "browse", "back from its password to the list: %s" % menu.page)
+    # ...and the password goes to the server as its shared password.
+    stub_lobbies(found)
+    await tap(menu.rows[3])
+    for character in "srvpw": await key(character.to_upper().unicode_at(0), character.unicode_at(0))
+    await key(KEY_ENTER)
+    joining = coop.join_lobby
+    check(not menu.visible and coop.join_setup_code == "203.0.113.6" and coop.join_password == "srvpw", "a private server joins with its password: %s %s" % [coop.join_setup_code, coop.join_password])
+    check(joining.get("direct") == true and int(joining.port) == 54601 and joining.kind == "server", "the private server is joined directly: %s" % [joining])
+    await reopen("browse")
     # A game is joined through the lobby network as before.
     stub_lobbies(found)
     chosen.clear()

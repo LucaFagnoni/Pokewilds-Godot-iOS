@@ -535,7 +535,8 @@ func _lobby_line(label:Label,lobby:Dictionary)->void:
     label.text=_clip("  ".join(parts).to_upper(),7,172.0)
     label.modulate=(PING_COLORS_DARK if Settings.enabled("dark_mode") else PING_COLORS)[color]
 
-## Whether a listed server would let this copy in: coop_session.gd refusal()'s rule, on its lobby entry.
+## Whether a listed server would let this copy in: coop_session.gd refusal()'s rule, on its lobby entry
+## (compat ids decide only when both are known).
 func _fits(lobby:Dictionary)->bool:
     if String(lobby.get("protocol",""))!=Session.PROTOCOL or String(lobby.get("mods",""))!=_my_mods():return false
     var compat:=String(lobby.get("compat",""))
@@ -569,26 +570,30 @@ func _save_listed(index:int)->void:
     refresh()
 
 ## A listed game or server, tapped. A server is joined directly at its address and port as MY SERVERS
-## does, one with player accounts through MY SERVERS' login form (the backend's single join entry point).
+## does (_join_server); one with player accounts goes through MY SERVERS' login form first.
 func _join_listed(lobby:Dictionary)->void:
     if int(lobby.players)>=int(lobby["max"]):
         _hint="THAT SERVER IS FULL." if _is_server(lobby) else "THAT GAME IS FULL.";_update_status();return
     if bool(lobby.get("accounts",false)):_join_account_lobby(lobby);return
-    _joining=-1
+    _joining=-1 # never a saved server's form on a refusal
     main.coop_game.join_lobby=lobby.duplicate(true);main.coop_game.join_password=""
-    if _is_server(lobby):main.coop_game.join_lobby.merge({"direct":true,"account_id":"","account_password":""},true)
     if lobby.private:_go("password_join")
+    elif _is_server(lobby):_join_server(lobby,"")
     else:chosen.emit("JOIN_SETUP",String(lobby.address))
+
+## A listed server without player accounts, with its shared password ("" for none).
+func _join_server(lobby:Dictionary,password:String)->void:
+    _hide_keyboard()
+    main.coop_game.join_listed_server(lobby,"",password)
 
 ## A failed or cancelled join goes back to MY SERVERS when it was a saved server, else to the list.
 func _from_saved()->bool:
     var joining:Dictionary=main.coop_game.join_lobby
     return bool(joining.get("direct",false)) and not joining.has("kind")
 
-## The most players HOST A GAME offers: coop_session.gd's MAX_PLAYERS (the hard cap), 8 if it has none.
+## The most players HOST A GAME offers, the host included: coop_session.gd's hard cap.
 static func max_players_cap()->int:
-    var session:Script=Session # Looked up, not named: a build without the constant still compiles.
-    return int(session.get_script_constant_map().get("MAX_PLAYERS",8))
+    return Session.MAX_PLAYERS
 
 func _set_max_players(value:int)->void:
     main.coop_game.max_players=clampi(value,2,max_players_cap());refresh()
@@ -728,6 +733,7 @@ func submit_password()->void:
     if page=="password_set":
         main.coop_game.lobby_private=true;main.coop_game.lobby_password=value;selection=1;_go("host",true)
     elif page=="password_join":
+        if _is_server(main.coop_game.join_lobby):_join_server(main.coop_game.join_lobby.duplicate(),value);return
         main.coop_game.join_password=value
         _hide_keyboard()
         chosen.emit("JOIN_SETUP",String(main.coop_game.join_lobby.get("address","")))
