@@ -9,6 +9,8 @@ const SIZE_NAMES := ["S", "M", "L", "XL", "XXL"]
 ## for its name and details inside the frame, three to a screen.
 const SAVE_ROW_HEIGHT := 40.0
 const VISIBLE_SAVES := 3
+## How far an autosave's row sits in under its world's row.
+const AUTOSAVE_INDENT := 16.0
 const Icons = preload("res://scripts/touch_icons.gd")
 
 var main: Node
@@ -216,15 +218,26 @@ func _refresh_saves() -> void:
         row.visible = index < saves.size()
         if not row.visible: continue
         var data: Dictionary = saves[index].data
+        var autosave: bool = saves[index].get("autosave", false)
+        # An autosave sits indented under its world's own save.
+        var indent := AUTOSAVE_INDENT if autosave and index > 0 \
+            and String(saves[index - 1].path) == main.saves.manual_path(String(saves[index].path)) else 0.0
+        row.position.x = indent
+        row.size.x = 308 - indent
+        (row.get_node("Name") as Control).size.x = 260 - indent
+        (row.get_node("Info") as Control).size.x = 262 - indent
+        (row.get_node("Trash") as Control).position.x = 284 - indent
         var world_name := String(data.get("world_name", "default")).strip_edges()
         (row.get_node("Name") as Label).text = world_name if not world_name.is_empty() else "default"
         var party: Array = data.get("caught_pokemon", [])
         var saved := Time.get_datetime_string_from_unix_time(FileAccess.get_modified_time(String(saves[index].path))).replace("T", "  ")
         # Red while armed: the next tap on it deletes the world.
         (row.get_node("Trash") as TextureRect).modulate = Color(1.0, 0.35, 0.3) if index == delete_armed else Color.WHITE
-        (row.get_node("Info") as Label).text = "%s   %s   SIZE %s   %d POKEMON" % [
-            String(data.get("player_name", "")).to_upper(), saved.left(17),
-            SIZE_NAMES[clampi(int(data.get("world_size", 0)), 0, 4)], party.size()]
+        var size_name: String = SIZE_NAMES[clampi(int(data.get("world_size", 0)), 0, 4)]
+        # The world's size is on its own row: the autosave's has room for its label.
+        (row.get_node("Info") as Label).text = "AUTOSAVE   %s   %d POKEMON" % [saved.left(17), party.size()] \
+            if autosave else "%s   %s   SIZE %s   %d POKEMON" % [
+                String(data.get("player_name", "")).to_upper(), saved.left(17), size_name, party.size()]
 
 func _set_mode(mode: String) -> void:
     if main.text_entry_target != "": main._finish_text_entry(true)
@@ -237,21 +250,28 @@ func _set_mode(mode: String) -> void:
     main._update_classic_menu_labels()
     main._update_menu_cursor()
 
-## The bin on a save: the first tap asks (it turns red), the second deletes.
+## The bin on a save: the first tap asks (it turns red), the second deletes
+## the world with its autosave; the bin on an autosave deletes just that.
 func _trash(index: int) -> void:
     if index >= saves.size(): return
+    var path := String(saves[index].path)
+    var autosave: bool = saves[index].get("autosave", false)
     var world_name := String(saves[index].data.get("world_name", "default")).strip_edges()
+    var what := world_name.to_upper() + (" AUTOSAVE" if autosave else "")
     if delete_armed != index:
         delete_armed = index
-        main.menu_status.text = "TAP THE BIN AGAIN TO DELETE %s." % world_name.to_upper()
+        main.menu_status.text = "TAP THE BIN AGAIN TO DELETE %s." % what
         _refresh_saves()
         return
     delete_armed = -1
-    if main.saves.delete(world_name, String(saves[index].path)) == OK:
+    if main.saves.delete(world_name, path, autosave) == OK:
         saves.remove_at(index)
-        main.menu_status.text = "%s DELETED." % world_name.to_upper()
+        if not autosave and index < saves.size() and saves[index].get("autosave", false) \
+                and main.saves.manual_path(String(saves[index].path)) == path:
+            saves.remove_at(index)
+        main.menu_status.text = "%s DELETED." % what
     else:
-        main.menu_status.text = "%s COULD NOT BE DELETED." % world_name.to_upper()
+        main.menu_status.text = "%s COULD NOT BE DELETED." % what
     _refresh_saves()
 
 func _load_save(index: int) -> void:
@@ -279,7 +299,7 @@ func _surface_key() -> Array:
             model_prev, model_next, copy_button, paste_button, start_button]:
         key.append(control.is_visible_in_tree())
     for control in size_chips: key.append(control.is_visible_in_tree())
-    for row in load_rows: key.append(row.visible)
+    for row in load_rows: key.append_array([row.visible, row.position.x])
     return key
 
 func surface() -> Dictionary:
