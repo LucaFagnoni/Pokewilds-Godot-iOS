@@ -8,9 +8,7 @@ var can_publish:Callable
 func namespace_for(actor:String)->int:
     var key="wild_namespace/"+actor
     if state.records.has(key):return int(state.records[key])
-    var next=1
-    for record_key_value in state.records:
-        if String(record_key_value).begins_with("wild_namespace/"):next=maxi(next,int(state.records[record_key_value])+1)
+    var next=state.namespace_max()+1
     if next>=2097152:return 0 # Keep all generated IDs exactly representable in JSON.
     var result=state.transact(actor,"wildnamespace",[state.change(key,next)])
     return next if result.get("ok",false) else 0
@@ -35,9 +33,7 @@ func register(actor:String,id:String,area:String,record:Dictionary)->Dictionary:
         if history is Dictionary and history.get(unique,false):return {"ok":false,"reason":"already_present"}
     if source.get("rare_forest_mew",false):unique="mew"
     if not unique.is_empty():
-        var prefix="world/"+area+"/wild_pokemon/"
-        for other_key in state.records:
-            if not String(other_key).begins_with(prefix):continue
+        for other_key in state.wild_by_area.get(area,{}):
             var other=Delta.decode(state.records[other_key])
             if other is Dictionary and other.get("species")==record.species:return {"ok":false,"reason":"already_present"}
     var changes:Array=[state.change(key,Delta.encode(record))]
@@ -64,8 +60,7 @@ func claim(actor:String,id:String,area:String,wild_id:int)->Dictionary:
     if presence.get(actor,{}).get("battle",false):return {"ok":false,"reason":"in_battle"}
     var key=claim_key(area,wild_id)
     if state.records.has(key):return {"ok":false,"reason":"already_claimed"}
-    for active_key in state.records:
-        if String(active_key).begins_with("wild_claim/") and state.records[active_key].get("actor")==actor:return {"ok":false,"reason":"already_in_encounter"}
+    if state.claims_by_actor.has(actor):return {"ok":false,"reason":"already_in_encounter"}
     var encoded=state.records.get(record_key(area,wild_id),Delta.encode(null))
     var record=Delta.decode(encoded)
     if not record is Dictionary:return {"ok":false,"reason":"no_pokemon"}
@@ -84,8 +79,8 @@ func abandon(coordinator:String,id:String,actor:String="")->Dictionary:
     var prior=_prior(coordinator,"wildabandon/"+id,[actor])
     if not prior.is_empty():return prior
     var changes:Array=[]
-    for key in state.records:
-        if String(key).begins_with("wild_claim/") and (actor.is_empty() or state.records[key].get("actor")==actor):changes.append(state.change(key,null))
+    for claimant in state.claims_by_actor if actor.is_empty() else [actor]:
+        for key in state.claims_by_actor.get(claimant,{}):changes.append(state.change(key,null))
     if changes.is_empty():return {"ok":true}
     return state.transact(coordinator,"wildabandon/"+id,changes,state.fingerprint([actor]))
 
