@@ -50,7 +50,8 @@ func _initialize() -> void:
         else:
             failures.append("host check")
             printerr("SESSION HOST CHECK FAILS: ", host)
-    print("BATTLE SESSION TEST: %d battles, %d differ%s" % [checked, failures.size(),
+    # "N failed" is what server/fast_tests.py looks for.
+    print("BATTLE SESSION TEST: %d battles, %d differ, %d failed%s" % [checked, failures.size(), failures.size(),
         "" if failures.is_empty() else ": " + ", ".join(failures)])
     quit(1 if not failures.is_empty() or checked == 0 else 0)
 

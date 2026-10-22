@@ -12,6 +12,9 @@ import concurrent.futures, os, re, subprocess, sys, time
 # (script, arguments after "--"). Slowest first, so the last test does not start late.
 TESTS = [
     ("fixture_load_test", ["--touch-ui"]),
+    ("battle_transcript_record", ["--check"]),
+    ("battle_session_test", []),
+    ("pvp_battle_test", []),
     ("journal_batch_test", []),
     ("save_format_test", ["--touch-ui"]),
     ("coop_ui_test", ["--touch-ui"]),
@@ -39,7 +42,7 @@ TIMEOUT = 420 # the slowest takes ~1 minute on a loaded machine
 
 def run(godot, test, args):
     """-> (ok, seconds, output)"""
-    command = [godot, "--headless", "--path", "project", "-s", f"../server/{test}.gd"] + (["--"] + args if args else [])
+    command = [godot, "--headless", "--path", "project", "-s", os.path.abspath(f"server/{test}.gd")] + (["--"] + args if args else [])
     started = time.time()
     try:
         done = subprocess.run(command, capture_output=True, timeout=TIMEOUT)
