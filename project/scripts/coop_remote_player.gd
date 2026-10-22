@@ -28,6 +28,8 @@ var _pose_cache:Dictionary={}
 var _night=preload("res://scripts/coop_night_visuals.gd").new()
 ## What render_at last drew: [first, second, weight, local z, local y].
 var _drawn:Array=[null,null,-1.0,0,0.0]
+## The look each part's texture was last set for (_draw_frames).
+var _looks:Dictionary={}
 
 func configure(main:Node)->void:
     _main=main
@@ -71,11 +73,16 @@ func receive(snapshot:Dictionary,received_ms:int=-1)->void:
     if not _frames.is_empty() and _number(snapshot.get("sent")) and _number(_frames[-1].data.get("sent")) \
             and float(snapshot.sent)-float(_frames[-1].data.sent)>HOLD_GAP_MS and now-int(_frames[-1].time)>SEND_INTERVAL_MS:
         _frames.append({"time":now-SEND_INTERVAL_MS,"data":_frames[-1].data})
-    _frames.append({"time":now,"data":snapshot.duplicate(true)})
+    _frames.append({"time":now,"data":snapshot}) # the caller's own copy (coop_players.gd _show)
     while _frames.size()>8:_frames.pop_front()
 
 func _process(_delta:float)->void:
+    var started:=Time.get_ticks_usec()
     render_at(Time.get_ticks_msec()-INTERPOLATION_MS)
+    if _transport==null:_transport=load("res://scripts/coop_transport.gd") # it preloads this script
+    if _transport.stats!=null:_transport.count("proc:remote",0,started)
+
+static var _transport:GDScript
 
 func render_at(time_ms:int)->void:
     if _frames.is_empty():return
@@ -104,7 +111,11 @@ func _draw_frames(first:Dictionary,second:Dictionary,weight:float)->void:
         var part:Dictionary=data.parts.get(key,{})
         sprite.visible=not part.is_empty()
         if not sprite.visible:continue
-        if key=="player":
+        # Which picture a part shows changes far less often than where it is:
+        # it is looked up (recoloured, cropped) only when it does.
+        var look:Array=[model,color,data.get("running"),data.get("pose"),data.get("pose_frame"),data.get(key+"_species"),data.get(key+"_form"),data.get(key+"_shiny")]
+        if _looks.get(key)==look:pass
+        elif key=="player":
             var running=bool(data.get("running",false))
             var base:Texture2D=_main.lazy_texture((_main.PLAYER_MODEL_RUN_TEXTURES if running else _main.PLAYER_MODEL_WALK_TEXTURES)[model])
             var pose=String(data.get("pose","walk"))
@@ -132,6 +143,7 @@ func _draw_frames(first:Dictionary,second:Dictionary,weight:float)->void:
             var sparkles:=sprite.get_node_or_null("ShinySparkles")
             if shiny and sparkles==null:preload("res://scripts/shiny_sparkles.gd").attach(sprite,{"species":species,"shiny":true})
             elif not shiny and sparkles!=null:sparkles.name="ShinySparklesGone";sparkles.queue_free()
+        _looks[key]=look
         if sprite.texture==null:sprite.hide();continue
         sprite.hframes=clampi(int(part.get("hframes",1)),1,sprite.texture.get_width())
         sprite.vframes=clampi(int(part.get("vframes",1)),1,sprite.texture.get_height())
@@ -230,34 +242,86 @@ static func capture(main:Node)->Dictionary:
     result["night"]=preload("res://scripts/coop_night_visuals.gd").capture(world)
     return result
 
-## player_visual on the wire (coop_transport.gd): bytes instead of JSON, about
-## half the size. Each group of keys below is a 32-bit mask of the keys present,
-## then their values in this order: a type byte (0 false, 1 true, 2 float32,
-## 3 UTF-8 text under 256 bytes) and the value. A packet that does not fit (any
-## other key or type, a number a float32 does not hold exactly) goes as JSON.
-## Read back, numbers are floats as JSON gave them, and the packet still goes
-## through coop_players.valid_packet before use.
+## player_visual on the wire (coop_transport.gd): bytes instead of JSON. A
+## frame is WIRE_TAG and the whole packet, or WIRE_DELTA and only what changed
+## since the last one on the same connection from the same player. That player
+## (the "stream": the relayed player's id, "" for one's own) is given whole
+## as a value (below) and a slot byte, the sender's number for it; a delta
+## names only the slot (255: none, always whole). Then the groups of keys: the
+## packet, its visual, its parts (a group of groups), its shadow and its night sprites.
+## Whole, a group is a 32-bit mask of the keys present, then their values in
+## this order: a type byte (0 false, 1 true, 2 float32, 3 UTF-8 text under 256
+## bytes, 4 lowercase hex text as its bytes, 5 int8, 6 int16) and the value.
+## In a delta each group starts with a byte: 0 as in the last packet, 1 whole,
+## 2 the same keys with only the changed ones sent (mask, values; a changed part
+## is itself a group). The night sprites go whole (1) or not at all (0).
+## A walking player's update is ~40 bytes instead of ~170 whole.
+## A packet that does not fit (any other key or type, a number a float32 does
+## not hold exactly) goes as JSON. Read back, numbers are floats as JSON gave
+## them, and the packet still goes through coop_players.valid_packet before use.
+## TCP keeps the frames in order, so both ends hold the same last packet: the
+## sender's (coop_transport.gd `sent`) only once its frame is queued, the
+## receiver's once read; both go with the connection. A delta with nothing to
+## apply to is a broken connection.
 const WIRE_TAG:=1
+const WIRE_DELTA:=3
 const WIRE_MAX_BYTES:=16384
-const WIRE_TOP:=["area","layer","population_scope","battle","afk","cell_x","cell_y","body_x","body_y","helper_slot","field_level","party_level","t","actor"]
+const WIRE_TOP:=["area","layer","population_scope","battle","afk","cell_x","cell_y","body_x","body_y","helper_slot","field_level","party_level","t"]
 const WIRE_VISUAL:=["model","color","running","move","fx","fy","helper_species","helper_shiny","helper_form","follower_species","follower_shiny","follower_form","pose","pose_frame","sleeping","thrown_species","thrown_shiny","thrown_form"]
 const WIRE_PARTS:=["player","helper","follower","rest","thrown"]
 const WIRE_PART:=["x","y","z","frame","hframes","vframes","flip_h","centered","ox","oy","s"]
 const WIRE_SHADOW:=["x","y","z"]
 const WIRE_NIGHT:=["id","texture","x","y","z","visible","centered","flip_h","hframes","vframes","frame","region","rx","ry","rw","rh"]
 
-## The packet as bytes, or empty when it has to go as JSON.
-static func pack(packet:Dictionary)->PackedByteArray:
+## The packet as bytes, or empty when it has to go as JSON. With `base` (the
+## last packet sent to this connection for this player) only what changed.
+static func pack(packet:Dictionary,base:Variant=null,slot:int=255)->PackedByteArray:
     var visual=packet.get("visual")
     if packet.get("kind")!="player_visual" or not visual is Dictionary or not visual.get("parts") is Dictionary or not visual.get("shadow") is Dictionary \
-            or not visual.get("night") is Array or visual.night.size()>64:return PackedByteArray()
-    var out:=PackedByteArray([WIRE_TAG])
-    if not (_pack(out,packet,WIRE_TOP,["kind","visual"]) and _pack(out,visual,WIRE_VISUAL,["parts","shadow","night"]) \
-            and _pack(out,visual.parts,WIRE_PARTS,[],WIRE_PART) and _pack(out,visual.shadow,WIRE_SHADOW)):return PackedByteArray()
+            or not visual.get("night") is Array or visual.night.size()>64 or not packet.get("actor","") is String:return PackedByteArray()
+    if slot<0 or slot>=255:base=null
+    var old=base.visual if base is Dictionary else null
+    var out:=PackedByteArray([WIRE_DELTA if old!=null else WIRE_TAG])
+    if old==null and not _value(out,packet.get("actor","")):return PackedByteArray()
+    out.append(clampi(slot,0,255))
+    if not (_group(out,packet,base,WIRE_TOP,["kind","visual","actor"]) and _group(out,visual,old,WIRE_VISUAL,["parts","shadow","night"]) \
+            and _group(out,visual.parts,old.parts if old!=null else null,WIRE_PARTS,[],WIRE_PART) and _group(out,visual.shadow,old.shadow if old!=null else null,WIRE_SHADOW)):return PackedByteArray()
+    if old!=null:
+        if visual.night==old.night:out.append(0);return out if out.size()<=WIRE_MAX_BYTES else PackedByteArray()
+        out.append(1)
     out.append(visual.night.size())
     for entry in visual.night:
         if not entry is Dictionary or not _pack(out,entry,WIRE_NIGHT):return PackedByteArray()
     return out if out.size()<=WIRE_MAX_BYTES else PackedByteArray()
+
+## One group: whole without a base, else as one of the delta forms.
+static func _group(out:PackedByteArray,data:Dictionary,base:Variant,keys:Array,skip:Array=[],inner:Array=[])->bool:
+    if base==null:return _pack(out,data,keys,skip,inner)
+    if not base is Dictionary or not _same_keys(data,base,skip):out.append(1);return _pack(out,data,keys,skip,inner)
+    var mask:=0
+    for index in keys.size():
+        if data.has(keys[index]) and not _equal(data[keys[index]],base[keys[index]]):mask|=1<<index
+    if mask==0:out.append(0);return true
+    out.append(2);out.resize(out.size()+4);out.encode_u32(out.size()-4,mask)
+    for index in keys.size():
+        if mask&(1<<index)==0:continue
+        var value=data[keys[index]]
+        if not inner.is_empty():
+            if not value is Dictionary or not _group(out,value,base[keys[index]],inner):return false
+        elif not _value(out,value):return false
+    return true
+
+static func _same_keys(data:Dictionary,base:Dictionary,skip:Array)->bool:
+    for key in data:
+        if not key in skip and not base.has(key):return false
+    for key in base:
+        if not key in skip and not data.has(key):return false
+    return true
+
+## Same value as sent: 1 and 1.0 are, true and 1 are not.
+static func _equal(a:Variant,b:Variant)->bool:
+    if (a is int or a is float) and (b is int or b is float):return float(a)==float(b)
+    return typeof(a)==typeof(b) and a==b
 
 static func _pack(out:PackedByteArray,data:Dictionary,keys:Array,skip:Array=[],inner:Array=[])->bool:
     var mask:=0
@@ -271,57 +335,118 @@ static func _pack(out:PackedByteArray,data:Dictionary,keys:Array,skip:Array=[],i
         var value=data[key]
         if not inner.is_empty():
             if not value is Dictionary or not _pack(out,value,inner):return false
-        elif value is bool:out.append(1 if value else 0)
-        elif (value is int or value is float) and is_finite(float(value)):
-            out.append(2);out.resize(out.size()+4);out.encode_float(out.size()-4,value)
-            if out.decode_float(out.size()-4)!=float(value):return false
-        elif value is String and value.to_utf8_buffer().size()<256:
-            var text:PackedByteArray=value.to_utf8_buffer()
-            out.append(3);out.append(text.size());out.append_array(text)
-        else:return false
+        elif not _value(out,value):return false
     return true
 
-## The packet pack() made, or null for anything malformed.
-static func unpack(bytes:PackedByteArray)->Variant:
-    if bytes.is_empty() or bytes.size()>WIRE_MAX_BYTES or bytes[0]!=WIRE_TAG:return null
+static func _value(out:PackedByteArray,value:Variant)->bool:
+    if value is bool:out.append(1 if value else 0);return true
+    if (value is int or value is float) and is_finite(float(value)):
+        var number:=float(value)
+        if number==floorf(number) and absf(number)<=32767:
+            if absf(number)<=127:out.append(5);out.append(int(number)&0xFF)
+            else:out.append(6);out.resize(out.size()+2);out.encode_s16(out.size()-2,int(number))
+            return true
+        out.append(2);out.resize(out.size()+4);out.encode_float(out.size()-4,number)
+        return out.decode_float(out.size()-4)==number
+    if not value is String:return false
+    var text:String=value
+    if text.length()>=2 and text.length()%2==0 and text.length()<512 and text==text.to_lower() and text.is_valid_hex_number():
+        var raw:=text.hex_decode()
+        if raw.hex_encode()==text:out.append(4);out.append(raw.size());out.append_array(raw);return true
+    var utf8:=text.to_utf8_buffer()
+    if utf8.size()>=256:return false
+    out.append(3);out.append(utf8.size());out.append_array(utf8)
+    return true
+
+## The packet pack() made, or null for anything malformed. `bases` holds the
+## last packet read from this connection for each slot; it is updated.
+static func unpack(bytes:PackedByteArray,bases:Dictionary={})->Variant:
+    if bytes.is_empty() or bytes.size()>WIRE_MAX_BYTES or not bytes[0] in [WIRE_TAG,WIRE_DELTA]:return null
     var at:=[1]
-    var packet=_unpack(bytes,at,WIRE_TOP)
-    var visual=_unpack(bytes,at,WIRE_VISUAL) if packet!=null else null
-    var parts=_unpack(bytes,at,WIRE_PARTS,WIRE_PART) if visual!=null else null
-    var shadow=_unpack(bytes,at,WIRE_SHADOW) if parts!=null else null
-    if shadow==null or int(at[0])>=bytes.size() or bytes[at[0]]>64:return null
-    var night:Array=[]
-    var count:int=bytes[at[0]];at[0]+=1
-    for _entry in count:
-        var entry=_unpack(bytes,at,WIRE_NIGHT)
-        if entry==null:return null
-        night.append(entry)
+    var stream=_read(bytes,at) if bytes[0]==WIRE_TAG else null
+    if (bytes[0]==WIRE_TAG and not stream is String) or int(at[0])>=bytes.size():return null
+    var slot:int=bytes[at[0]];at[0]+=1
+    var base=bases.get(slot) if bytes[0]==WIRE_DELTA and slot<255 else null
+    if bytes[0]==WIRE_DELTA:
+        if base==null:return null
+        stream=String(base.get("actor",""))
+    var old=base.visual if base!=null else null
+    var packet=_unread(bytes,at,WIRE_TOP,base)
+    var visual=_unread(bytes,at,WIRE_VISUAL,old) if packet!=null else null
+    var parts=_unread(bytes,at,WIRE_PARTS,old.parts if old!=null else null,WIRE_PART) if visual!=null else null
+    var shadow=_unread(bytes,at,WIRE_SHADOW,old.shadow if old!=null else null) if parts!=null else null
+    if shadow==null or int(at[0])>=bytes.size():return null
+    var night=null
+    if old!=null:
+        var flag:=bytes[at[0]];at[0]+=1
+        if flag==0:night=old.night
+        elif flag!=1 or int(at[0])>=bytes.size():return null
+    if night==null:
+        if bytes[at[0]]>64:return null
+        night=[]
+        var count:int=bytes[at[0]];at[0]+=1
+        for _entry in count:
+            var entry=_unpack(bytes,at,WIRE_NIGHT)
+            if entry==null:return null
+            night.append(entry)
     if int(at[0])!=bytes.size():return null
     visual["parts"]=parts;visual["shadow"]=shadow;visual["night"]=night
     packet["kind"]="player_visual";packet["visual"]=visual
+    if not String(stream).is_empty():packet["actor"]=stream
+    if slot<255:bases[slot]=packet
     return packet
+
+## One group read back: whole without a base, else in one of the delta forms.
+static func _unread(bytes:PackedByteArray,at:Array,keys:Array,base:Variant,inner:Array=[])->Variant:
+    if base==null:return _unpack(bytes,at,keys,inner)
+    if not base is Dictionary or int(at[0])>=bytes.size():return null
+    var flag:=bytes[at[0]];at[0]+=1
+    if flag==0:return _kept(base,keys)
+    if flag==1:return _unpack(bytes,at,keys,inner)
+    if flag!=2 or int(at[0])+4>bytes.size():return null
+    var mask:=bytes.decode_u32(at[0]);at[0]+=4
+    if mask>>keys.size()!=0:return null
+    var data:=_kept(base,keys)
+    for index in keys.size():
+        if mask&(1<<index)==0:continue
+        if not data.has(keys[index]):return null
+        var value=_unread(bytes,at,inner,data[keys[index]]) if not inner.is_empty() else _read(bytes,at)
+        if value==null:return null
+        data[keys[index]]=value
+    return data
+
+## The keys of this group from the last packet (not those of the groups inside it).
+static func _kept(base:Dictionary,keys:Array)->Dictionary:
+    var data:={}
+    for key in keys:
+        if base.has(key):data[key]=base[key]
+    return data
 
 static func _unpack(bytes:PackedByteArray,at:Array,keys:Array,inner:Array=[])->Variant:
     var i:int=at[0]
     if i+4>bytes.size():return null
-    var mask:=bytes.decode_u32(i);i+=4
+    var mask:=bytes.decode_u32(i);at[0]=i+4
     if mask>>keys.size()!=0:return null
     var data:={}
     for index in keys.size():
         if mask&(1<<index)==0:continue
-        if not inner.is_empty():
-            at[0]=i
-            var value=_unpack(bytes,at,inner)
-            if value==null:return null
-            data[keys[index]]=value;i=at[0]
-            continue
-        if i>=bytes.size():return null
-        var type:=bytes[i];i+=1
-        if type<=1:data[keys[index]]=type==1
-        elif type==2 and i+4<=bytes.size():data[keys[index]]=bytes.decode_float(i);i+=4
-        elif type==3 and i<bytes.size() and i+1+bytes[i]<=bytes.size():
-            var length:=bytes[i]
-            data[keys[index]]=bytes.slice(i+1,i+1+length).get_string_from_utf8();i+=1+length
-        else:return null
-    at[0]=i
+        var value=_unpack(bytes,at,inner) if not inner.is_empty() else _read(bytes,at)
+        if value==null:return null
+        data[keys[index]]=value
     return data
+
+## One value, or null (no value is null).
+static func _read(bytes:PackedByteArray,at:Array)->Variant:
+    var i:int=at[0]
+    if i>=bytes.size():return null
+    var type:=bytes[i];i+=1
+    var value=null
+    if type<=1:value=type==1
+    elif type==2 and i+4<=bytes.size():value=bytes.decode_float(i);i+=4
+    elif type==5 and i<bytes.size():value=float(bytes.decode_s8(i));i+=1
+    elif type==6 and i+2<=bytes.size():value=float(bytes.decode_s16(i));i+=2
+    elif (type==3 or type==4) and i<bytes.size() and i+1+bytes[i]<=bytes.size():
+        var raw:=bytes.slice(i+1,i+1+bytes[i])
+        value=raw.get_string_from_utf8() if type==3 else raw.hex_encode();i+=1+bytes[i]
+    at[0]=i
+    return value

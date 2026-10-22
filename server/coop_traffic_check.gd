@@ -4,7 +4,8 @@
 # one is refused), a storage box goes as the few edits that changed it, an
 # area saved again without its terrain cache is made whole
 # from the stored one only, a position packet sent as bytes reads back
-# as JSON would have given it (and a malformed one is refused), and the Megas
+# as JSON would have given it (and a malformed one is refused), one sent after
+# another as only what changed reads back whole, and the Megas
 # packed piece by piece match a whole encode.
 # Run: godot --headless --path project -s <this file>
 extends SceneTree
@@ -156,9 +157,11 @@ func _visuals() -> void:
 		check(Remote.unpack(bytes.slice(0, cut)) == null, "a cut packet is refused (%d bytes)" % cut)
 	var longer := bytes.duplicate(); longer.append(0)
 	check(Remote.unpack(longer) == null, "trailing bytes are refused")
-	var bad_mask := bytes.duplicate(); bad_mask.encode_u32(1, 0xFFFFFFFF)
+	# The relayed player's id comes first: type 4 (hex as bytes), 32 bytes, a slot byte, then the packet's keys.
+	check(bytes[1] == 4 and bytes[2] == 32 and bytes[35] == 255, "a player id travels as its 32 bytes")
+	var bad_mask := bytes.duplicate(); bad_mask.encode_u32(36, 0xFFFFFFFF)
 	check(Remote.unpack(bad_mask) == null, "unknown keys are refused")
-	var bad_type := bytes.duplicate(); bad_type[5] = 9
+	var bad_type := bytes.duplicate(); bad_type[40] = 9
 	check(Remote.unpack(bad_type) == null, "an unknown value type is refused")
 	var too_big := PackedByteArray([Remote.WIRE_TAG]); too_big.resize(Remote.WIRE_MAX_BYTES + 1)
 	check(Remote.unpack(too_big) == null, "an oversized packet is refused")
@@ -169,6 +172,7 @@ func _visuals() -> void:
 	wordy.visual.night.clear()
 	for i in 64: wordy.visual.night.append(packet.visual.night[0].merged({"id": str(i), "texture": "t".repeat(250)}, true))
 	check(Remote.pack(wordy).is_empty(), "a packet over the size limit goes as JSON")
+	_deltas(packet)
 	# Random bytes after the tag: refused or read as some packet, never a crash.
 	var noise := RandomNumberGenerator.new(); noise.seed = 7
 	for i in 300:
@@ -176,6 +180,47 @@ func _visuals() -> void:
 		for j in noise.randi_range(0, 200): junk.append(noise.randi_range(0, 255))
 		var any = Remote.unpack(junk)
 		check(any == null or any is Dictionary, "random bytes")
+
+## A position sent after another on the same connection goes as what changed,
+## and reads back as the whole packet would have; without the one before it is refused.
+func _deltas(packet: Dictionary) -> void:
+	var sent := {}
+	var first := Remote.pack(packet, null, 0)
+	Remote.unpack(first, sent)
+	var moves := []
+	var step := packet.duplicate(true)
+	for i in 6:
+		step = step.duplicate(true)
+		step.t = int(step.t) + 50; step.body_x = float(step.body_x) + 1.0
+		step.visual.parts.player.x = float(step.visual.parts.player.x) + 1.0; step.visual.parts.player.frame = i % 4
+		if i == 2: step.cell_x = int(step.cell_x) + 1
+		if i == 3: step.visual.parts.erase("thrown")
+		if i == 4: step.visual.night[0].x = 11.0
+		if i == 5: step.visual.erase("pose_frame"); step.visual.parts["follower"] = step.visual.parts.player.duplicate()
+		moves.append(step)
+	var base: Dictionary = packet
+	for i in moves.size():
+		var delta := Remote.pack(moves[i], base, 0)
+		check(not delta.is_empty() and delta[0] == Remote.WIRE_DELTA, "step %d goes as a delta" % i)
+		if i == 0: check(delta.size() < 64 and delta.size() * 4 < first.size(), "a step is a few bytes (%d of %d)" % [delta.size(), first.size()])
+		var read = Remote.unpack(delta, sent)
+		check(read is Dictionary and _same(read, JSON.parse_string(JSON.stringify(moves[i]))) and Players.valid_packet(read), "step %d reads back whole" % i)
+		base = moves[i]
+	var still := Remote.pack(base, base, 0)
+	check(still.size() < first.size() / 8 and _same(Remote.unpack(still, sent), JSON.parse_string(JSON.stringify(base))), "standing still is a few bytes (%d)" % still.size())
+	check(Remote.unpack(Remote.pack(moves[0], packet, 0), {}) == null, "a delta with nothing before it is refused")
+	check(Remote.pack(moves[0], packet)[0] == Remote.WIRE_TAG, "without a slot it goes whole")
+	var mine := packet.duplicate(true); mine.erase("actor")
+	Remote.unpack(Remote.pack(mine, null, 1), sent)
+	var other = Remote.unpack(Remote.pack(base, base, 0), sent)
+	check(other is Dictionary and other.actor == packet.actor and not sent[1].has("actor"), "each player's last packet is kept apart")
+	var noise := RandomNumberGenerator.new(); noise.seed = 11
+	for i in 300:
+		var junk := Remote.pack(moves[1], packet, 0)
+		for j in noise.randi_range(1, 4): junk[noise.randi_range(1, junk.size() - 1)] = noise.randi_range(0, 255)
+		var bases := {0: packet.duplicate(true)}
+		var any = Remote.unpack(junk, bases)
+		check(any == null or any is Dictionary, "damaged deltas")
 
 func _megas() -> void:
 	var megas := {}

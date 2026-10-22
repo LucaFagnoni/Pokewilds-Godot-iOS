@@ -3,6 +3,7 @@ const TexturePixels = preload("res://scripts/texture_pixels.gd")
 signal presence_received(actor:String,packet:Dictionary)
 ## Area-scoped visual replication. The host decides which peers share an area.
 const Remote=preload("res://scripts/coop_remote_player.gd")
+const Transport=preload("res://scripts/coop_transport.gd")
 const SEND_INTERVAL_MS:=50
 const HEARTBEAT_MS:=1000
 const AFK_MS:=180000
@@ -39,6 +40,11 @@ func _input(event:InputEvent)->void:
     _last_input=Time.get_ticks_msec()
 
 func _process(_delta:float)->void:
+    var started:=Time.get_ticks_usec()
+    _send_visual()
+    if Transport.stats!=null:Transport.count("proc:players",0,started)
+
+func _send_visual()->void:
     if main==null or session==null or not session.trusted or area.is_empty() or not main.started or main.generating or Server.active:return
     var now=Time.get_ticks_msec()
     if now-_last_send<SEND_INTERVAL_MS:return
@@ -87,21 +93,26 @@ func _message(peer:int,actor:String,packet:Dictionary)->void:
         var remote_actor=packet.get("actor")
         if remote_actor is String and remote_actor!=session.actor:_show(remote_actor,packet)
 
+## Packets as read (coop_remote_player.gd unpack) are new each time and never
+## changed after, though one shares the parts that did not change with the
+## one before: they are kept and passed on without deep copies.
 func _relay(sender_peer:int,actor:String,packet:Dictionary)->void:
-    var outgoing=packet.duplicate(true)
+    var outgoing=packet.duplicate()
     outgoing["actor"]=actor
     _last_received[actor]=Time.get_ticks_msec()
     last_packets[actor]=outgoing
     presence_received.emit(actor,outgoing)
+    var targets:Array=[]
     for peer in session.players:
         if peer==1 or peer==sender_peer:continue
         var other_actor=String(session.players[peer].actor)
-        if state!=null and state.members.get(other_actor,{}).get("area","")==packet.area:
-            session.send_to(peer,outgoing)
+        if state!=null and state.members.get(other_actor,{}).get("area","")==packet.area:targets.append(peer)
+    # Packed once for all of them (coop_transport.gd send_visual).
+    session.transport.send_visual(targets,outgoing)
     if actor!=session.actor and not Server.active:_show(actor,outgoing)
 
 func _show(actor:String,packet:Dictionary)->void:
-    last_packets[actor]=packet.duplicate(true)
+    last_packets[actor]=packet
     _last_received[actor]=Time.get_ticks_msec()
     if packet.area!=area or packet.get("layer","")!=_layer():
         if actors.has(actor):
@@ -115,8 +126,7 @@ func _show(actor:String,packet:Dictionary)->void:
         main.world.add_child(remote);remote.configure(main)
         actors[actor]=remote
     _last_received[actor]=Time.get_ticks_msec()
-    last_packets[actor]=packet.duplicate(true)
-    var visual:Dictionary=packet.visual.duplicate(true)
+    var visual:Dictionary=packet.visual.duplicate()
     visual["battle"]=bool(packet.get("battle",false));visual["afk"]=bool(packet.get("afk",false))
     if packet.has("t"):visual["sent"]=packet.t
     actors[actor].receive(visual)

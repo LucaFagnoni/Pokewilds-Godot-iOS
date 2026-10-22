@@ -369,6 +369,7 @@ func _process(_delta:float)->void:
     if sync_pending:
         sync_pending=false
         synchronize()
+    if game.nobody_here():return
     var world=game.main.world
     var simulate:bool=authority() and world.is_processing() and (not world.gameplay_enabled or world.active_area_id!="OVERWORLD")
     # world._update_wild_pokemon makes the list itself first.
