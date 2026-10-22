@@ -19,8 +19,20 @@ var horde_action:Callable
 var raid_action:Callable
 var population_battle_action:Callable
 var event_action:Callable
+const Patch=preload("res://scripts/coop_patch.gd")
+const PROFILE_RESULTS:=["wild_finish","raid_finish","population_finish","event_finish"]
+var _rebuilt:Dictionary={}
+var _saves:Dictionary={}
 const MAX_PENDING:=128
 const MAX_PER_SECOND:=40
+
+## A player's record was saved (request `id`) and is now `base`. The last few
+## per player: a player waits for each command before saving again.
+func saved(actor:String,id:String,base:String)->void:
+    if not _saves.has(actor):_saves[actor]={}
+    var mine:Dictionary=_saves[actor]
+    if mine.size()>=8:mine.erase(mine.keys()[0])
+    mine[id]=base
 
 func bind(connection, model) -> void:
     session=connection;state=model
@@ -37,7 +49,7 @@ func _message(peer:int,actor:String,payload:Dictionary)->void:
     # this one included, in the shared commit; sending it here as well put the
     # player's whole record on the wire twice.
     var answer:Dictionary=visible_result(result,actor)
-    answer.erase("changes");answer.erase("player_edits")
+    answer.erase("changes");answer.erase("player_edits");answer.erase("list_edits")
     var packet={"kind":"command_result","id":payload.get("id",""),"result":answer}
     if session.send_to(peer,packet)==ERR_BUSY and _pending.size()<MAX_PENDING:
         _pending.append({"peer":peer,"packet":packet})
@@ -54,7 +66,7 @@ func _departed(_peer:int,actor:String)->void:
     var result:Dictionary=interactions.player_disconnected(actor)
     if result.get("ok",false):reply.emit(actor,"",result)
     # AreaService owns the leave/authority epoch transition.
-    presence.erase(actor);_budgets.erase(actor)
+    presence.erase(actor);_budgets.erase(actor);_saves.erase(actor)
     _interaction_replies.erase(actor)
 
 func execute(actor:String,payload:Dictionary)->Dictionary:
@@ -69,6 +81,27 @@ func execute(actor:String,payload:Dictionary)->Dictionary:
     if now-int(budget.start)>=1000:budget={"start":now,"count":0}
     budget.count+=1;_budgets[actor]=budget
     if int(budget.count)>MAX_PER_SECOND:return {"ok":false,"reason":"rate_limited"}
+    # Sent right behind a save of the player's record, in the same round trip
+    # (coop_game.gd command): it runs only if that save worked, and is checked
+    # against the record the save made, as it was when sent after the answer.
+    if payload.has("after"):
+        var made=_saves.get(actor,{}).get(str(payload.after))
+        if made==null:return {"ok":false,"reason":"save_failed"}
+        if args.has("profile_hash"):args["profile_hash"]=made
+        if operation=="deploy":args["base"]=made
+    # A battle's result may bring the player's record as edits to the one held
+    # here (coop_game.gd _with_profile_edits). Rebuilt once per request, so a
+    # request sent again is the same request and gets the same answer.
+    if operation in PROFILE_RESULTS and args.has("profile_edits") and not args.has("profile"):
+        var rebuilt=_rebuilt.get(actor+"/"+id)
+        if rebuilt==null:
+            var key:String="player/"+actor
+            if not Patch.valid(args.profile_edits) or String(args.get("base",""))!=state.print_of(key,{}):return {"ok":false,"reason":"profile_changed"}
+            rebuilt=Patch.apply(state.records.get(key,{}),args.profile_edits)
+            if not rebuilt is Dictionary:return {"ok":false,"reason":"edits_do_not_fit"}
+            if _rebuilt.size()>=64:_rebuilt.clear()
+            _rebuilt[actor+"/"+id]=rebuilt
+        args=args.duplicate();args.erase("profile_edits");args["profile"]=rebuilt.duplicate(true)
     var consent_command:bool=operation in ["interact","answer","trade_offer","trade_confirm","battle_action","battle_done","cancel"]
     # Only these keep their answer by request; a world motion's runs to 16 KB.
     var request_hash:String=state.fingerprint([operation,args]) if consent_command else ""

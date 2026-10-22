@@ -403,24 +403,40 @@ func _checkpoint_player_now()->bool:
             storage.broadcast_profile_storage(result)
         else:print("ONLINE host player record not saved: ",result.get("reason","unknown")," ",result.get("key",""))
         return bool(result.get("ok",false))
-    # Send what changed since the record the host last confirmed. The whole
-    # record goes only the first time, or after the host could not use edits.
+    var request:=_checkpoint_packet(profile,sent_pending)
+    if request.is_empty():return true
+    var response:Dictionary=await _rpc(request)
+    if _sent_checkpoints.erase(request.id) or not response.get("ok",false):_send_whole_profile=true
+    return bool(response.get("ok",false))
+
+## Guest: a save of this player's record, sent as what changed since the record
+## the host last confirmed. The whole record goes only the first time, or after
+## the host could not use edits. {} when nothing changed. The answer is taken
+## in as it arrives (_checkpoint_done), before anything the host sent after it.
+var _sent_checkpoints:Dictionary={}
+
+func _checkpoint_packet(profile:Dictionary,sent_pending:Array)->Dictionary:
     var request:={"kind":"profile_checkpoint","id":_id(),"base":profile_base}
     var confirmed:Dictionary=shared_records.get("player/"+session.actor,{})
     if _send_whole_profile or confirmed.is_empty():request["profile"]=profile
     else:
         var edits:=Patch.diff(confirmed,profile)
-        if edits.is_empty():return true
+        if edits.is_empty():return {}
         request["edits"]=edits
-    var response:Dictionary=await _rpc(request)
+    _sent_checkpoints[request.id]={"profile":profile,"sent_pending":sent_pending}
+    return request
+
+func _checkpoint_done(id:String,response:Dictionary)->void:
+    var sent:Dictionary=_sent_checkpoints.get(id,{})
+    if not _sent_checkpoints.erase(id):return
     _send_whole_profile=not response.get("ok",false)
-    if response.get("ok",false):
-        profile_base=String(response.base)
-        profile.save.coop_pending_pokemon=response.get("pending",[]).duplicate(true)
-        shared_records["player/"+session.actor]=profile.duplicate(true)
-        _berry_profile_base=profile_base
-        storage.settle(sent_pending,response.get("pending",[]));return true
-    return false
+    if not response.get("ok",false):return
+    var profile:Dictionary=sent.profile
+    profile_base=String(response.base)
+    profile.save.coop_pending_pokemon=response.get("pending",[]).duplicate(true)
+    shared_records["player/"+session.actor]=profile.duplicate(true)
+    _berry_profile_base=profile_base
+    storage.settle(sent.sent_pending,response.get("pending",[]))
 
 var _berry_profile_base:=""
 var _send_whole_profile:=false
@@ -512,18 +528,47 @@ func _berry_profile_is_current()->bool:
     var profile:Dictionary=(state.records if hosting else shared_records).get("player/"+session.actor,{})
     return not profile.is_empty() and profile.get("party",[])==main.caught_pokemon and profile.get("inventory",{})==main.inventory and (state.print_of("player/"+session.actor,{})==profile_base if hosting else _berry_profile_base==profile_base)
 
+## Sent by an area's simulation on its own, several times a second while
+## creatures move. They touch no player's record and have their own busy
+## flags. They used to take the one-at-a-time slot below as well: a guest
+## simulating an area over a phone connection had one in flight nearly all the
+## time, and the player's own actions (a battle, a catch, a build, a drop) were
+## turned away as busy until a gap came, often for tens of seconds.
+const BACKGROUND_COMMANDS:=["wild_motion","population_motion","event_motion","wild_spawn","wild_namespace"]
+## Need no fresh player record first: they neither read nor change it, or carry
+## all of it themselves. A claim saved the record first, one more round trip
+## before every battle and catch.
+const NO_CHECKPOINT:=["trade_offer","trade_confirm","battle_action","battle_done","cancel","wild_claim","wild_release","wild_finish","raid_damage","raid_finish","population_finish","event_finish"]
+
 func command(operation:String,args:Dictionary,berry_pickup:bool=false)->Dictionary:
-    if _request_busy or not active or not session.trusted:return {"ok":false,"reason":"busy"}
-    _request_busy=true
-    while _checkpoint_running:
+    var background:bool=operation in BACKGROUND_COMMANDS
+    if (_request_busy and not background) or not active or not session.trusted:return {"ok":false,"reason":"busy"}
+    if not background:_request_busy=true
+    while _checkpoint_running and not background:
         await get_tree().process_frame
         if not session.trusted:_request_busy=false;return {"ok":false,"reason":"disconnected"}
     var reuse_berry_profile:=berry_pickup and operation=="field_dig" and _berry_profile_is_current()
-    if not reuse_berry_profile and operation not in ["trade_offer","trade_confirm","battle_action","battle_done","cancel","wild_finish","wild_namespace","wild_motion","wild_spawn","population_motion","raid_damage","raid_finish","population_finish","event_motion","event_finish"] and not await checkpoint_player():
+    var save_first:bool=not reuse_berry_profile and not background and operation not in NO_CHECKPOINT
+    # A guest's save goes just in front of the command instead of a round trip
+    # before it: the host runs the command only if the save worked, and checks
+    # it against the record that save made (coop_commands.gd "after").
+    var ahead:Dictionary={}
+    if save_first and not hosting:
+        while _profile_write_busy:
+            await get_tree().process_frame
+            if not session.trusted:_request_busy=false;return {"ok":false,"reason":"disconnected"}
+        var profile:Dictionary=_personal_profile()
+        ahead=_checkpoint_packet(profile,profile.save.coop_pending_pokemon.duplicate(true))
+        if not ahead.is_empty():
+            if session.send_host(ahead)!=OK:
+                _sent_checkpoints.erase(ahead.id);_request_busy=false;return {"ok":false,"reason":"connection_busy"}
+            _profile_write_busy=true
+    elif save_first and not await checkpoint_player():
         print("ONLINE command not sent: ",operation," (player record could not be saved)")
         _request_busy=false;return {"ok":false,"reason":"save_failed"}
     var cell:Vector2i=main.world._player_cell()
     var packet={"kind":"command","id":_id(),"op":operation,"args":args}
+    if not ahead.is_empty():packet["after"]=ahead.id
     if operation in ["build","remove_build","paint","field_cut","field_dig"]:args["profile_hash"]=profile_base
     if operation=="deploy":args["base"]=profile_base
     var result:Dictionary
@@ -534,11 +579,33 @@ func command(operation:String,args:Dictionary,berry_pickup:bool=false)->Dictiona
         for index in range(main.caught_pokemon.size()):
             if main._storage_is_active(main.caught_pokemon[index]):commands.presence[session.actor]["helper_slot"]=index;break
         result=commands.execute(session.actor,packet)
-    else:result=await _rpc(packet)
-    _request_busy=false
+    else:
+        var slim:=_with_profile_edits(packet)
+        result=await _rpc(slim)
+        if result.get("reason")=="edits_do_not_fit" and slim!=packet:packet.id=_id();result=await _rpc(packet)
+    if not ahead.is_empty():
+        # Its answer came before the command's; none at all means start over whole.
+        _profile_write_busy=false;_replies.erase(ahead.id)
+        if _sent_checkpoints.erase(ahead.id):_send_whole_profile=true
+    if not background:_request_busy=false
     # Refusals are otherwise silent: the action just visibly undoes itself.
     if not result.get("ok",false):print("ONLINE command refused: ",operation," reason=",result.get("reason","unknown")," key=",result.get("key",""))
     return result
+
+## A battle's result carries the player's whole record: 80 KB and more for a
+## long-played one, over a second of a phone's uplink after every battle and
+## catch. A guest sends what changed since the copy the host confirmed instead
+## (rebuilt by the host, coop_commands.gd); the whole record only if that fails.
+const PROFILE_RESULTS:=["wild_finish","raid_finish","population_finish","event_finish"]
+
+func _with_profile_edits(packet:Dictionary)->Dictionary:
+    var args:Dictionary=packet.args
+    var confirmed=shared_records.get("player/"+session.actor)
+    if not packet.op in PROFILE_RESULTS or not args.get("profile") is Dictionary or not confirmed is Dictionary or String(args.get("base",""))!=profile_base:return packet
+    var edits:=Patch.diff(confirmed,args.profile)
+    if not Patch.valid(edits):return packet
+    var slim:=packet.duplicate();slim.args=args.duplicate();slim.args.erase("profile");slim.args["profile_edits"]=edits
+    return slim
 
 func _id()->String:return preload("res://scripts/coop_random.gd").hex(16)
 
@@ -583,6 +650,8 @@ func _checkpoint_request(peer:int,actor:String,packet:Dictionary)->void:
                 if result.has("changes"):storage.broadcast_profile_storage(result)
                 var stored:Dictionary=state.records.get(key,{})
                 result={"ok":true,"base":state.print_of(key,{}),"pending":stored.get("save",{}).get("coop_pending_pokemon",[])}
+    # For a command sent right behind this save ("after"): the record it made.
+    if result.get("ok",false):commands.saved(actor,String(packet.id),String(result.base))
     session.send_to(peer,{"kind":"profile_result","id":packet.id,"result":result})
 
 func _profile_shape_ok(profile:Variant)->bool:
@@ -611,12 +680,25 @@ func _committed(commit:Dictionary)->void:
             for change in visible.get("changes",[]):
                 if String(change.get("key",""))=="player/"+actor and change.has("after"):
                     change.erase("after");change["edits"]=own_edits
-        visible.erase("player_edits")
+        # A storage box too (Patch.diff_list), with its list of entries to check by.
+        var list_edits:Dictionary=commit.get("list_edits",{})
+        for change in visible.get("changes",[]):
+            var edits=list_edits.get(String(change.get("key","")))
+            if edits is Array and change.get("after") is Array:
+                change["entries"]=_entry_ids(change.after);change.erase("after");change["edits"]=edits
+        visible.erase("player_edits");visible.erase("list_edits")
         visible["profile_base"]=state.print_of("player/"+actor,{})
         session.send_to(peer,{"kind":"shared_commit","result":visible})
     var own:Dictionary=Commands.visible_result(commit,session.actor)
     own["profile_base"]=state.print_of("player/"+session.actor,{})
     _apply_visible(own)
+
+## The ids of a box's entries in order, as one number: a box rebuilt from
+## edits must come out with the same ones.
+static func _entry_ids(list:Array)->int:
+    var ids:=PackedStringArray()
+    for entry in list:ids.append(str(entry.get("id","")) if entry is Dictionary else "")
+    return "\n".join(ids).hash()
 
 ## Guest: true until the host's records have arrived (joining, or after asking
 ## for them again because a world change did not fit the copy here).
@@ -637,11 +719,14 @@ func _apply_visible(result:Dictionary)->void:
             change["after"]=rebuilt
         kept.append(change)
     if result.has("changes"):result["changes"]=kept
-    # This player's own record arrives as edits to the copy held here.
+    # This player's own record, and a storage box, arrive as edits to the copy held here.
     for change in result.get("changes",[]):
         if change is Dictionary and change.has("edits") and not change.has("after"):
             var held=shared_records.get(String(change.get("key","")))
-            var edited=Patch.apply(held,change.edits) if held is Dictionary and Patch.valid(change.edits) else null
+            var edited=Patch.apply(held,change.edits) if (held is Dictionary or held is Array) and Patch.valid(change.edits) else null
+            if edited is Array:
+                var entries=change.get("entries")
+                if not (entries is int or entries is float) or _entry_ids(edited)!=int(entries):edited=null
             if edited==null:
                 # The copies have drifted apart: ask the host for everything again.
                 if not hosting:session.send_host({"kind":"state_request"})
@@ -1035,13 +1120,14 @@ func publish_current()->bool:
     _publishing=true
     var seed_value=int(main.world.world_seed)
     var size_index=int(main.world.map_size_index)
-    var cache=FileAccess.get_file_as_bytes(Cache.cache_path(seed_value,size_index))
     var parts=Snapshot.split(main.world.get_crafting_save_state())
     var registry:Dictionary=state.records if hosting else shared_records
     if not area_authority.is_empty() or (hosting and state.records.has("area/"+_area())):
         parts.shared=Snapshot.committed_population(_area(),parts.shared,registry)
     parts.shared["_coop_build_base"]=building.known(_area(),state.records if hosting else shared_records)
-    var bytes=Snapshot.encode(seed_value,size_index,cache,parts.shared)
+    # A guest leaves out the terrain cache: the host has it (Snapshot.refill).
+    var bytes=Snapshot.encode_without_cache(seed_value,size_index,parts.shared) if not hosting else \
+        Snapshot.encode(seed_value,size_index,FileAccess.get_file_as_bytes(Cache.cache_path(seed_value,size_index)),parts.shared)
     if bytes.is_empty():_publishing=false;_failure("ONLINE AREA CACHE IS MISSING");return false
     if not hosting:
         var uploaded:Dictionary=await service.upload(_area(),"",area_epoch,bytes)
@@ -1246,6 +1332,7 @@ func _message(_peer:int,actor:String,packet:Dictionary)->void:
     if packet.get("kind")=="area_generate" and packet.get("area")==_travel_target and packet.get("token") is String:
         _travel_token=packet.token;_travel_offer={"new":true};return
     if packet.get("kind") in ["command_result","profile_result"] and packet.get("id") is String and packet.get("result") is Dictionary:
+        if packet.kind=="profile_result":_checkpoint_done(packet.id,packet.result)
         _replies[packet.id]=packet.result
         return
     if packet.get("kind")=="player_notice":

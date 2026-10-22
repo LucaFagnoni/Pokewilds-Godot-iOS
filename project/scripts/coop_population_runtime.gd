@@ -199,7 +199,7 @@ func execute(actor:String,id:String,operation:String,args:Dictionary)->Dictionar
         var record=Delta.decode(args.record)
         if not record is Dictionary:return {"ok":false,"reason":"invalid_record"}
         return model().place(actor,id,args.area,int(args.slot),record,args.base)
-    if operation=="recall_population":return model().take(actor,id,args.area,Vector2i(int(args.x),int(args.y)),args.group,args.expected,args.box)
+    if operation=="recall_population":return model().take(actor,id,args.area,Vector2i(int(args.x),int(args.y)),args.group,args.expected,args.box,str(args.get("identity","")))
     if operation=="harvest_population":return model().harvest(actor,id,args.area,Vector2i(int(args.x),int(args.y)),args.expected,String(args.get("identity","")))
     return {"ok":false,"reason":"invalid_command"}
 func remove(group:String,cell:Vector2i)->void:
@@ -316,7 +316,8 @@ func recall(cell:Vector2i,group:String="deployed_pokemon")->void:
     var records:Dictionary=game.state.records if game.hosting else game.shared_records
     var key=Records.key(game._area(),group,cell)
     var encoded=String(records.get(key,Delta.encode(null)))
-    if Delta.decode(encoded)==null:return
+    var held=Delta.decode(encoded)
+    if held==null:return
     var box=""
     for candidate in game.main._built_storage_keys():
         var chest:Dictionary=records.get("chest/"+candidate,{})
@@ -324,7 +325,7 @@ func recall(cell:Vector2i,group:String="deployed_pokemon")->void:
         var destination=preload("res://scripts/coop_shared_items.gd").new().box_key(game.session.actor,chest)
         if records.get(destination,[]).size()<4096:box=candidate;break
     busy=true
-    var result:Dictionary=await game.command("recall_population",{"area":game._area(),"x":cell.x,"y":cell.y,"group":group,"expected":game.state.fingerprint(encoded),"box":box})
+    var result:Dictionary=await game.command("recall_population",{"area":game._area(),"x":cell.x,"y":cell.y,"group":group,"expected":game.state.fingerprint(encoded),"box":box,"identity":String(held.get("ecology_id","")) if held is Dictionary else ""})
     last_result=result
     busy=false
     if result.get("ok",false):

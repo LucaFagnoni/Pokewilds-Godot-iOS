@@ -7,7 +7,7 @@ signal message(peer: int, actor: String, payload: Dictionary)
 signal rejected(reason: String)
 signal connection_lost
 const Transport = preload("res://scripts/coop_transport.gd")
-const PROTOCOL := "pokewilds-godot-coop-7"
+const PROTOCOL := "pokewilds-godot-coop-8"
 ## Most players one game can have, a phone host included (a dedicated server's
 ## own player does not count). The host relays every position update to each
 ## other player in the same area, so its upload grows with the square of the

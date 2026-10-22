@@ -128,7 +128,7 @@ func place(actor:String,id:String,area:String,slot:int,record:Dictionary,base:St
     profile.party.remove_at(slot)
     return state.transact(actor,"deploy/"+id,[state.change("player/"+actor,profile),state.change(key(area,group,cell),Delta.encode(stored))],state.fingerprint(args))
 
-func take(actor:String,id:String,area:String,cell:Vector2i,group:String,expected:String,box:String="")->Dictionary:
+func take(actor:String,id:String,area:String,cell:Vector2i,group:String,expected:String,box:String="",identity:String="")->Dictionary:
     var args=[area,cell,group,expected,box]
     var previous=_prior(actor,"takepopulation/"+id,args)
     if not previous.is_empty():return previous
@@ -136,7 +136,19 @@ func take(actor:String,id:String,area:String,cell:Vector2i,group:String,expected
     var record_key=key(area,group,cell)
     var encoded=state.records.get(record_key,Delta.encode(null))
     var record=Delta.decode(encoded)
-    if not record is Dictionary or state.fingerprint(encoded)!=expected:return {"ok":false,"reason":"too_late"}
+    if not record is Dictionary or state.fingerprint(encoded)!=expected:
+        # As for harvest: the Pokemon asked for, not this exact copy of its
+        # record. Over a phone connection it has often taken a step or its
+        # timers have moved on by the time the request arrives.
+        record=null
+        if group=="deployed_pokemon" and not identity.is_empty():
+            for dy in range(-2,3):
+                for dx in range(-2,3):
+                    var near_key=key(area,group,cell+Vector2i(dx,dy))
+                    var candidate=Delta.decode(state.records.get(near_key,Delta.encode(null)))
+                    if candidate is Dictionary and String(candidate.get("ecology_id",""))==identity:
+                        record=candidate;record_key=near_key
+        if not record is Dictionary:return {"ok":false,"reason":"too_late"}
     var profile:Dictionary=state.records.get("player/"+actor,{}).duplicate(true)
     if not profile.get("party") is Array or not profile.get("inventory") is Dictionary:return {"ok":false,"reason":"missing_profile"}
     var pokemon:Dictionary=record.duplicate(true)
