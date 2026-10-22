@@ -1,6 +1,6 @@
 {
   "name": "PokeWilds",
-  "identifier": "com.pokewilds.godot.source",
+  "identifier": "com.bebo.pokewilds.source",
   "subtitle": "PokeWilds for iPhone",
   "description": "An iPhone port of PokeWilds, remade in Godot, with a Windows dedicated server for co-op.",
   "iconURL": "https://raw.githubusercontent.com/LucaFagnoni/Pokewilds-Godot-iOS/main/project/assets/icon.png",
@@ -9,7 +9,7 @@
   "apps": [
     {
       "name": "PokeWilds",
-      "bundleIdentifier": "com.pokewilds.godot",
+      "bundleIdentifier": "com.bebo.pokewilds",
       "developerName": "LucaFagnoni",
       "subtitle": "Explore, catch and build in a wild open world.",
       "localizedDescription": "An iPhone port of PokeWilds, remade in Godot, with a Windows dedicated server for co-op.",
@@ -18,6 +18,15 @@
       "category": "games",
       "screenshots": [],
       "versions": [
+        {
+          "version": "0.10.213",
+          "buildVersion": "213",
+          "date": "2026-10-22T00:23:28Z",
+          "localizedDescription": "Android wrapper: gradlew is executable (Godot's export runs it)",
+          "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0039/Pokewilds-unsigned.ipa",
+          "size": 63274101,
+          "minOSVersion": "15.0"
+        },
         {
           "version": "0.10.209",
           "buildVersion": "209",
@@ -108,10 +117,10 @@
           "NSPhotoLibraryUsageDescription": "Not used by the game (Godot's default key)."
         }
       },
-      "version": "0.10.209",
-      "versionDate": "2026-10-21T23:48:10Z",
-      "versionDescription": "Merge ios-zerotier",
-      "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0036/Pokewilds-unsigned.ipa",
+      "version": "0.10.213",
+      "versionDate": "2026-10-22T00:23:28Z",
+      "versionDescription": "Android wrapper: gradlew is executable (Godot's export runs it)",
+      "downloadURL": "https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/download/build-0039/Pokewilds-unsigned.ipa",
       "size": 63274101
     }
   ],
