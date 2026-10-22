@@ -114,6 +114,14 @@ func leave(actor: String) -> void:
             authority[area] = other
             break
 
+## Who may change what (no deep copies but where ownership changes):
+## - `changes`, and every value in them, belong to the commit from this call
+##   on: the caller builds them for it and leaves them alone afterwards.
+## - The result handed back is the caller's, to read or change; it shares
+##   those values. commit_writer turns it into text before returning.
+## - `records` hold their own copy of each value (apply_committed), and
+##   `outcomes` their own copy of the commit (the receipt); only this script
+##   changes either. Receipts are handed out as copies.
 func transact(actor: String, id: String, changes: Array, command_hash: String = "", durable: bool = true) -> Dictionary:
     if not members.has(actor) or id.is_empty() or id.length() > 80:
         return {"ok":false,"reason":"invalid_request"}
@@ -145,7 +153,7 @@ func transact(actor: String, id: String, changes: Array, command_hash: String = 
             return {"ok":false,"reason":"conflict","key":key,
                 "current":records.get(key),"revision":revision}
     var result := {"ok":true,"revision":revision+1,"actor":actor,"command_hash":command_hash,
-        "id":id,"request_hash":request_hash,"changes":changes.duplicate(true)}
+        "id":id,"request_hash":request_hash,"changes":changes.duplicate()}
     # What changed in each player's record, worked out once against the record
     # as it was. The journal keeps this, and the owner is sent it, instead of
     # the whole record, which runs to hundreds of kilobytes and took seconds
@@ -177,7 +185,7 @@ func transact(actor: String, id: String, changes: Array, command_hash: String = 
     apply_committed(result, staged)
     if not player_edits.is_empty(): result["player_edits"] = player_edits
     if not list_edits.is_empty(): result["list_edits"] = list_edits
-    return result.duplicate(true)
+    return result
 
 ## Building, storing or picking something up hands back the player's whole
 ## record. Players are still sent it whole; the journal keeps only what changed.
@@ -215,10 +223,11 @@ func apply_committed(commit: Dictionary, staged: Dictionary = {}) -> bool:
         _index(key, old, records.get(key))
     revision += 1
     var request_key:=String(commit.actor)+"/"+String(commit.id)
-    var receipt:Dictionary=commit.duplicate(true)
+    var receipt:Dictionary=commit.duplicate()
     # A player checkpoint is never replayed from its receipt (a retry only asks
     # whether the id is known), and its changes are a whole player record.
     if String(commit.id).begins_with("profile/"):receipt.erase("changes")
+    receipt=receipt.duplicate(true)
     outcomes[request_key] = receipt
     _recent_outcomes.append(request_key)
     if _recent_outcomes.size()>RECENT_RESULTS:
