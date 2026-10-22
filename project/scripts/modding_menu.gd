@@ -93,9 +93,9 @@ func _refresh() -> void:
         if page=="conflicts" and selection<collisions.size():
             var conflict:Dictionary=collisions[selection]
             status.text=str(conflict.earlier)+" -> "+str(conflict.winner)+"\nLater enabled mod wins this entry."
-        elif page=="detail":status.text="Version: "+str(entries[chosen].version)+"  Order: "+str(chosen+1)+"\nChanges apply after a full restart. B: BACK"
-        elif page=="library":status.text="A: SELECT  B: BACK  UP/DOWN: SCROLL\nLater enabled mods win conflicts. Restart to apply."
-        else:status.text="A: SELECT  B: BACK"
+        elif page=="detail":status.text="Version: "+str(entries[chosen].version)+"  Order: "+str(chosen+1)+"\nChanges apply after a full restart."+("" if main.touch_on() else " B: BACK")
+        elif page=="library":status.text=("" if main.touch_on() else "A: SELECT  B: BACK  UP/DOWN: SCROLL\n")+"Later enabled mods win conflicts. Restart to apply."
+        else:status.text="" if main.touch_on() else "A: SELECT  B: BACK"
     Settings.refresh_frames(self)
 
 func _navigate(direction:int) -> void:

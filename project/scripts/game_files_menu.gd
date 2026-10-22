@@ -40,7 +40,7 @@ func configure(owner_main: Node) -> void:
     status.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART;status.add_theme_constant_override("line_spacing",-2)
     for i in range(2):
         var button:=Button.new();button.position=Vector2(10+i*152,25);button.size=Vector2(140,18)
-        button.text="B: BACK" if i==0 else "A: NEXT"
+        button.text=("BACK" if i==0 else "NEXT") if main.touch_on() else ("B: BACK" if i==0 else "A: NEXT")
         button.flat=true;button.focus_mode=Control.FOCUS_NONE
         button.add_theme_font_override("font",main.JOHTO_FONT);button.add_theme_font_size_override("font_size",7)
         for color in ["font_color","font_hover_color","font_pressed_color"]:button.add_theme_color_override(color,Color.BLACK)
@@ -70,7 +70,7 @@ func _refresh() -> void:
     if showing_help:
         help_text.text=DIRECTIONS[help_page]
         status.text="SAVE DIRECTIONS   %d / 3" % (help_page+1)
-    else:status.text=HELP[selection]+"\nA: SELECT   B: BACK"
+    else:status.text=HELP[selection]+("" if main.touch_on() else "\nA: SELECT   B: BACK")
 
 func handle(event: InputEvent) -> void:
     if busy or event.is_echo():return

@@ -129,7 +129,7 @@ func configure(owner_main: Node) -> void:
     label(password_view,"PASSWORD",Vector2(14,10),Vector2(288,14),10)
     password_text=label(password_view,"",Vector2(14,34),Vector2(288,112),10)
     password_text.autowrap_mode=TextServer.AUTOWRAP_ARBITRARY
-    label(password_view,"B: BACK",Vector2(14,154),Vector2(288,12),7)
+    label(password_view,"" if main.touch_on() else "B: BACK",Vector2(14,154),Vector2(288,12),7)
     password_view.hide()
     hide()
 
@@ -180,7 +180,7 @@ func open() -> void:
     if is_instance_valid(main.coop_game) and main.coop_game.active and main.coop_game.hosting:
         menu_rows.append(["horde_mode","HORDE MODE","Rare cooperative night hordes. Host sets this world option."])
         menu_rows.append(["raids_mode","RAIDS","ALL: each fighter catches. LAST: finishing player catches."])
-        menu_rows.append(["players","LOBBY","Friends find this world in MULTIPLAYER > JOIN GAME. A: players, and the password of a private game."])
+        menu_rows.append(["players","LOBBY","Friends find this world in MULTIPLAYER > JOIN GAME. Players, and the password of a private game."])
         menu_rows.append(["autosave","AUTOSAVE","OFF: the world is only written when you SAVE. Resets to ON each launch."])
     kick_index=0;players_page=false;kick_prompt.hide();action_prompt.hide();password_view.hide()
     controls_page=false;selection=0;first=0
@@ -341,6 +341,7 @@ func refresh() -> void:
             elif page_rows==0 and i==0:label(row,"NO OTHER PLAYERS",Vector2.ZERO,Vector2(280,14),8)
         if kick_index>=players.size() and main.coop_game.lobby_private:description.text="A: SHOW THIS WORLD'S PASSWORD\nB: BACK"
         else:description.text="Nobody else is in your world.\nB: BACK" if players.is_empty() else "A: KICK or KICK AND BAN\nB: BACK"
+        if main.touch_on():description.text=description.text.replace("A: ","").replace("\nB: BACK","").replace("KICK or KICK AND BAN","TAP A PLAYER TO KICK OR BAN").replace("SHOW THIS WORLD'S PASSWORD","TAP SHOW PASSWORD")
         return
     cursor.visible=true
     title.text="CONTROLS" if controls_page else ("OPTIONS" if category<0 else "OPTIONS - "+String(CATEGORIES[category][0]))

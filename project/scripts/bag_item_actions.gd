@@ -22,7 +22,7 @@ func open(owner_main: Node, selected: String) -> void:
     refresh()
 func refresh() -> void:
     if choosing_amount:
-        rows[0].text="x%d"%quantity;rows[1].text="A: DROP";rows[2].text="B: BACK"
+        rows[0].text="x%d"%quantity;rows[1].text="DROP" if main.touch_on() else "A: DROP";rows[2].text="BACK" if main.touch_on() else "B: BACK"
         tick.hide();help.text="%s\nChoose how many to drop."%item
     else:
         for i in range(3):rows[i].text=["USE","DROP","CANCEL"][i]
