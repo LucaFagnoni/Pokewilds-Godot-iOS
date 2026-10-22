@@ -490,6 +490,10 @@ func sync_current()->void:
         if current.get(key,Delta.encode(null))!=authoritative[key]:changes.append({"key":key,"value":Delta.decode(authoritative[key])})
     if not changes.is_empty():apply_records(area,changes,true)
 
+## A day's dig site record, or none: a dig site added, renewed or taken away.
+static func _dig_site(value)->bool:
+    return value==null or value is Dictionary and value.get("kind")=="BIOME_DIG_SITE"
+
 func apply_records(area:String,records:Array,arriving:bool=false)->void:
     if area!=game._area() or not game.main.world.generated:return
     if not arriving and (game.main.generating or game.main.edge_travel_busy):return
@@ -499,6 +503,7 @@ func apply_records(area:String,records:Array,arriving:bool=false)->void:
     var was_restoring:bool=world.restoring_saved_tiles
     var refresh_pending:bool=world.restored_tiles_need_refresh
     var changed_cells:Dictionary={}
+    var dug_cells:Array=[]
     var decorated:Dictionary={}
     world.restoring_saved_tiles=true
     for record in records:
@@ -506,11 +511,17 @@ func apply_records(area:String,records:Array,arriving:bool=false)->void:
         var key=String(record.key).get_slice("/",1).uri_decode()
         if group=="structures":structures.append(record);continue
         if group not in GROUPS:continue
-        if group in ["source_interior_mutations","source_plant_farms","terrain_changes","removed_resources"]:
+        var dictionary:Dictionary=world.get(group)
+        # A dig site changes its own cell only (the layers redraw around it
+        # themselves), and a new day brings ~200 of them: 25 cells each, all in
+        # one frame, was ~90 ms on a desktop. The world hands them to the
+        # layers a few at a time instead.
+        if group=="source_interior_mutations" and _dig_site(record.value) and _dig_site(dictionary.get(key)):
+            dug_cells.append(world._cell_from_key(key))
+        elif group in ["source_interior_mutations","source_plant_farms","terrain_changes","removed_resources"]:
             var center:Vector2i=world._cell_from_key(key)
             for y in range(-2,3):
                 for x in range(-2,3):changed_cells[center+Vector2i(x,y)]=true
-        var dictionary:Dictionary=world.get(group)
         if record.value==null:dictionary.erase(key)
         else:dictionary[key]=true if group in ["built_house_floor_tiles","removed_resources"] else record.value
         if group=="removed_resources":
@@ -557,6 +568,7 @@ func apply_records(area:String,records:Array,arriving:bool=false)->void:
     if not was_restoring:
         world.restored_tiles_need_refresh=refresh_pending
         if not changed_cells.is_empty():world._refresh_exact_pickup_cells(changed_cells.keys())
+        if not dug_cells.is_empty():world._queue_exact_refresh(dug_cells)
     for record in structures:
         var parts=String(record.key).get_slice("/",1).uri_decode().split(",")
         var cell=Vector2i(int(parts[0]),int(parts[1]))

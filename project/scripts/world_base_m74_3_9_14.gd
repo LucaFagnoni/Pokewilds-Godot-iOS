@@ -2872,6 +2872,7 @@ var held_emote_refresh_remaining := 0.0
 var window_display_cache: Dictionary = {}
 
 func _process(delta: float) -> void:
+    _flush_exact_refresh_queue()
     if active_area_id == "HOUSE":
         if built_house_blocks_stale: _displace_foreign_house_blocks()
     elif not built_house_displaced_blocks.is_empty():
@@ -5165,6 +5166,41 @@ func _refresh_exact_pickup_cells(cells: Array) -> void:
         reflection_layer.refresh_cells(cells)
     var canopy := get_node_or_null("TreeCanopyOverlay")
     if canopy != null: canopy.queue_redraw()
+
+## Cells a whole day changes at once (its ~200 dig sites, the night's cacti),
+## handed to the layers a few at a time by _flush_exact_refresh_queue. All at
+## once they took one frame of 20-30 ms on a desktop, over 100 ms on a phone,
+## and ~90 ms on a desktop for a player sent the day's dig sites by the host.
+var exact_refresh_queue: Array = []
+const EXACT_REFRESH_CHUNK := 16
+
+## Queues `cells`, or with none the edited cells (resident_changed_cells).
+## Either way they are taken out of resident_changed_cells: the next edit's
+## refresh would redo them all at once otherwise.
+func _queue_exact_refresh(cells: Array = []) -> void:
+    if cells.is_empty():
+        for key in SourceTile.resident_changed_cells:
+            if exact_world.tiles.has(key): exact_refresh_queue.append(Vector2i(key / TILE))
+        SourceTile.resident_changed_cells.clear()
+        return
+    for cell in cells:
+        exact_refresh_queue.append(cell)
+        SourceTile.resident_changed_cells.erase(cell * TILE)
+
+## Every frame: queued cells to the layers until this frame's slice is used
+## (at least one chunk).
+func _flush_exact_refresh_queue() -> void:
+    if exact_refresh_queue.is_empty(): return
+    if exact_world == null:
+        exact_refresh_queue.clear()
+        return
+    var deadline := Time.get_ticks_usec() + _daily_slice_usec()
+    var done := 0
+    while done < exact_refresh_queue.size():
+        _refresh_exact_pickup_cells(exact_refresh_queue.slice(done, done + EXACT_REFRESH_CHUNK))
+        done += EXACT_REFRESH_CHUNK
+        if Time.get_ticks_usec() >= deadline: break
+    exact_refresh_queue = exact_refresh_queue.slice(done)
 
 func _refresh_exact_streams() -> void:
     if restoring_saved_tiles:
@@ -9402,6 +9438,10 @@ func _refresh_biome_dig_sites(spread: bool = false) -> void:
     # Remove only untouched dynamic sites from an older day. A site that was
     # dug already became a normal TILE_NAMES mutation and is never restored.
     for raw_key in source_interior_mutations.keys().duplicate():
+        if spread and Time.get_ticks_usec()-slice_started>=_daily_slice_usec():
+            await get_tree().process_frame
+            if exact_world!=identity or _world_day_index()!=day: return
+            slice_started=Time.get_ticks_usec()
         var key := String(raw_key)
         var mutation := source_interior_mutations.get(key, {}) as Dictionary
         if String(mutation.get("kind", "")) != "BIOME_DIG_SITE":
@@ -9464,6 +9504,10 @@ func _refresh_biome_dig_sites(spread: bool = false) -> void:
         for _index in range(target_count):
             if cells.is_empty():
                 break
+            if spread and Time.get_ticks_usec()-slice_started>=_daily_slice_usec():
+                await get_tree().process_frame
+                if exact_world!=identity or _world_day_index()!=day: return
+                slice_started=Time.get_ticks_usec()
             var pick := daily_rng.randi_range(0, cells.size() - 1)
             var cell := cells.pop_at(pick) as Vector2i
             var key := _cell_key(cell)
@@ -9480,7 +9524,9 @@ func _refresh_biome_dig_sites(spread: bool = false) -> void:
                 "kind":"BIOME_DIG_SITE", "day":day,
                 "base":original_base, "original_upper":original_upper, "crack":crack
             }
-    _refresh_exact_tile_streams()
+    # Spread, the layers take the day's cells a few at a time.
+    if spread: _queue_exact_refresh()
+    else: _refresh_exact_tile_streams()
 
 ## Whole-map daily scans: 1 ms a frame in play, most of the frame behind the
 ## loading screen (at 1 ms a frame they added ~6 s to every load).
