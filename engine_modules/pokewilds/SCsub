@@ -1,0 +1,6 @@
+#!/usr/bin/env python
+Import("env")
+Import("env_modules")
+
+env_pokewilds = env_modules.Clone()
+env_pokewilds.add_source_files(env.modules_sources, "*.cpp")
