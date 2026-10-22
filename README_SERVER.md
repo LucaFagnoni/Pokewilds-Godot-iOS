@@ -7,7 +7,7 @@ quando escono tutti.
 
 ## In tre passi
 
-1. **Scarica** l'ultimo server: [PokeWilds-Server-win64.zip](https://github.com/LucaFagnoni/Pokewilds-Godot-iOS/releases/latest/download/PokeWilds-Server-win64.zip).
+1. **Scarica** l'ultimo server: [PokeWilds-Server-win64.zip](https://github.com/LucaFagnoni/pokewilds-mobile/releases/latest/download/PokeWilds-Server-win64.zip).
    Estrailo in una cartella, per esempio `C:\PokeWilds-Server`.
 2. **Doppio clic su `start_server.bat`.** La prima volta Windows chiede il
    permesso di aprire il firewall per PokeWilds: rispondi **Sì**. Dopo qualche

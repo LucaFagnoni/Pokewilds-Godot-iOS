@@ -1,14 +1,14 @@
 """The PokeWilds source for Feather, AltStore, SideStore and other sideloading
 apps (AltStore's source format): every published release's IPA, newest first.
 
-    gh api "repos/LucaFagnoni/Pokewilds-Godot-iOS/releases?per_page=100" | python3 make_source.py > apps.json
+    gh api "repos/LucaFagnoni/pokewilds-mobile/releases?per_page=100" | python3 make_source.py > apps.json
 
 The publish job of .github/workflows/build.yml runs it after each release and
 stores apps.json on the "source" branch, the address the README gives.
 """
 import json, re, sys
 
-REPO = "LucaFagnoni/Pokewilds-Godot-iOS"
+REPO = "LucaFagnoni/pokewilds-mobile"
 ICON = f"https://raw.githubusercontent.com/{REPO}/main/project/assets/icon.png"
 ABOUT = "An iPhone port of PokeWilds, remade in Godot, with a Windows dedicated server for co-op."
 
