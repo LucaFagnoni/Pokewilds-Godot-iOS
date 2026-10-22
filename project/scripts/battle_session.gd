@@ -219,6 +219,14 @@ func resume(answer = null) -> Array:
         _resumed.emit(answer)
     return _out
 
+## Drops the battle where it stands (it was ended from outside): the turn
+## waiting for its next event is let go, not run on.
+func abandon() -> void:
+    for connection in _resumed.get_connections():
+        _resumed.disconnect(connection.callable)
+    running = false
+    pending = {}
+
 func _emit(event: Dictionary) -> Variant:
     _out.append(event)
     if not stepwise and not event.has("request"):
@@ -518,6 +526,12 @@ static func trapped(pokemon: Dictionary) -> bool:
 func item_refusal(item_name: String, index: int) -> String:
     var pokemon := Battle.ensure_pokemon(party[index])
     party[index] = pokemon
+    return pokemon_item_refusal(pokemon, item_name)
+
+## Why `item_name` would not help `pokemon`: the line the battle shows, ""
+## when it would help, or "-" for an item with no use in battle (refused
+## without a word).
+static func pokemon_item_refusal(pokemon: Dictionary, item_name: String) -> String:
     if bool(pokemon.get("is_egg", false)):
         return "That item cannot be used on an EGG."
     var rule: Dictionary = ITEM_RULES.get(item_name, {})

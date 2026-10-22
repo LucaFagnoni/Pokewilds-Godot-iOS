@@ -267,11 +267,19 @@ func _state() -> Dictionary:
     var full := full_state(main.caught_pokemon, main.battle_enemy_party,
         [main.battle_party_index, main.battle_partner_party_index,
             main.battle_enemy_party_index, main.battle_enemy_partner_party_index],
-        main.battle_field, [main.battle_turn_count, main.battle_run_attempts,
-            main.battle_enemy_action_count, main.source_boss_action_count],
+        main.battle_field, _counters(),
         main.battle_exp_participants, main.battle_context, main.inventory, main.battle_rng)
     last_full_state = full
     return digest(full)
+
+## Turns, run attempts and the enemy's action counts: the battle session's
+## once the battle runs there (main.gd's own before).
+func _counters() -> Array:
+    var session = main.get("battle_session")
+    if session != null and (not main.has_method("_session_battle") or main._session_battle()):
+        return [session.turn_count, session.run_attempts, session.enemy_action_count, session.boss_action_count]
+    return [main.battle_turn_count, main.battle_run_attempts,
+        main.battle_enemy_action_count, main.source_boss_action_count]
 
 var last_full_state: Dictionary = {}
 

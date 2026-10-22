@@ -32,6 +32,7 @@ const FieldMoveData = preload("res://scripts/field_move_data.gd")
 const PokemonData = preload("res://scripts/pokemon_data.gd")
 const PokemonEcology = preload("res://scripts/pokemon_ecology.gd")
 const BattleEngine = preload("res://scripts/battle_engine.gd")
+const BattleSession = preload("res://scripts/battle_session.gd")
 const PokemonState = preload("res://scripts/pokemon_state.gd")
 const SourceEventData = preload("res://scripts/source_event_data.gd")
 const FieldMoveRadial = preload("res://scripts/field_move_radial.gd")
@@ -646,31 +647,7 @@ const BATTLE_BALL_BONUS := {
     "MASTER BALL":999.0, "PARK BALL":999.0
 }
 
-const BATTLE_ITEM_RULES := {
-    "POTION":{"kind":"heal", "amount":20},
-    "SUPER POTION":{"kind":"heal", "amount":50},
-    "HYPER POTION":{"kind":"heal", "amount":200},
-    "MAX POTION":{"kind":"heal", "amount":99999},
-    "FULL RESTORE":{"kind":"full_restore", "amount":99999},
-    "RAGECANDYBAR":{"kind":"heal", "amount":20},
-    "FULL HEAL":{"kind":"status", "status":"ANY"},
-    "ANTIDOTE":{"kind":"status", "status":"POISON"},
-    "BURN HEAL":{"kind":"status", "status":"BURN"},
-    "ICE HEAL":{"kind":"status", "status":"FREEZE"},
-    "AWAKENING":{"kind":"status", "status":"SLEEP"},
-    "PARLYZ HEAL":{"kind":"status", "status":"PARALYSIS"},
-    "LUM BERRY":{"kind":"status", "status":"ANY"},
-    "PECHA BERRY":{"kind":"status", "status":"POISON"},
-    "CHERI BERRY":{"kind":"status", "status":"PARALYSIS"},
-    "ASPEAR BERRY":{"kind":"status", "status":"FREEZE"},
-    "CHESTO BERRY":{"kind":"status", "status":"SLEEP"},
-    "RAWST BERRY":{"kind":"status", "status":"BURN"},
-    "PERSIM BERRY":{"kind":"confusion"},
-    "BERRY JUICE":{"kind":"heal", "amount":20},
-    "MOOMOO MILK":{"kind":"heal", "amount":100},
-    "REVIVE":{"kind":"revive", "fraction":0.5},
-    "MAX REVIVE":{"kind":"revive", "fraction":1.0}
-}
+const BATTLE_ITEM_RULES := BattleSession.ITEM_RULES
 
 var sign_dialog: ConfirmationDialog
 var sign_edit: LineEdit
@@ -858,6 +835,8 @@ var battle_move_index := 0
 var battle_command_index := 0
 var battle_ui_mode := "INTRO"
 var battle_rng := RandomNumberGenerator.new()
+## The battle on screen (scripts/battle_session.gd): this file plays its events.
+var battle_session: BattleSession
 var battle_run_attempts := 0
 var battle_turn_count := 0
 var battle_field: Dictionary = {}
@@ -5759,66 +5738,16 @@ func _on_battle_requested(context: Dictionary) -> void:
     _start_battle_context(context, source_alert)
 
 func _party_reference_level() -> int:
-    var levels: Array[int] = []
-    for raw_pokemon in caught_pokemon:
-        if typeof(raw_pokemon) != TYPE_DICTIONARY:
-            continue
-        var pokemon := raw_pokemon as Dictionary
-        if bool(pokemon.get("is_egg", false)):
-            continue
-        levels.append(maxi(1, int(pokemon.get("level", 1))))
-    if levels.is_empty():
-        return 5
-    levels.sort()
-    var middle := levels.size() / 2
-    if levels.size() % 2 == 1:
-        return levels[middle]
-    return roundi((levels[middle - 1] + levels[middle]) * 0.5)
+    return BattleSession.reference_level(caught_pokemon)
 
 func wild_level_for_player(source_level: int) -> int:
-    var reference_level := _party_reference_level()
-    return clampi(
-        maxi(1, source_level),
-        maxi(2, reference_level - 3),
-        mini(100, reference_level + 1)
-    )
-
-func _prepare_battle_context(context: Dictionary) -> Dictionary:
-    var prepared := context.duplicate(true)
-    if bool(prepared.get("fixed_level",false)) or bool(prepared.get("source_unown", false)) or String(prepared.get("id", "")).begins_with("source_night_"):
-        # SpawnGhost/Cacturnt supply authored levels, not scaled wild spawns.
-        return prepared
-    if String(prepared.get("kind", "wild")) != "wild":
-        return prepared
-    var raw_party = prepared.get("party", [])
-    if typeof(raw_party) != TYPE_ARRAY:
-        return prepared
-    var scaled_party: Array = []
-    var scaled_any := false
-    for raw_member in raw_party as Array:
-        if typeof(raw_member) != TYPE_DICTIONARY:
-            continue
-        var member := (raw_member as Dictionary).duplicate(true)
-        var source_level := maxi(1, int(member.get("level", 1)))
-        var scaled_level := wild_level_for_player(source_level)
-        member["level"] = scaled_level
-        if scaled_level != source_level:
-            # Let the battle engine rebuild a legal move set at the adjusted
-            # level rather than importing attacks from the high-level source.
-            member.erase("moves")
-            member.erase("pp")
-            member["met_level"] = scaled_level
-            scaled_any = true
-        scaled_party.append(member)
-    prepared["party"] = scaled_party
-    prepared["_wild_level_scaled"] = scaled_any
-    return prepared
+    return BattleSession.wild_level(caught_pokemon, source_level)
 
 func _start_battle_context(context: Dictionary, source_alert: bool = false) -> void:
     if battle_active or battle_entry_pending:
         return
 
-    var prepared_context = _prepare_battle_context(context)
+    var prepared_context = BattleSession.prepare_context(context, caught_pokemon)
     var raw_party = prepared_context.get("party", [])
     if typeof(raw_party) != TYPE_ARRAY or (raw_party as Array).is_empty():
         return
@@ -5853,16 +5782,15 @@ func _start_battle_context(context: Dictionary, source_alert: bool = false) -> v
     if source_alert:
         world._show_ecology_emote(world.player.sprite, "!")
         await get_tree().create_timer(60.0 / 60.0).timeout
-    battle_exp_participants.clear()
     battle_context = prepared_context
     world.environment_system.prepare_battle_music(battle_context)
-    battle_enemy_party = (raw_party as Array).duplicate(true)
+    battle_enemy_party = []
     battle_enemy_party_index = 0
     battle_enemy_action_count = 0
     battle_is_double = String(context.get("battle_format", "single")) == "double" and \
         (raw_party as Array).size() >= 2
-    battle_player_partner.clear()
-    battle_enemy_partner.clear()
+    battle_player_partner = {}
+    battle_enemy_partner = {}
     battle_partner_party_index = -1
     battle_enemy_partner_party_index = -1
     battle_double_command_slot = 0
@@ -5871,12 +5799,7 @@ func _start_battle_context(context: Dictionary, source_alert: bool = false) -> v
     battle_double_replacement_slot = -1
     battle_result_sent = false
     battle_player_cry_played = false
-    if bool(battle_context.get("requires_silph_scope", false)):
-        var revealed = bool(battle_context.get("ghost_revealed", false))
-        battle_context["ghost_revealed"] = revealed
-        if not revealed:
-            battle_context["can_catch"] = false
-    var first_member = battle_enemy_party[0] as Dictionary
+    var first_member = (raw_party as Array)[0] as Dictionary
     var species = String(first_member.get("species", "rattata")).to_lower()
     var level = maxi(1, int(first_member.get("level", 1)))
 
@@ -5896,11 +5819,10 @@ func _start_battle_context(context: Dictionary, source_alert: bool = false) -> v
     battle_item_menu_names.clear()
     battle_item_menu_index = 0
     item_pocket_menu.visible = false
-    battle_field = {
-        "weather":"", "weather_turns":0,
+    # What the battle reads from the world, as it begins.
+    var battle_facts := {
         "time_of_day":"night" if world.environment_system.is_night_time() else "day",
-        "terrain":String(battle_context.get("terrain", _current_battle_terrain())),
-        "player_spikes":0, "enemy_spikes":0
+        "terrain":_current_battle_terrain()
     }
     current_species = species
     current_level = level
@@ -5938,63 +5860,24 @@ func _start_battle_context(context: Dictionary, source_alert: bool = false) -> v
         world.environment_system.music_players[music_index].volume_db=mewtwo_route_volumes[music_index]
     touch_config.visible = false
 
-    battle_enemy = _make_context_enemy(first_member)
-    battle_enemy_party[0] = battle_enemy
-    battle_enemy = _apply_pending_wild_record(battle_enemy, level)
-    battle_enemy_party[0] = battle_enemy
-    if coop_game.active and coop_game.raids.active:coop_game.raids.apply_hp()
-    BattleEngine.reset_battle_state(battle_enemy)
-    battle_party_index = _first_healthy_party_index()
+    if String(battle_context.get("kind", "wild")) == "wild" and world.has_method("take_pending_encounter_record"):
+        battle_facts["wild_record"] = world.call("take_pending_encounter_record")
     if is_instance_valid(ball_mechanics) and not ball_mechanics.requested_battler.is_empty():
-        for index in range(caught_pokemon.size()):
-            if str(caught_pokemon[index].get("party_ecology_id","")) == ball_mechanics.requested_battler and int(caught_pokemon[index].get("hp",0))>0:
-                battle_party_index = index
-                break
+        battle_facts["requested"] = ball_mechanics.requested_battler
         ball_mechanics.requested_battler = ""
-    if battle_party_index < 0:
+    battle_session = BattleSession.new()
+    battle_session.stepwise = true
+    # The battle draws from main's RNG, as it always has (a transcript seeds it).
+    battle_session.rng = battle_rng
+    var able_to_battle := battle_session.begin(battle_context, caught_pokemon, inventory, battle_facts)
+    _pull_battle_state()
+    if coop_game.active and coop_game.raids.active:coop_game.raids.apply_hp()
+    if not able_to_battle:
         battle_panel.visible = true
         await _type_battle_text("You have no Pokemon able to battle.")
         await get_tree().create_timer(0.4).timeout
         _end_battle("whiteout")
         return
-    battle_player = BattleEngine.ensure_pokemon(caught_pokemon[battle_party_index])
-    BattleEngine.reset_battle_state(battle_player)
-    caught_pokemon[battle_party_index] = battle_player
-    battle_exp_participants.append(battle_party_index)
-    if battle_is_double:
-        var partner_choices = _healthy_party_indices(true)
-        if partner_choices.is_empty():
-            battle_is_double = false
-        else:
-            battle_partner_party_index = partner_choices[0]
-            battle_exp_participants.append(battle_partner_party_index)
-            battle_player_partner = BattleEngine.ensure_pokemon(
-                caught_pokemon[battle_partner_party_index])
-            BattleEngine.reset_battle_state(battle_player_partner)
-            caught_pokemon[battle_partner_party_index] = battle_player_partner
-            battle_enemy_partner_party_index = 1
-            var enemy_partner_member = battle_enemy_party[1] as Dictionary
-            battle_enemy_partner = _make_context_enemy(enemy_partner_member)
-            BattleEngine.reset_battle_state(battle_enemy_partner)
-            battle_enemy_party[1] = battle_enemy_partner
-    var entry_messages: Array[String] = []
-    var player_actives: Array = [battle_player]
-    var enemy_actives: Array = [battle_enemy]
-    if battle_is_double:
-        player_actives.append(battle_player_partner)
-        enemy_actives.append(battle_enemy_partner)
-    var enemy_entry = BattleEngine.switch_in_message(battle_enemy, player_actives, battle_field)
-    var player_entry = BattleEngine.switch_in_message(battle_player, enemy_actives, battle_field)
-    if not enemy_entry.is_empty(): entry_messages.append(enemy_entry)
-    if not player_entry.is_empty(): entry_messages.append(player_entry)
-    if battle_is_double:
-        var enemy_partner_entry = BattleEngine.switch_in_message(
-            battle_enemy_partner, player_actives, battle_field)
-        var player_partner_entry = BattleEngine.switch_in_message(
-            battle_player_partner, enemy_actives, battle_field)
-        if not enemy_partner_entry.is_empty(): entry_messages.append(enemy_partner_entry)
-        if not player_partner_entry.is_empty(): entry_messages.append(player_partner_entry)
-    battle_context["_entry_messages"] = entry_messages.duplicate()
     _request_pokemon_cry(battle_enemy)
     _request_pokemon_cry(battle_player)
 
@@ -6508,12 +6391,7 @@ func _show_battle_intro_screen() -> void:
     enemy_sprite.modulate = Color.WHITE
     if bool(battle_context.get("pvp",false)):
         enemy_sprite.texture = preload("res://scripts/coop_trainer_portraits.gd").texture(self,battle_context.get("trainer_visual",{}))
-    var intro = String(battle_context.get("intro", ""))
-    if bool(battle_enemy.get("is_ghost", false)):
-        intro = "Wild GHOST\nappeared!"
-    elif intro.is_empty():
-        intro = "Wild %s\nappeared!" % BattleEngine.display_name(battle_enemy)
-    _start_battle_text(intro)
+    _start_battle_text(BattleSession.intro_text(battle_context, battle_enemy))
 
 func _advance_battle_intro() -> void:
     if source_effect_playing: return
@@ -6556,8 +6434,7 @@ func _show_battle_command_screen() -> void:
         _play_pokemon_cry(battle_player)
     _update_battle_hud()
     _update_battle_command_cursor()
-    var command_actor := _command_pokemon()
-    _start_battle_text("What will\n%s do?" % PokemonState.display_name(command_actor))
+    _start_battle_text(BattleSession.command_text(_command_pokemon()))
 
 func _command_pokemon() -> Dictionary:
     if battle_is_double and battle_double_command_slot == 1 and \
@@ -6582,6 +6459,328 @@ func _show_battle_message_screen() -> void:
     battle_move_box.visible = false
     battle_message_arrow.visible = false
     _set_battle_message_width(true)
+
+# --- the battle screen plays the battle session's events -------------------------
+
+## Battles whose turns run on the battle session (the others still run on
+## the turn code below until they move there too).
+func _session_battle() -> bool:
+    return not battle_is_double and String(battle_context.get("source_boss", "")).is_empty() \
+        and not bool(battle_context.get("source_mewtwo", false)) \
+        and not bool(battle_context.get("pvp", false)) and not (coop_game.active and coop_game.raids.active)
+
+## This screen's copies of what the battle session holds (the HUD, sprites,
+## menus and co-op read them).
+func _pull_battle_state() -> void:
+    var session := battle_session
+    battle_player = session.player
+    battle_enemy = session.enemy
+    battle_player_partner = session.partner
+    battle_enemy_partner = session.enemy_partner
+    battle_party_index = session.party_index
+    battle_partner_party_index = session.partner_index
+    battle_enemy_party = session.enemy_party
+    battle_enemy_party_index = session.enemy_index
+    battle_enemy_partner_party_index = session.enemy_partner_index
+    battle_field = session.field
+    battle_is_double = session.double
+    battle_turn_count = session.turn_count
+    battle_exp_participants = session.participants
+    current_species = String(battle_enemy.get("species", current_species))
+    current_level = int(battle_enemy.get("level", current_level))
+
+## Plays the session's events one at a time, the battle waiting for each; a
+## request (a Pokemon to send out) is answered from the party menu.
+func _battle_play(events: Array) -> void:
+    var session := battle_session
+    while true:
+        var answer = null
+        for event in events:
+            if session != battle_session or (not battle_active and not session.finished):
+                # The battle was ended from outside (a co-op game closing).
+                session.abandon()
+                return
+            _pull_battle_state()
+            answer = await _play_battle_event(event)
+        if not session.running:
+            return
+        events = session.resume(answer)
+
+func _play_battle_event(event: Dictionary) -> Variant:
+    match String(event.kind):
+        "text":
+            if bool(event.get("hud", false)):
+                _update_battle_hud()
+            await _type_battle_text(String(event.text))
+            if float(event.get("wait", 0.0)) > 0.0:
+                await get_tree().create_timer(float(event.wait)).timeout
+        "wait":
+            await get_tree().create_timer(float(event.seconds)).timeout
+        "message_screen":
+            _show_battle_message_screen()
+        "command":
+            if battle_is_double:
+                battle_double_actions.clear()
+                battle_double_command_slot = int(event.get("slot", 0))
+                battle_move_index = 0
+            battle_turn_busy = false
+            _show_battle_command_screen()
+        "end":
+            _end_battle(String(event.outcome))
+        "move":
+            await _play_move_event(event)
+        "double_move":
+            await _play_double_move_event(event)
+        "residual":
+            await _play_residual_event(event)
+        "end_turn":
+            await _play_end_turn_event(event)
+        "poison_check":
+            await _play_poison_status_feedback(event.pokemon, bool(event.player_side),
+                int(event.hp_before), bool(event.poisoned))
+        "double_end_turn":
+            _update_battle_field_visuals()
+            if not String(event.text).is_empty():
+                await _type_battle_text(String(event.text))
+                await get_tree().create_timer(0.1).timeout
+        "player_switch", "enemy_switch":
+            if bool(event.get("reset_move", false)):
+                battle_move_index = 0
+            _refresh_battle_sprites()
+            if bool(event.get("hud", false)):
+                _update_battle_hud()
+            _play_pokemon_cry(event.pokemon)
+            if not String(event.text).is_empty():
+                await _type_battle_text(String(event.text))
+                await get_tree().create_timer(float(event.wait)).timeout
+        "refresh":
+            _refresh_battle_sprites()
+            _update_battle_hud()
+        "victory_music":
+            world.environment_system.play_victory_music()
+        "throw":
+            _play_source_battle_sound("throw_pokeball1.ogg")
+            await _play_source_throw_animation(bool(event.captured), int(event.shakes))
+        "caught":
+            await _play_caught_event(event)
+        "experience":
+            await _run_experience_progression(event.pokemon, int(event.amount),
+                int(event.index), bool(event.defer_evolution))
+        "evolution_check":
+            await _check_reward_evolution(event.pokemon, int(event.index))
+        "boss_special":
+            await _play_boss_special(event)
+        "special_damage":
+            await _play_special_damage(event)
+        "silph_scope_fade":
+            await _play_silph_scope_fade()
+        "silph_scope_reveal":
+            await _play_silph_scope_reveal()
+        "switch":
+            # A Pokemon to send out: after a faint, Baton Pass or Roar.
+            if String(event.reason) == "DOUBLE_FORCED":
+                battle_double_replacement_slot = int(event.get("slot", 0))
+            _open_battle_party_menu(String(event.reason))
+            return int(await battle_party_chosen)
+    return null
+
+## A move: its first sentence, its animation, the HP bars, the rest of its
+## message and any status it caused.
+func _play_move_event(event: Dictionary) -> void:
+    var result: Dictionary = event.result
+    var player_attacks := bool(event.player_side)
+    var attacker: Dictionary = event.attacker
+    var defender: Dictionary = event.defender
+    var attacker_hp_before := int(event.attacker_hp_before)
+    var defender_hp_before := int(event.defender_hp_before)
+    if coop_game.active and coop_game.raids.active:await coop_game.raids.sync_damage(int(event.raid_hp_before))
+    if bool(event.weather):
+        _update_battle_field_visuals()
+    var message_parts := BattleSession.message_parts(String(result.message))
+    _start_battle_text(message_parts[0])
+    if battle_text_busy:
+        await battle_text_finished
+    if not bool(result.get("executed", false)):
+        await _play_blocked_status_feedback(attacker, player_attacks, String(result.get("message", "")))
+    else:
+        await _play_battle_feedback(String(result.get("animation_move", event.move)),
+            player_attacks, result, defender)
+    if battle_text_busy:
+        await battle_text_finished
+    _refresh_battle_sprites()
+    await _animate_visible_battle_hp(defender, int(defender.hp) if bool(result.get("hp_feedback_complete", false)) else defender_hp_before,
+        int(defender.get("hp", 0)))
+    if int(defender.hp) != defender_hp_before:
+        await get_tree().create_timer(13.0 / 60.0).timeout
+    await _animate_visible_battle_hp(attacker, attacker_hp_before,
+        int(attacker.get("hp", 0)))
+    if int(attacker.hp) != attacker_hp_before:
+        await get_tree().create_timer(13.0 / 60.0).timeout
+    _update_battle_hud()
+    if not message_parts[1].is_empty():
+        await _type_battle_text(message_parts[1])
+    await _play_new_status_feedback(defender, not player_attacks, event.status_before, result)
+    await get_tree().create_timer(0.1).timeout
+
+## A double battle's move on one of its targets.
+func _play_double_move_event(event: Dictionary) -> void:
+    var result: Dictionary = event.result
+    var player_side := bool(event.player_side)
+    var attacker: Dictionary = event.attacker
+    var defender: Dictionary = event.defender
+    var attacker_hp_before := int(event.attacker_hp_before)
+    var defender_hp_before := int(event.defender_hp_before)
+    var message_parts := BattleSession.message_parts(String(result.message))
+    _start_battle_text("Target %s: %s" % [
+        BattleEngine.display_name(defender),
+        message_parts[0]])
+    if battle_text_busy:
+        await battle_text_finished
+    if not bool(result.get("executed", false)):
+        await _play_blocked_status_feedback(attacker, player_side, String(result.get("message", "")))
+    else:
+        await _play_battle_feedback(String(result.get("animation_move", event.move)),
+            player_side, result, defender)
+    if battle_text_busy:
+        await battle_text_finished
+    _refresh_battle_sprites()
+    await _animate_visible_battle_hp(defender, int(defender.hp) if bool(result.get("hp_feedback_complete", false)) else defender_hp_before,
+        int(defender.get("hp", 0)))
+    if int(defender.hp) != defender_hp_before:
+        await get_tree().create_timer(13.0 / 60.0).timeout
+    await _animate_visible_battle_hp(attacker, attacker_hp_before,
+        int(attacker.get("hp", 0)))
+    if int(attacker.hp) != attacker_hp_before:
+        await get_tree().create_timer(13.0 / 60.0).timeout
+    _update_battle_hud()
+    if not message_parts[1].is_empty():
+        await _type_battle_text(message_parts[1])
+    await _play_new_status_feedback(defender, bool(event.target_player_side),
+        event.status_before, result)
+    await get_tree().create_timer(0.08).timeout
+
+## Burn, poison or a curse after a Pokemon's own action.
+func _play_residual_event(event: Dictionary) -> void:
+    var pokemon: Dictionary = event.pokemon
+    var player_side := bool(event.player_side)
+    var hp_before := int(event.hp_before)
+    if not player_side and coop_game.active and coop_game.raids.active:await coop_game.raids.sync_damage(hp_before)
+    var message := String(event.message)
+    if message.is_empty(): return
+    await _type_battle_text(message)
+    await _play_poison_status_feedback(pokemon, player_side, hp_before, bool(event.poisoned))
+    await _animate_visible_battle_hp(pokemon, hp_before, int(pokemon.hp))
+    _update_battle_hud()
+    await get_tree().create_timer(13.0 / 60.0).timeout
+
+## A single battle's end of turn: residual damage, the weather, its message.
+func _play_end_turn_event(event: Dictionary) -> void:
+    var player_hp_before := int(event.player_hp_before)
+    var enemy_hp_before := int(event.enemy_hp_before)
+    if coop_game.active and coop_game.raids.active:await coop_game.raids.sync_damage(enemy_hp_before)
+    if bool(event.weather_ended):
+        _update_battle_field_visuals()
+    await _play_poison_status_feedback(battle_player,true,player_hp_before,bool(event.player_poisoned))
+    await _play_poison_status_feedback(battle_enemy,false,enemy_hp_before,bool(event.enemy_poisoned))
+    await _animate_battle_hp_change(battle_player, player_hp_before,
+        int(battle_player.get("hp", 0)), true)
+    await _animate_battle_hp_change(battle_enemy, enemy_hp_before,
+        int(battle_enemy.get("hp", 0)), false)
+    _update_battle_hud()
+    if not String(event.text).is_empty():
+        await _type_battle_text(String(event.text))
+        await get_tree().create_timer(0.125).timeout
+
+## A caught Pokemon joins the party or storage; the Pokedex and caught list
+## learn of it.
+func _play_caught_event(event: Dictionary) -> void:
+    var captured: Dictionary = event.pokemon
+    if not caught_species.has(current_species):
+        caught_species.append(current_species)
+    if coop_game.active and coop_game.raids.active:coop_game.raids.normalize_capture(captured)
+    pokedex_progress.mark(captured, true)
+    var destination := _route_received_pokemon(captured)
+    _play_source_battle_sound("catch_fanfare.ogg")
+    await _type_battle_text("Caught %s!" % String(event.name))
+    var notice := _received_pokemon_notice(captured, destination)
+    if not notice.is_empty(): await _type_battle_text(notice)
+
+var regigigas_special_running := false
+
+## Mewtwo's psychic wave, or Regigigas's quake up to the moment it lands.
+func _play_boss_special(event: Dictionary) -> void:
+    await get_tree().create_timer(3.0 / 60.0).timeout
+    if String(event.boss) == "mewtwo":
+        await _type_battle_text("A wave of psychic power unleashes!")
+        await source_mewtwo.play_special()
+        return
+    await _type_battle_text("The ground is shaking violently!")
+    source_boss_move_type = String(event.move_type)
+    var damage_due := [false]
+    source_boss.special_damage_due.connect(func() -> void: damage_due[0] = true, CONNECT_ONE_SHOT)
+    regigigas_special_running = true
+    _run_regigigas_special()
+    while not damage_due[0]:
+        await get_tree().process_frame
+    if not battle_active or int(battle_player.get("hp",0)) <= 0:
+        return
+    # Battle.java selects the impact cue using the preceding ordinary move's
+    # type, but computes special damage using Ground (battle_session.gd).
+    var scale := BattleEngine.effectiveness(source_boss_move_type,battle_player.types)
+    var cue := "SUPER_EFFECTIVE" if scale>1.0 else "NOT_VERY_EFFECTIVE" if scale>0.0 and scale<1.0 else "NEUTRAL_EFFECTIVE"
+    await _play_source_battle_feedback(cue,false,{})
+
+func _run_regigigas_special() -> void:
+    await source_boss.play_special()
+    regigigas_special_running = false
+
+## The HP a boss special took, then the rest of its animation.
+func _play_special_damage(event: Dictionary) -> void:
+    var pokemon: Dictionary = event.pokemon
+    await _animate_visible_battle_hp(pokemon, int(event.hp_before), int(pokemon.hp))
+    _update_battle_hud()
+    if String(event.boss) == "regigigas":
+        while regigigas_special_running:
+            await get_tree().process_frame
+        if is_instance_valid(source_boss):source_boss.set_palette_stage(0)
+    await get_tree().create_timer(30.0/60.0).timeout
+
+var silph_scope_fade: TextureRect
+var silph_scope_started := 0
+
+## The SILPH SCOPE's fade up to the moment the ghost is revealed
+## (Battle.java: a 96-tick reveal alongside FadeAnim(slow=8), 144 ticks).
+func _play_silph_scope_fade() -> void:
+    source_effect_playing = true
+    silph_scope_fade = TextureRect.new()
+    silph_scope_fade.texture = preload("res://assets/events/source_fade.png")
+    silph_scope_fade.position = Vector2.ZERO
+    silph_scope_fade.size = Vector2(320, 180)
+    silph_scope_fade.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+    silph_scope_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    battle_panel.add_child(silph_scope_fade)
+    silph_scope_started = preload("res://scripts/game_clock.gd").ticks_usec()
+    await _play_silph_scope_frames(0, 96)
+
+## The revealed Pokemon, the rest of the fade and its intro.
+func _play_silph_scope_reveal() -> void:
+    await _play_silph_scope_frames(96, 144)
+    silph_scope_fade.queue_free()
+    await _play_source_ghost_intro(false)
+    source_effect_playing = false
+    await get_tree().create_timer(3.0 * SOURCE_FRAME_TIME).timeout
+
+func _play_silph_scope_frames(first: int, last: int) -> void:
+    for frame in range(first, last):
+        silph_scope_fade.modulate.a = (0.0 if frame < 16 else 0.25 if frame < 32 else
+            0.5 if frame < 48 else 1.0 if frame < 96 else
+            0.75 if frame < 112 else 0.5 if frame < 128 else 0.25)
+        if frame == 96:
+            pokedex_progress.mark(battle_enemy)
+            _refresh_battle_sprites()
+            _update_battle_hud()
+        while preload("res://scripts/game_clock.gd").ticks_usec() - silph_scope_started < int((frame + 1) * 1000000.0 / 60.0):
+            await get_tree().process_frame
 
 func _open_battle_move_menu() -> void:
     var command_actor := _command_pokemon()
@@ -6772,6 +6971,9 @@ func _battle_fight() -> void:
     battle_turn_busy = true
     _show_battle_message_screen()
     var player_move := _selected_player_move()
+    if _session_battle():
+        await _battle_play(battle_session.submit({"kind":"move", "move":player_move}))
+        return
     var enemy_action := _choose_enemy_action()
     if String(enemy_action.get("kind", "move")) != "move":
         await _perform_enemy_tactical_action(enemy_action)
@@ -7713,6 +7915,15 @@ func _battle_throw_ball(ball: String) -> void:
         _start_battle_text("You cannot throw a POKE BALL here.")
         return
     _close_battle_submenu()
+    if _session_battle():
+        last_battle_ball = ball
+        battle_turn_busy = true
+        _show_battle_message_screen()
+        await _battle_play(battle_session.submit({"kind":"ball", "ball":ball,
+            "night":_world_source_time_of_day() == "night",
+            "indoors":String(world.get("active_area_id")) != "OVERWORLD",
+            "surfing":String(world.get("active_field_move")) == "SURF"}))
+        return
     inventory[ball] = int(inventory.get(ball, 0)) - 1
     last_battle_ball = ball
     battle_turn_busy = true
@@ -7974,6 +8185,9 @@ func _battle_use_silph_scope() -> void:
         return
     battle_turn_busy = true
     _show_battle_message_screen()
+    if _session_battle():
+        await _battle_play(battle_session.submit({"kind":"silph_scope"}))
+        return
     await _type_battle_text("Used SILPH SCOPE!")
     # Battle.java: 96-tick reveal runs alongside FadeAnim(slow=8), 144 ticks.
     source_effect_playing = true
@@ -8032,6 +8246,11 @@ func _battle_use_poke_doll() -> void:
         return
     if not bool(battle_context.get("can_run", true)):
         _start_battle_text("The POKE DOLL cannot end this battle.")
+        return
+    if _session_battle():
+        battle_turn_busy = true
+        _show_battle_message_screen()
+        await _battle_play(battle_session.submit({"kind":"poke_doll"}))
         return
     inventory["POKE DOLL"] = int(inventory.get("POKE DOLL", 0)) - 1
     battle_turn_busy = true
@@ -8320,6 +8539,9 @@ func _switch_from_battle_party_action(party_index: int) -> void:
         return
     _close_battle_submenu()
     battle_turn_busy = true
+    if _session_battle():
+        await _battle_play(battle_session.submit({"kind":"switch", "index":party_index}))
+        return
     await _switch_battle_party(party_index, false, true)
     if await _resolve_battle_faints():
         return
@@ -8392,39 +8614,23 @@ func _request_forced_player_switch() -> void:
 func _can_use_battle_item_on(item_name: String, party_index: int) -> bool:
     var pokemon := BattleEngine.ensure_pokemon(caught_pokemon[party_index])
     caught_pokemon[party_index] = pokemon
-    if bool(pokemon.get("is_egg", false)):
-        _start_battle_text("That item cannot be used on an EGG.")
-        return false
-    var rule: Dictionary = BATTLE_ITEM_RULES.get(item_name, {})
-    match String(rule.get("kind", "")):
-        "heal":
-            if int(pokemon.hp) <= 0 or int(pokemon.hp) >= int(pokemon.max_hp):
-                _start_battle_text("That Pokemon does not need HP restored.")
-                return false
-        "full_restore":
-            if int(pokemon.hp) <= 0 or (int(pokemon.hp) >= int(pokemon.max_hp) and String(pokemon.status).is_empty()):
-                _start_battle_text("That Pokemon does not need restoring.")
-                return false
-        "status":
-            var cures := String(rule.get("status", "ANY"))
-            if int(pokemon.hp) <= 0 or String(pokemon.status).is_empty() or (cures != "ANY" and String(pokemon.status) != cures):
-                _start_battle_text("That item will not help this Pokemon.")
-                return false
-        "confusion":
-            if not (pokemon.volatile as Dictionary).has("confuse_turns"):
-                _start_battle_text("That Pokemon is not confused.")
-                return false
-        "revive":
-            if int(pokemon.hp) > 0:
-                _start_battle_text("That Pokemon has not fainted.")
-                return false
-        _:
-            return false
-    return true
+    var refusal := BattleSession.pokemon_item_refusal(pokemon, item_name)
+    if refusal.is_empty():
+        return true
+    if refusal != "-":
+        _start_battle_text(refusal)
+    return false
 
 func _use_battle_item_on(item_name: String, party_index: int) -> void:
     if is_instance_valid(coop_game.pvp) and coop_game.pvp.active:
         coop_game.pvp.submit({"kind":"item","item":item_name,"index":party_index})
+        return
+    if _session_battle():
+        battle_pending_item = ""
+        _close_battle_submenu()
+        battle_turn_busy = true
+        _show_battle_message_screen()
+        await _battle_play(battle_session.submit({"kind":"item", "item":item_name, "index":party_index}))
         return
     var pokemon := BattleEngine.ensure_pokemon(caught_pokemon[party_index])
     var rule: Dictionary = BATTLE_ITEM_RULES[item_name]
@@ -8506,6 +8712,9 @@ func _battle_run() -> void:
         return
     battle_turn_busy = true
     _show_battle_message_screen()
+    if _session_battle():
+        await _battle_play(battle_session.submit({"kind":"run"}))
+        return
     battle_run_attempts += 1
     var player_speed := BattleEngine.effective_stat(battle_player, "speed")
     var enemy_speed := BattleEngine.effective_stat(battle_enemy, "speed")
@@ -8529,6 +8738,8 @@ func _end_battle(outcome: String = "") -> void:
     var ending_population=coop_game.active and not coop_game.population_battles.claim.is_empty()
     var ending_event=coop_game.active and coop_game.events.active
     if ending_pvp:outcome=""
+    if battle_session != null and battle_session.running and not battle_session.finished:
+        battle_session.abandon()
     battle_ended.emit(outcome)
     if is_instance_valid(source_boss):
         source_boss.set_palette_stage(0)
