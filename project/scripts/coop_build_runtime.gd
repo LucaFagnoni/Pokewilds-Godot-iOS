@@ -23,6 +23,15 @@ func configure(coordinator:Node)->void:game=coordinator
 static func is_build_key(key:String)->bool:
     return key.begins_with("world/") and key.get_slice("/",2) in GROUPS
 
+## Only the built pieces of an area snapshot (GROUPS). Packing every wild
+## Pokemon and habitat of a long-played area as well, to be thrown away, made
+## each area save stall the host for a quarter of a second.
+static func builds(shared:Dictionary)->Dictionary:
+    var result:Dictionary={}
+    for group in GROUPS:
+        if shared.has(group):result[group]=shared[group]
+    return result
+
 func capture()->Dictionary:
     var world=game.main.world
     var records:Array=[]
@@ -57,10 +66,10 @@ func seed(area:String,shared:Dictionary)->bool:
     if not shared.get("_coop_build_base") is Dictionary:return true
     var baseline:Dictionary=shared._coop_build_base
     var current=known(area,game.state.records)
-    var next=Delta.flatten(shared)
+    var next=Delta.flatten(builds(shared))
     var keys=current.keys()
     for key in next:
-        if String(key).get_slice("/",0) in GROUPS and key not in keys:keys.append(key)
+        if String(key).get_slice("/",0) in GROUPS and not current.has(key):keys.append(key)
     var patches:Array=[];var empty=Delta.encode(null)
     for key in keys:
         var old=current.get(key,empty)
