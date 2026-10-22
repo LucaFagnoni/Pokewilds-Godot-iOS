@@ -156,8 +156,8 @@ func _process(_delta:float)->void:
             if not decoded is Dictionary:
                 _drop(peer,"invalid_frame_json")
                 break
-            if stats != null: count("rx:"+String(decoded.get("kind","")), length + 4, started)
-            if decoded.get("kind", "") != "keepalive": received.emit(peer, decoded)
+            if stats != null: count("rx:"+str(decoded.get("kind","")), length + 4, started)
+            if str(decoded.get("kind", "")) != "keepalive": received.emit(peer, decoded)
         if not peers.has(peer): continue
         _write(peer, FRAME_BUDGET)
 
@@ -188,7 +188,7 @@ func flush() -> void:
 
 func _drop(peer: int, reason: String = "session_closed") -> void:
     if not peers.has(peer): return
-    print("ONLINE transport closed peer=",peer," reason=",reason)
+    if reason!="status":print("ONLINE transport closed peer=",peer," reason=",reason) # MY SERVERS asks every few seconds
     last_disconnect_reason=reason
     peers[peer].socket.disconnect_from_host()
     peers.erase(peer)
