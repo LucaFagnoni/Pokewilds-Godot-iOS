@@ -13,7 +13,7 @@ func configure(owner_main:Node)->void:
     edit=LineEdit.new();edit.position=Vector2(12,78);edit.size=Vector2(248,24);edit.max_length=15
     edit.add_theme_font_override("font",main.JOHTO_FONT);edit.add_theme_font_size_override("font_size",9)
     add_child(edit);edit.text=Network.address();edit.text_submitted.connect(func(_value):save())
-    for entry in [["A: SAVE",12,save],["B: BACK",142,close]]:
+    for entry in [["SAVE" if main.touch_on() else "A: SAVE",12,save],["BACK" if main.touch_on() else "B: BACK",142,close]]:
         var button=Button.new();button.text=entry[0];button.position=Vector2(entry[1],114);button.size=Vector2(118,28)
         button.add_theme_font_override("font",main.JOHTO_FONT);button.add_theme_font_size_override("font_size",9)
         button.add_theme_stylebox_override("normal",Settings.style());button.pressed.connect(entry[2]);add_child(button)

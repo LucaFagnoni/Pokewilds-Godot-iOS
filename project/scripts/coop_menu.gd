@@ -418,6 +418,9 @@ func _update_status()->void:
             lines.append(Network.status_text() if trouble.is_empty() else trouble);lines.append("A: JOIN   B: BACK")
         "load":lines.append("A: LOAD   B: BACK")
         _:lines.append(Network.status_text());lines.append("A: SELECT   B: BACK")
+    if main.touch_on():
+        lines=PackedStringArray(Array(lines).filter(func(l):return not l.begins_with("A: ")))
+        if lines.is_empty():lines.append("")
     if not _hint.is_empty():lines[0]=_hint
     status.text="\n".join(lines)
 

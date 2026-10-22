@@ -4952,6 +4952,9 @@ func _menu_stick_event_is_blocked(event: InputEvent) -> bool:
         return false
     return true
 
+func touch_on() -> bool:
+    return is_instance_valid(touch_ui) and touch_ui.enabled
+
 func _is_android_touch_runtime() -> bool:
     return OS.has_feature("mobile") or (
         is_instance_valid(touch_controls)
@@ -9695,7 +9698,7 @@ func _refresh_pokemon_category_menu() -> void:
 
     if caught_pokemon.is_empty():
         _refresh_party_list_rows(pokemon_party_rows, [], -1)
-        pokemon_menu_prompt.text = "NO POKEMON.   B: BACK"
+        pokemon_menu_prompt.text = "NO POKEMON." if touch_on() else "NO POKEMON.   B: BACK"
         return
 
     var visible_count := mini(6, caught_pokemon.size())
@@ -9708,7 +9711,7 @@ func _refresh_pokemon_category_menu() -> void:
         pokemon_menu_index)
     var entry := caught_pokemon[pokemon_menu_index] as Dictionary
     if bool(entry.get("is_egg", false)):
-        pokemon_menu_prompt.text = "%d STEPS TO HATCH   B: BACK" % int(
+        pokemon_menu_prompt.text = ("%d STEPS TO HATCH" if touch_on() else "%d STEPS TO HATCH   B: BACK") % int(
             entry.get("hatch_steps", EGG_HATCH_STEPS))
         return
     pokemon_menu_prompt.text = (
@@ -10158,7 +10161,7 @@ func _refresh_evolution_item_target() -> void:
     if caught_pokemon.is_empty():
         return
     var target := BattleEngine.item_evolution_target(caught_pokemon[pokemon_menu_index], overworld_evolution_item)
-    pokemon_menu_prompt.text = "%s: %s" % [overworld_evolution_item, "ABLE. A: USE" if not target.is_empty() else "NOT ABLE"]
+    pokemon_menu_prompt.text = "%s: %s" % [overworld_evolution_item, ("ABLE." if touch_on() else "ABLE. A: USE") if not target.is_empty() else "NOT ABLE"]
 
 func _handle_evolution_item_input(event: InputEvent) -> void:
     if event.is_action_pressed("cancel") or event.is_action_pressed("start"):
