@@ -491,6 +491,15 @@ jobs:
           python3 tools/compat_id.py project > project/compat_id.txt
           echo "::notice::compat id $(cat project/compat_id.txt)"
 
+      # The lobby list's address and password (project/lobby_server.txt), as in
+      # the phone builds: a server with listed=true shows in their JOIN GAME list.
+      - name: Lobby list address
+        env:
+          LOBBY_SERVER: ${{ secrets.LOBBY_SERVER }}
+        run: |
+          if [ -n "$LOBBY_SERVER" ]; then printf '%s\n' "$LOBBY_SERVER" > project/lobby_server.txt
+          else echo "::warning::No LOBBY_SERVER secret: this server cannot be listed online"; fi
+
       # Godot's import cache (.godot): only assets that changed since are imported again.
       - uses: actions/cache@v4
         with:

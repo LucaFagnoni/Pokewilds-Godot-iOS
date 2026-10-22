@@ -18,7 +18,7 @@ export class LobbyDirectory {
     async fetch(request) {
         const url = new URL(request.url);
         const body = request.method === "GET" ? "" : await request.text();
-        const result = await this.directory.handle(request.method, url.pathname, body,
+        const result = await this.directory.handle(request.method, url.pathname + url.search, body,
             request.headers.get("x-client") ?? "");
         if (result.saved) await this.storage.put(result.saved.id, result.saved);
         if (result.removed.length) await this.storage.delete(result.removed);

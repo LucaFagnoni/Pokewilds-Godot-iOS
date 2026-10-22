@@ -8,6 +8,16 @@ signal rejected(reason: String)
 signal connection_lost
 const Transport = preload("res://scripts/coop_transport.gd")
 const PROTOCOL := "pokewilds-godot-coop-7"
+## Most players one game can have, a phone host included (a dedicated server's
+## own player does not count). The host relays every position update to each
+## other player in the same area, so its upload grows with the square of the
+## players. Measured (a walking player's update packs to ~320 bytes, sent 20
+## times a second): all 8 moving in one area is 1120 relays a second, ~350 KB/s
+## (2.8 Mbit/s) up and ~4% of a desktop core, against ~76 KB/s at 4; Wi-Fi and
+## 4G uploads manage it. 16 would be ~1.5 MB/s, more than many home lines can
+## send, so a dedicated server has the same limit.
+## The lobby directory (lobby-directory/src/directory.js) uses the same number.
+const MAX_PLAYERS := 8
 var transport: Node
 var hosting := false
 var world_id := ""

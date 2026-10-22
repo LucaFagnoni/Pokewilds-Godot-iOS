@@ -13,8 +13,11 @@ size="M"
 accounts="open"
 ; Shared password, only used with accounts="off". Empty = anyone can join.
 password=""
-; Players at once (1-4).
+; Players at once (1-8). `maxplayers N` in the server window changes it live.
 max_players=4
+; Show the server in the phones' JOIN GAME list (true/false). The port must be
+; reachable from outside. `list on` / `list off` in the server window change it.
+listed=false
 ; Minutes between automatic saves.
 autosave_minutes=5
 ; Open the port on the router by itself (UPnP) while the server runs.

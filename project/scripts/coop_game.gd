@@ -38,7 +38,9 @@ var lobby_private:=false
 var lobby_password:=""
 var lobby_salt:=""
 var lobby_name:=""
-## Where hosting listens and how many may play; a dedicated server sets both.
+## Where hosting listens and how many may play (the host included, 2 to
+## Session.MAX_PLAYERS; a dedicated server's own player is not counted). Set
+## before hosting; a dedicated server sets both.
 var host_port:=preload("res://scripts/coop_join_code.gd").PORT
 var max_players:=4
 ## A dedicated server makes new areas itself: (actor, area, token) -> true once
@@ -833,7 +835,19 @@ func _lobby_record()->Dictionary:
     var players:int=session.players.size()-(1 if Server.active else 0)
     return {"name":lobby_name,"host":String(session.profile.get("name","PLAYER")),"private":lobby_private,
         "players":players,"max":max_players,"salt":lobby_salt,"protocol":Session.PROTOCOL,"mods":session.mod_digest,"port":host_port,
-        "accounts":session.accounts!=null}
+        "accounts":session.accounts!=null,"kind":"server" if Server.active else "game","version":Session.build_version(),"compat":Session.compat_id()}
+
+## Joins a dedicated server from the JOIN GAME list (a "server" entry of
+## coop_lobby.gd) over the internet, straight to its address and port as MY
+## SERVERS does, never through ZeroTier. A server with player IDs (entry
+## "accounts") takes `player_id` and `password` as the ID's login; otherwise
+## `password` is its shared password ("" for none).
+func join_listed_server(entry:Dictionary,player_id:String,password:String)->void:
+    var account:=bool(entry.get("accounts",false))
+    join_lobby={"name":String(entry.get("name","SERVER")),"address":String(entry.get("address","")),"port":int(entry.get("port",Network.GAME_PORT)),
+        "direct":true,"private":false,"salt":"","kind":"server","account_id":player_id.strip_edges() if account else "","account_password":password if account else ""}
+    join_password="" if account else password
+    choose("JOIN_SETUP",String(join_lobby.address))
 
 func choose(action:String,value:String)->void:
     # Starting or joining a world takes time; a second press must not start
@@ -892,7 +906,8 @@ func _choose(action:String,value:String)->void:
         preload("res://scripts/crafting_data.gd").online_enabled=true
         active=true;hosting=false;_loading=true
         # A typed address is reached directly, never through the lobby network.
-        var direct:=bool(join_lobby.get("direct",false))
+        # A dedicated server from the list is on the internet, not on ZeroTier.
+        var direct:bool=bool(join_lobby.get("direct",false)) or join_lobby.get("kind")=="server"
         if not direct:Network.start()
         var deadline=Time.get_ticks_msec()+120000
         while active and not direct and Network.status().state!="ready":
@@ -988,6 +1003,9 @@ func game_started()->bool:
     if not save_checkpoint(checkpoint):_failure("ONLINE SAVE FAILED");return false
     var error:Error=session.host(world_id,host_port)
     if error!=OK:_failure("HOST COULD NOT START: "+error_string(error));return false
+    # Connections at once: everyone but a hosting player, who is already in.
+    max_players=clampi(max_players,1 if Server.active else 2,Session.MAX_PLAYERS)
+    session.transport.max_peers=max_players-(0 if Server.active else 1)
     # The world name is the lobby name other players see in JOIN GAME.
     lobby_name=String(checkpoint.get("world_name","WORLD")).strip_edges().left(24)
     lobby_salt=_id()
@@ -1111,10 +1129,13 @@ var _notice_fade:Tween
 ## "loading" when a player connects, "joined" once their world has loaded and
 ## they are standing in it, "left" when they go.
 ## "away"/"back" when the host leaves the app and returns, "hosting" to the
-## host itself on a phone.
+## host itself on a phone. "restart"/"stop" (seconds left) and their "_cancel"
+## come from a dedicated server's countdown.
 const NOTICE_TEXT:={"loading":"%s is loading in...","joined":"%s joined the game.","left":"%s left the game.",
     "away":"%s left the app. Waiting...","back":"%s is back.",
-    "hosting":"Keep the app open while you host.\nPlug in the charger."}
+    "hosting":"Keep the app open while you host.\nPlug in the charger.",
+    "restart":"Server restarting in %s s","stop":"Server shutting down in %s s",
+    "restart_cancel":"Server restart cancelled.","stop_cancel":"Server shutdown cancelled."}
 var _notice_loading:Dictionary={}
 
 func _player_notice(peer:int,player:String,event:String)->void:
@@ -1137,6 +1158,7 @@ func show_notice(player:String,event:String)->void:
         _notice_label=_notice_box.get_node("Text")
         _notice_label.add_theme_constant_override("line_spacing",NOTICE_LINE-roundi(HudStyle.FONT.get_height(HudStyle.FONT_SIZE)))
     var text:=String(NOTICE_TEXT[event]).replace("%s",player.strip_edges().left(24).to_upper())
+    if not Server.active:print("ONLINE notice: ",text.replace("\n"," ")) # the server says it its own way
     # Wrapped and centred as the newest chat message (coop_chat.gd), which goes under it.
     chat.fit(_notice_box,text,chat.room(),NOTICE_LINE)
     _notice_box.position=Vector2(roundf(chat.centre()-_notice_box.size.x/2.0),main.touch_controls.usable_rect.position.y+HudStyle.MARGIN+float(main.status_hud.row_height())+HudStyle.GAP)
@@ -1228,6 +1250,12 @@ func _message(_peer:int,actor:String,packet:Dictionary)->void:
         return
     if packet.get("kind")=="player_notice":
         if packet.get("name") is String and packet.get("event") is String and main.started:show_notice(packet.name,packet.event)
+        return
+    # A dedicated server about to restart or stop (dedicated_server.gd), once a second.
+    if packet.get("kind")=="server_countdown":
+        if packet.get("action") in ["restart","stop"] and main.started:
+            if packet.get("cancel")==true:show_notice("",String(packet.action)+"_cancel")
+            elif packet.get("seconds") is float or packet.get("seconds") is int:show_notice(str(clampi(int(packet.seconds),0,3600)),String(packet.action))
         return
     if packet.get("kind")=="world_clock":
         var seconds=packet.get("seconds");var speed=packet.get("speed")

@@ -2,7 +2,8 @@
 # A release build of Godot dies at once on Ctrl+C or when its console closes, so
 # the server never owns the console: Ctrl+C here sends it "stop", and closing
 # this window closes its input pipe, which the server also takes as "stop".
-# Either way it saves the world before it exits. Typed lines are sent as commands.
+# Either way it saves the world before it exits. Typed lines are sent as commands,
+# and a server that ends for `restart` is started again.
 $exe = Join-Path $PSScriptRoot 'PokeWilds.exe'
 
 # Windows asks once whether the server may be reached, and by default only on
@@ -36,31 +37,45 @@ $psi.CreateNoWindow = $true
 $psi.RedirectStandardInput = $true
 $psi.RedirectStandardOutput = $true
 $psi.RedirectStandardError = $true
-$server = [System.Diagnostics.Process]::Start($psi)
 $console = -not [Console]::IsInputRedirected
 if ($console) { [Console]::TreatControlCAsInput = $true }
-$out = $server.StandardOutput.ReadLineAsync()
-$err = $server.StandardError.ReadLineAsync()
-$typed = ''
-while ($out -ne $null -or $err -ne $null) {
-    if ($out -ne $null -and $out.IsCompleted) {
-        if ($out.Result -eq $null) { $out = $null } else { [Console]::WriteLine($out.Result); $out = $server.StandardOutput.ReadLineAsync() }
-        continue
+# Run by another program instead of a console: the lines it sends are the commands.
+# (A reader of its own: [Console]::In reads "asynchronously" by blocking.)
+$stdin = if ($console) { $null } else { New-Object System.IO.StreamReader([Console]::OpenStandardInput()) }
+$in = if ($console) { $null } else { $stdin.ReadLineAsync() }
+do {
+    $server = [System.Diagnostics.Process]::Start($psi)
+    $out = $server.StandardOutput.ReadLineAsync()
+    $err = $server.StandardError.ReadLineAsync()
+    $typed = ''
+    while ($out -ne $null -or $err -ne $null) {
+        if ($out -ne $null -and $out.IsCompleted) {
+            if ($out.Result -eq $null) { $out = $null } else { [Console]::WriteLine($out.Result); $out = $server.StandardOutput.ReadLineAsync() }
+            continue
+        }
+        if ($err -ne $null -and $err.IsCompleted) {
+            if ($err.Result -eq $null) { $err = $null } else { [Console]::WriteLine($err.Result); $err = $server.StandardError.ReadLineAsync() }
+            continue
+        }
+        if ($in -ne $null -and $in.IsCompleted -and -not $server.HasExited) {
+            if ($in.Result -eq $null) { $server.StandardInput.Close(); $in = $null } else { $server.StandardInput.WriteLine($in.Result); $in = $stdin.ReadLineAsync() }
+            continue
+        }
+        while ($console -and -not $server.HasExited -and [Console]::KeyAvailable) {
+            $key = [Console]::ReadKey($true)
+            # Ctrl+C saves and stops at once, without the players' countdown.
+            if ($key.Key -eq 'C' -and $key.Modifiers -band [ConsoleModifiers]::Control) { $typed = 'stop 0' }
+            elseif ($key.Key -eq 'Backspace') { if ($typed.Length -gt 0) { $typed = $typed.Substring(0, $typed.Length - 1); [Console]::Write("`b `b") }; continue }
+            elseif ($key.Key -ne 'Enter') { $typed += $key.KeyChar; [Console]::Write($key.KeyChar); continue }
+            [Console]::WriteLine()
+            $server.StandardInput.WriteLine($typed)
+            $typed = ''
+        }
+        Start-Sleep -Milliseconds 50
     }
-    if ($err -ne $null -and $err.IsCompleted) {
-        if ($err.Result -eq $null) { $err = $null } else { [Console]::WriteLine($err.Result); $err = $server.StandardError.ReadLineAsync() }
-        continue
-    }
-    while ($console -and -not $server.HasExited -and [Console]::KeyAvailable) {
-        $key = [Console]::ReadKey($true)
-        if ($key.Key -eq 'C' -and $key.Modifiers -band [ConsoleModifiers]::Control) { $typed = 'stop' }
-        elseif ($key.Key -eq 'Backspace') { if ($typed.Length -gt 0) { $typed = $typed.Substring(0, $typed.Length - 1); [Console]::Write("`b `b") }; continue }
-        elseif ($key.Key -ne 'Enter') { $typed += $key.KeyChar; [Console]::Write($key.KeyChar); continue }
-        [Console]::WriteLine()
-        $server.StandardInput.WriteLine($typed)
-        $typed = ''
-    }
-    Start-Sleep -Milliseconds 50
-}
-$server.WaitForExit()
+    $server.WaitForExit()
+    # `restart` typed in the server: it saved and ended with code 75. Start it again.
+    $again = $server.ExitCode -eq 75
+    if ($again) { Write-Host 'SERVER starting again...' }
+} while ($again)
 exit $server.ExitCode

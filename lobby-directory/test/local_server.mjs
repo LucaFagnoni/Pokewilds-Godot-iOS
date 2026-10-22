@@ -6,7 +6,7 @@ const port = Number(process.argv[2] ?? 8787);
 http.createServer(async (request, response) => {
     let body = "";
     for await (const chunk of request) body += chunk;
-    const result = await directory.handle(request.method, new URL(request.url, "http://x").pathname, body,
+    const result = await directory.handle(request.method, request.url, body,
         request.socket.remoteAddress ?? "");
     response.writeHead(result.status, { "content-type": "application/json" });
     response.end(JSON.stringify(result.body));
