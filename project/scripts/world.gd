@@ -237,7 +237,9 @@ var savanna_tree_front_sprite: Sprite2D
 var active_regi_pedestal_cell := Vector2i(-2147483648, -2147483648)
 var active_area_id := "OVERWORLD"
 var area_return_cells: Dictionary = {}
-var discovered_cells: Dictionary = {}
+const DiscoveredCells = preload("res://scripts/discovered_cells.gd")
+## The cells the player has uncovered: a bitset over the map (discovered_cells.gd).
+var discovered_cells := DiscoveredCells.new()
 ## What _discover_around added to discovered_cells since the minimap last took
 ## it: the cells' bounding box (empty if none), and how many were added in all.
 ## The minimap redraws just that box; if discovered_cells changed by any other
@@ -509,7 +511,7 @@ func generate_world(
     flower_anim_time = 0.0
     encounter_count = 0
     encounter_grace_remaining = 0.0
-    discovered_cells.clear()
+    discovered_cells.reset(Rect2i())
     dropped_items().restore({})
     map_art_revision += 1
     wild_pokemon.clear()
@@ -735,6 +737,9 @@ func _generate_exact_live_world(
             push_warning("Saved-world cache worker unavailable; cache was not written.")
     _repair_orphaned_large_trees()
     exact_world_bounds = exact_world.bounds()
+    # Discovery covers every cell _in_bounds accepts: the tile store's rectangle.
+    var store_tiles = exact_world.tiles
+    discovered_cells.reset(Rect2i(store_tiles.origin, Vector2i(store_tiles.width, store_tiles.height)) if store_tiles is WorldTileStore else exact_world_bounds)
     map_w = exact_world_bounds.size.x
     map_h = exact_world_bounds.size.y
     spawn_cell = exact_world.spawn_cell
@@ -4255,7 +4260,7 @@ func _travel_destinations(include_spawn: bool) -> Array[Dictionary]:
             landmark_cell = raw_value
         elif typeof(raw_value) == TYPE_DICTIONARY and (raw_value as Dictionary).has("cell"):
             landmark_cell = Vector2i((raw_value as Dictionary).get("cell", landmark_cell))
-        if landmark_cell.x <= -2147483648 or not discovered_cells.has(_cell_key(landmark_cell)):
+        if landmark_cell.x <= -2147483648 or not discovered_cells.has(landmark_cell):
             continue
         var landing := _nearest_walkable_cell(landmark_cell, 4)
         if landing.x <= -2147483648:
@@ -6972,7 +6977,7 @@ func get_crafting_save_state(include_population: bool = true) -> Dictionary:
         "event_progress": event_progress.duplicate(true),
         "ghost_step_countdown": ghost_step_countdown,
         "dropped_items": dropped_items().snapshot(),
-        "discovered_cells": discovered_cells.keys(),
+        "discovered_cells": discovered_save_value(),
         "world_elapsed_seconds": world_elapsed_seconds,
         "repel_until_elapsed": repel_until_elapsed,
         "active_area_id": active_area_id,
@@ -7103,20 +7108,20 @@ func restore_crafting_save_state(state: Dictionary) -> void:
     next_deployed_id = maxi(1, int(state.get("next_deployed_id", 1)))
 
     if state.has("discovered_cells"):
-        discovered_cells.clear()
         var saved_discovery = state.get("discovered_cells", [])
-        # An online player's record keeps this packed into squares.
-        if typeof(saved_discovery) == TYPE_DICTIONARY:
-            saved_discovery = preload("res://scripts/coop_world_snapshot.gd").unpacked_discovery(saved_discovery)
         if typeof(saved_discovery) == TYPE_ARRAY:
+            # A save from before the bitset: a list of "x,y" keys, read a
+            # slice of the frame at a time (an explored world has 100 000s).
+            discovered_cells.clear()
             for raw_key in saved_discovery:
                 if Time.get_ticks_usec() >= restore_deadline:
                     await get_tree().process_frame
                     restore_deadline = Time.get_ticks_usec() + 13000
-                var key := String(raw_key)
-                var cell := _cell_from_key(key)
+                var cell := _cell_from_key(String(raw_key))
                 if _in_bounds(cell):
-                    discovered_cells[key] = true
+                    discovered_cells.add(cell)
+        else:
+            restore_discovered(saved_discovery)
 
     var saved_terrain = state.get("terrain_changes", {})
     if typeof(saved_terrain) == TYPE_DICTIONARY:
@@ -10855,7 +10860,17 @@ func _source_biome_for_tile(tile: SourceTile) -> String:
 func is_cell_discovered(cell: Vector2i) -> bool:
     if active_area_id != "OVERWORLD" and source_area_rects.has(active_area_id):
         return get_map_bounds().has_point(cell)
-    return discovered_cells.has(_cell_key(cell))
+    return discovered_cells.has(cell)
+
+## The discovered cells as a save keeps them: {"bounds": [x, y, w, h], "bits":
+## base64}, one bit per cell of the map (DiscoveredCells.to_save).
+func discovered_save_value() -> Dictionary:
+    return discovered_cells.to_save()
+
+## Takes a save's discovered cells in any form saves have had: the bitset
+## (discovered_save_value), the co-op squares, or the old list of "x,y" keys.
+func restore_discovered(value: Variant) -> void:
+    discovered_cells.from_save(value)
 
 func reveal_player_area() -> void:
     if active_area_id != "OVERWORLD":
@@ -10874,9 +10889,7 @@ func _discover_around(cell: Vector2i, radius: int) -> void:
             if not _in_bounds(test):
                 continue
             if Vector2(test - cell).length_squared() <= float(radius * radius + 2):
-                var known := discovered_cells.size()
-                discovered_cells[_cell_key(test)] = true
-                if discovered_cells.size() != known:
+                if discovered_cells.add(test):
                     added += 1
                     low = Vector2i(mini(low.x, x), mini(low.y, y))
                     high = Vector2i(maxi(high.x, x), maxi(high.y, y))

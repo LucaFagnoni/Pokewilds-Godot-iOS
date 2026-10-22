@@ -233,6 +233,12 @@ func _initialize() -> void:
         FileAccess.open(dump, FileAccess.WRITE).store_string(JSON.stringify(save_data, " ", true))
     var state: Dictionary = save_data.get("crafting_state", {})
     state["mine_pokemon"] = _without_rolls(state.get("mine_pokemon", {}))
+    # Discovery as the sorted cells, whatever form the save keeps it in.
+    var discovered = world.get("discovered_cells")
+    var cells: Array = discovered.keys() if discovered is Dictionary else \
+        discovered.cells().map(func(cell: Vector2i) -> String: return "%d,%d" % [cell.x, cell.y])
+    cells.sort()
+    state["discovered_cells"] = cells
     for key in state: parts["save.crafting_state." + key] = _digest(state[key])
     for key in save_data:
         if key != "crafting_state": parts["save." + key] = _digest(save_data[key])

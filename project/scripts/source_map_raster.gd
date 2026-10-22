@@ -105,14 +105,13 @@ func _mark(cells: Rect2i, new_blocks: bool) -> void:
             var chunk := Vector2i(x, y)
             if new_blocks or chunks.has(chunk): dirty[chunk] = true
 
-## Every block with discovered ground (keys "x,y"); every block off the overworld.
+## Every block with discovered ground; every block off the overworld.
 func _mark_discovered() -> void:
     var world = main.world
     if world.active_area_id != "OVERWORLD":
         _mark(bounds, true)
         return
-    for key in world.discovered_cells:
-        var cell := Vector2i(String(key).get_slice(",", 0).to_int(), String(key).get_slice(",", 1).to_int())
+    for cell in world.discovered_cells.cells():
         if bounds.has_point(cell): dirty[(cell - bounds.position) / CHUNK] = true
 
 ## Draws dirty blocks, nearest the player first, until budget_usec has passed

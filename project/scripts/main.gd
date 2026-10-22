@@ -1884,7 +1884,7 @@ func _refresh_minimap(bounds: Rect2i, player_position: Vector2) -> void:
     var source_image: Image = source_region.get("image")
     var raster_key: Array = [bounds, view_origin, window_cells, indoor, centered,
         0 if exact == null else exact.get_instance_id(),
-        (world.get("discovered_cells") as Dictionary).size() if Time.get_ticks_msec() - minimap_cache_built >= 400 else minimap_cache_discovered,
+        world.discovered_cells.size() if Time.get_ticks_msec() - minimap_cache_built >= 400 else minimap_cache_discovered,
         0 if source_image == null else source_image.get_instance_id(), minimap_source_serial,
         _minimap_world_revision() if source_image == null else []]
     if raster_key == minimap_raster_key and minimap_map.texture != null:
@@ -1981,7 +1981,7 @@ func _minimap_source_region(bounds: Rect2i, view_origin: Vector2) -> Dictionary:
         ceili(view_origin.y + MINIMAP_WINDOW_CELLS.y)) + Vector2i(3, 3)
     var needed := Rect2i(origin, end - origin)
     var world_id: int = exact_world.get_instance_id()
-    var discovered_count: int = (world.get("discovered_cells") as Dictionary).size()
+    var discovered_count: int = world.discovered_cells.size()
     var now: int = Time.get_ticks_msec()
     if world_id != minimap_cache_world_id:
         minimap_texture_images.clear()
@@ -2130,8 +2130,7 @@ func _minimap_render(region: Rect2i, bounds: Rect2i, exact_world) -> Image:
         region.size.y * SOURCE_MAP_TILE_PIXELS, false, Image.FORMAT_RGBA8)
     image.fill(Color(0.025, 0.035, 0.03, 1.0))
     # Tiles are read straight from the store's arrays, not one SourceTile
-    # object per cell, and discovery is looked up by the same "x,y" keys
-    # is_cell_discovered uses (built from per-column and per-row parts).
+    # object per cell, and discovery is looked up in the world's bitset.
     var store = exact_world.tiles
     var packed: bool = store is WorldTileStore
     var flags := PackedInt32Array()
@@ -2151,12 +2150,8 @@ func _minimap_render(region: Rect2i, bounds: Rect2i, exact_world) -> Image:
         store_width = store.width
         store_height = store.height
         store_extra = not (store.extra as Dictionary).is_empty()
-    var discovered: Dictionary = world.discovered_cells
-    var by_key: bool = String(world.active_area_id) == "OVERWORLD"
-    var columns := PackedStringArray()
-    if by_key:
-        for x in range(region.size.x):
-            columns.append("%d" % (region.position.x + x))
+    var discovered = world.discovered_cells
+    var overworld: bool = String(world.active_area_id) == "OVERWORLD"
     var draw_x := PackedInt32Array()
     var draw_y := PackedInt32Array()
     var lower: Array = []
@@ -2168,11 +2163,10 @@ func _minimap_render(region: Rect2i, bounds: Rect2i, exact_world) -> Image:
     for y in range(region.size.y):
         var cy := region.position.y + y
         var row_inside := cy >= bounds.position.y and cy < bounds.end.y
-        var suffix := ",%d" % cy
         for x in range(region.size.x):
             var cx := region.position.x + x
             if not row_inside or cx < bounds_left or cx >= bounds_right \
-                    or not (discovered.has(columns[x] + suffix) if by_key else world.is_cell_discovered(Vector2i(cx, cy))):
+                    or not (discovered.has(Vector2i(cx, cy)) if overworld else world.is_cell_discovered(Vector2i(cx, cy))):
                 hidden_x.append(x)
                 hidden_y.append(y)
                 continue

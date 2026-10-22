@@ -67,7 +67,7 @@ func _initialize() -> void:
 func _veteran() -> void:
 	var bounds: Rect2i = main.world.get_map_bounds()
 	for x in range(bounds.position.x, bounds.end.x):
-		for y in range(bounds.position.y, bounds.end.y): main.world.discovered_cells["%d,%d" % [x, y]] = true
+		for y in range(bounds.position.y, bounds.end.y): main.world.discovered_cells.add(Vector2i(x, y))
 	var species: Array = preload("res://scripts/pokemon_data.gd").all_species()
 	for name in species:
 		main.pokedex_progress.entries[name] = 2
