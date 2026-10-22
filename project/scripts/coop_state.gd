@@ -41,8 +41,16 @@ var _namespace_stale := false
 ## written only by an explicit save. For telling save cost apart from the rest.
 static var journal_enabled := true
 
+## A world record is encoded text (coop_world_delta.gd encode), and players
+## send the fingerprint of the one they last saw: it is hashed as it is, with
+## no JSON copy of it first (16 KB: 67 -> 40 us, the hash itself). Anything
+## else is hashed as JSON with sorted keys, after a mark no record text starts
+## with: Godot's JSON writer is native and beat sorting and var_to_bytes in
+## script (a 300-entry dictionary: 0.68 ms against 1.3 ms). Host and players
+## must agree on these: changing them changes Session.PROTOCOL.
 static func fingerprint(value: Variant) -> String:
-    return JSON.stringify(value, "", true, true).sha256_text()
+    if value is String: return value.sha256_text()
+    return ("\u001f" + JSON.stringify(value, "", true, true)).sha256_text()
 
 ## The fingerprint of a stored record, worked out once per change to it. A
 ## player's record is a few hundred kilobytes and is asked about many times.
