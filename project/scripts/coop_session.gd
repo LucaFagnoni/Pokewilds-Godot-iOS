@@ -41,14 +41,26 @@ const Accounts = preload("res://scripts/coop_accounts.gd")
 ## The commit an official build was made from: CI writes build_id.txt before
 ## exporting. Builds from different commits can share the protocol and still
 ## disagree on the world (a world from one, tiles drawn by the other), so a
-## host refuses another build. Editor and local builds have none and skip it.
+## host refuses another build unless both carry the same compat_id(). Editor
+## and local builds have none and skip it.
 static var _build := ""
+static var _compat := ""
 
 static func build_id() -> String:
     if not OS.get_environment("POKEWILDS_BUILD_ID").is_empty(): return OS.get_environment("POKEWILDS_BUILD_ID") # tests
     if _build.is_empty() and FileAccess.file_exists("res://build_id.txt"):
         _build = FileAccess.get_file_as_string("res://build_id.txt").strip_edges().left(40)
     return _build
+
+## What two builds must share to play together: CI writes compat_id.txt, a hash
+## of the project without the client-only files of tools/client_only_paths.txt
+## (tools/compat_id.py), so a build that only changed, say, the HUD still plays
+## with the server of an older one. Without the file, the build id.
+static func compat_id() -> String:
+    if not OS.get_environment("POKEWILDS_COMPAT_ID").is_empty(): return OS.get_environment("POKEWILDS_COMPAT_ID") # tests
+    if _compat.is_empty() and FileAccess.file_exists("res://compat_id.txt"):
+        _compat = FileAccess.get_file_as_string("res://compat_id.txt").strip_edges().left(40)
+    return build_id() if _compat.is_empty() else _compat
 
 ## The version players see (build_version.txt, also written by CI), "" in local builds.
 static func build_version() -> String:
@@ -57,13 +69,19 @@ static func build_version() -> String:
 
 ## Why this host refuses a player whose hello (or status request) names this
 ## protocol, mods and build; "" when it would let them in. MY SERVERS shows the
-## same answer before joining (coop_server_ping.gd).
+## same answer before joining (coop_server_ping.gd). Compat ids decide when both
+## sides send one; a player from before them (no "compat") needs the same build.
 func refusal(payload: Dictionary) -> String:
     if str(payload.get("protocol",""))!=PROTOCOL:return "Game versions do not match." # str: any JSON value compares
     if str(payload.get("mods",""))!=mod_digest:return "Enabled mods and their order must match the host."
     var build:=str(payload.get("build",""))
-    if not build.is_empty() and not build_id().is_empty() and build!=build_id():
-        return "Different game build: host %s, yours %s." % [build_id().left(8),build.left(8)]
+    var compat:=str(payload.get("compat",""))
+    var differs:=compat!=compat_id() if not compat.is_empty() and not compat_id().is_empty() \
+        else not build.is_empty() and not build_id().is_empty() and build!=build_id()
+    if differs:
+        var theirs:=str(payload.get("version","")).left(16)
+        return "Different game version: host %s, yours %s." % [build_version() if not build_version().is_empty() else build_id().left(8),
+            theirs if not theirs.is_empty() else build.left(8)]
     return ""
 ## Host only: true for a player this world's host has banned. A player is the
 ## identity their copy of the game made on first run, not a name or appearance.
@@ -142,7 +160,7 @@ func _hello(peer: int, world: String, nonce: String = "") -> void:
     # A typed address may cross the internet: its proof only ever travels hashed.
     if world.is_empty() and not access_password.is_empty():access = ""
     var hello := {"kind":"hello","protocol":PROTOCOL,"mods":mod_digest,
-        "identity":identity,"profile":profile,"access":access,"build":build_id()}
+        "identity":identity,"profile":profile,"access":access,"build":build_id(),"compat":compat_id(),"version":build_version()}
     if not account_id.is_empty():
         hello["account"] = account_id
         if not world.is_empty() and _account_challenge.get("salt") is String:

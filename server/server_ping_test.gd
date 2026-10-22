@@ -1,5 +1,6 @@
 # MY SERVERS status pings (coop_server_ping.gd) against a real headless dedicated server:
-# the same build answers with its version in green, another build is red, a host from before
+# the same compat id answers with its version in green (another build too), another compat id
+# is red, a copy without a compat id needs the same build, a host from before
 # status requests is red, a closed port or a silent address is OFFLINE within the timeout, and
 # malformed status packets neither crash the server nor stop it answering. Then the real
 # MY SERVERS list shows those rows in green, red and grey and pings again while open.
@@ -11,6 +12,7 @@ extends SceneTree
 const Paths = preload("res://scripts/game_data_paths.gd")
 const Ping = preload("res://scripts/coop_server_ping.gd")
 const Saved = preload("res://scripts/coop_saved_servers.gd")
+const Session = preload("res://scripts/coop_session.gd")
 const PORT := 54781
 const OLD_PORT := 54782
 const OTHER_PORT := 54783
@@ -100,8 +102,9 @@ func _initialize() -> void:
     Paths.directory = dir.path_join("client")
     var mods := String(preload("res://scripts/coop_identity.gd").mods().get("digest", ""))
     check(not mods.is_empty(), "this copy's mods digest")
-    # Server and this test share a build id and version (the child inherits the environment).
+    # Server and this test share a build id, compat id and version (the child inherits the environment).
     OS.set_environment("POKEWILDS_BUILD_ID", "ping-build-a")
+    OS.set_environment("POKEWILDS_COMPAT_ID", "ping-compat-a")
     OS.set_environment("POKEWILDS_BUILD_VERSION", "0.10.999")
     for pair in [[OLD_PORT, {"kind": "rejected", "reason": "Join handshake required."}],
             [OTHER_PORT, {"kind": "status", "protocol": "pokewilds-godot-coop-7", "version": "0.10.198", "build": "ping-build-b", "compatible": false}]]:
@@ -143,11 +146,21 @@ func _initialize() -> void:
     check(int(found.get("ms", 99999)) < 1000, "the ping is measured: %s ms" % [found.get("ms")])
     found = await ping("localhost", PORT, mods)
     check(found.get("state") == "ok" and found.compatible, "a host name is resolved: %s" % [found])
-    # Another build: the server's own rule refuses it, so red.
+    # Another build with another compat id: the server's own rule refuses it, so red.
     OS.set_environment("POKEWILDS_BUILD_ID", "ping-build-old")
+    OS.set_environment("POKEWILDS_COMPAT_ID", "ping-compat-old")
     found = await ping("127.0.0.1", PORT, mods)
-    check(found.get("state") == "ok" and found.version == "0.10.999" and not found.compatible, "another build is not compatible: %s" % [found])
+    check(found.get("state") == "ok" and found.version == "0.10.999" and not found.compatible, "another compat id is not compatible: %s" % [found])
+    # A newer build that changed only client-only files keeps the compat id: green, the server's own version.
+    OS.set_environment("POKEWILDS_BUILD_ID", "ping-build-new")
+    OS.set_environment("POKEWILDS_COMPAT_ID", "ping-compat-a")
+    found = await ping("127.0.0.1", PORT, mods)
+    check(found.get("state") == "ok" and found.version == "0.10.999" and found.build == "ping-build-a" and found.compatible, "another build with the same compat id is compatible: %s" % [found])
     OS.set_environment("POKEWILDS_BUILD_ID", "ping-build-a")
+    # A copy from before compat ids sends only its build: the build decides.
+    for pair in [["ping-build-a", true], ["ping-build-old", false]]:
+        var old_reply = JSON.parse_string((await raw(framed(JSON.stringify({"kind": "status", "protocol": Session.PROTOCOL, "mods": mods, "build": pair[0]})))).slice(4).get_string_from_utf8())
+        check(old_reply is Dictionary and old_reply.get("compatible") == pair[1], "no compat id, build %s: compatible %s: %s" % [pair[0], pair[1], old_reply])
     found = await ping("127.0.0.1", PORT, "other-mods")
     check(found.get("state") == "ok" and not found.compatible, "other mods are not compatible: %s" % [found])
 

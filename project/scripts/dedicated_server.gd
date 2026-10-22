@@ -99,8 +99,10 @@ func _ready()->void:
     if active:
         get_tree().auto_accept_quit=false
         add_child(maker)
+        # The exact build, and the compat id that decides who may join (coop_session.gd refusal).
         var build:String=preload("res://scripts/coop_session.gd").build_id()
-        print("SERVER PokeWilds dedicated server",(" build "+build.left(8)) if not build.is_empty() else "",", data in ",ProjectSettings.globalize_path(Paths.root_path()))
+        var compat:String=preload("res://scripts/coop_session.gd").compat_id()
+        print("SERVER PokeWilds dedicated server",(" build "+build.left(8)) if not build.is_empty() else "",(" compat "+compat.left(8)) if compat!=build else "",", data in ",ProjectSettings.globalize_path(Paths.root_path()))
     while not (get_tree().current_scene!=null and get_tree().current_scene.get("startup_complete")):
         await get_tree().process_frame
     main=get_tree().current_scene

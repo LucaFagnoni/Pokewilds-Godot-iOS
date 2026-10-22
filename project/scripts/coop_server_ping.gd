@@ -1,6 +1,6 @@
 extends RefCounted
 ## One status check of a server for MY SERVERS: connect to its game port, send {"kind":"status"}
-## with this copy's protocol, mods and build, and read the one reply. The host answers before any
+## with this copy's protocol, mods, build and compat id, and read the one reply. The host answers before any
 ## hello and closes (coop_session.gd), saying whether it would let this player in. Call poll()
 ## every frame until it returns true; nothing blocks, host names are resolved in the background.
 ## result: {"state":"ok","ms","version","build","compatible"} or {"state":"old|unknown|busy|offline"}
@@ -20,7 +20,7 @@ var _rx:=PackedByteArray()
 
 func _init(address:String,port:int,mods:String)->void:
     _port=port;_started=Time.get_ticks_msec()
-    _request=JSON.stringify({"kind":"status","protocol":Session.PROTOCOL,"mods":mods,"build":Session.build_id()}).to_utf8_buffer()
+    _request=JSON.stringify({"kind":"status","protocol":Session.PROTOCOL,"mods":mods,"build":Session.build_id(),"compat":Session.compat_id(),"version":Session.build_version()}).to_utf8_buffer()
     if address.is_valid_ip_address():_connect(address)
     else:_resolve=IP.resolve_hostname_queue_item(address)
 
