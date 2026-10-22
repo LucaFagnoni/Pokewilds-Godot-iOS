@@ -7252,7 +7252,9 @@ func _pokemon_can_enter(species: String, cell: Vector2i) -> bool:
         return terrain_kind_at(cell) == 0
     return _is_walkable(cell) and terrain_kind_at(cell) != 0
 
-func get_crafting_save_state() -> Dictionary:
+## include_population false leaves the habitat and wild Pokemon and the eggs
+## out (empty): an online area save takes them from the shared records.
+func get_crafting_save_state(include_population: bool = true) -> Dictionary:
     var structures: Array = []
     for key in built_structures.keys():
         var cell: Vector2i = key
@@ -7268,13 +7270,13 @@ func get_crafting_save_state() -> Dictionary:
         structures.append(saved_structure)
 
     var farms: Array = []
-    for key in deployed_pokemon.keys():
+    for key in (deployed_pokemon.keys() if include_population else []):
         var cell: Vector2i = key
         var data: Dictionary = deployed_pokemon[cell]
         farms.append(_serializable_ecology_record(data, cell))
 
     var saved_wild_pokemon: Array = []
-    for raw_id in wild_pokemon.keys():
+    for raw_id in (wild_pokemon.keys() if include_population else []):
         var data: Dictionary = wild_pokemon[raw_id]
         var cell: Vector2i = data.get("cell", Vector2i.ZERO)
         var saved_wild := _serializable_ecology_record(data, cell)
@@ -7282,7 +7284,7 @@ func get_crafting_save_state() -> Dictionary:
         saved_wild_pokemon.append(saved_wild)
 
     var saved_eggs: Array = []
-    for raw_cell in wild_eggs.keys():
+    for raw_cell in (wild_eggs.keys() if include_population else []):
         var cell: Vector2i = raw_cell
         var data: Dictionary = wild_eggs[cell]
         var saved_egg := data.duplicate(true)

@@ -74,25 +74,36 @@ static func capture_personal(world:Node)->Dictionary:
         "camera_zoom_level":world.camera_zoom_level,"respawn_house":world.respawn_house.duplicate(true),
         "respawn_x":world.respawn_cell.x,"respawn_y":world.respawn_cell.y}
 
-static func split(crafting:Dictionary)->Dictionary:
-    var shared=crafting.duplicate(true)
+## copy false for a crafting state made just for this (get_crafting_save_state):
+## nothing else holds it, so it is not copied again.
+static func split(crafting:Dictionary,copy:bool=true)->Dictionary:
+    var shared=crafting.duplicate(true) if copy else crafting.duplicate()
     var personal:Dictionary={}
     for key in PERSONAL_KEYS:
         if shared.has(key):personal[key]=shared[key];shared.erase(key)
     return {"shared":shared,"personal":personal}
 
-static func committed_population(area:String,shared:Dictionary,records:Dictionary)->Dictionary:
-    # An in-flight spawn or habitat move must not enter a join/travel snapshot
-    # before its transaction has been saved. Initial world seeding is separate.
-    var result=shared.duplicate(true)
-    for group in ["wild_pokemon","deployed_pokemon","wild_eggs"]:result[group]=[]
+## An in-flight spawn or habitat move must not enter a join/travel snapshot
+## before its transaction has been saved. Initial world seeding is separate.
+## committed_population(shared, population_records(area, records)): the
+## records are picked on the game thread, still packed; unpacking them, a
+## thousand wild Pokemon in a long-played area, can then run on a worker.
+static func population_records(area:String,records:Dictionary)->Array:
+    var picked:Array=[]
     var prefix="world/"+area+"/"
     for key in records:
         if not String(key).begins_with(prefix):continue
         var group=String(key).get_slice("/",2)
-        if group not in ["wild_pokemon","deployed_pokemon","wild_eggs"]:continue
-        var record=preload("res://scripts/coop_world_delta.gd").decode(records[key])
-        if record is Dictionary:result[group].append(record)
+        if group in ["wild_pokemon","deployed_pokemon","wild_eggs"]:picked.append([group,records[key]])
+    return picked
+
+## Only these groups are replaced; the rest is the caller's own, not copied.
+static func committed_population(shared:Dictionary,picked:Array)->Dictionary:
+    var result=shared.duplicate()
+    for group in ["wild_pokemon","deployed_pokemon","wild_eggs"]:result[group]=[]
+    for entry in picked:
+        var record=preload("res://scripts/coop_world_delta.gd").decode(entry[1])
+        if record is Dictionary:result[entry[0]].append(record)
     return result
 
 static func merge(shared:Dictionary,personal:Dictionary)->Dictionary:

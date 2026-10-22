@@ -174,8 +174,10 @@ func _arrival_personal(area:String)->Dictionary:
 func finish_travel()->bool:
     if not _travel_token.is_empty():
         main.generation_status.text="Saving new area...";main.generation_panel.show()
-        var parts=Snapshot.split(main.world.get_crafting_save_state())
-        var bytes=Snapshot.encode(main.world.world_seed,main.world.map_size_index,FileAccess.get_file_as_bytes(Cache.cache_path(main.world.world_seed,main.world.map_size_index)),parts.shared)
+        var shared:Dictionary=Snapshot.split(main.world.get_crafting_save_state(),false).shared
+        var seed_value:int=main.world.world_seed;var size_index:int=main.world.map_size_index
+        var cache:=Cache.cache_path(seed_value,size_index)
+        var bytes:PackedByteArray=await _off_thread(func():return Snapshot.encode(seed_value,size_index,FileAccess.get_file_as_bytes(cache),shared))
         var result:Dictionary
         if hosting:result=await service.generated(session.actor,_travel_target,_travel_token,{"seed":main.world.world_seed,"size":main.world.map_size_index},bytes)
         else:result=await service.upload(_travel_target,_travel_token,0,bytes)
@@ -1201,14 +1203,23 @@ func publish_current()->bool:
     _publishing=true
     var seed_value=int(main.world.world_seed)
     var size_index=int(main.world.map_size_index)
-    var parts=Snapshot.split(main.world.get_crafting_save_state())
     var registry:Dictionary=state.records if hosting else shared_records
-    if not area_authority.is_empty() or (hosting and state.records.has("area/"+_area())):
-        parts.shared=Snapshot.committed_population(_area(),parts.shared,registry)
-    parts.shared["_coop_build_base"]=building.known(_area(),state.records if hosting else shared_records)
-    # A guest leaves out the terrain cache: the host has it (Snapshot.refill).
-    var bytes=Snapshot.encode_without_cache(seed_value,size_index,parts.shared) if not hosting else \
-        Snapshot.encode(seed_value,size_index,FileAccess.get_file_as_bytes(Cache.cache_path(seed_value,size_index)),parts.shared)
+    # The population then comes from the records, not from the world here,
+    # which need not pack its own only to have it replaced.
+    var committed:bool=not area_authority.is_empty() or (hosting and state.records.has("area/"+_area()))
+    var parts=Snapshot.split(main.world.get_crafting_save_state(not committed),false)
+    var picked:Array=Snapshot.population_records(_area(),registry) if committed else []
+    parts.shared["_coop_build_base"]=building.known(_area(),registry).duplicate(true)
+    # Unpacked and packed on a worker: a long-played area and its terrain
+    # cache are megabytes. A guest leaves out the terrain cache: the host has
+    # it (Snapshot.refill).
+    var cache:=Cache.cache_path(seed_value,size_index) if hosting else ""
+    var made:Array=await _off_thread(func():
+        var shared:Dictionary=Snapshot.committed_population(parts.shared,picked) if committed else parts.shared
+        return [shared,Snapshot.encode_without_cache(seed_value,size_index,shared) if cache.is_empty() else \
+            Snapshot.encode(seed_value,size_index,FileAccess.get_file_as_bytes(cache),shared)])
+    parts.shared=made[0]
+    var bytes:PackedByteArray=made[1]
     if bytes.is_empty():_publishing=false;_failure("ONLINE AREA CACHE IS MISSING");return false
     if not hosting:
         var uploaded:Dictionary=await service.upload(_area(),"",area_epoch,bytes)
@@ -1378,7 +1389,8 @@ func _admitted(peer:int,actor:String,profile:Dictionary)->void:
         await get_tree().process_frame
         if not session.players.has(peer):return
     if not await publish_current():session.transport._drop(peer);return
-    var data:Dictionary=main._capture_game_save()
+    # The host's own crafting state is replaced below: its personal part only.
+    var data:Dictionary=main._capture_game_save(2,true)
     # A new guest starts with their own party and inventory, never the host's.
     var personal:Dictionary=state.records.get("player/"+actor,{})
     var saved_personal:Dictionary=personal.get("save",{})
@@ -1398,7 +1410,7 @@ func _admitted(peer:int,actor:String,profile:Dictionary)->void:
     data["player_name"]=profile.get("name","PLAYER");data["player_name_custom"]=true
     data["player_model"]=profile.get("model",0);data["player_color"]=profile.get("color",0)
     # Spawn beside the host in the same scene; shared crafting arrives separately.
-    data["coop_personal"]=saved_personal.get("crafting_state",Snapshot.split(main.world.get_crafting_save_state()).personal).duplicate(true)
+    data["coop_personal"]=(saved_personal.crafting_state if saved_personal.has("crafting_state") else Snapshot.split(main.world.get_crafting_save_state(false),false).personal).duplicate(true)
     data.coop_personal.erase("follower_pokemon");data.coop_personal.erase("active_field_move");data.coop_personal.erase("active_field_pokemon")
     if personal.is_empty():
         personal={"party":data.caught_pokemon,"inventory":data.inventory,"save":{}}
