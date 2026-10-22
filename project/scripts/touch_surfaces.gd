@@ -83,6 +83,7 @@ func build() -> Dictionary:
     # A co-op TRADE / BATTLE / request / BEACON box takes the input first (coop_game.handle_input).
     if is_instance_valid(m.coop_game) and is_instance_valid(m.coop_game.interaction_ui) and m.coop_game.interaction_ui.visible:
         return _coop_interaction(m.coop_game.interaction_ui)
+    if is_instance_valid(m.coop_game) and is_instance_valid(m.coop_game.chat) and m.coop_game.chat.visible: return m.coop_game.chat.surface()
     if is_instance_valid(m.waypoint_ui) and m.waypoint_ui.naming: return _waypoint_naming()
     if m.progression_active: return _progression()
     if m.quit_prompt_open: return _yes_no(m.quit_prompt, func(i): m.quit_prompt_index = i; m._update_quit_prompt_cursor())
@@ -111,6 +112,9 @@ func _field() -> Dictionary:
     var minimap_shown := is_instance_valid(minimap) and minimap.is_visible_in_tree()
     var minimap_rect := minimap.get_global_rect() if minimap_shown else Rect2()
     var buttons: Array = field_hud.buttons()
+    # Online, the world chat (coop_chat.gd) under the menu button.
+    if is_instance_valid(m.coop_game) and is_instance_valid(m.coop_game.chat) and m.coop_game.chat.available():
+        buttons.append(["CHAT", func(): m.coop_game.chat.open(), m.coop_game.chat.button_rect()])
     # A tap on the clock switches real time and game time.
     var clock: Control = m.status_hud.clock_chip
     var clock_shown := is_instance_valid(clock) and clock.is_visible_in_tree()

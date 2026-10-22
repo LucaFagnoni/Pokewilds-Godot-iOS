@@ -3289,6 +3289,7 @@ func _field_ui_blocks_gameplay(ignore_build_hud: bool = false) -> bool:
     if is_instance_valid(coop_game) and coop_game.active and (coop_game.wild.encounter_pending or not coop_game.wild.encounter.is_empty()):return true
     if is_instance_valid(coop_game) and coop_game.active and not coop_game.session.trusted and started:return true
     if is_instance_valid(coop_game) and is_instance_valid(coop_game.interaction_ui) and coop_game.interaction_ui.visible:return true
+    if is_instance_valid(coop_game) and is_instance_valid(coop_game.chat) and coop_game.chat.visible:return true
     return ((is_instance_valid(pokedex_menu) and pokedex_menu.visible)
         or battle_active or battle_entry_pending or progression_active
         or mansion_switch_open or field_item_busy or game_menu_open

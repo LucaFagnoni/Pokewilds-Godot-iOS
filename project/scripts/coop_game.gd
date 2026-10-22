@@ -22,6 +22,7 @@ var visuals:Node
 var service:Node
 var commands:Node
 var interaction_ui:Control
+var chat:Control
 var rest:Node
 var storage:Node
 var beacons:Node
@@ -285,6 +286,8 @@ func configure(game:Node)->void:
     main.get_node("UI").add_child(interaction_ui);interaction_ui.configure(main,self)
     pvp=preload("res://scripts/coop_pvp_runtime.gd").new();add_child(pvp);pvp.configure(self)
     interaction_ui.battle_accepted.connect(pvp.receive)
+    chat=preload("res://scripts/coop_chat.gd").new()
+    main.get_node("UI").add_child(chat);chat.configure(main,self)
     rest=preload("res://scripts/coop_rest.gd").new();add_child(rest);rest.configure(self)
     storage=preload("res://scripts/coop_storage.gd").new();add_child(storage);storage.configure(self)
     beacons=preload("res://scripts/coop_beacons.gd").new();add_child(beacons);beacons.configure(self)
@@ -306,7 +309,10 @@ func configure(game:Node)->void:
 
 func handle_input(event:InputEvent)->bool:
     if interaction_ui.visible:interaction_ui.handle(event);return true
+    if chat.visible:chat.handle(event);return true
     if not active or not session.trusted or not main.started or main.generating or main._field_ui_blocks_gameplay():return false
+    # T opens the world chat (coop_chat.gd).
+    if event is InputEventKey and event.pressed and not event.echo and event.keycode==KEY_T:chat.open();return true
     if not event.is_action_pressed("confirm"):return false
     if main.world.active_area_id=="OVERWORLD" and main.world.built_structures.get(main.world._player_cell(),{}).get("name")=="BEACON":
         beacons.open();return true
@@ -1192,6 +1198,7 @@ func _admitted(peer:int,actor:String,profile:Dictionary)->void:
     if error!=OK:session.transport._drop(peer)
 
 func _message(_peer:int,actor:String,packet:Dictionary)->void:
+    if chat.message(_peer,actor,packet):return
     if hosting:
         if packet.get("kind")=="area_flush_result" and packet.get("id") is String and packet.get("ok") is bool:
             _area_flushes[packet.id]=packet.ok;return
