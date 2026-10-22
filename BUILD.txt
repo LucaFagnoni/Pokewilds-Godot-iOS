@@ -19,7 +19,7 @@ project/android/build/libs/. Keep the included custom src/ and res/ files.
 Do not replace the custom Android wrapper with a stock build template: it contains
 the save-file bridges, document provider and launch behavior used by this game.
 4. Open Project > Export > Android. Gradle build is enabled. Internet permission
-is enabled for multiplayer. Verify package com.pokewilds.godot and architectures.
+is enabled for multiplayer. Verify package com.bebo.pokewilds and architectures.
 5. Use your own debug or release keystore. No signing credentials are supplied.
 A differently signed APK cannot update the existing signed app in place; back up
 saves before installing a separately signed build. For development, choose a

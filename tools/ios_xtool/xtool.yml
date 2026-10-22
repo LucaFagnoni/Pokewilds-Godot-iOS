@@ -1,6 +1,6 @@
 version: 1
 # Info.plist (made by build_ipa.sh from Godot's) sets the real id and versions.
-bundleID: com.pokewilds.godot
+bundleID: com.bebo.pokewilds
 product: Pokewilds
 infoPath: Info.plist
 # Copied to the root of Pokewilds.app.

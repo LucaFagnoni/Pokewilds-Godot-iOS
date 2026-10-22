@@ -39,7 +39,7 @@ latest = versions[0]
 
 app = {
     "name": "PokeWilds",
-    "bundleIdentifier": "com.pokewilds.godot",
+    "bundleIdentifier": "com.bebo.pokewilds",
     "developerName": "LucaFagnoni",
     "subtitle": "Explore, catch and build in a wild open world.",
     "localizedDescription": ABOUT,
@@ -67,7 +67,7 @@ app = {
 }
 source = {
     "name": "PokeWilds",
-    "identifier": "com.pokewilds.godot.source",
+    "identifier": "com.bebo.pokewilds.source",
     "subtitle": "PokeWilds for iPhone",
     "description": ABOUT,
     "iconURL": ICON,

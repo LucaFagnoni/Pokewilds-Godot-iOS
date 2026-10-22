@@ -3,7 +3,7 @@
     <shortcut android:shortcutId="game_files" android:enabled="true"
         android:icon="@mipmap/icon" android:shortcutShortLabel="@string/pokewilds_game_files">
         <intent android:action="android.intent.action.VIEW"
-            android:targetPackage="com.pokewilds.godot"
+            android:targetPackage="com.bebo.pokewilds"
             android:targetClass="com.godot.game.PokeWildsFilesActivity" />
     </shortcut>
 </shortcuts>

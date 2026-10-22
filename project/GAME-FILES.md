@@ -2,7 +2,7 @@
 
 Launch the updated Android app once, then close it. Long-press the PokeWilds launcher icon and choose **Game files**. Alternatively, open the system Files app and select **PokeWilds** in the sidebar. This is the live game folder, not an import/export copy.
 
-It contains `game.ini`, `saves/`, and `world_cache/`. New save files appear after saving a game. On normal external-storage initialization, the physical path is `Android/data/com.pokewilds.godot/files/`. If the game falls back to private storage, the Files location follows that same live folder.
+It contains `game.ini`, `saves/`, and `world_cache/`. New save files appear after saving a game. On normal external-storage initialization, the physical path is `Android/data/com.bebo.pokewilds/files/`. If the game falls back to private storage, the Files location follows that same live folder.
 
 Copy `.json` save files into `saves/`, and their matching `exact_v2_*.bin` caches into `world_cache/`. Include neighboring-world caches. LOAD discovers valid copied saves. Its `.sav` display label does not change the actual `.json` filename. Java-game saves are not automatically converted.
 
