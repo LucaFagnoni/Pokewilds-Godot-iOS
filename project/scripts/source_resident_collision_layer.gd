@@ -90,9 +90,14 @@ func set_cell_passable(cell: Vector2i, value: bool) -> void:
     _forget(cell)
 
 func refresh_cells(cells: Array) -> void:
+    # Each cell and each block once: a change's cells overlap its neighbours',
+    # and a day's dig sites (some 200 changes) forgot the same ones over and
+    # over, a third of a second on the host and on every player's phone.
+    var forget := {}
     for cell in cells:
         for y in range(-2,3):
-            for x in range(-1,2): _forget(cell + Vector2i(x, y))
+            for x in range(-1,2): forget[cell + Vector2i(x, y)] = true
+    _forget_all(forget.keys())
 
 ## Forgets every cell: each is worked out again when next needed.
 func refresh_now() -> void:
@@ -105,19 +110,27 @@ func refresh_now() -> void:
     _apply_collision_mode()
 
 func _forget(cell: Vector2i) -> void:
-    # The water next to the cell can change with it: its blocks too.
-    for y in range(-1, 2):
-        for x in range(-1, 2):
-            var block := _block_of(cell + Vector2i(x, y))
-            _blocks.erase(Vector3i(block.x, block.y, 0))
-            _blocks.erase(Vector3i(block.x, block.y, 1))
+    _forget_all([cell])
+
+func _forget_all(cells: Array) -> void:
+    # The water next to a cell can change with it: the blocks of the cells
+    # around it too (_block_of of each of them).
+    var blocks := {}
+    for cell in cells:
+        for by in range(floori((cell.y - 1) / float(QUADRANT)), floori((cell.y + 1) / float(QUADRANT)) + 1):
+            for bx in range(floori((cell.x - 1) / float(QUADRANT)), floori((cell.x + 1) / float(QUADRANT)) + 1):
+                blocks[Vector2i(bx, by)] = true
+    for block in blocks:
+        _blocks.erase(Vector3i(block.x, block.y, 0))
+        _blocks.erase(Vector3i(block.x, block.y, 1))
     var store: WorldTileStore = source_tiles
-    if not store.has(cell * tile_size if source_keys_are_pixels else cell): _touched[cell] = true
-    var at := cell - store.origin
-    if at.x >= 0 and at.y >= 0 and at.x < store.width and at.y < store.height:
-        _kinds[at.y * store.width + at.x] = 0
-    else:
-        _outside.erase(cell)
+    for cell in cells:
+        if not store.has(cell * tile_size if source_keys_are_pixels else cell): _touched[cell] = true
+        var at: Vector2i = cell - store.origin
+        if at.x >= 0 and at.y >= 0 and at.x < store.width and at.y < store.height:
+            _kinds[at.y * store.width + at.x] = 0
+        else:
+            _outside.erase(cell)
 
 ## Appends the solids (PlayerMotion.Solid) of the ground under `area` for a
 ## body colliding with `mask`.

@@ -5149,16 +5149,19 @@ func _refresh_exact_pickup_cell(cell: Vector2i) -> void:
 func _refresh_exact_pickup_cells(cells: Array) -> void:
     # Pickups mutate one tile. Never scan the whole resident world for them.
     _bump_map_art(cells)
+    # A dedicated server draws nothing: of these it keeps only the collisions
+    # current. Redrawing a day's new dig sites took it a tenth of a second.
+    var drawn := not preload("res://scripts/dedicated_server.gd").active
     for path in ["GroundLayer/ExactBaseTileStream", "DecorLayer/ExactUpperTileStream"]:
         var stream := get_node_or_null(path)
-        if stream == null: continue
+        if stream == null or not drawn: continue
         if stream.has_method("refresh_changed_tiles"):
             stream.refresh_changed_tiles(cells)
         else:
             stream.invalidate_tiles()
     var collision_stream := get_node_or_null("ExactCollisionStream") as SourceChunkCollisionStreamer
     if collision_stream != null: collision_stream.refresh_cells(cells)
-    if is_instance_valid(reflection_layer) and reflection_layer.has_method("refresh_cells"):
+    if drawn and is_instance_valid(reflection_layer) and reflection_layer.has_method("refresh_cells"):
         reflection_layer.refresh_cells(cells)
     var canopy := get_node_or_null("TreeCanopyOverlay")
     if canopy != null: canopy.queue_redraw()
