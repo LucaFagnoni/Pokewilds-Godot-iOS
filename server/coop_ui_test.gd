@@ -3,12 +3,12 @@
 # (coop_interaction_ui.gd) clear of the HUD with rows a finger picks, and the
 # joined / left / hosting notice as a HUD chip under the top row.
 # Run: godot --headless --path project -s <this file> -- --touch-ui
-# Run it windowed (no --headless) to also save screenshots into SHOTS.
+# Run it windowed (no --headless) to also save screenshots into SHOTS (the system temp folder).
 extends SceneTree
 
 const Paths = preload("res://scripts/game_data_paths.gd")
 const Hud = preload("res://scripts/hud_style.gd")
-const SHOTS := "C:/Users/Luca/AppData/Local/Temp/claude/D--Repositories-pokewilds/43fe92fc-33f0-4c00-8d1a-0cf9d8b90b5d/scratchpad/coop_ui"
+var SHOTS := OS.get_temp_dir().path_join("coop_ui")
 const BREAKS := TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND | TextServer.BREAK_ADAPTIVE | TextServer.BREAK_TRIM_EDGE_SPACES
 
 var main: Node
