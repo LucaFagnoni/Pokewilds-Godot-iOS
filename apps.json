@@ -19,6 +19,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "0.10.255",
+          "buildVersion": "255",
+          "date": "2026-10-22T17:41:04Z",
+          "localizedDescription": "Co-op requests wake on their answer, not a frame later\n\n_rpc waited for the next process_frame after each check, and the answer is\nread during a frame (coop_transport.gd), so every request took one more frame\nthan it needed: ~33 ms at 30 FPS, twice for an action of two requests (a\ncatch, a friendly Pokemon joining). Over 4G that left the recruit at\n400-560 ms against a 690 ms budget, so one 250 ms radio stall from the netem\nprofile took it over. Waiters now also wake at the end of the frame that read\ntheir answer. LAN: recruit 130-164 -> 96-130 ms, catch 132-166 -> 69-101 ms,\nwild battle start 80-90 -> 37-59 ms; 4G recruit 321-404 ms.",
+          "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0044/Pokewilds-unsigned.ipa",
+          "size": 63337244,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.10.245",
           "buildVersion": "245",
           "date": "2026-10-22T13:52:36Z",
@@ -98,15 +107,6 @@
           "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0032/Pokewilds-unsigned.ipa",
           "size": 57592086,
           "minOSVersion": "15.0"
-        },
-        {
-          "version": "0.10.190",
-          "buildVersion": "190",
-          "date": "2026-10-21T18:01:28Z",
-          "localizedDescription": "Menus: live party strip, A HINT option at the bottom centre, OPTIONS blocks the field UI\n\n- The touch start menu's party strip walks and follows HP (sleeping bag,\n  bed, co-op campfire) while it stays open, on the party views' 0.3 s tick;\n  eggs show as eggs there (they keep their species). A co-op campfire heal\n  refreshes an open POKEMON list too.\n- OPTIONS > CONTROLS > A HINT (off by default, touch only): the \"A: ...\" chip\n  sits at the bottom centre; off, nothing polls what A would do.\n- An OPTIONS menu open without the game menu (back from MOVE BUTTONS) now\n  blocks the field UI, so the next-throw ball icon cannot come back over it.\n- status_hud_test: the game clock chip ticks once a second, up to four game\n  minutes behind the world, which the check now allows.",
-          "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0031/Pokewilds-unsigned.ipa",
-          "size": 57591924,
-          "minOSVersion": "15.0"
         }
       ],
       "appPermissions": {
@@ -117,11 +117,11 @@
           "NSPhotoLibraryUsageDescription": "Not used by the game (Godot's default key)."
         }
       },
-      "version": "0.10.245",
-      "versionDate": "2026-10-22T13:52:36Z",
-      "versionDescription": "Dark mode: touch buttons keep their own text colours (the X was light on white)",
-      "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0043/Pokewilds-unsigned.ipa",
-      "size": 63324214
+      "version": "0.10.255",
+      "versionDate": "2026-10-22T17:41:04Z",
+      "versionDescription": "Co-op requests wake on their answer, not a frame later\n\n_rpc waited for the next process_frame after each check, and the answer is\nread during a frame (coop_transport.gd), so every request took one more frame\nthan it needed: ~33 ms at 30 FPS, twice for an action of two requests (a\ncatch, a friendly Pokemon joining). Over 4G that left the recruit at\n400-560 ms against a 690 ms budget, so one 250 ms radio stall from the netem\nprofile took it over. Waiters now also wake at the end of the frame that read\ntheir answer. LAN: recruit 130-164 -> 96-130 ms, catch 132-166 -> 69-101 ms,\nwild battle start 80-90 -> 37-59 ms; 4G recruit 321-404 ms.",
+      "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0044/Pokewilds-unsigned.ipa",
+      "size": 63337244
     }
   ],
   "news": []
