@@ -121,11 +121,23 @@ Per fermarlo: **Ctrl+C**, oppure chiudi la finestra, oppure scrivi `stop` e
 Invio. In tutti e tre i casi il server salva il mondo prima di uscire e
 richiude la porta sul router.
 
+Con `stop` o `restart` e qualcuno collegato, i giocatori vedono prima un conto
+alla rovescia sotto l'orologio ("SERVER SHUTTING DOWN IN 30 S", "SERVER
+RESTARTING IN 30 S"), poi il server salva e chiude; sul telefono compare
+"THE SERVER WAS SHUT DOWN." oppure "SERVER RESTARTING. TRY AGAIN IN A MOMENT.".
+Se non c'è nessuno, o con `stop 0` / Ctrl+C, si spegne subito. `cancel` ferma
+il conto alla rovescia. `restart` riparte da solo solo se il server è stato
+avviato con `start_server.bat` (che lo rilancia quando esce con il codice 75).
+
 Comandi che puoi scrivere nella finestra:
 
 | Comando | Cosa fa |
 | --- | --- |
-| `stop` | salva e spegne |
+| `stop [SECONDI]` | avvisa i giocatori per 30 secondi (o quanti ne scrivi, `0` = subito), salva e spegne; anche `quit` o `exit` |
+| `restart [SECONDI]` | come `stop`, poi riparte da solo |
+| `cancel` | annulla lo `stop` o il `restart` in corso |
+| `maxplayers N` | giocatori massimi, da 1 a 8, subito e in `server.cfg`; chi è già dentro resta, i nuovi entrano quando c'è posto |
+| `list on` / `list off` | mette o toglie il server dalla lista **JOIN GAME** dei telefoni (anche `publish` / `unpublish`), e lo scrive in `server.cfg` |
 | `save` | salva subito |
 | `players` | elenca chi è collegato (1ST, 2ND...) |
 | `address` | mostra di nuovo gli indirizzi per collegarsi |
@@ -161,8 +173,26 @@ Si possono dare a `start_server.bat` (per esempio
 
 Per usare il file copia `server.cfg.example` in `server.cfg` e modificalo
 (porta, mondo, taglia, ID dei giocatori, password, giocatori massimi da 1 a
-4, minuti tra un salvataggio automatico e l'altro, apertura automatica della
-porta). Le opzioni da riga di comando vincono sul file.
+8, presenza nella lista JOIN GAME, minuti tra un salvataggio automatico e
+l'altro, apertura automatica della porta). Le opzioni da riga di comando
+vincono sul file. `maxplayers` e `list` riscrivono la loro riga nel file
+lasciando com'erano i commenti.
+
+## Il server nella lista JOIN GAME
+
+Con `listed=true` in `server.cfg` (oppure `list on` nella finestra) il server
+compare nella lista **JOIN GAME** dei telefoni, accanto alle partite degli
+altri giocatori, con nome del mondo, giocatori collegati e massimi. Dal
+telefono basta toccarlo: si collega direttamente all'indirizzo **From
+outside** del server (non passa dalla rete ZeroTier delle partite dei
+telefoni), quindi la porta deve essere raggiungibile da fuori come sopra; con
+gli ID attivi il telefono chiede ID e password. Il server si annuncia ogni
+mezzo minuto e si toglie da solo con `list off` o quando si spegne (se si
+spegne di colpo sparisce dalla lista entro un minuto e mezzo). Nella finestra:
+"SERVER listed in the online games list as ..." quando è in lista.
+
+Funziona solo con il server delle release ufficiali (che conoscono l'indirizzo
+della lista); una build fatta in casa scrive "not available".
 
 Se il server è raggiungibile da Internet e vuoi scegliere tu chi gioca, usa
 `accounts=closed` e crea gli ID con `account add`: con `open` chiunque conosca
@@ -192,7 +222,9 @@ a server spento. Il server tiene anche da sé le ultime 5 copie in
 
 ## Limiti
 
-- Fino a 4 giocatori insieme (il limite del co-op del gioco).
+- Fino a 8 giocatori insieme (il limite del co-op del gioco; `max_players`,
+  predefinito 4). I telefoni con una versione vecchia del gioco vedono al
+  massimo "4/4".
 - Le password non viaggiano mai in chiaro, ma il resto del traffico non è
   cifrato, e il server non blocca chi prova tante password di fila: usa
   password non banali e che non usi altrove.

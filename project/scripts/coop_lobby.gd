@@ -4,6 +4,7 @@ extends Node
 ## hosts announce to the lobby directory and browsers read the list from it.
 ## Either way only the list travels here; play is always player to player.
 const Network=preload("res://scripts/coop_network.gd")
+const Session=preload("res://scripts/coop_session.gd")
 const QUERY:="pw-query"
 const LOBBY:="pw-lobby"
 const VERSION:=1
@@ -12,6 +13,8 @@ const EXPIRE_MS:=7000
 const MAX_LOBBIES:=64
 const ANNOUNCE_INTERVAL_MS:=30000
 const LIST_INTERVAL_MS:=5000
+## Asks the directory to list dedicated servers too (older builds do not).
+const SERVERS:="?servers=1"
 var describe:Callable
 var browsing:=false
 ## Shown in JOIN GAME when the lobby directory cannot be reached.
@@ -142,7 +145,7 @@ func _directory(now:int)->void:
             _announcer.request(url,_headers(url,true),HTTPClient.METHOD_POST,JSON.stringify(record))
     if browsing and now>=_next_query and _idle(_lister):
         _next_query=now+LIST_INTERVAL_MS
-        if _lister.request(url,_headers(url,false))!=OK:list_error="LOBBY LIST UNAVAILABLE."
+        if _lister.request(url+SERVERS,_headers(url,false))!=OK:list_error="LOBBY LIST UNAVAILABLE."
 
 ## Same schedule as above, through the Android bridge instead of HTTPRequest.
 func _directory_native(now:int,url:String)->void:
@@ -161,7 +164,7 @@ func _directory_native(now:int,url:String)->void:
             _listed(HTTPRequest.RESULT_SUCCESS if int(answer.code)>0 else HTTPRequest.RESULT_CANT_CONNECT,int(answer.code),PackedStringArray(),String(answer.body).to_utf8_buffer())
     if browsing and now>=_next_query and _native_list==0:
         _next_query=now+LIST_INTERVAL_MS
-        _native_list=Network.http_start(url)
+        _native_list=Network.http_start(url+SERVERS)
 
 func _listed(result:int,code:int,_headers:PackedStringArray,body:PackedByteArray)->void:
     if not browsing:return
@@ -183,8 +186,14 @@ static func _clean(address:String,source:Dictionary,now:int)->Dictionary:
         "name":String(source.get("name","WORLD")).strip_edges().left(24),
         "host":String(source.get("host","PLAYER")).strip_edges().left(24),
         "private":bool(source.get("private",false)),
-        "players":clampi(int(source.get("players",1)),0,4),
-        "max":clampi(int(source.get("max",4)),1,4),
+        "players":clampi(int(source.get("players",1)),0,Session.MAX_PLAYERS),
+        "max":clampi(int(source.get("max",4)),1,Session.MAX_PLAYERS),
+        # "game": a player hosting; "server": a dedicated server, joined directly
+        # (coop_game.gd join_listed_server). Version and compat id as the host's
+        # build sees them (coop_session.gd), "" when unknown.
+        "kind":"server" if source.get("kind")=="server" else "game",
+        "version":String(source.get("version","")).left(24),
+        "compat":String(source.get("compat","")).left(64),
         "salt":String(source.get("salt","")).left(64),
         "protocol":String(source.get("protocol","")).left(48),
         "mods":String(source.get("mods","")).left(64),

@@ -5,7 +5,7 @@ extends RefCounted
 ## every frame until it returns true; nothing blocks, host names are resolved in the background.
 ## result: {"state":"ok","ms","version","build","compatible"} or {"state":"old|unknown|busy|offline"}
 ## (old = a host from before status requests: it refuses with "Join handshake required.";
-## busy = it closed without a word, as a full host does).
+## busy = it is full: it says so, or closes without a word as hosts before that did).
 const Session=preload("res://scripts/coop_session.gd")
 const TIMEOUT_MS:=2500
 const MAX_REPLY:=1024
@@ -65,7 +65,7 @@ func _step()->void:
 ## What a host's reply says, every field bounded.
 static func read(reply:Variant,ms:int)->Dictionary:
     if not reply is Dictionary:return {"state":"unknown"}
-    if reply.get("kind")=="rejected":return {"state":"old"}
+    if reply.get("kind")=="rejected":return {"state":"busy" if reply.get("reason")==Session.Transport.FULL else "old"}
     if reply.get("kind")!="status":return {"state":"unknown"}
     return {"state":"ok","ms":ms,"version":String(reply.get("version","")).left(16),"build":String(reply.get("build","")).left(40),
         "compatible":reply.get("compatible")==true}

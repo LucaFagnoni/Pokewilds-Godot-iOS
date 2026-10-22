@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { Directory, TTL_MS, MAX_PER_ADDRESS } from "../src/directory.js";
+import { Directory, TTL_MS, MAX_PER_ADDRESS, MAX_PLAYERS } from "../src/directory.js";
 let clock = 1000;
 const d = new Directory(() => clock);
 const key = (n) => String(n).padStart(32, "0");
@@ -44,4 +44,38 @@ clock += TTL_MS + 1;
 const expiry = await restarted.handle("GET", "/v1/lobbies", "", "");
 assert.equal(expiry.body.lobbies.length, 0); assert.equal(expiry.removed.length, 1, "expired lobbies are cleared from storage");
 assert.equal((await list()).length, 0, "silent lobbies expire");
+
+// Dedicated servers: their own kind, reached directly on their port, listed
+// only for builds that ask for them.
+{
+    const d3 = new Directory(() => clock);
+    const announce = (n, extra, client = "5.6.7.8") => d3.handle("POST", "/v1/lobbies", JSON.stringify({ key: key(n), name: "S" + n, ...extra }), client);
+    const listed = async (query = "") => (await d3.handle("GET", "/v1/lobbies" + query, "", "")).body.lobbies;
+    assert.equal((await announce(1, { kind: "server", address: "auto", port: 60000, players: 0, max: 8, version: "1.2.3",
+        compat: "ab".repeat(20), accounts: true })).status, 200);
+    let [server] = await listed("?servers=1");
+    assert.equal(server.address, "5.6.7.8", "auto takes the caller's address");
+    assert.equal(server.kind, "server"); assert.equal(server.port, 60000); assert.equal(server.players, 0);
+    assert.equal(server.max, 8); assert.equal(server.version, "1.2.3"); assert.equal(server.compat, "ab".repeat(20)); assert.equal(server.accounts, true);
+    assert.equal((await listed()).length, 0, "older builds are not shown servers");
+    assert.equal((await announce(1, { kind: "server", address: "auto" }, "::ffff:9.9.9.9")).status, 200);
+    assert.equal((await listed("?servers=1"))[0].address, "9.9.9.9", "an IPv4 caller seen over IPv6 is listed as IPv4");
+    assert.equal((await announce(2, { kind: "server", address: "auto" }, "")).status, 400, "auto needs a caller address");
+    assert.equal((await announce(3, { kind: "server", address: "evil.example" })).status, 400, "explicit addresses are still checked");
+    assert.equal((await announce(4, { kind: "server", address: "1.2.3.4", max: 99, players: 50, port: 0, compat: "not hex", version: "v".repeat(40) })).status, 200);
+    server = (await listed("?servers=1")).find((l) => l.name === "S4");
+    assert.equal(server.max, MAX_PLAYERS); assert.equal(server.players, MAX_PLAYERS); assert.equal(server.port, 1);
+    assert.equal(server.compat, ""); assert.equal(server.version.length, 24);
+    // A phone host from before this change: no kind, port or version.
+    assert.equal((await announce(5, { address: "fce3::5", players: 0, max: 4 })).status, 200);
+    const old = (await listed()).find((l) => l.name === "S5");
+    assert.equal(old.kind, "game"); assert.equal(old.port, 54555); assert.equal(old.players, 1); assert.equal(old.max, 4);
+    assert.equal((await announce(6, { address: "fce3::6", max: 8, players: 6 })).status, 200);
+    assert.equal((await listed()).find((l) => l.name === "S6").players, 6, "games of more than 4 players");
+    // Records stored by the previous version (no kind) are still listed after an upgrade.
+    d3.lobbies.set("old", { id: "old", address: "fce3::7", name: "Stored", players: 1, max: 4, seen: clock, client: "" });
+    assert.ok((await listed()).some((l) => l.name === "Stored"));
+    assert.equal((await announce(1, { remove: true })).status, 200);
+    assert.ok(!(await listed("?servers=1")).some((l) => l.name === "S1"), "a server removes itself");
+}
 console.log("directory tests passed");
