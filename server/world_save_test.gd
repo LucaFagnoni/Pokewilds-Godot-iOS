@@ -50,6 +50,8 @@ func _init() -> void:
 	for value in range(3, 6): _commit(state, value)
 	job = store.prepare(state, {"world_name": "TEST"})
 	for value in range(6, 8): _commit(state, value)
+	# Answered only once on disk (coop_store.gd group commit).
+	check(not store.has_written(store.queued) and store.sync() and store.has_written(store.queued), "written as one batch")
 	check(Store.write(job) == OK, "second save written")
 	# Killed here, before rotate(): the journal still starts with commits the world has.
 	_has_all(_loaded(base), 8, "killed before rotate")

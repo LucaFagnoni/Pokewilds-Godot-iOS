@@ -7,7 +7,9 @@ signal message(peer: int, actor: String, payload: Dictionary)
 signal rejected(reason: String)
 signal connection_lost
 const Transport = preload("res://scripts/coop_transport.gd")
-const PROTOCOL := "pokewilds-godot-coop-9"
+## coop-9b: record fingerprints hash encoded text directly (coop_state.gd
+## fingerprint). coop-10 is kept for the end of the netcode rewrite.
+const PROTOCOL := "pokewilds-godot-coop-9b"
 ## Most players one game can have, a phone host included (a dedicated server's
 ## own player does not count). The host relays every position update to each
 ## other player in the same area, so its upload grows with the square of the

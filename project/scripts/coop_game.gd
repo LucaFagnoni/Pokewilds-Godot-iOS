@@ -872,6 +872,7 @@ func end_session(reason:String)->void:
     main.world.set_gameplay_enabled(false)
     active=false;ended_reason=reason
     lobby.stop_advertise();Network.host_close();Network.join_close()
+    if hosting:store.sync()
     session.stop();Cache.online_namespace=""
     get_tree().call_deferred("reload_current_scene")
 
@@ -1113,7 +1114,7 @@ func _choose(action:String,value:String)->void:
         if not await _restore_latest_host_area():_failure("ONLINE AREA COULD NOT LOAD");return
         if state.records.has("clock"):
             pending_game.crafting_state["world_elapsed_seconds"]=float(state.records.clock.seconds)
-    state.commit_writer=store.append
+    state.commit_writer=store.append;session.transport.journal=store
     state.enroll(session.actor,session.profile)
     if not wild.recover() or not population_battles.recover() or not events.recover():_failure("ONLINE ENCOUNTERS COULD NOT BE RECOVERED");return
     active=true;hosting=true;Cache.online_namespace=world_id
@@ -1613,11 +1614,14 @@ func _notification(what:int)->void:
         for peer in session.players:
             if peer!=1:session.send_to(peer,{"kind":"player_notice","name":String(session.profile.get("name","HOST")),"event":"away" if away else "back"})
         if not away and OS.has_feature("mobile"):show_notice("","hosting")
-    if away:session.transport.flush()
+    if away:
+        if hosting:store.sync()
+        session.transport.flush()
 
 func _exit_tree()->void:
     if _area_cleanup!=null:_area_cleanup.wait_to_finish();_area_cleanup=null
-    # A save being written is finished, not cut off.
+    # A save being written is finished, not cut off; so is the journal.
+    store.sync()
     for task in _workers:WorkerThreadPool.wait_for_task_completion(task)
     _workers.clear()
     Network.host_close();Network.join_close()

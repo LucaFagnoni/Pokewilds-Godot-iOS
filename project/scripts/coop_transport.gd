@@ -33,6 +33,10 @@ const FULL := "This game is full."
 var _turned_away: Array = []
 var _next_peer := 2
 var last_disconnect_reason := ""
+## The host's journal (coop_store.gd), or null. What is queued for a player
+## after a commit waits until that commit is on disk (journal.durable()): a
+## command's answer, the shared commit and anything behind them in order.
+var journal = null
 
 func host(listen_port: int = JoinCode.PORT, address: String = "*") -> Error:
     stop()
@@ -60,8 +64,8 @@ func join_address(address: String, remote_port: int) -> Error:
 
 func _add(peer: int, socket: StreamPeerTCP) -> void:
     socket.set_no_delay(true)
-    peers[peer] = {"socket": socket, "rx": PackedByteArray(), "tx": PackedByteArray(),
-        "offset": 0, "queued": 0, "ready": false,
+    peers[peer] = {"socket": socket, "rx": PackedByteArray(), "rx_at": 0, "tx": PackedByteArray(),
+        "offset": 0, "queued": 0, "sent_total": 0, "holds": [], "ready": false,
         "seen": Time.get_ticks_msec(), "ping": Time.get_ticks_msec(), "heard": false,
         "local_loading_until": 0, "remote_loading_until": 0,
         # The last position sent and read here for each player (coop_remote_player.gd pack).
@@ -172,6 +176,11 @@ func send_encoded(peer:int, bytes:PackedByteArray)->Error:
     if stats != null: count("tx", bytes.size() + 4, Time.get_ticks_usec())
     var header := PackedByteArray([0, 0, 0, 0])
     header.encode_u32(0, bytes.size())
+    # Held while a commit is not yet on disk: [first byte held, counted in
+    # bytes ever queued for this peer; lines the journal must have written].
+    if journal != null and journal.written != journal.queued:
+        var holds: Array = state.holds
+        if holds.is_empty() or holds[-1][1] != journal.queued: holds.append([int(state.sent_total) + int(state.queued), journal.queued])
     state.tx.append_array(header)
     state.tx.append_array(bytes)
     state.queued += bytes.size() + 4
@@ -241,6 +250,12 @@ func _poll()->void:
             if data[0] != OK:
                 _drop(peer,"socket_read_failed")
                 continue
+            # Frames are read from rx_at on; what is before it goes once it
+            # is half the buffer, not with every frame read (a copy of the
+            # whole backlog per message under a burst).
+            if int(state.rx_at) * 2 >= state.rx.size():
+                state.rx = state.rx.slice(state.rx_at)
+                state.rx_at = 0
             state.rx.append_array(data[1])
             state.seen = now
             state.heard = true
@@ -250,16 +265,19 @@ func _poll()->void:
             _drop(peer,"receive_timeout")
             continue
         var read_count := 0
-        while peers.has(peer) and state.rx.size() >= 4 and read_count < 32:
-            var length := int(state.rx.decode_u32(0))
+        var rx: PackedByteArray = state.rx
+        var at := int(state.rx_at)
+        while peers.has(peer) and rx.size() - at >= 4 and read_count < 32:
+            var length := int(rx.decode_u32(at))
             if length <= 0 or length > MAX_FRAME:
                 _drop(peer,"invalid_frame_size_"+str(length))
                 break
-            if state.rx.size() < length + 4: break
+            if rx.size() - at < length + 4: break
             var started := Time.get_ticks_usec()
-            var frame: PackedByteArray = unpack(state.rx.slice(4, length + 4))
+            var frame: PackedByteArray = unpack(rx.slice(at + 4, at + length + 4))
             var decoded = null if frame.is_empty() else Remote.unpack(frame, state.bases) if frame[0] == Remote.WIRE_TAG or frame[0] == Remote.WIRE_DELTA else JSON.parse_string(frame.get_string_from_utf8())
-            state.rx = state.rx.slice(length + 4)
+            at += length + 4
+            state.rx_at = at
             read_count += 1
             if not decoded is Dictionary:
                 _drop(peer,"invalid_frame_json")
@@ -277,7 +295,14 @@ func _poll()->void:
 func _write(peer: int, budget: int) -> void:
     var state: Dictionary = peers[peer]
     var offset := int(state.offset)
-    var pending: int = state.tx.size() - offset
+    var end: int = state.tx.size()
+    var holds: Array = state.holds
+    while not holds.is_empty():
+        if journal != null and not journal.has_written(int(holds[0][1])):
+            end = offset + int(holds[0][0]) - int(state.sent_total)
+            break
+        holds.pop_front()
+    var pending: int = end - offset
     if pending <= 0 or budget <= 0: return
     var sent: Array = state.socket.put_partial_data(state.tx.slice(offset, offset + mini(pending, budget)))
     if sent[0] != OK:
@@ -286,6 +311,7 @@ func _write(peer: int, budget: int) -> void:
     var count := int(sent[1])
     state.offset = offset + count
     state.queued -= count
+    state.sent_total += count
     if int(state.offset) >= state.tx.size():
         state.tx = PackedByteArray()
         state.offset = 0
