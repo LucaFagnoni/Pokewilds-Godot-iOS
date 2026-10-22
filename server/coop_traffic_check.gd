@@ -1,6 +1,9 @@
 # Co-op wire checks, in seconds: a world record sent as a delta is rebuilt
 # byte for byte, a delta that does not fit is refused, a large transfer
-# arrives whole through compression, a position packet sent as bytes reads back
+# arrives whole through compression, a large frame travels packed (and a bad
+# one is refused), a storage box goes as the few edits that changed it, an
+# area saved again without its terrain cache is made whole
+# from the stored one only, a position packet sent as bytes reads back
 # as JSON would have given it (and a malformed one is refused), and the Megas
 # packed piece by piece match a whole encode.
 # Run: godot --headless --path project -s <this file>
@@ -10,6 +13,9 @@ const Delta = preload("res://scripts/coop_world_delta.gd")
 const Blob = preload("res://scripts/coop_blob.gd")
 const Remote = preload("res://scripts/coop_remote_player.gd")
 const Players = preload("res://scripts/coop_players.gd")
+const Transport = preload("res://scripts/coop_transport.gd")
+const Snapshot = preload("res://scripts/coop_world_snapshot.gd")
+const Patch = preload("res://scripts/coop_patch.gd")
 
 var failed := 0
 
@@ -48,10 +54,70 @@ func _init() -> void:
 	var result: Dictionary = {}
 	for chunk in chunks: result = receiver.receive(5, chunk)
 	check(result.get("bytes", PackedByteArray()) == text, "it arrives whole")
+	_frames()
+	_box_edits()
+	_area_resave()
 	_visuals()
 	_megas()
 	print("COOP TRAFFIC CHECK: %d failed" % failed)
 	quit(1 if failed > 0 else 0)
+
+## A large frame travels packed and unpacks to the same bytes; a small one, a
+## position packet, and one packing would not shrink stay as they are; a packed
+## frame that lies about its size is refused.
+func _frames() -> void:
+	var box := []
+	for i in 200: box.append({"id": "%016x" % i, "pokemon": {"species": "pidgey", "level": i % 50, "moves": ["TACKLE", "GUST"]}})
+	var big := JSON.stringify({"kind": "shared_commit", "result": {"changes": [{"key": "box/a", "after": box}]}}).to_utf8_buffer()
+	var packed := Transport.pack(big)
+	check(packed[0] == Transport.ZSTD_TAG and packed.size() * 4 < big.size(), "a large frame travels packed (%d of %d bytes)" % [packed.size(), big.size()])
+	check(Transport.unpack(packed) == big, "and unpacks to the same bytes")
+	var small := JSON.stringify({"kind": "keepalive"}).to_utf8_buffer()
+	check(Transport.pack(small) == small and Transport.unpack(small) == small, "a small frame stays text")
+	var noise := RandomNumberGenerator.new(); noise.seed = 3
+	var random := PackedByteArray()
+	for i in 4096: random.append(noise.randi_range(0, 255))
+	random[0] = 123
+	check(Transport.pack(random) == random, "a frame that does not shrink stays as it is")
+	var lying := packed.duplicate(); lying.encode_u32(1, big.size() + 1)
+	check(Transport.unpack(lying).is_empty(), "a packed frame with the wrong size is refused")
+	var huge := packed.duplicate(); huge.encode_u32(1, Transport.MAX_FRAME + 1)
+	check(Transport.unpack(huge).is_empty(), "a packed frame over the frame limit is refused")
+	check(Transport.unpack(PackedByteArray([Transport.ZSTD_TAG, 1, 0, 0, 0, 9])).is_empty(), "a broken packed frame is refused")
+
+## A storage box changed by a deposit, a release, a nickname or a swap goes as
+## a few edits that rebuild it exactly; any other change goes whole.
+func _box_edits() -> void:
+	var box := []
+	for i in 50: box.append({"id": "e%d" % i, "pokemon": {"species": "pidgey", "level": i}})
+	var cases := {}
+	var added := box.duplicate(true); added.append({"id": "new", "pokemon": {"species": "eevee"}}); cases["deposit"] = added
+	var removed := box.duplicate(true); removed.remove_at(17); cases["release"] = removed
+	var last := box.duplicate(true); last.pop_back(); cases["withdraw the last"] = last
+	var named := box.duplicate(true); named[3].pokemon["nickname"] = "BOB"; cases["nickname"] = named
+	var swapped := box.duplicate(true); swapped[1] = box[2].duplicate(true); swapped[2] = box[1].duplicate(true); cases["swap"] = swapped
+	for what in cases:
+		var edits := Patch.diff_list(box, cases[what])
+		var sent = JSON.parse_string(JSON.stringify(edits))
+		check(not edits.is_empty() and JSON.stringify(edits).length() < 300 and Patch.valid(sent), "a %s is a few edits (%d bytes)" % [what, JSON.stringify(edits).length()])
+		check(_same(Patch.apply(JSON.parse_string(JSON.stringify(box)), sent), JSON.parse_string(JSON.stringify(cases[what]))), "and rebuilds the box: " + what)
+	var two_gone := box.duplicate(true); two_gone.remove_at(3); two_gone.remove_at(9)
+	check(Patch.diff_list(box, two_gone).is_empty() and Patch.diff_list(box, box.slice(10)).is_empty(), "other changes go whole")
+	check(Patch.apply({"a": [1]}, [["r", ["a"]]]) == null and Patch.apply({"a": 1}, [["a", [], [2]]]) == null, "a removal or root addition that does not fit is refused")
+	check(not Patch.valid([["r", []]]) and not Patch.valid([["r", [1], 2]]), "malformed removals are refused")
+
+## An area saved again by its guest goes without the terrain cache and is made
+## whole from the host's copy; never from another area's.
+func _area_resave() -> void:
+	var cache := PackedByteArray(); cache.resize(5000); cache.fill(7)
+	var stored := Snapshot.encode(1234, 2, cache, {"structures": [1]})
+	var light := Snapshot.encode_without_cache(1234, 2, {"structures": [1, 2]})
+	check(not light.is_empty() and light.size() < stored.size() and Snapshot.decode(light).is_empty(), "a re-save has no cache and is not an area by itself")
+	var whole := Snapshot.refill(light, stored)
+	check(Snapshot.decode(whole).get("cache") == cache and Snapshot.decode(whole).get("shared") == {"structures": [1, 2]}, "it is made whole with the stored cache and its own changes")
+	check(Snapshot.refill(Snapshot.encode_without_cache(999, 2, {}), stored).is_empty(), "not with another area's cache")
+	check(Snapshot.refill(stored, stored).is_empty() and Snapshot.refill(light, light).is_empty(), "only a re-save, only from a whole area")
+	check(Snapshot.encode_without_cache(1234, 2, {"discovered_cells": {}}).is_empty(), "a player's own fields stay out")
 
 ## The same text JSON gives, keys in order: numbers as floats either way.
 func _same(a: Variant, b: Variant) -> bool:

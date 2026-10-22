@@ -63,14 +63,27 @@ func _receive_upload(peer:int,actor:String,packet:Dictionary)->void:
         _upload_headers.erase(peer);session.send_to(peer,{"kind":"area_upload_result","id":header.id,"result":{"ok":false,"reason":result.error}});return
     if not result.has("bytes"):return
     _upload_headers.erase(peer)
-    var verified:Dictionary=await snapshots.save_bytes(result.bytes)
+    var bytes:PackedByteArray=result.bytes
+    var digest:String=result.sha256
+    # A re-save comes without the terrain cache: put back the one stored here.
+    if String(header.token).is_empty() and Blob.digest(bytes)==digest:
+        var whole:=await _refill(String(header.area),bytes)
+        if not whole.is_empty():bytes=whole;digest=Blob.digest(whole)
+    var verified:Dictionary=await snapshots.save_bytes(bytes)
     var outcome={"ok":false,"reason":"invalid_snapshot"}
-    if result.id==header.id and verified.get("ok",false) and verified.get("sha256")==result.sha256:
-        var decoded=preload("res://scripts/coop_world_snapshot.gd").decode(result.bytes)
+    if result.id==header.id and verified.get("ok",false) and verified.get("sha256")==digest:
+        var decoded=preload("res://scripts/coop_world_snapshot.gd").decode(bytes)
         if not decoded.is_empty():
-            if String(header.token).is_empty():outcome=await publish(actor,header.area,int(header.epoch),result.bytes)
-            else:outcome=await generated(actor,header.area,header.token,{"seed":decoded.seed,"size":decoded["size"]},result.bytes)
+            if String(header.token).is_empty():outcome=await publish(actor,header.area,int(header.epoch),bytes)
+            else:outcome=await generated(actor,header.area,header.token,{"seed":decoded.seed,"size":decoded["size"]},bytes)
     session.send_to(peer,{"kind":"area_upload_result","id":header.id,"result":outcome})
+
+## `bytes` without a terrain cache, made whole from this area's stored snapshot.
+func _refill(area:String,bytes:PackedByteArray)->PackedByteArray:
+    var record:Dictionary=state.records.get("area/"+area,{})
+    if not record.get("sha256") is String:return PackedByteArray()
+    var stored:Dictionary=await snapshots.load_bytes(record.sha256)
+    return preload("res://scripts/coop_world_snapshot.gd").refill(bytes,stored.bytes) if stored.get("ok",false) else PackedByteArray()
 
 func configure(model,connection:Node,directory:String)->Error:
     state=model;session=connection;areas.state=state

@@ -112,6 +112,27 @@ static func encode(seed_value:int,size_index:int,cache:PackedByteArray,shared:Di
     var bytes=var_to_bytes({"format":"POKEWILDS_ONLINE_AREA_1","seed":seed_value,"size":size_index,"cache":cache,"shared":shared})
     return bytes if bytes.size()<=MAX_BYTES else PackedByteArray()
 
+## An area the host already holds, saved again by the guest who runs it: the
+## same, but without the terrain cache. The cache never changes after the area
+## is made and was most of the upload (about 420 of 460 KB packed, over a minute
+## of a weak phone uplink); the host puts back the one it has (refill).
+static func encode_without_cache(seed_value:int,size_index:int,shared:Dictionary)->PackedByteArray:
+    if seed_value==0 or size_index<0 or size_index>4:return PackedByteArray()
+    for key in PERSONAL_KEYS:
+        if shared.has(key):return PackedByteArray()
+    var bytes=var_to_bytes({"format":"POKEWILDS_ONLINE_AREA_1","seed":seed_value,"size":size_index,"cache":PackedByteArray(),"shared":shared})
+    return bytes if bytes.size()<=MAX_BYTES else PackedByteArray()
+
+## `bytes` from encode_without_cache made whole with the cache of `stored`, the
+## area's snapshot as the host has it; empty when they are not the same area.
+static func refill(bytes:PackedByteArray,stored:PackedByteArray)->PackedByteArray:
+    if bytes.is_empty() or bytes.size()>MAX_BYTES:return PackedByteArray()
+    var value=bytes_to_var(bytes)
+    var old:=decode(stored)
+    if old.is_empty() or not value is Dictionary or value.get("format","")!="POKEWILDS_ONLINE_AREA_1" or not value.get("shared") is Dictionary:return PackedByteArray()
+    if not value.get("cache") is PackedByteArray or not value.cache.is_empty() or value.get("seed")!=old.seed or value.get("size")!=old["size"]:return PackedByteArray()
+    return encode(old.seed,old["size"],old.cache,value.shared)
+
 static func decode(bytes:PackedByteArray)->Dictionary:
     if bytes.is_empty() or bytes.size()>MAX_BYTES:return {}
     # bytes_to_var does not permit object deserialization (unlike _with_objects).

@@ -82,11 +82,37 @@ func send(peer: int, message: Dictionary) -> Error:
     count("enc:"+String(message.get("kind","")),bytes.size(),started)
     return send_encoded(peer,bytes)
 
+## A frame this large or larger travels packed (zstd) when that saves a tenth:
+## ZSTD_TAG, the unpacked size (u32), then the packed bytes. A storage box or a
+## player's record changed by one Pokemon was sent whole as JSON text, 100-200
+## KB, to every player; packed it is a sixth of that. Small frames stay text.
+const ZSTD_TAG := 2
+const COMPRESS_FROM := 2048
+
+static func pack(bytes:PackedByteArray)->PackedByteArray:
+    if bytes.size() < COMPRESS_FROM or bytes[0] == Remote.WIRE_TAG: return bytes
+    var packed := bytes.compress(FileAccess.COMPRESSION_ZSTD)
+    if packed.is_empty() or packed.size() + 5 > bytes.size() * 9 / 10: return bytes
+    var out := PackedByteArray([ZSTD_TAG, 0, 0, 0, 0])
+    out.encode_u32(1, bytes.size())
+    out.append_array(packed)
+    return out
+
+## A frame as it was before pack(); empty when it does not unpack to its stated size.
+static func unpack(frame:PackedByteArray)->PackedByteArray:
+    if frame.size() < 6 or frame[0] != ZSTD_TAG: return frame
+    var size := int(frame.decode_u32(1))
+    if size <= 0 or size > MAX_FRAME: return PackedByteArray()
+    var bytes := frame.slice(5).decompress(size, FileAccess.COMPRESSION_ZSTD)
+    return bytes if bytes.size() == size else PackedByteArray()
+
 func send_encoded(peer:int, bytes:PackedByteArray)->Error:
     if not peers.has(peer): return ERR_DOES_NOT_EXIST
     if bytes.is_empty() or bytes.size() > MAX_FRAME: return ERR_INVALID_DATA
     var state: Dictionary = peers[peer]
     if int(state.queued) + bytes.size() + 4 > MAX_QUEUE: return ERR_BUSY
+    bytes = pack(bytes)
+    if stats != null: count("tx", bytes.size() + 4, Time.get_ticks_usec())
     var frame := PackedByteArray()
     frame.resize(4)
     frame.encode_u32(0, bytes.size())
@@ -149,8 +175,8 @@ func _process(_delta:float)->void:
                 break
             if state.rx.size() < length + 4: break
             var started := Time.get_ticks_usec()
-            var frame: PackedByteArray = state.rx.slice(4, length + 4)
-            var decoded = Remote.unpack(frame) if frame[0] == Remote.WIRE_TAG else JSON.parse_string(frame.get_string_from_utf8())
+            var frame: PackedByteArray = unpack(state.rx.slice(4, length + 4))
+            var decoded = null if frame.is_empty() else Remote.unpack(frame) if frame[0] == Remote.WIRE_TAG else JSON.parse_string(frame.get_string_from_utf8())
             state.rx = state.rx.slice(length + 4)
             read_count += 1
             if not decoded is Dictionary:

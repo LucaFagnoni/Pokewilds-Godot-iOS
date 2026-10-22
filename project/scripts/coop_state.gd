@@ -138,6 +138,13 @@ func transact(actor: String, id: String, changes: Array, command_hash: String = 
         if key.begins_with("player/") and change.get("after") is Dictionary and records.get(key) is Dictionary:
             var edits := Patch.diff(records[key], change.after)
             if not edits.is_empty() and Patch.valid(edits): player_edits[key] = edits
+    # The same for a storage box, for the players only (the journal keeps it whole).
+    var list_edits := {}
+    for change in changes:
+        var key := String(change.key)
+        if (key.begins_with("box/") or key.begins_with("private_box/")) and change.get("after") is Array and records.get(key) is Array:
+            var edits := Patch.diff_list(records[key], change.after)
+            if not edits.is_empty() and Patch.valid(edits): list_edits[key] = edits
     # The encoded records this commit replaces, by key, with the fingerprint
     # they had: the host sends players only what changed in them (coop_game).
     replaced.clear()
@@ -151,6 +158,7 @@ func transact(actor: String, id: String, changes: Array, command_hash: String = 
         unwritten = 0
     apply_committed(result, staged)
     if not player_edits.is_empty(): result["player_edits"] = player_edits
+    if not list_edits.is_empty(): result["list_edits"] = list_edits
     return result.duplicate(true)
 
 ## Building, storing or picking something up hands back the player's whole

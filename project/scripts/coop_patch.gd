@@ -4,8 +4,9 @@ extends RefCounted
 ## is usually a position or one item count. Sending and journaling the edits
 ## instead of the whole record is what keeps ONLINE traffic and saves small.
 ##
-## An edit is ["s", path, value] (set), ["d", path] (delete) or
-## ["a", path, values] (add to the end of a list, such as the explored map).
+## An edit is ["s", path, value] (set), ["d", path] (delete),
+## ["a", path, values] (add to the end of a list, such as the explored map) or
+## ["r", path] (take one entry out of a list; see diff_list).
 ## A path is the list of dictionary keys and array indexes leading to the value.
 const MAX_EDITS:=4096
 const MAX_DEPTH:=12
@@ -85,12 +86,25 @@ static func _walk(old:Variant,new:Variant,path:Array,edits:Array)->void:
         if path.is_empty():edits.append(["s",[],new])
         else:edits.append(["s",path,new])
 
+## A whole list (a storage box) changed by what storage does to it: entries
+## added at the end, one taken out, or entries changed in place. [] when it
+## changed some other way, and is better sent whole. A box of 200 Pokemon is
+## 200 KB as text; a deposit or a release went to every player as all of it.
+static func diff_list(old:Array,new:Array)->Array:
+    if new.size()==old.size():return diff(old,new)
+    if new.size()>old.size():return [["a",[],new.slice(old.size())]] if new.slice(0,old.size())==old else []
+    if new.size()!=old.size()-1:return []
+    var index:=0
+    while index<new.size() and new[index]==old[index]:index+=1
+    return [["r",[index]]] if old.slice(index+1)==new.slice(index) else []
+
 static func valid(edits:Variant)->bool:
     if not edits is Array or edits.size()>MAX_EDITS:return false
     for edit in edits:
-        if not edit is Array or edit.size()<2 or not edit[0] in ["s","d","a"] or not edit[1] is Array:return false
-        if edit[1].size()>MAX_DEPTH or (edit[0]=="s" and edit.size()!=3) or (edit[0]=="d" and edit.size()!=2):return false
-        if edit[0]=="a" and (edit.size()!=3 or not edit[2] is Array or edit[1].is_empty()):return false
+        if not edit is Array or edit.size()<2 or not edit[0] in ["s","d","a","r"] or not edit[1] is Array:return false
+        if edit[1].size()>MAX_DEPTH or (edit[0]=="s" and edit.size()!=3) or (edit[0] in ["d","r"] and edit.size()!=2):return false
+        if edit[0]=="r" and edit[1].is_empty():return false
+        if edit[0]=="a" and (edit.size()!=3 or not edit[2] is Array):return false
         for step in edit[1]:
             if typeof(step) not in [TYPE_STRING,TYPE_INT,TYPE_FLOAT]:return false
     return true
@@ -102,6 +116,7 @@ static func apply(record:Variant,edits:Array)->Variant:
     for edit in edits:
         var path:Array=edit[1]
         if path.is_empty():
+            if edit[0]=="a" and result is Array:result.append_array(edit[2].duplicate(true));continue
             if edit[0]!="s":return null
             result=edit[2].duplicate(true) if edit[2] is Dictionary or edit[2] is Array else edit[2]
             continue
@@ -117,12 +132,14 @@ static func apply(record:Variant,edits:Array)->Variant:
             continue
         if container is Dictionary:
             var key:Variant=_key_for(container,last)
+            if edit[0]=="r":return null
             if edit[0]=="d":container.erase(key)
             else:container[key]=edit[2].duplicate(true) if edit[2] is Dictionary or edit[2] is Array else edit[2]
         elif container is Array:
-            if typeof(last) not in [TYPE_INT,TYPE_FLOAT] or edit[0]!="s":return null
+            if typeof(last) not in [TYPE_INT,TYPE_FLOAT] or edit[0] not in ["s","r"]:return null
             var index:=int(last)
             if index<0 or index>=container.size():return null
+            if edit[0]=="r":container.remove_at(index);continue
             container[index]=edit[2].duplicate(true) if edit[2] is Dictionary or edit[2] is Array else edit[2]
         else:return null
     return result
