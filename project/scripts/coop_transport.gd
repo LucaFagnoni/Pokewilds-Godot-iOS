@@ -11,6 +11,11 @@ const MAX_FRAME := 256 * 1024
 const MAX_QUEUE := 4 * 1024 * 1024
 const FRAME_BUDGET := 64 * 1024
 const TIMEOUT_MS := 20000
+## How long a connected player may go without a byte arriving before it is
+## dropped. Both sides send a keepalive after 4 s of saying nothing, so only a
+## dead link is this quiet; a phone on 4G stalls for many seconds when it
+## changes cell, and 20 s dropped players whose link came back.
+const SILENCE_MS := 30000
 const LOADING_TIMEOUT_MS := 120000
 ## How long a joining player waits for the host's first word. Two devices that
 ## have not spoken since their games were opened need time to find a path to
@@ -67,7 +72,7 @@ func set_loading(peer:int, loading:bool, remote:bool=false)->void:
     peers[peer]["remote_loading_until" if remote else "local_loading_until"] = Time.get_ticks_msec()+LOADING_TIMEOUT_MS if loading else 0
 
 func receive_expired(state:Dictionary, now:int)->bool:
-    var limit:=FIRST_CONTACT_MS if joining and not state.get("heard",false) else TIMEOUT_MS
+    var limit:=FIRST_CONTACT_MS if joining and not state.get("heard",false) else SILENCE_MS
     return now-int(state.seen)>limit and now>int(state.get("local_loading_until",0)) and now>int(state.get("remote_loading_until",0))
 
 ## Traffic counters for benchmarks: null unless a test sets a Dictionary.
