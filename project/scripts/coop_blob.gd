@@ -21,14 +21,22 @@ func start_send(peer: int, id: String, bytes: PackedByteArray, trusted_digest: S
     for transfer in outgoing.values():reserved+=transfer.bytes.size()
     if reserved>MAX_BYTES:return false
     if not trusted_digest.is_empty() and (trusted_digest.length()!=64 or not trusted_digest.is_valid_hex_number()):return false
-    var packed:=bytes.compress(FileAccess.COMPRESSION_ZSTD)
-    var raw:=bytes.size() if not packed.is_empty() and packed.size()<bytes.size() else 0
-    outgoing[peer]={"id":id,"bytes":packed if raw>0 else bytes,"raw":raw,"offset":0,"hash":digest(bytes) if trusted_digest.is_empty() else trusted_digest}
+    # Packed and hashed on a worker: an area or a world's records are
+    # megabytes, which took the host tens of ms. pump() waits for it.
+    var done:Array=[]
+    var task:=WorkerThreadPool.add_task(func():
+        var packed:=bytes.compress(FileAccess.COMPRESSION_ZSTD)
+        var raw:=bytes.size() if not packed.is_empty() and packed.size()<bytes.size() else 0
+        done.append_array([packed if raw>0 else bytes,raw,digest(bytes) if trusted_digest.is_empty() else trusted_digest]))
+    outgoing[peer]={"id":id,"bytes":bytes,"raw":0,"offset":0,"hash":"","task":task,"done":done}
     return true
 
 func pump(peer: int, send: Callable) -> Error:
     if not outgoing.has(peer):return OK
     var transfer: Dictionary=outgoing[peer]
+    if transfer.has("task"):
+        if not WorkerThreadPool.is_task_completed(transfer.task):return ERR_BUSY
+        _packed(transfer)
     var offset:=int(transfer.offset)
     var data:PackedByteArray=transfer.bytes.slice(offset,mini(offset+CHUNK_BYTES,transfer.bytes.size()))
     var packet:Dictionary={"kind":"blob","id":transfer.id,"offset":offset,
@@ -76,4 +84,11 @@ func expire() -> void:
         if Time.get_ticks_msec()-int(incoming[peer].seen)>TIMEOUT_MS:incoming.erase(peer)
 
 func drop(peer: int) -> void:
+    if outgoing.has(peer) and outgoing[peer].has("task"):_packed(outgoing[peer])
     incoming.erase(peer);outgoing.erase(peer)
+
+## A transfer's packing done on the worker, taken over.
+static func _packed(transfer: Dictionary) -> void:
+    WorkerThreadPool.wait_for_task_completion(transfer.task)
+    transfer.bytes=transfer.done[0];transfer.raw=transfer.done[1];transfer.hash=transfer.done[2]
+    transfer.erase("task");transfer.erase("done")

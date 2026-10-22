@@ -5149,16 +5149,19 @@ func _refresh_exact_pickup_cell(cell: Vector2i) -> void:
 func _refresh_exact_pickup_cells(cells: Array) -> void:
     # Pickups mutate one tile. Never scan the whole resident world for them.
     _bump_map_art(cells)
+    # A dedicated server draws nothing: of these it keeps only the collisions
+    # current. Redrawing a day's new dig sites took it a tenth of a second.
+    var drawn := not preload("res://scripts/dedicated_server.gd").active
     for path in ["GroundLayer/ExactBaseTileStream", "DecorLayer/ExactUpperTileStream"]:
         var stream := get_node_or_null(path)
-        if stream == null: continue
+        if stream == null or not drawn: continue
         if stream.has_method("refresh_changed_tiles"):
             stream.refresh_changed_tiles(cells)
         else:
             stream.invalidate_tiles()
     var collision_stream := get_node_or_null("ExactCollisionStream") as SourceChunkCollisionStreamer
     if collision_stream != null: collision_stream.refresh_cells(cells)
-    if is_instance_valid(reflection_layer) and reflection_layer.has_method("refresh_cells"):
+    if drawn and is_instance_valid(reflection_layer) and reflection_layer.has_method("refresh_cells"):
         reflection_layer.refresh_cells(cells)
     var canopy := get_node_or_null("TreeCanopyOverlay")
     if canopy != null: canopy.queue_redraw()
@@ -6726,6 +6729,15 @@ func _refresh_ecology_relationships() -> Array[Dictionary]:
     # With no habitats out, only the player's square counts: most of the
     # world's wild Pokemon are settled by these two comparisons.
     var player_only := deployed_pokemon.is_empty()
+    # The cells near a habitat, once for this pass: asking every habitat about
+    # every wild Pokemon (_wild_ecology_is_active) was most of a pass that took
+    # the host 10 ms and more with a few dozen habitats out.
+    var near_habitat := {}
+    for raw_cell in deployed_pokemon:
+        var habitat_cell := Vector2i(raw_cell)
+        for y in range(-PokemonEcology.HABITAT_RADIUS, PokemonEcology.HABITAT_RADIUS + 1):
+            for x in range(-PokemonEcology.HABITAT_RADIUS, PokemonEcology.HABITAT_RADIUS + 1):
+                near_habitat[habitat_cell + Vector2i(x, y)] = true
     for raw_id in wild_pokemon:
         var wild_data: Dictionary = wild_pokemon[raw_id]
         if bool(wild_data.get("burrowed", false)):
@@ -6736,7 +6748,11 @@ func _refresh_ecology_relationships() -> Array[Dictionary]:
                 or absi(wild_cell.y - active_center.y) > ECOLOGY_ACTIVE_RADIUS
             ):
             continue
-        if not _wild_ecology_is_active(wild_cell, active_center):
+        if (
+                (absi(wild_cell.x - active_center.x) > ECOLOGY_ACTIVE_RADIUS
+                or absi(wild_cell.y - active_center.y) > ECOLOGY_ACTIVE_RADIUS)
+                and not near_habitat.has(wild_cell)
+            ):
             continue
         active_wild.append(wild_data)
         records.append({
@@ -7252,7 +7268,9 @@ func _pokemon_can_enter(species: String, cell: Vector2i) -> bool:
         return terrain_kind_at(cell) == 0
     return _is_walkable(cell) and terrain_kind_at(cell) != 0
 
-func get_crafting_save_state() -> Dictionary:
+## include_population false leaves the habitat and wild Pokemon and the eggs
+## out (empty): an online area save takes them from the shared records.
+func get_crafting_save_state(include_population: bool = true) -> Dictionary:
     var structures: Array = []
     for key in built_structures.keys():
         var cell: Vector2i = key
@@ -7268,13 +7286,13 @@ func get_crafting_save_state() -> Dictionary:
         structures.append(saved_structure)
 
     var farms: Array = []
-    for key in deployed_pokemon.keys():
+    for key in (deployed_pokemon.keys() if include_population else []):
         var cell: Vector2i = key
         var data: Dictionary = deployed_pokemon[cell]
         farms.append(_serializable_ecology_record(data, cell))
 
     var saved_wild_pokemon: Array = []
-    for raw_id in wild_pokemon.keys():
+    for raw_id in (wild_pokemon.keys() if include_population else []):
         var data: Dictionary = wild_pokemon[raw_id]
         var cell: Vector2i = data.get("cell", Vector2i.ZERO)
         var saved_wild := _serializable_ecology_record(data, cell)
@@ -7282,7 +7300,7 @@ func get_crafting_save_state() -> Dictionary:
         saved_wild_pokemon.append(saved_wild)
 
     var saved_eggs: Array = []
-    for raw_cell in wild_eggs.keys():
+    for raw_cell in (wild_eggs.keys() if include_population else []):
         var cell: Vector2i = raw_cell
         var data: Dictionary = wild_eggs[cell]
         var saved_egg := data.duplicate(true)

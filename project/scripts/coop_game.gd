@@ -174,8 +174,10 @@ func _arrival_personal(area:String)->Dictionary:
 func finish_travel()->bool:
     if not _travel_token.is_empty():
         main.generation_status.text="Saving new area...";main.generation_panel.show()
-        var parts=Snapshot.split(main.world.get_crafting_save_state())
-        var bytes=Snapshot.encode(main.world.world_seed,main.world.map_size_index,FileAccess.get_file_as_bytes(Cache.cache_path(main.world.world_seed,main.world.map_size_index)),parts.shared)
+        var shared:Dictionary=Snapshot.split(main.world.get_crafting_save_state(),false).shared
+        var seed_value:int=main.world.world_seed;var size_index:int=main.world.map_size_index
+        var cache:=Cache.cache_path(seed_value,size_index)
+        var bytes:PackedByteArray=await _off_thread(func():return Snapshot.encode(seed_value,size_index,FileAccess.get_file_as_bytes(cache),shared))
         var result:Dictionary
         if hosting:result=await service.generated(session.actor,_travel_target,_travel_token,{"seed":main.world.world_seed,"size":main.world.map_size_index},bytes)
         else:result=await service.upload(_travel_target,_travel_token,0,bytes)
@@ -195,7 +197,7 @@ func finish_travel()->bool:
     population.sync_pending=true
     _refresh_drops()
     rest.apply_on_entry()
-    if hosting and not save_checkpoint(main._capture_game_save()):return false
+    if hosting and not await save_checkpoint(main._capture_game_save()):return false
     return await checkpoint_player()
 
 func _generation_requested(actor:String,area:String,token:String)->void:
@@ -927,13 +929,11 @@ func _process(delta:float)->void:
             _clock_sent=now;_clock_sent_speed=Engine.time_scale
             for peer in session.players:
                 if peer!=1:session.send_to(peer,{"kind":"world_clock","seconds":clock_seconds,"speed":Engine.time_scale})
-    if hosting and now-_journal_checked>=20000 and not _checkpoint_running and not _request_busy and not _publishing and not interaction_ui.visible and not main.generating and not main.edge_travel_busy and not main.battle_active:
+    if hosting and now-_journal_checked>=20000 and not _checkpoint_running and not _request_busy and not _publishing and not _world_writing and not interaction_ui.visible and not main.generating and not main.edge_travel_busy and not main.battle_active:
         _journal_checked=now
         if _world_saved_at==0:_world_saved_at=now
         var fold:bool=State.journal_enabled and (store.journal_size()>JOURNAL_COMPACT_BYTES or (state.loose>0 and now-_world_saved_at>=MOTION_SAVE_MS))
-        var captured:Dictionary=main._capture_game_save() if fold else {}
-        if fold and not save_checkpoint(captured):
-            print("ONLINE journal could not be folded into a world save")
+        if fold:_fold_journal(main._capture_game_save())
     if now-_last_checkpoint>=750 and not _checkpoint_running and not _request_busy and not interaction_ui.visible and not main.generating and not main.edge_travel_busy:
         _last_checkpoint=now
         # The full record is large, and position updates share its connection.
@@ -949,6 +949,9 @@ func _process(delta:float)->void:
         var saved:bool=await checkpoint_player()
         if saved:_saved_stamp=stamp
         _checkpoint_running=false
+
+func _fold_journal(captured:Dictionary)->void:
+    if not await save_checkpoint(captured):print("ONLINE journal could not be folded into a world save")
 
 func _identity()->bool:
     var token=Identity.token()
@@ -1154,7 +1157,7 @@ func game_started()->bool:
     if not _create_service():_failure("ONLINE CACHE COULD NOT OPEN");return false
     if not await publish_current():return false
     var checkpoint:Dictionary=main._capture_game_save()
-    if not save_checkpoint(checkpoint):_failure("ONLINE SAVE FAILED");return false
+    if not await save_checkpoint(checkpoint):_failure("ONLINE SAVE FAILED");return false
     var error:Error=session.host(world_id,host_port)
     if error!=OK:_failure("HOST COULD NOT START: "+error_string(error));return false
     # Connections at once: everyone but a hosting player, who is already in.
@@ -1200,14 +1203,23 @@ func publish_current()->bool:
     _publishing=true
     var seed_value=int(main.world.world_seed)
     var size_index=int(main.world.map_size_index)
-    var parts=Snapshot.split(main.world.get_crafting_save_state())
     var registry:Dictionary=state.records if hosting else shared_records
-    if not area_authority.is_empty() or (hosting and state.records.has("area/"+_area())):
-        parts.shared=Snapshot.committed_population(_area(),parts.shared,registry)
-    parts.shared["_coop_build_base"]=building.known(_area(),state.records if hosting else shared_records)
-    # A guest leaves out the terrain cache: the host has it (Snapshot.refill).
-    var bytes=Snapshot.encode_without_cache(seed_value,size_index,parts.shared) if not hosting else \
-        Snapshot.encode(seed_value,size_index,FileAccess.get_file_as_bytes(Cache.cache_path(seed_value,size_index)),parts.shared)
+    # The population then comes from the records, not from the world here,
+    # which need not pack its own only to have it replaced.
+    var committed:bool=not area_authority.is_empty() or (hosting and state.records.has("area/"+_area()))
+    var parts=Snapshot.split(main.world.get_crafting_save_state(not committed),false)
+    var picked:Array=Snapshot.population_records(_area(),registry) if committed else []
+    parts.shared["_coop_build_base"]=building.known(_area(),registry).duplicate(true)
+    # Unpacked and packed on a worker: a long-played area and its terrain
+    # cache are megabytes. A guest leaves out the terrain cache: the host has
+    # it (Snapshot.refill).
+    var cache:=Cache.cache_path(seed_value,size_index) if hosting else ""
+    var made:Array=await _off_thread(func():
+        var shared:Dictionary=Snapshot.committed_population(parts.shared,picked) if committed else parts.shared
+        return [shared,Snapshot.encode_without_cache(seed_value,size_index,shared) if cache.is_empty() else \
+            Snapshot.encode(seed_value,size_index,FileAccess.get_file_as_bytes(cache),shared)])
+    parts.shared=made[0]
+    var bytes:PackedByteArray=made[1]
     if bytes.is_empty():_publishing=false;_failure("ONLINE AREA CACHE IS MISSING");return false
     if not hosting:
         var uploaded:Dictionary=await service.upload(_area(),"",area_epoch,bytes)
@@ -1221,12 +1233,44 @@ func publish_current()->bool:
     var registered:bool=bool(result.get("ok",false)) and storage.register_objects(_area(),parts.shared)
     return registered
 
+## Runs `work` on a worker thread and waits for it a frame at a time.
+## `work` must touch nothing the game changes meanwhile.
+var _workers:Array=[]
+func _off_thread(work:Callable)->Variant:
+    var out:=[null]
+    var task:=WorkerThreadPool.add_task(func():out[0]=work.call())
+    _workers.append(task)
+    while not WorkerThreadPool.is_task_completed(task):await get_tree().process_frame
+    WorkerThreadPool.wait_for_task_completion(task)
+    _workers.erase(task)
+    return out[0]
+
+## The world and the host's own save. The game thread only takes a copy of
+## what to write; the writing (megabytes of text, read back and checked, the
+## .bak copies) runs on a worker. Doing it all here stalled the host for
+## about 400 ms on every save, a stall every player saw. One at a time, each
+## with everything up to the moment it starts.
+var _world_writing:=false
 func save_checkpoint(data:Dictionary)->bool:
     if not active or not hosting:return false
-    if store.save(state,{"world_name":String(data.get("world_name","WORLD")),"owner":session.actor})!=OK:return false
-    state.loose=0;_world_saved_at=Time.get_ticks_msec()
-    var saved:bool=saves.save_host(world_id,session.actor,data)==OK
-    return saved
+    while _world_writing:await get_tree().process_frame
+    if not active or not hosting:return false
+    _world_writing=true
+    var job:Dictionary=store.prepare(state,{"world_name":String(data.get("world_name","WORLD")),"owner":session.actor})
+    var loose:int=state.loose
+    # The crafting state is made afresh for each save (main._capture_game_save);
+    # the party, bag and boxes are the game's own and are copied.
+    var host:Dictionary=data.duplicate()
+    for key in host:
+        if key!="crafting_state" and (host[key] is Dictionary or host[key] is Array):host[key]=host[key].duplicate(true)
+    var path:String=saves.path_for(world_id);var id:String=world_id;var actor:String=session.actor
+    var written:Array=await _off_thread(func():
+        var world:Error=Store.write(job) if not job.is_empty() else ERR_INVALID_PARAMETER
+        return [world,Saves.write(path,id,actor,host) if world==OK else ERR_SKIP])
+    var saved:bool=written[0]==OK and store.rotate(job)==OK
+    if saved:state.loose=maxi(0,state.loose-loose);_world_saved_at=Time.get_ticks_msec()
+    _world_writing=false
+    return saved and written[1]==OK
 
 func save_game(data:Dictionary)->bool:
     while building.busy or _request_busy or _checkpoint_running:
@@ -1235,7 +1279,7 @@ func save_game(data:Dictionary)->bool:
     if not await checkpoint_player():return false
     if not hosting:return true # Host's journal has durably acknowledged this player.
     if not await publish_current():return false
-    return save_checkpoint(data)
+    return await save_checkpoint(data)
 
 func _ready_session(id:String,_actor:String)->void:
     if hosting:return
@@ -1345,7 +1389,8 @@ func _admitted(peer:int,actor:String,profile:Dictionary)->void:
         await get_tree().process_frame
         if not session.players.has(peer):return
     if not await publish_current():session.transport._drop(peer);return
-    var data:Dictionary=main._capture_game_save()
+    # The host's own crafting state is replaced below: its personal part only.
+    var data:Dictionary=main._capture_game_save(2,true)
     # A new guest starts with their own party and inventory, never the host's.
     var personal:Dictionary=state.records.get("player/"+actor,{})
     var saved_personal:Dictionary=personal.get("save",{})
@@ -1365,7 +1410,7 @@ func _admitted(peer:int,actor:String,profile:Dictionary)->void:
     data["player_name"]=profile.get("name","PLAYER");data["player_name_custom"]=true
     data["player_model"]=profile.get("model",0);data["player_color"]=profile.get("color",0)
     # Spawn beside the host in the same scene; shared crafting arrives separately.
-    data["coop_personal"]=saved_personal.get("crafting_state",Snapshot.split(main.world.get_crafting_save_state()).personal).duplicate(true)
+    data["coop_personal"]=(saved_personal.crafting_state if saved_personal.has("crafting_state") else Snapshot.split(main.world.get_crafting_save_state(false),false).personal).duplicate(true)
     data.coop_personal.erase("follower_pokemon");data.coop_personal.erase("active_field_move");data.coop_personal.erase("active_field_pokemon")
     if personal.is_empty():
         personal={"party":data.caught_pokemon,"inventory":data.inventory,"save":{}}
@@ -1481,6 +1526,22 @@ func _shared_key(key:String,actor:String)->bool:
 ## they watch (_watched), but for those of `kept`, which they hold already.
 ## With `going` (an area they have asked to go to) only that area's, which
 ## they then watch too, so it arrives as it is now.
+## The records a player may hold (_shared_key), each with its area and
+## whether every player may, in the order of state.records. Made again only
+## when a record comes or goes: asking every record of a long-played world
+## on each join and arrival took the host up to 90 ms.
+var _sharable:Array=[]
+var _sharable_epoch:=-1
+var _sharable_state:=0
+func _sharable_keys()->Array:
+    if _sharable_epoch!=state.key_epoch or _sharable_state!=state.get_instance_id():
+        _sharable_epoch=state.key_epoch;_sharable_state=state.get_instance_id();_sharable=[]
+        for key in state.records:
+            var text:=String(key)
+            var anyone:=_shared_key(text,"")
+            if anyone or text.begins_with("horde_reward/") or text.begins_with("private_box/"):_sharable.append([key,_key_area(text),anyone])
+    return _sharable
+
 func _send_state(peer:int,actor:String,going:String="",kept:String="")->void:
     var deadline=Time.get_ticks_msec()+10000
     while session.players.has(peer) and Time.get_ticks_msec()<deadline:
@@ -1488,10 +1549,10 @@ func _send_state(peer:int,actor:String,going:String="",kept:String="")->void:
         # commits always follow this complete snapshot in the ordered connection.
         var areas:=_watched(actor) if going.is_empty() else [going]
         var records:Dictionary={}
-        for key in state.records:
-            if _shared_key(String(key),actor):
-                var area:=_key_area(String(key))
-                if ((area.is_empty() and going.is_empty()) or area in areas) and (kept.is_empty() or area!=kept):records[key]=state.records[key]
+        for entry in _sharable_keys():
+            if entry[2] or _shared_key(String(entry[0]),actor):
+                var area:String=entry[1]
+                if ((area.is_empty() and going.is_empty()) or area in areas) and (kept.is_empty() or area!=kept):records[entry[0]]=state.records[entry[0]]
         var packet:={"kind":"state_snapshot","records":records,"kept":kept}
         if not going.is_empty():packet={"kind":"area_records","area":going,"records":records}
         var error:Error=session.send_to(peer,packet)
@@ -1556,4 +1617,7 @@ func _notification(what:int)->void:
 
 func _exit_tree()->void:
     if _area_cleanup!=null:_area_cleanup.wait_to_finish();_area_cleanup=null
+    # A save being written is finished, not cut off.
+    for task in _workers:WorkerThreadPool.wait_for_task_completion(task)
+    _workers.clear()
     Network.host_close();Network.join_close()

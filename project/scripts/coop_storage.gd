@@ -89,9 +89,15 @@ func configure(coordinator:Node)->void:game=coordinator
 func register_objects(area:String,shared:Dictionary)->bool:
     if is_instance_valid(game.building) and not game.building.seed(area,shared):return false
     # Registration follows the accepted journal, including edits committed while
-    # this full-area snapshot was travelling from another player.
+    # this full-area snapshot was travelling from another player. Only the
+    # structures are read below, so only they are overlaid: packing and
+    # unpacking all of a long-played area again stalled the host each time.
     if is_instance_valid(game.building):
-        shared=game.building.overlay(area,shared,game.state.records)
+        var placed:Dictionary={}
+        var prefix:="world/"+area+"/structures/"
+        for key in game.state.records:
+            if String(key).begins_with(prefix):placed[key]=game.state.records[key]
+        shared=game.building.overlay(area,{"structures":shared.get("structures",[])},placed)
     var changes:Array=[]
     if is_instance_valid(game.beacons):changes.append_array(game.beacons.registry_changes(area,shared))
     for piece in shared.get("structures",[]):

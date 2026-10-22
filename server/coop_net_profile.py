@@ -8,8 +8,19 @@ kind by the server and by every player:
   walkN      N players walking in the spawn area
   walkNsplit N players walking, the odd ones in the area east of it
   walkNaway  N players walking, all in the area east (the server's own area empty)
+  walkNlong  (with --long S) N players walking back in the spawn area for S seconds,
+             long enough for autosaves (--autosave MINUTES) and journal folds
 
-    python server/coop_net_profile.py GODOT [--clients N] [--seconds S] [--breakdown] [--project DIR] [--world-from DIR] [--keep]
+The last player joins while the others walk (joinN). The server also prints
+its frame time distribution per phase (FRAMES) and, for frames over 16 ms,
+what took the most (SPIKES: the sections a test build times into Engine meta
+"probe_frame", name -> microseconds this frame, "_top" the outermost summed).
+
+    python server/coop_net_profile.py GODOT [--clients N] [--seconds S] [--long S] [--autosave MINUTES] [--breakdown]
+        [--project DIR] [--world-from DIR] [--world NAME] [--port N] [--keep]
+
+--world-from copies a server data folder (a server_data, or a server folder
+kept with --keep) and --world names the world in it to load.
 
 --breakdown then prints the server's frame cost by script (each script's nodes
 stopped for a moment while the players keep walking).
@@ -19,8 +30,11 @@ import os, re, shutil, subprocess, sys, tempfile, time
 godot = sys.argv[1]
 clients = int(sys.argv[sys.argv.index("--clients") + 1]) if "--clients" in sys.argv else 8
 seconds = float(sys.argv[sys.argv.index("--seconds") + 1]) if "--seconds" in sys.argv else 15
+long_seconds = float(sys.argv[sys.argv.index("--long") + 1]) if "--long" in sys.argv else 0
+world = sys.argv[sys.argv.index("--world") + 1] if "--world" in sys.argv else "Profile"
+autosave = sys.argv[sys.argv.index("--autosave") + 1] if "--autosave" in sys.argv else "5"
 work = tempfile.mkdtemp(prefix="pw-netprofile-")
-port = 54793
+port = int(sys.argv[sys.argv.index("--port") + 1]) if "--port" in sys.argv else 54793
 script = os.path.abspath("server/coop_net_profile.gd")
 phase_file = os.path.join(work, "phase.txt")
 project = sys.argv[sys.argv.index("--project") + 1] if "--project" in sys.argv else "project"
@@ -67,8 +81,8 @@ try:
     # The same world for runs to compare: a copy of a server folder kept from an earlier run.
     if "--world-from" in sys.argv: shutil.copytree(sys.argv[sys.argv.index("--world-from") + 1], os.path.join(work, "server"))
     config = os.path.join(work, "server.cfg")
-    open(config, "w").write(f"[server]\nmax_players={clients}\n")
-    server = start("server", ["--server", "--port", str(port), "--world", "Profile", "--size", "S", "--data", os.path.join(work, "server"),
+    open(config, "w").write(f"[server]\nmax_players={clients}\nautosave_minutes={autosave}\n")
+    server = start("server", ["--server", "--port", str(port), "--world", world, "--size", "S", "--data", os.path.join(work, "server"),
         "--no-upnp", "--area-size", "S", "--accounts", "off", "--config", config, "--", "--phase=" + phase_file], subprocess.PIPE)
     wait_for("server", "listening on TCP port", 900)
 
@@ -79,7 +93,13 @@ try:
     join(0)
     time.sleep(3)
     measure("idle1"); measure("walk1")
-    for i in range(1, clients): join(i)
+    for i in range(1, clients - 1): join(i)
+    if clients > 1:
+        # The last one joins while the others walk.
+        print("phase", f"join{clients}", flush=True)
+        set_phase(f"join{clients}")
+        join(clients - 1)
+        set_phase("rest")
     time.sleep(5)
     measure(f"idle{clients}"); measure(f"walk{clients}")
     # The odd players travel east first (the server makes the area); measured once they are there.
@@ -93,6 +113,13 @@ try:
     while sum(text(f"client{i}").count("travelled to") for i in range(clients)) < clients and time.time() < deadline: time.sleep(1)
     time.sleep(3)
     measure(f"walk{clients}away")
+    if long_seconds > 0:
+        # Everyone back in the spawn area (the server's own), walking for a long time.
+        set_phase(f"walk{clients}long-travel")
+        deadline = time.time() + 600
+        while sum(text(f"client{i}").count("travelled back") for i in range(clients)) < clients and time.time() < deadline: time.sleep(1)
+        time.sleep(3)
+        measure(f"walk{clients}long", long_seconds)
     if "--breakdown" in sys.argv:
         set_phase("walk-breakdown")
         wait_for("server", "PROFILE SERVER breakdown", 900)
@@ -101,7 +128,7 @@ try:
     rows = []
     for name in logs:
         for line in text(name).splitlines():
-            if line.startswith("PROFILE") and " rest " not in line and "-travel " not in line and " setup " not in line: rows.append(line)
+            if line.startswith("PROFILE") and " rest " not in line and " setup " not in line and ("-travel " not in line or " FRAMES " in line or " SPIKES " in line): rows.append(line)
     print("\n".join(rows))
 finally:
     try: server.stdin.write(b"stop\n"); server.stdin.close(); server.wait(60)

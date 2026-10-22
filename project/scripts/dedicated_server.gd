@@ -365,6 +365,9 @@ func save()->bool:
     var saved:bool=await main.coop_game.save_game(main._capture_game_save())
     _saving=false
     print("SERVER world saved" if saved else "SERVER ERROR: world save failed")
+    # Each save of an area is a new 2.4 MB file; those nothing needs any more
+    # went only when the world was next loaded (coop_snapshot_store.gd clean_up).
+    if saved:main.coop_game._clean_up_area_files()
     return saved
 
 func _notification(what:int)->void:

@@ -40,7 +40,10 @@ func _sort_palms() -> void:
 
 func refresh_cells(cells: Array) -> void:
     var changed:=false
-    for cell in cells:
+    # Each cell once: the cells of nearby changes overlap.
+    var unique:={}
+    for cell in cells: unique[cell]=true
+    for cell in unique:
         if _refresh_palm(cell): changed=true
     if changed: _sort_palms()
 
