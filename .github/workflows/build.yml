@@ -1,9 +1,10 @@
 name: PokeWilds build
 
-# One release per commit with both files: the iPhone IPA and the Windows server
-# zip. It starts as a draft (nobody sees it), each build uploads its file, and
-# it is published as "Latest" only when both builds passed; otherwise the draft
-# is deleted. So releases/latest/download/<file> always gives a matching pair.
+# One release per commit with every file: the iPhone IPA, the Android APK and
+# the Windows server zip. It starts as a draft (nobody sees it), each build
+# uploads its file, and it is published as "Latest" only when all builds
+# passed; otherwise the draft is deleted. So releases/latest/download/<file>
+# always gives a matching set.
 on:
   workflow_dispatch:
     inputs:
@@ -66,8 +67,9 @@ jobs:
         run: |
           git log -1 --pretty=%B > notes.md
           echo "" >> notes.md
-          echo "IPA version $VERSION ($BUNDLE). IPA and server built from ${GITHUB_SHA::8}: they play together (a host refuses players of another build)." >> notes.md
+          echo "IPA version $VERSION ($BUNDLE). IPA, APK and server built from ${GITHUB_SHA::8}: they play together (a host refuses players of another build)." >> notes.md
           echo "- **Pokewilds-unsigned.ipa**: sign it with Feather (or similar) before installing." >> notes.md
+          echo "- **Pokewilds.apk**: Android, signed; installs over the previous APK." >> notes.md
           echo "- **PokeWilds-Server-win64.zip**: unzip it and run start_server.bat. Guide: README_SERVER.md." >> notes.md
           gh release create "$TAG" --draft --target "$GITHUB_SHA" \
             --title "PokeWilds $VERSION" --notes-file notes.md
@@ -511,10 +513,144 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$TAG" PokeWilds-Server-win64.zip
 
+  # The Android APK: stock editor and official templates with the game's own
+  # Gradle wrapper (project/android/build) and libzt for ONLINE play, signed
+  # with the release keystore (secrets ANDROID_KEYSTORE_BASE64 and
+  # ANDROID_KEYSTORE_PASSWORD, alias "pokewilds"): every APK has the same
+  # signature, so each one installs over the last.
+  android:
+    needs: draft
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      TAG: ${{ needs.draft.outputs.tag }}
+      NDK_VERSION: 29.0.14206865
+      CMAKE_VERSION: 3.22.1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # The versions project/android/build/config.gradle asks for.
+      - name: Android SDK packages
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-36" "build-tools;36.1.0" \
+            "ndk;$NDK_VERSION" "cmake;$CMAKE_VERSION" > /dev/null
+
+      # libzt's AAR (build_libzt_android.sh), compiled once per patch set.
+      - uses: actions/cache@v4
+        id: libzt
+        with:
+          path: project/android/build/libs/zerotier
+          key: libzt-android-${{ hashFiles('build_libzt_android.sh', 'libzt_patches.py', 'tools/build_libzt_ios.sh') }}
+
+      - name: Build libzt for Android
+        if: steps.libzt.outputs.cache-hit != 'true'
+        run: |
+          # The commit the iOS plugin uses.
+          commit=$(sed -n 's/^LIBZT_COMMIT=//p' tools/build_libzt_ios.sh)
+          git clone -q https://github.com/zerotier/libzt "$RUNNER_TEMP/libzt"
+          git -C "$RUNNER_TEMP/libzt" -c advice.detachedHead=false checkout -q "$commit"
+          git -C "$RUNNER_TEMP/libzt" submodule -q update --init
+          LIBZT_SRC="$RUNNER_TEMP/libzt" LIBZT_WORK="$RUNNER_TEMP/libzt-work" bash build_libzt_android.sh
+
+      - name: Install Godot + Android export templates
+        run: |
+          base=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
+          curl -sSL -o godot.zip "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          curl -sSL -o templates.tpz "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          unzip -q godot.zip
+          tpl="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p "$tpl"
+          unzip -q -j templates.tpz 'templates/android_source.zip' 'templates/version.txt' -d "$tpl"
+          echo "GODOT=$PWD/Godot_v${GODOT_VERSION}-stable_linux.x86_64" >> "$GITHUB_ENV"
+          # The game keeps its own wrapper (src/, res/, Gradle files): only the
+          # engine libraries come from the template, as BUILD.txt describes.
+          unzip -q "$tpl/android_source.zip" 'libs/*' -d "$RUNNER_TEMP/android_source"
+          cp -R "$RUNNER_TEMP/android_source/libs/." project/android/build/libs/
+          # Where this Godot looks for the installed template's version.
+          for f in project/android/.build_version project/android/build/.build_version; do printf '%s' "${GODOT_VERSION}.stable" > "$f"; done
+          # Where the editor finds the SDK and Java (no editor UI here).
+          mkdir -p ~/.config/godot
+          for name in editor_settings-4.tres "editor_settings-${GODOT_VERSION%.*}.tres"; do
+            printf '[gd_resource type="EditorSettings" format=3]\n\n[resource]\nexport/android/android_sdk_path = "%s"\nexport/android/java_sdk_path = "%s"\n' \
+              "$ANDROID_HOME" "$JAVA_HOME" > ~/.config/godot/$name
+          done
+
+      # Same data as the other builds, so the bundled mods (and their digest) match.
+      - name: Minify JSON data
+        run: python3 .github/engine/minify_json.py project
+
+      # Same build id and version as the IPA: the APK plays with this release's
+      # IPA and server. Its versionCode is the commit count, so it only goes up.
+      - name: Stamp build id and APK version
+        env:
+          VERSION: ${{ needs.draft.outputs.version }}
+          BUNDLE: ${{ needs.draft.outputs.bundle }}
+        run: |
+          echo "$GITHUB_SHA" > project/build_id.txt
+          echo "$VERSION" > project/build_version.txt
+          python3 - <<'EOF'
+          import os, re
+          path = "project/export_presets.cfg"
+          text = open(path, newline="").read()
+          text = re.sub(r'(?m)^version/name="[^"]*"', 'version/name="%s"' % os.environ["VERSION"], text)
+          text = re.sub(r'(?m)^version/code=\d+', 'version/code=%s' % os.environ["BUNDLE"], text)
+          open(path, "w", newline="").write(text)
+          EOF
+          grep -n '^version/' project/export_presets.cfg
+
+      - name: Lobby list address
+        env:
+          LOBBY_SERVER: ${{ secrets.LOBBY_SERVER }}
+        run: |
+          if [ -n "$LOBBY_SERVER" ]; then printf '%s\n' "$LOBBY_SERVER" > project/lobby_server.txt
+          else echo "::warning::No LOBBY_SERVER secret: this APK has no online lobby list"; fi
+
+      - name: Release keystore
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE" ] || [ -z "$PASSWORD" ]; then echo "::error::ANDROID_KEYSTORE_BASE64 and ANDROID_KEYSTORE_PASSWORD are needed to sign the APK"; exit 1; fi
+          printf '%s' "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          echo "GODOT_ANDROID_KEYSTORE_RELEASE_PATH=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+          echo "GODOT_ANDROID_KEYSTORE_RELEASE_USER=pokewilds" >> "$GITHUB_ENV"
+
+      # Godot's import cache (.godot): only assets that changed since are imported again.
+      - uses: actions/cache@v4
+        with:
+          path: project/.godot
+          key: godot-import-android-${{ env.GODOT_VERSION }}-${{ hashFiles('project/assets/**/*.import') }}
+          restore-keys: godot-import-android-${{ env.GODOT_VERSION }}-
+
+      - name: Import + export the APK
+        working-directory: project
+        env:
+          GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          set -o pipefail
+          mkdir -p ../build/android
+          "$GODOT" --headless --import
+          "$GODOT" --headless --export-release "Android" ../build/android/Pokewilds.apk 2>&1 | tee export.log \
+            || { grep -E -i -B2 -A8 'error|FAILURE|What went wrong' export.log | head -80 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}' | sed 's/^/::error::/'; echo; exit 1; }
+          test -f ../build/android/Pokewilds.apk
+          echo "::notice::APK $(du -h ../build/android/Pokewilds.apk | cut -f1)"
+
+      - name: Add the APK to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload --clobber "$TAG" build/android/Pokewilds.apk
+
   publish:
-    needs: [draft, smoke, ios_xtool, server]
+    needs: [draft, smoke, ios_xtool, server, android]
     # The IPA from the Mac or, failing that, from xtool: ios_xtool says which.
-    if: ${{ always() && needs.draft.result == 'success' && needs.smoke.result == 'success' && needs.server.result == 'success' && needs.ios_xtool.outputs.ipa == 'true' }}
+    if: ${{ always() && needs.draft.result == 'success' && needs.smoke.result == 'success' && needs.server.result == 'success' && needs.android.result == 'success' && needs.ios_xtool.outputs.ipa == 'true' }}
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
