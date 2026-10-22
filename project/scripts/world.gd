@@ -1276,14 +1276,46 @@ func _setup_normal_grass_front_overlay() -> void:
 ## Base and upper tile names at a cell, read straight from the tile store:
 ## building a SourceTile proxy for a name costs about 10 us, and the per-frame
 ## overlays and wild Pokemon ask for many. Empty when there is no tile.
+## per-frame
 func _exact_names_at(cell: Vector2i) -> PackedStringArray:
     var store = exact_world.tiles
+    var key := cell * TILE
+    var tile: SourceTile = null
     if store is WorldTileStore:
-        var index: int = store.index_of(cell * TILE)
+        var index: int = store.index_of(key)
         if index >= 0:
             return PackedStringArray([store.name_at(index), store.upper_at(index)])
-    var tile := exact_world.tile_at(cell)
+        # Off the packed cells: a plain tile object, as tile_at gives.
+        tile = store.extra.get(key) as SourceTile
+    else:
+        tile = store.get(key) as SourceTile
     return PackedStringArray() if tile == null else PackedStringArray([tile.name, tile.name_upper])
+
+## The world's own cursors for _frame_tile, one per slot.
+var _frame_cursors: Array = [null, null]
+
+## per-frame
+## The tile at `cell` to read at once, without making a proxy (tile_at makes
+## one, ~10 us, for each call: a few a frame were a phone's millisecond). It is
+## one of the world's cursors re-pointed at the cell (fresh from the store), or
+## the store's plain tile for a cell off its packed arrays. It changes at the
+## next call with the same `slot`: read it at once, never keep it or write to
+## it, and do not hand it to code that calls _frame_tile itself.
+func _frame_tile(cell: Vector2i, slot: int = 0) -> SourceTile:
+    var store = exact_world.tiles
+    var key := cell * TILE
+    if not store is WorldTileStore:
+        return store.get(key) as SourceTile
+    var index: int = store.index_of(key)
+    if index < 0:
+        return store.extra.get(key) as SourceTile
+    var cursor: SourceTile = _frame_cursors[slot]
+    if cursor == null or cursor._store != store:
+        cursor = SourceTile.bound_to(store, index)
+        _frame_cursors[slot] = cursor
+    else:
+        cursor.repoint(index)
+    return cursor
 
 func _source_tile_key(value: String) -> String:
     var key := value.to_lower().strip_edges()
@@ -1302,6 +1334,7 @@ func _is_normal_encounter_grass(cell: Vector2i) -> bool:
         or _source_tile_key(tile.name_upper) == "grass1"
     )
 
+## per-frame
 func _update_normal_grass_front_overlay(_cell: Vector2i) -> void:
     if not is_instance_valid(normal_grass_front_sprite):
         return
@@ -1351,6 +1384,7 @@ func _savanna_tree_anchor_covering(cell: Vector2i) -> Vector2i:
             return anchor_cell
     return Vector2i(-2147483648, -2147483648)
 
+## per-frame
 func _update_savanna_tree_front_overlay(cell: Vector2i) -> void:
     if savanna_tree_front_sprite == null or not is_instance_valid(savanna_tree_front_sprite):
         return
@@ -2115,6 +2149,7 @@ func _process(delta: float) -> void:
     if generated and gameplay_enabled:
         _update_overworld_idle_sprites(delta)
 
+## per-frame
 func _update_world_frame(delta: float) -> void:
     _flush_exact_refresh_queue()
     if active_area_id == "HOUSE":
@@ -2295,6 +2330,7 @@ func _update_world_frame(delta: float) -> void:
                 encounter_count += 1
                 _request_random_encounter()
 
+## per-frame
 func try_walk_into_door(position: Vector2, movement: Vector2) -> bool:
     if not generated or not gameplay_enabled or build_mode_active or \
             active_field_move == "FLY" or movement.length_squared() < 0.0001:
@@ -2521,6 +2557,7 @@ func clear_active_field_move(show_message: bool = true) -> void:
         clear_follower()
     # Field moves stop silently.
 
+## per-frame
 func _set_fly_shadow_active(active: bool) -> void:
     # Use the authored PokeWilds shadow1 asset instead of the fabricated polygon.
     if active:
@@ -2539,6 +2576,7 @@ func _set_fly_shadow_active(active: bool) -> void:
     if is_instance_valid(fly_shadow):
         fly_shadow.visible = false
 
+## per-frame
 func _update_fly_shadow() -> void:
     if not is_instance_valid(fly_shadow_sprite):
         return
@@ -2719,6 +2757,7 @@ func _place_follower_live() -> void:
     _set_overworld_motion_frame(follower_sprite, facing, int(player.walk_phase))
     follower_sprite.offset = Vector2(0, -16) if follower_sprite.has_meta("alolan_exeggutor_walk") else Vector2.ZERO
 
+## per-frame
 func _place_field_helper_live() -> void:
     if field_helper_pokemon.is_empty() or not is_instance_valid(field_helper_sprite):
         return
@@ -4268,6 +4307,7 @@ func _travel_destinations(include_spawn: bool) -> Array[Dictionary]:
         result.append({"name":String(raw_name).replace("_", " ").to_upper(), "cell":landing})
     return result
 
+## per-frame
 func _clamp_flying_player_to_world() -> void:
     var bounds := get_map_bounds()
     if bounds.size.x <= 0 or bounds.size.y <= 0:
@@ -4539,6 +4579,7 @@ func get_build_execution_cell() -> Vector2i:
     # never underneath it; both input paths share this snapped destination.
     return get_build_preview_cell()
 
+## per-frame
 func _update_build_preview() -> void:
     if not build_mode_active or build_preview_sprite == null or not is_instance_valid(build_preview_sprite):
         return
@@ -4757,6 +4798,7 @@ func _queue_exact_refresh(cells: Array = []) -> void:
         exact_refresh_queue.append(cell)
         SourceTile.resident_changed_cells.erase(cell * TILE)
 
+## per-frame
 ## Every frame: queued cells to the layers until this frame's slice is used
 ## (at least one chunk).
 func _flush_exact_refresh_queue() -> void:
@@ -6170,6 +6212,7 @@ func _ecology_names_at(cell: Vector2i) -> String:
         names.append("snow")
     return " ".join(names)
 
+## per-frame
 func _update_ecology(delta:float)->void:
     var coordinator=get_parent().get("coop_game")
     if is_instance_valid(coordinator) and coordinator.active:
@@ -6498,6 +6541,7 @@ func _store_ecology_descriptor(descriptor: Dictionary) -> void:
         if wild_pokemon.has(wild_id):
             wild_pokemon[wild_id] = data
 
+## per-frame
 func _update_deployed_pokemon(delta: float) -> void:
     var coordinator=get_parent().get("coop_game")
     if is_instance_valid(coordinator) and coordinator.active and not coordinator.population.authority():return
@@ -7948,6 +7992,7 @@ func _charm_suppresses(data: Dictionary) -> bool:
     return int(active_field_pokemon.get("level", 1)) >= _effective_wild_level(
         int(data.get("level", 1)))
 
+## per-frame
 func _update_wild_pokemon(delta: float) -> void:
     var coordinator=get_parent().get("coop_game")
     var online=is_instance_valid(coordinator) and coordinator.active
@@ -8503,6 +8548,7 @@ func _sand_trap_merged(wild_id: int) -> void:
     if bool(data.get("burrowed", false)) and not bool(data.get("burrow_active", false)):
         _sand_trap_join(wild_id, data)
 
+## per-frame
 func _update_sand_traps(delta: float) -> void:
     if active_area_id != "OVERWORLD":
         return
@@ -9862,6 +9908,7 @@ func _spawn_puddle_step_effect(cell: Vector2i) -> void:
     splash.play("splash")
     _spawn_tidal_front_splash(high_tide)
 
+## per-frame
 func _update_tidal_wade_visual() -> void:
     var show_wade = false
     var tile = null
@@ -9878,7 +9925,7 @@ func _update_tidal_wade_visual() -> void:
                 var foot_names := _exact_names_at(foot_cell)
                 if foot_names.is_empty() or not foot_names[0].to_lower().contains("_tidalwater"):
                     continue
-                var foot_tile: SourceTile = exact_world.tile_at(foot_cell)
+                var foot_tile: SourceTile = _frame_tile(foot_cell)
                 if foot_tile != null and _is_beach_tidal_tile(foot_tile) and \
                         foot_tile.name.to_lower().contains("_tidalwater"):
                     tile = foot_tile
@@ -9974,6 +10021,7 @@ func environment_camera_center() -> Vector2:
         return camera.get_screen_center_position()
     return player.position
 
+## per-frame
 func environment_context() -> Dictionary:
     if active_area_id == "HOUSE":
         return {"area_id":"HOUSE", "indoors":true, "dungeon":false, "route_name":"", "route_type":"", "biome":"INTERIOR"}
@@ -9985,7 +10033,7 @@ func environment_context() -> Dictionary:
     var biome := "INTERIOR"
     if active_area_id == "OVERWORLD":
         if exact_world != null:
-            var exact_tile := exact_world.tile_at(cell)
+            var exact_tile := _frame_tile(cell)
             var route: SourceRoute = exact_tile.route_belongs_to if exact_tile != null else null
             if route != null:
                 route_name = route.name
@@ -10399,6 +10447,7 @@ func _apply_tide_band(band: Array, lowering: bool) -> Array[Vector2i]:
         _redraw_exact_tide_streams(changed_cells)
     return changed_cells
 
+## per-frame
 func _update_tide_state(force: bool = false, delta: float = 0.0, spread := false) -> void:
     if exact_world == null:
         tide_initialized = true
@@ -10594,6 +10643,7 @@ func _ledge_landing_terrain_clear(cell: Vector2i) -> bool:
         and _wild_id_at_cell(cell) < 0
     )
 
+## per-frame
 func constrain_player_motion(before:Vector2,after:Vector2)->Vector2:
     var result:Vector2=_constrain_motion_to_terrain(before,after)
     var coordinator=get_parent().get("coop_game")
@@ -10729,6 +10779,7 @@ func _constrain_motion_to_terrain(before: Vector2, after: Vector2) -> Vector2:
             return before
     return _keep_box_off_closed_ledges(before, after)
 
+## per-frame
 ## A ledge row is open ground for the player's box, so that it can be entered
 ## from the side it is jumped from, and the rule above only checks the box's
 ## centre: from any other side the box (and the sprite) went half onto the
@@ -10756,7 +10807,7 @@ func _keep_box_off_closed_ledges(before: Vector2, at: Vector2) -> Vector2:
                 var index: int = store.index_of(cell * TILE)
                 if index < 0 or store.flags[index] & WorldTileStore.LEDGE == 0:
                     continue
-            var tile: SourceTile = exact_world.tile_at(cell)
+            var tile: SourceTile = _frame_tile(cell)
             if tile == null or not tile.is_ledge:
                 continue
             # Open only from the side it is jumped from. A corner cell is the
@@ -11629,6 +11680,7 @@ func _house_pokemon_cell_allowed(cell: Vector2i) -> bool:
         return false
     return active_area_id == "HOUSE" and built_house_interior_cells.has(cell) and not built_structures.has(cell) and _couch_anchor_at(cell) == Vector2i(2147483647,2147483647) and String(interior_interactables.get(cell,"")) != "EXIT_HOUSE" and _built_house_floor_index_for_cell(cell) == _built_house_floor_index_for_cell(_player_cell())
 
+## per-frame
 func _update_house_pokemon(delta:float)->void:
     var coordinator=get_parent().get("coop_game")
     if is_instance_valid(coordinator) and coordinator.active and not coordinator.population.authority(coordinator.population.local_scope()):
@@ -11750,6 +11802,7 @@ var _watched_wild_at := -100000
 var _near_wild_ids: Array = []
 var _near_wild_at := -100000
 
+## per-frame
 ## Wild Pokemon within sight or earshot of this player, refreshed twice a
 ## second. Per-frame work that only matters near the player (idle animation,
 ## pursuit sounds) uses this instead of visiting every Pokemon in the world.
@@ -11831,6 +11884,7 @@ func _flee_direction(wild_id: int, species: String, origin: Vector2i, threat: Ve
     _flee_routes[wild_id] = route.slice(0, FLEE_REPLAN_STEPS)
     return first - origin
 
+## per-frame
 func _update_overworld_idle_sprites(delta: float) -> void:
     var sprites: Array[Sprite2D] = []
     var animated: Array = deployed_pokemon.values()
@@ -11900,6 +11954,7 @@ void fragment() {
     material.set_shader_parameter("water_texture", SOURCE_TIDAL_WATER)
     return material
 
+## per-frame
 func _place_normal_grass_fronts() -> int:
     if active_area_id != "OVERWORLD" or exact_world == null:
         return 0
@@ -11923,7 +11978,7 @@ func _place_normal_grass_fronts() -> int:
             var upper := _source_tile_key(names[1])
             if base not in ["grass1", "grass2", "grass3", "grass4", "grass_sand1", "grass_sand2", "grass_sand3", "grass_graveyard1", "grass_savanna1", "grass_savanna2"] and upper not in ["grass1", "grass2_over", "grass3_over", "grass4_over", "grass5_over", "grass6_over", "grass_savanna1", "grass_savanna2"]:
                 continue
-            var tile := exact_world.tile_at(cell)
+            var tile := _frame_tile(cell)
             var tick := int(world_elapsed_seconds * 60.0)
             var stream = get_node_or_null("DecorLayer/ExactUpperTileStream")
             if stream != null:
@@ -12122,6 +12177,7 @@ func tick_dig_motion(input_direction: Vector2, speed: float, delta: float) -> vo
         dig_action_pending = false
         _use_dig(_player_cell() + _facing_cell())
 
+## per-frame
 func field_movement_direction(input_direction: Vector2) -> Vector2:
     if active_field_move == "FLY" and fly_phase in ["TAKEOFF", "LANDING"]:
         return Vector2.ZERO
@@ -12145,8 +12201,8 @@ func field_movement_direction(input_direction: Vector2) -> Vector2:
         ice_slide_direction = Vector2.ZERO
         return input_direction
     var cell = _player_cell()
-    var tile = exact_world.tile_at(cell)
-    var on_ice = tile != null and _source_tile_key(tile.name) == "ice2"
+    var names := _exact_names_at(cell)
+    var on_ice = not names.is_empty() and _source_tile_key(names[0]) == "ice2"
     if not on_ice:
         ice_slide_direction = Vector2.ZERO
         ice_blocked_direction = Vector2.ZERO
@@ -12164,6 +12220,7 @@ func field_movement_direction(input_direction: Vector2) -> Vector2:
             ice_slide_direction = Vector2(0, 1 if input_direction.y > 0.0 else -1)
     return ice_slide_direction
 
+## per-frame
 func field_motion_completed(before: Vector2, after: Vector2, movement_direction: Vector2) -> void:
     if active_field_move == "DIG" and _is_walkable(_player_cell()):
         dig_return_position = _cell_center(_player_cell())
@@ -12172,8 +12229,8 @@ func field_motion_completed(before: Vector2, after: Vector2, movement_direction:
     if ice_slide_direction == Vector2.ZERO or exact_world == null:
         return
     var after_cell = Vector2i(floori(after.x / TILE), floori(after.y / TILE))
-    var after_tile = exact_world.tile_at(after_cell)
-    var still_on_ice = after_tile != null and _source_tile_key(after_tile.name) == "ice2"
+    var after_names := _exact_names_at(after_cell)
+    var still_on_ice = not after_names.is_empty() and _source_tile_key(after_names[0]) == "ice2"
     var stopped := before.distance_squared_to(after) < 0.0025 and movement_direction.length_squared() > 0.0001
     if not stopped and still_on_ice:
         _align_ice_slide(after_cell)
@@ -12200,6 +12257,7 @@ func _align_ice_slide(cell: Vector2i) -> void:
     if not player.test_move(player.transform, step):
         player.position += step
 
+## per-frame
 func try_pre_move_field_jump(before: Vector2, movement_direction: Vector2):
     if active_field_move != "RIDE" or exact_world == null or active_area_id != "OVERWORLD":
         return null
@@ -12214,7 +12272,7 @@ func try_pre_move_field_jump(before: Vector2, movement_direction: Vector2):
         return null
     var start_cell = Vector2i(floori(before.x / float(TILE)), floori(before.y / float(TILE)))
     var obstacle_cell = start_cell + direction
-    var obstacle = exact_world.tile_at(obstacle_cell)
+    var obstacle = _frame_tile(obstacle_cell)
     if obstacle == null:
         return null
     var obstacle_key = (String(obstacle.name) + " " + String(obstacle.name_upper)).to_lower()
@@ -12241,7 +12299,7 @@ func try_pre_move_field_jump(before: Vector2, movement_direction: Vector2):
         _set_fly_shadow_active(true)
         play_source_sound("ledge1")
         return fence_position
-    var current_tile = exact_world.tile_at(start_cell)
+    var current_tile = _frame_tile(start_cell, 1)
     var mountain_edge := bool(obstacle.is_bottom_mtn_layer) or "ledges3" in obstacle_key
     var leaving_mountain := current_tile != null and (bool(current_tile.is_bottom_mtn_layer) or "ledges3" in (String(current_tile.name) + " " + String(current_tile.name_upper)))
     if mountain_edge or leaving_mountain:
@@ -12686,6 +12744,7 @@ var source_surf_wake_distance := 16.0
 var source_surf_wake_direction := Vector2.ZERO
 var source_surf_wake_frames: Dictionary = {}
 
+## per-frame
 func _update_source_surf_wake(before: Vector2, after: Vector2, direction: Vector2) -> void:
     if active_field_move != "SURF" or active_area_id != "OVERWORLD" or exact_world == null:
         source_surf_wake_distance = 16.0
@@ -12695,7 +12754,7 @@ func _update_source_surf_wake(before: Vector2, after: Vector2, direction: Vector
     if distance <= 0.001:
         return
     var cell := Vector2i(floori(before.x / TILE), floori(before.y / TILE))
-    var tile: SourceTile = exact_world.tile_at(cell)
+    var tile: SourceTile = _frame_tile(cell)
     if tile == null or not tile.is_water:
         return
     var facing := Vector2(signf(direction.x), 0.0) if absf(direction.x) > absf(direction.y) else Vector2(0.0, signf(direction.y))
@@ -12738,6 +12797,7 @@ func _spawn_source_surf_wake(anchor: Vector2, facing: Vector2) -> AnimatedSprite
 
 var walked_open_gates: Dictionary = {}
 
+## per-frame
 func _animate_walked_gates(before: Vector2, after: Vector2) -> void:
     # PlayerMoving.java removes the gate overlay after six pixels of approach
     # and restores it eleven pixels into the departure, with gate1/gate2 sounds.
@@ -12770,6 +12830,7 @@ func _animate_walked_gates(before: Vector2, after: Vector2) -> void:
             play_source_sound("gate2")
 
 var source_walked_open_gates: Dictionary = {}
+## per-frame
 func _animate_source_gates(before: Vector2, after: Vector2) -> void:
     var nearby := source_walked_open_gates.duplicate()
     var origin := Vector2i((after / float(TILE)).floor())
@@ -12777,8 +12838,10 @@ func _animate_source_gates(before: Vector2, after: Vector2) -> void:
         for y in range(-1,2):
             for x in range(-1,2):
                 var cell := origin + Vector2i(x,y)
-                var tile: SourceTile = exact_world.tile_at(cell)
-                if tile != null and "gate" in tile.name + tile.name_upper and not built_structures.has(cell): nearby[cell] = true
+                # Names from the store: nine tile objects a frame of walking
+                # (~190 us on a desktop) only to find no gate.
+                var names := _exact_names_at(cell)
+                if not names.is_empty() and "gate" in names[0] + names[1] and not built_structures.has(cell): nearby[cell] = true
     for cell in nearby:
         var center := _cell_center(cell)
         var closest := Geometry2D.get_closest_point_to_segment(center,before,after)

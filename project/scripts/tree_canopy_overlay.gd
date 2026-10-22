@@ -14,10 +14,12 @@ func _draw() -> void:
     for y in range(cell.y-3,cell.y+4):
         for x in range(cell.x-3,cell.x+4):
             var anchor := Vector2i(x,y)
-            var tile: SourceTile = world.exact_world.tile_at(anchor)
-            if tile == null: continue
-            var key := tile.name+tile.name_upper
+            # Names first, from the store: 49 tile objects a step otherwise.
+            var names: PackedStringArray = world._exact_names_at(anchor)
+            if names.is_empty(): continue
+            var key := names[0]+names[1]
             if "tree" not in key or "savanna" in key or "planted" in key: continue
+            var tile: SourceTile = world._frame_tile(anchor)
             for upper in [false,true]:
                 var spec := SourceWorldData.render_spec(tile,upper,0,0)
                 if spec.is_empty(): continue
