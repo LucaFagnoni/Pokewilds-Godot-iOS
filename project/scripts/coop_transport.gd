@@ -21,8 +21,11 @@ var peers: Dictionary = {}
 var hosting := false
 var joining := false
 var port := JoinCode.PORT
-## Guests at once. A hosting player is the fourth; a dedicated server has none.
+## Connections at once, joining ones included. The host sets it from
+## coop_game.gd max_players: one fewer for a hosting player, who is already in.
 var max_peers := 3
+const FULL := "This game is full."
+var _turned_away: Array = []
 var _next_peer := 2
 var last_disconnect_reason := ""
 
@@ -101,13 +104,23 @@ func _process(_delta:float)->void:
     if hosting and server.is_connection_available():
         var socket := server.take_connection()
         if peers.size() >= max_peers:
-            socket.disconnect_from_host()
+            # Said, not just closed: "could not reach the host" sends players to check their Wi-Fi.
+            var reply := JSON.stringify({"kind": "rejected", "reason": FULL}).to_utf8_buffer()
+            var frame := PackedByteArray()
+            frame.resize(4)
+            frame.encode_u32(0, reply.size())
+            frame.append_array(reply)
+            socket.put_data(frame)
+            # Closed a moment later: closing now could drop the reply unread.
+            _turned_away.append([socket, Time.get_ticks_msec() + 2000])
         else:
             var id := _next_peer
             _next_peer += 1
             _add(id, socket)
     # Real time, independent of gameplay/battle speed and menu pauses.
     var now := Time.get_ticks_msec()
+    while not _turned_away.is_empty() and now >= int(_turned_away[0][1]):
+        _turned_away.pop_front()[0].disconnect_from_host()
     for peer in peers.keys():
         if not peers.has(peer): continue
         var state: Dictionary = peers[peer]
@@ -200,6 +213,8 @@ func _drop(peer: int, reason: String = "session_closed") -> void:
 func stop() -> void:
     server.stop()
     for state in peers.values(): state.socket.disconnect_from_host()
+    for pair in _turned_away: pair[0].disconnect_from_host()
+    _turned_away.clear()
     peers.clear()
     hosting = false
     joining = false
