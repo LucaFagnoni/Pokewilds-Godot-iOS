@@ -1386,9 +1386,7 @@ func _ready() -> void:
     # LineEdit itself out of keyboard/controller focus so its native caret
     # handling cannot consume D-pad navigation or resize the field while typing.
     world_edit.focus_mode = Control.FOCUS_NONE
-    # The game opens its own keyboard (_show_virtual_keyboard_custom). Left on, the
-    # system one also opened when a tap landed on this field, which the touch
-    # setup screen hides but does not remove (tapping SOLO did it on iPhone).
+    # The game opens its own keyboard (_show_virtual_keyboard_custom), never the system one.
     world_edit.virtual_keyboard_enabled = false
     world_edit.expand_to_text_length = false
     world_edit.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -5622,6 +5620,10 @@ func _apply_world_player_textures() -> void:
         player_sprite.frame = 0
 
 func _display_field_gui_input(event: InputEvent, target: String) -> void:
+    # On touch the touch setup screen's own name fields take the taps: this
+    # classic field stays under it (only transparent), and tapping SOLO opened
+    # the setup under the finger, whose touch then landed here (iPhone keyboard).
+    if is_instance_valid(touch_ui) and touch_ui.enabled: return
     # Touching/clicking the field opens Android keyboard WITHOUT focusing LineEdit.
     if event is InputEventScreenTouch:
         var touch := event as InputEventScreenTouch
