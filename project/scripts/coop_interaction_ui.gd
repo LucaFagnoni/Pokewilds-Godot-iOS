@@ -57,7 +57,7 @@ func open_for(actor:String)->void:
 func choices()->Array:
     match phase:
         "beacons":return game.beacons.names()
-        "choose":return ["TRADE","BATTLE"]
+        "choose":return ["TRADE","BATTLE","DOUBLE BATTLE"]
         "invite":return ["ACCEPT","DECLINE"]
         "confirm":return ["CONFIRM","CHANGE POKEMON","CANCEL"]
         "trade":
@@ -137,7 +137,7 @@ func update(result:Dictionary)->void:
     interaction=result.session
     show()
     if not interaction.get("accepted",false):phase="invite" if interaction.b==game.session.actor else "wait"
-    elif interaction.kind=="BATTLE":
+    elif interaction.kind in ["BATTLE","DOUBLE BATTLE"]:
         phase="battle";hide();battle_accepted.emit(interaction);return
     elif interaction.get("offers",{}).size()==2:phase="confirm"
     elif interaction.get("offers",{}).has(game.session.actor):phase="wait"
@@ -149,7 +149,7 @@ func activate()->void:
     if phase=="beacons":game.beacons.travel(selection);return
     var operation="";var args:Dictionary={}
     match phase:
-        "choose":operation="interact";args={"target":target,"action":"TRADE" if selection==0 else "BATTLE"}
+        "choose":operation="interact";args={"target":target,"action":choices()[selection]}
         "invite":operation="answer";args={"accept":selection==0}
         "trade":operation="trade_offer";args={"slot":selection}
         "confirm":

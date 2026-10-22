@@ -272,6 +272,9 @@ func abandon() -> void:
 
 func _emit(event: Dictionary) -> Variant:
     _out.append(event)
+    if not actors.is_empty():
+        var wire := _pvp_wire(event)
+        if not wire.is_empty(): _pvp_event(String(wire.kind), String(wire.actor), wire)
     if not stepwise and not event.has("request"):
         return null
     if event.has("request"): pending = event
@@ -1233,11 +1236,12 @@ func _turn_double(player_actions: Array) -> void:
     var actions: Array[Dictionary] = []
     for action in player_actions:
         actions.append((action as Dictionary).duplicate(true))
-    AI.add_double_actions(self, actions)
+    if actors.is_empty():
+        AI.add_double_actions(self, actions)
     for action in actions:
         var actor := double_actor(String(action.side), int(action.slot))
         action["priority"] = 6 if String(action.get("kind", "move")) in [
-            "switch", "enemy_switch", "enemy_item"] else \
+            "switch", "enemy_switch", "enemy_item", "use_item"] else \
             Battle.pokemon_move_priority(actor, String(action.get("move", "")))
         action["speed"] = Battle.effective_stat(actor, "speed", field)
         action["tie"] = rng.randf()
@@ -1261,14 +1265,29 @@ func _turn_double(player_actions: Array) -> void:
                 await _double_enemy_switch(int(action.slot), int(action.switch_index))
             "enemy_item":
                 await _double_enemy_item(int(action.slot))
+            "use_item":
+                await _double_use_item(String(action.side), String(action.item), int(action.index))
             _:
                 await _double_move(action)
     if finished:
         return
     await _double_end_turn()
+    if not actors.is_empty():
+        return # PvP: pvp_submit() sees to the faints
     if await _resolve_double_faints():
         return
     await _command(0 if int(player.get("hp", 0)) > 0 else 1)
+
+## A PvP double battle's item, in its Pokemon's place in the turn.
+func _double_use_item(side: String, item_name: String, index: int) -> void:
+    var actor := String(actors[0] if side == "player" else actors[1])
+    var pokemon: Dictionary = pvp_parties[actor][index]
+    _apply_item(pokemon, pvp_item_rules[item_name])
+    # A revived Pokemon's next faint is announced again.
+    if int(pokemon.hp) > 0: pokemon.erase("_double_faint_announced")
+    pvp_inventories[actor][item_name] = int(pvp_inventories[actor].get(item_name, 0)) - 1
+    await _emit({"kind":"use_item", "side":side, "item":item_name, "index":index,
+        "name":Battle.display_name(pokemon)})
 
 func _double_move(action: Dictionary) -> void:
     var side = String(action.side)
@@ -1335,16 +1354,18 @@ func _double_move(action: Dictionary) -> void:
         if not String(result.get("weather", "")).is_empty():
             field.weather = String(result.weather)
             field.weather_turns = 5
-        if bool(result.get("heal_party", false)) and side == "player":
-            for party_member in range(party.size()):
-                if typeof(party[party_member]) == TYPE_DICTIONARY:
-                    party[party_member]["status"] = ""
+        # Heal Bell cures the user's party (a single-player enemy's cures none, as ever).
+        if bool(result.get("heal_party", false)) and (side == "player" or not actors.is_empty()):
+            var healed_party: Array = party if side == "player" else enemy_party
+            for party_member in range(healed_party.size()):
+                if typeof(healed_party[party_member]) == TYPE_DICTIONARY:
+                    healed_party[party_member]["status"] = ""
         if int(result.get("pay_day", 0)) > 0:
             inventory["COINS"] = int(inventory.get("COINS", 0)) + int(result.pay_day)
         sync_double_records()
         await _emit({"kind":"double_move", "player_side":side == "player", "move":move_name,
-            "result":result, "attacker":attacker, "defender":defender,
-            "target_player_side":String(target_spec.side) == "player",
+            "result":result, "attacker":attacker, "defender":defender, "slot":int(action.slot),
+            "target_player_side":String(target_spec.side) == "player", "target_slot":int(target_spec.slot),
             "attacker_hp_before":attacker_hp_before, "defender_hp_before":defender_hp_before,
             "status_before":defender_status_before, "status_after":status_snapshot(defender),
             "defender_hp":int(defender.get("hp", 0)), "defender_name":Battle.display_name(defender)})
@@ -1481,7 +1502,8 @@ func _replace_double_enemy(slot: int, next_index: int) -> void:
     var message := "%s sent out %s!" % [String(context.get(
         "trainer_name", "The opponent")), Battle.display_name(replacement)]
     if not entry_message.is_empty(): message += " " + entry_message
-    await _emit({"kind":"enemy_switch", "pokemon":replacement, "slot":slot, "text":message, "wait":0.1, "hud":false})
+    await _emit({"kind":"enemy_switch", "pokemon":replacement, "slot":slot, "text":message, "wait":0.1, "hud":false,
+        "entry":entry_message})
 
 func _replace_double_player(slot: int, next_index: int) -> void:
     if not participants.has(next_index): participants.append(next_index)
@@ -1505,7 +1527,7 @@ func _replace_double_player(slot: int, next_index: int) -> void:
     var message := "Go, %s!" % Battle.display_name(replacement)
     if not entry_message.is_empty(): message += " " + entry_message
     await _emit({"kind":"player_switch", "pokemon":replacement, "slot":slot, "text":message,
-        "wait":0.1, "hud":false, "reset_move":false})
+        "wait":0.1, "hud":false, "reset_move":false, "entry":entry_message})
 
 func _double_player_switch(slot: int, next_index: int) -> void:
     var outgoing := double_actor("player", slot)
@@ -1586,9 +1608,9 @@ static func event_lines(event: Dictionary) -> Array[String]:
     return lines
 
 # --- PvP ----------------------------------------------------------------------------------
-# Two players' singles, resolved by the host: both choose, then the turn runs.
-# The state and events keep the shape coop_pvp_runtime.gd plays (actors,
-# parties by actor, slots, replacement...).
+# Two players' battles, resolved by the host: both choose, then the turn runs
+# (double battles below). The state and events keep the shape
+# coop_pvp_runtime.gd plays (actors, parties by actor, slots, replacement...).
 
 var actors: Array = []
 var pvp_parties: Dictionary = {}
@@ -1603,8 +1625,11 @@ var pvp_turn := 0
 var winner := ""
 var resolving := false
 
+## Starts a PvP battle; `battle_format` "double" makes it a double battle when
+## both players have two Pokemon able to fight (slots then hold two indices
+## per player, and turns run on the single-player double battle's flow).
 func pvp_start(first: String, second: String, source: Dictionary, seed_value: int,
-        items: Dictionary = {}, rules: Dictionary = {}) -> bool:
+        items: Dictionary = {}, rules: Dictionary = {}, battle_format: String = "single") -> bool:
     actors = [first, second]
     rng.seed = seed_value
     start_state = rng.state
@@ -1619,10 +1644,39 @@ func pvp_start(first: String, second: String, source: Dictionary, seed_value: in
             pvp_parties[actor].append(pokemon)
         slots[actor] = healthy(actor).front() if not healthy(actor).is_empty() else -1
         if slots[actor] < 0: return false
+    if battle_format == "double" and healthy(first).size() >= 2 and healthy(second).size() >= 2:
+        _pvp_double_start()
+        return true
     for actor in actors:
         var message := Battle.switch_in_message(current(actor), [current(other(actor))], field)
         if not message.is_empty(): _pvp_event("message", actor, {"message":message})
     return true
+
+func _pvp_double_start() -> void:
+    double = true
+    context = {"kind":"pvp", "trainer_name":"The opponent"}
+    party = pvp_parties[actors[0]]
+    enemy_party = pvp_parties[actors[1]]
+    party_index = healthy(actors[0])[0]
+    partner_index = healthy(actors[0])[1]
+    enemy_index = healthy(actors[1])[0]
+    enemy_partner_index = healthy(actors[1])[1]
+    player = party[party_index]
+    partner = party[partner_index]
+    enemy = enemy_party[enemy_index]
+    enemy_partner = enemy_party[enemy_partner_index]
+    for side in ["player", "enemy"]:
+        for entry in living(side):
+            var opponents: Array = []
+            for opponent in living("enemy" if side == "player" else "player"): opponents.append(opponent.pokemon)
+            var message := Battle.switch_in_message(entry.pokemon, opponents, field)
+            if not message.is_empty(): _pvp_event("message", _actor_of(side), {"message":message})
+
+func _actor_of(side: String) -> String:
+    return String(actors[0] if side == "player" else actors[1])
+
+func _side_of(actor: String) -> String:
+    return "player" if actor == actors[0] else "enemy"
 
 func other(actor: String) -> String:
     return String(actors[1]) if actor == actors[0] else String(actors[0])
@@ -1637,7 +1691,10 @@ func healthy(actor: String) -> Array:
     return result
 
 func pvp_snapshot() -> Dictionary:
-    return {"parties":pvp_parties.duplicate(true), "slots":slots.duplicate(), "field":field.duplicate(true),
+    if double:
+        slots[actors[0]] = [party_index, partner_index]
+        slots[actors[1]] = [enemy_index, enemy_partner_index]
+    return {"parties":pvp_parties.duplicate(true), "slots":slots.duplicate(true), "field":field.duplicate(true),
         "turn":pvp_turn, "finished":finished, "winner":winner, "replacement":replacement.duplicate(true)}
 
 func pvp_submit(actor: String, expected_turn: int, action: Dictionary) -> Dictionary:
@@ -1652,6 +1709,8 @@ func pvp_submit(actor: String, expected_turn: int, action: Dictionary) -> Dictio
         winner = other(actor)
         _pvp_event("finished", actor, {"message":"The battle ended."})
         return _pvp_reply()
+    if double:
+        return _pvp_double_submit(actor, action)
     if not replacement.is_empty():
         if not replacement.has(actor) or kind != "switch": return {"ok":false, "reason":"replacement_required"}
         var index := int(action.get("index", -1))
@@ -1699,15 +1758,177 @@ func pvp_submit(actor: String, expected_turn: int, action: Dictionary) -> Dictio
 static func pvp_valid_action(action: Dictionary) -> bool:
     if not action.get("kind") is String: return false
     var kind: String = action.kind
-    if kind not in ["run", "move", "switch", "item"]: return false
+    if kind not in ["run", "move", "switch", "item", "double"]: return false
+    if kind == "double":
+        # Both slots' choices; each one is checked against the battle (_pvp_double_actions).
+        var choices = action.get("actions")
+        if not choices is Array or choices.is_empty() or choices.size() > 2: return false
+        for choice in choices:
+            if not choice is Dictionary or JSON.stringify(choice).length() > 512: return false
+        return true
     if kind in ["switch", "item"]:
         var index = action.get("index")
         if not (index is int or index is float): return false
         if not is_finite(float(index)) or float(index) != floor(float(index)) or float(index) < 0 or float(index) > 5: return false
+    if kind == "switch" and action.has("slot"):
+        var slot = action.get("slot")
+        if not (slot is int or slot is float) or float(slot) not in [0.0, 1.0]: return false
     if kind in ["move", "item"]:
         var value = action.get("move" if kind == "move" else "item")
         if not value is String or value.is_empty() or value.length() > 80: return false
     return true
+
+# --- PvP double battles -------------------------------------------------------------------
+# Both players choose for both their Pokemon; the turn then runs on the
+# single-player double battle's flow (_turn_double, with no AI), its events
+# going out in PvP's shape (_pvp_wire). Fainted Pokemon are replaced by their
+# player between turns, as in PvP singles.
+
+func _pvp_double_submit(actor: String, action: Dictionary) -> Dictionary:
+    var kind := String(action.kind)
+    var side := _side_of(actor)
+    if not replacement.is_empty():
+        if not replacement.has(actor) or kind != "switch": return {"ok":false, "reason":"replacement_required"}
+        var slot := int(action.get("slot", -1))
+        var index := int(action.get("index", -1))
+        var needed: Array = replacement[actor].slots
+        if slot not in needed or index not in healthy(actor) or index in _active_indices(side):
+            return {"ok":false, "reason":"invalid_switch"}
+        pvp_events.clear()
+        _out.clear()
+        if side == "player":
+            _replace_double_player(slot, index)
+        else:
+            _replace_double_enemy(slot, index)
+        needed.erase(slot)
+        if needed.is_empty(): replacement.erase(actor)
+        return _pvp_reply()
+    if pvp_actions.has(actor): return {"ok":false, "reason":"already_selected"}
+    if kind != "double": return {"ok":false, "reason":"double_battle"}
+    var choices := _pvp_double_actions(actor, side, action.actions)
+    if choices.is_empty(): return {"ok":false, "reason":"invalid_action"}
+    pvp_actions[actor] = choices
+    if pvp_actions.size() < 2: return {"ok":true, "waiting":true, "state":pvp_snapshot(), "events":[]}
+    pvp_events.clear()
+    _out.clear()
+    # Neither waits for an answer here (faints are seen to below), so the
+    # whole turn runs now.
+    _turn_double((pvp_actions[actors[0]] as Array) + (pvp_actions[actors[1]] as Array))
+    pvp_turn = turn_count
+    pvp_actions.clear()
+    if not finished: _pvp_double_faints()
+    return _pvp_reply()
+
+func _active_indices(side: String) -> Array:
+    return [party_index, partner_index] if side == "player" else [enemy_index, enemy_partner_index]
+
+## A player's two choices, checked against the battle and turned into the
+## double battle's actions (sides as the host sees them: the first player's
+## are "player"). Empty when any choice does not fit.
+func _pvp_double_actions(actor: String, side: String, raw: Array) -> Array:
+    var out: Array = []
+    var used_slots: Array[int] = []
+    var switching: Array[int] = []
+    var items: Dictionary = {}
+    for choice in raw:
+        var slot := _whole(choice.get("slot"), 0, 1)
+        if slot < 0 or slot in used_slots: return []
+        used_slots.append(slot)
+        var pokemon := double_actor(side, slot)
+        if pokemon.is_empty() or int(pokemon.get("hp", 0)) <= 0: return []
+        match String(choice.get("kind", "move")):
+            "move":
+                var move = choice.get("move")
+                var forced := Battle.forced_move(pokemon)
+                if not forced.is_empty(): move = forced
+                elif not _valid_move(pokemon, move): return []
+                # -1: no target given (a spread move); it falls to a living foe.
+                var target := _whole(choice.get("target_slot", -1), -1, 1)
+                var target_side = choice.get("target_side", "enemy")
+                if target < -1 or target_side not in ["player", "enemy"]: return []
+                # The player's own side is "player" in what they send.
+                var absolute := side if target_side == "player" else ("enemy" if side == "player" else "player")
+                out.append({"side":side, "slot":slot, "move":String(move), "target_slot":target,
+                    "target_side":absolute, "spread":Battle.move_targets_all(String(move))})
+            "switch":
+                var index := _whole(choice.get("switch_index", choice.get("index")), 0, 5)
+                if index not in healthy(actor) or index in _active_indices(side) or index in switching or trapped(pokemon): return []
+                switching.append(index)
+                out.append({"kind":"switch" if side == "player" else "enemy_switch", "side":side, "slot":slot,
+                    "switch_index":index, "move":"", "target_slot":-1, "spread":false})
+            "use_item":
+                var item = choice.get("item")
+                var index := _whole(choice.get("index"), 0, 5)
+                if not item is String or index < 0: return []
+                items[item] = int(items.get(item, 0)) + 1
+                if not pvp_can_use_item(actor, item, index) or int(pvp_inventories[actor].get(item, 0)) < int(items[item]): return []
+                out.append({"kind":"use_item", "side":side, "slot":slot, "item":item, "index":index,
+                    "move":"", "target_slot":-1, "spread":false})
+            _:
+                return []
+    for entry in living(side):
+        if int(entry.slot) not in used_slots: return []
+    return out
+
+## A whole number a player sent, from low to high, else low - 1.
+static func _whole(value, low: int, high: int) -> int:
+    if not (value is int or value is float) or not is_finite(float(value)) or float(value) != floor(float(value)) \
+            or float(value) < low or float(value) > high: return low - 1
+    return int(value)
+
+## After a PvP double turn: who fainted, who lost, and which fainted
+## Pokemon their player must replace.
+func _pvp_double_faints() -> void:
+    for side in ["player", "enemy"]:
+        for slot in range(2):
+            var fallen := double_actor(side, slot)
+            if fallen.is_empty() or int(fallen.get("hp", 0)) > 0 or bool(fallen.get("_double_faint_announced", false)):
+                continue
+            fallen["_double_faint_announced"] = true
+            _pvp_event("faint", _actor_of(side), {"slot":slot, "name":Battle.display_name(fallen),
+                "message":"%s fainted!" % Battle.display_name(fallen)})
+    var alive: Array = []
+    for actor in actors:
+        if not healthy(actor).is_empty(): alive.append(actor)
+    if alive.size() < 2:
+        finished = true
+        winner = String(alive[0]) if alive.size() == 1 else ""
+        replacement.clear()
+        return
+    for actor in actors:
+        var side := _side_of(actor)
+        var bench := healthy(actor).filter(func(index): return index not in _active_indices(side))
+        var needed: Array = []
+        for slot in range(2):
+            var fallen := double_actor(side, slot)
+            if not fallen.is_empty() and int(fallen.get("hp", 0)) <= 0 and needed.size() < bench.size():
+                needed.append(slot)
+        if not needed.is_empty(): replacement[actor] = {"slots":needed}
+
+## A double battle's event as PvP sends it ({} for what only a view plays).
+func _pvp_wire(event: Dictionary) -> Dictionary:
+    match String(event.kind):
+        "double_move":
+            return {"kind":"move", "actor":_actor_of("player" if bool(event.player_side) else "enemy"),
+                "slot":int(event.slot), "move":String(event.move), "result":event.result,
+                "target_actor":_actor_of("player" if bool(event.target_player_side) else "enemy"),
+                "target_slot":int(event.target_slot)}
+        "residual":
+            if not String(event.message).is_empty():
+                return {"kind":"residual", "actor":_actor_of("player" if bool(event.player_side) else "enemy"),
+                    "message":String(event.message)}
+        "double_end_turn":
+            if not String(event.text).is_empty():
+                return {"kind":"residual", "actor":"", "message":String(event.text)}
+        "player_switch", "enemy_switch":
+            return {"kind":"switch", "actor":_actor_of("player" if event.kind == "player_switch" else "enemy"),
+                "slot":int(event.slot), "name":Battle.display_name(event.pokemon), "message":String(event.get("entry", ""))}
+        "use_item":
+            return {"kind":"item", "actor":_actor_of(String(event.side)),
+                "message":"Used %s on %s." % [String(event.item), String(event.name)]}
+        "text":
+            return {"kind":"message", "actor":"", "message":String(event.text)}
+    return {}
 
 func _pvp_advance() -> void:
     if not resolving: return
@@ -1776,7 +1997,13 @@ func pvp_can_use_item(actor: String, item: String, index: int) -> bool:
 
 func _pvp_item(actor: String, item: String, index: int) -> void:
     var pokemon: Dictionary = pvp_parties[actor][index]
-    var rule: Dictionary = pvp_item_rules[item]
+    _apply_item(pokemon, pvp_item_rules[item])
+    pvp_inventories[actor][item] -= 1
+    _pvp_event("item", actor, {"message":"Used %s on %s." % [item, Battle.display_name(pokemon)]})
+
+## An item's effect as PvP applies it (single-player battles word theirs:
+## _turn_item()).
+static func _apply_item(pokemon: Dictionary, rule: Dictionary) -> void:
     match String(rule.kind):
         "heal": pokemon.hp = mini(int(pokemon.max_hp), int(pokemon.hp) + int(rule.amount))
         "full_restore":
@@ -1790,8 +2017,6 @@ func _pvp_item(actor: String, item: String, index: int) -> void:
             pokemon.toxic_counter = 0
         "confusion": pokemon.volatile.erase("confuse_turns")
         "revive": pokemon.hp = maxi(1, int(int(pokemon.max_hp) * float(rule.fraction)))
-    pvp_inventories[actor][item] -= 1
-    _pvp_event("item", actor, {"message":"Used %s on %s." % [item, Battle.display_name(pokemon)]})
 
 func _pvp_switch(actor: String, index: int, baton: bool = false) -> void:
     var previous := current(actor)

@@ -9,7 +9,7 @@ var battles:Dictionary={}
 var battle_item_rules:Dictionary={}
 
 func request(actor: String, other: String, kind: String) -> Dictionary:
-    if kind not in ["TRADE","BATTLE"] or actor==other:return {"ok":false}
+    if kind not in ["TRADE","BATTLE","DOUBLE BATTLE"] or actor==other:return {"ok":false}
     if player_sessions.has(actor) or player_sessions.has(other):return {"ok":false,"reason":"busy"}
     if not presence.has(actor) or not presence.has(other):return {"ok":false,"reason":"offline"}
     var first:Dictionary=presence[actor];var second:Dictionary=presence[other]
@@ -31,14 +31,16 @@ func answer(actor: String, accept: bool) -> Dictionary:
     if session.is_empty() or actor!=session.b or session.accepted:return {"ok":false}
     if not accept:return cancel(actor)
     session.accepted=true
-    if session.kind=="BATTLE":
+    if session.kind in ["BATTLE","DOUBLE BATTLE"]:
         var first=_profile(session.a);var second=_profile(session.b)
         if first.is_empty() or second.is_empty():return cancel(actor)
         # These are independent copies. PvP never writes into saved player records.
         session["battle_parties"]={session.a:first.get("party",[]).duplicate(true),session.b:second.get("party",[]).duplicate(true)}
         session["battle_inventory"]={session.a:first.get("inventory",{}).duplicate(true),session.b:second.get("inventory",{}).duplicate(true)}
         var model=preload("res://scripts/battle_session.gd").new()
-        if not model.pvp_start(session.a,session.b,session.battle_parties,Time.get_ticks_usec(),session.battle_inventory,battle_item_rules):return cancel(actor,"no_healthy_pokemon")
+        # A double battle when both have two Pokemon able to fight, else a single one.
+        var battle_format:="double" if session.kind=="DOUBLE BATTLE" else "single"
+        if not model.pvp_start(session.a,session.b,session.battle_parties,Time.get_ticks_usec(),session.battle_inventory,battle_item_rules,battle_format):return cancel(actor,"no_healthy_pokemon")
         battles[session.id]=model
         session["battle_state"]=model.pvp_snapshot()
         session["trainers"]={session.a:state.members.get(session.a,{}).duplicate(true),session.b:state.members.get(session.b,{}).duplicate(true)}
@@ -108,7 +110,7 @@ func player_disconnected(actor: String) -> Dictionary:
 
 func finish_battle(actor: String) -> Dictionary:
     var session:=_session(actor)
-    if session.is_empty() or session.kind!="BATTLE":return {"ok":false}
+    if session.is_empty() or session.kind not in ["BATTLE","DOUBLE BATTLE"]:return {"ok":false}
     # Dropping temporary battle copies is sufficient on win, loss, quit or disconnect.
     # No EXP, inventory writes, caught/seen history, whiteout, or reward callbacks.
     return cancel(actor,"battle_finished")

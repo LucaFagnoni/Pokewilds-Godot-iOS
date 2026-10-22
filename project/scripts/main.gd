@@ -6860,7 +6860,10 @@ func _activate_battle_command() -> void:
             2:
                 _open_battle_item_menu()
             3:
-                _start_battle_text("There is no running from this double battle!")
+                if is_instance_valid(coop_game.pvp) and coop_game.pvp.active:
+                    _battle_run()
+                else:
+                    _start_battle_text("There is no running from this double battle!")
         return
     match battle_command_index:
         0:
@@ -6906,7 +6909,7 @@ func _first_healthy_party_index() -> int:
     return -1
 
 func _battle_fight() -> void:
-    if is_instance_valid(coop_game.pvp) and coop_game.pvp.active:
+    if is_instance_valid(coop_game.pvp) and coop_game.pvp.active and not battle_is_double:
         if not battle_turn_busy:coop_game.pvp.submit({"kind":"move","move":_selected_player_move()})
         return
     if not battle_active or battle_turn_busy:
@@ -6962,6 +6965,9 @@ func _advance_double_command_slot() -> void:
         battle_double_command_slot = 1
         battle_move_index = 0
         _show_battle_command_screen()
+        return
+    if is_instance_valid(coop_game.pvp) and coop_game.pvp.active:
+        coop_game.pvp.submit({"kind":"double", "actions":battle_double_actions.duplicate(true)})
         return
     battle_turn_busy = true
     _show_battle_message_screen()
@@ -7356,9 +7362,12 @@ func _confirm_battle_submenu() -> void:
         })
         _advance_double_command_slot()
         return
+    var forced_slot := battle_double_replacement_slot if battle_submenu_mode == "DOUBLE_FORCED" else -1
     _close_battle_submenu()
     if is_instance_valid(coop_game.pvp) and coop_game.pvp.active:
-        coop_game.pvp.submit({"kind":"switch","index":party_index})
+        var switch := {"kind":"switch","index":party_index}
+        if forced_slot >= 0: switch["slot"] = forced_slot
+        coop_game.pvp.submit(switch)
         return
     battle_party_chosen.emit(party_index)
 
@@ -7486,7 +7495,7 @@ func _activate_battle_party_action() -> void:
     battle_party_prompt.text = "That action cannot be used during battle."
 
 func _switch_from_battle_party_action(party_index: int) -> void:
-    if is_instance_valid(coop_game.pvp) and coop_game.pvp.active:
+    if is_instance_valid(coop_game.pvp) and coop_game.pvp.active and not battle_is_double:
         coop_game.pvp.submit({"kind":"switch","index":party_index})
         return
     if party_index in [battle_party_index, battle_partner_party_index] or \
@@ -7502,8 +7511,18 @@ func _switch_from_battle_party_action(party_index: int) -> void:
         battle_party_prompt.text = "%s cannot switch out!" % PokemonState.display_name(battle_player)
         return
     _close_battle_submenu()
+    if is_instance_valid(coop_game.pvp) and coop_game.pvp.active:
+        _queue_pvp_double_choice({"kind":"switch", "switch_index":party_index})
+        return
     battle_turn_busy = true
     await _battle_play(battle_session.submit({"kind":"switch", "index":party_index}))
+
+## A PvP double battle's switch or item: the commanded slot's choice for the
+## turn (the host checks it with the rest).
+func _queue_pvp_double_choice(choice: Dictionary) -> void:
+    choice.merge({"side":"player", "slot":battle_double_command_slot, "move":"", "target_slot":-1, "spread":false})
+    battle_double_actions.append(choice)
+    _advance_double_command_slot()
 
 func _can_use_battle_item_on(item_name: String, party_index: int) -> bool:
     var pokemon := BattleEngine.ensure_pokemon(caught_pokemon[party_index])
@@ -7517,7 +7536,12 @@ func _can_use_battle_item_on(item_name: String, party_index: int) -> bool:
 
 func _use_battle_item_on(item_name: String, party_index: int) -> void:
     if is_instance_valid(coop_game.pvp) and coop_game.pvp.active:
-        coop_game.pvp.submit({"kind":"item","item":item_name,"index":party_index})
+        if not battle_is_double:
+            coop_game.pvp.submit({"kind":"item","item":item_name,"index":party_index})
+            return
+        battle_pending_item = ""
+        _close_battle_submenu()
+        _queue_pvp_double_choice({"kind":"use_item", "item":item_name, "index":party_index})
         return
     battle_pending_item = ""
     _close_battle_submenu()

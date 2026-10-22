@@ -97,7 +97,7 @@ func _check_host(fixture: Dictionary) -> String:
 func _play_pvp(fixture: Dictionary) -> Array:
     session = Session.new()
     var started: bool = session.pvp_start("A", "B", _ints(fixture.parties), int(fixture.seed),
-        _ints(fixture.inventories), Session.ITEM_RULES)
+        _ints(fixture.inventories), Session.ITEM_RULES, String(fixture.get("format", "single")))
     var out: Array = [{"start": started, "reply": Record.reply_digest({"state": session.pvp_snapshot(),
         "events": session.pvp_events})}]
     for entry in fixture.log:

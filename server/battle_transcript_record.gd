@@ -368,8 +368,10 @@ func _record_pvp(scenario: Dictionary) -> void:
     var rules: Dictionary = Session.ITEM_RULES
     var transcript := {"name": scenario.name, "kind": "pvp", "seed": int(scenario.seed),
         "parties": _plain(parties), "inventories": _plain(inventories)}
+    var battle_format := String(scenario.get("format", "single"))
+    if battle_format != "single": transcript["format"] = battle_format
     var model = Session.new()
-    var started: bool = model.pvp_start("A", "B", parties.duplicate(true), int(scenario.seed), inventories.duplicate(true), rules)
+    var started: bool = model.pvp_start("A", "B", parties.duplicate(true), int(scenario.seed), inventories.duplicate(true), rules, battle_format)
     var entries: Array = [{"start": started, "reply": reply_digest({"state": model.pvp_snapshot(), "events": model.pvp_events})}]
     var picks: Dictionary = scenario.get("picks", {}).duplicate(true)
     for step in scenario.steps:
@@ -380,7 +382,18 @@ func _record_pvp(scenario: Dictionary) -> void:
             entries.append({"submit": {"actor": raw.actor, "turn": turn, "action": raw.action},
                 "reply": reply_digest(model.pvp_submit(String(raw.actor), turn, raw.action))})
             continue
-        while not model.replacement.is_empty() and not model.finished:
+        while model.double and not model.replacement.is_empty() and not model.finished:
+            for actor in ["A", "B"]:
+                if not model.replacement.has(actor): continue
+                for slot in (model.replacement[actor].slots as Array).duplicate():
+                    var queue: Array = picks.get(actor, [])
+                    var choice: int = int(queue.pop_front()) if not queue.is_empty() else -1
+                    var bench: Array = model.healthy(actor).filter(func(index): return index not in model._active_indices(model._side_of(actor)))
+                    if choice not in bench: choice = int(bench[0]) if not bench.is_empty() else 0
+                    var action := {"kind": "switch", "slot": slot, "index": choice}
+                    entries.append({"submit": {"actor": actor, "turn": model.pvp_turn, "action": action},
+                        "reply": reply_digest(model.pvp_submit(actor, model.pvp_turn, action))})
+        while not model.double and not model.replacement.is_empty() and not model.finished:
             for actor in ["A", "B"]:
                 if not model.replacement.has(actor): continue
                 var queue: Array = picks.get(actor, [])
@@ -394,12 +407,27 @@ func _record_pvp(scenario: Dictionary) -> void:
         for actor in ["A", "B"]:
             if model.finished: break
             var action: Dictionary = step.get(actor, {}).duplicate(true)
-            if action.is_empty() or (action.get("kind") == "move" and not Battle.move_is_usable(model.current(actor), String(action.get("move", "")))):
+            if model.double:
+                # A scripted choice the battle refuses (its Pokemon fainted or left) falls back.
+                if not action.is_empty():
+                    var turn: int = model.pvp_turn
+                    var reply: Dictionary = model.pvp_submit(actor, turn, action)
+                    entries.append({"submit": {"actor": actor, "turn": turn, "action": action}, "reply": reply_digest(reply)})
+                    if reply.get("ok", false): continue
+                action = _default_double(model, actor)
+            elif action.is_empty() or (action.get("kind") == "move" and not Battle.move_is_usable(model.current(actor), String(action.get("move", "")))):
                 action = {"kind": "move", "move": _first_usable(model.current(actor))}
             entries.append({"submit": {"actor": actor, "turn": model.pvp_turn, "action": action},
                 "reply": reply_digest(model.pvp_submit(actor, model.pvp_turn, action))})
     transcript["log"] = entries
     _finish(transcript)
+
+## Each living Pokemon's first usable move, at the other side's first slot.
+static func _default_double(model, actor: String) -> Dictionary:
+    var actions: Array = []
+    for entry in model.living(model._side_of(actor)):
+        actions.append({"slot": int(entry.slot), "move": _first_usable(entry.pokemon), "target_slot": 0, "target_side": "enemy"})
+    return {"kind": "double", "actions": actions}
 
 static func _first_usable(pokemon: Dictionary) -> String:
     for move in pokemon.get("moves", []):
@@ -686,4 +714,45 @@ static func pvp_scenarios() -> Array:
             "A": [{"species": "golem", "level": 30, "moves": ["SELFDESTRUCT"]}],
             "B": [{"species": "weezing", "level": 30, "moves": ["SELFDESTRUCT"]}],
             "steps": [{"A": {"kind": "move", "move": "SELFDESTRUCT"}, "B": {"kind": "move", "move": "SELFDESTRUCT"}}, {}, {}]},
+        {"name": "pvp_doubles", "seed": 45, "format": "double",
+            "A": [{"species": "pikachu", "level": 30, "moves": ["THUNDERBOLT", "QUICK_ATTACK", "THUNDER_WAVE", "DOUBLE_TEAM"]},
+                {"species": "geodude", "level": 28, "moves": ["MAGNITUDE", "ROCK_THROW", "DEFENSE_CURL", "SELFDESTRUCT"]},
+                {"species": "wartortle", "level": 30, "moves": ["WATER_GUN", "BITE", "PROTECT", "TOXIC"]}],
+            "B": [{"species": "charmeleon", "level": 30, "moves": ["EMBER", "SLASH", "SMOKESCREEN", "RAGE"]},
+                {"species": "pidgeotto", "level": 29, "moves": ["GUST", "QUICK_ATTACK", "SAND_ATTACK", "WING_ATTACK"]},
+                {"species": "ekans", "level": 28, "moves": ["WRAP", "POISON_STING", "BITE", "GLARE"]}],
+            "inventories": {"A": {"POTION": 2, "REVIVE": 1}, "B": {"SUPER POTION": 1}},
+            "steps": [
+                # Refused: a single battle's move, one slot short, a target that is not there, a stale turn.
+                {"raw": {"actor": "A", "action": {"kind": "move", "move": "THUNDERBOLT"}}},
+                {"raw": {"actor": "A", "action": {"kind": "double", "actions": [{"slot": 0, "move": "THUNDERBOLT", "target_slot": 0}]}}},
+                {"raw": {"actor": "B", "action": {"kind": "double", "actions": [{"slot": 0, "move": "EMBER", "target_slot": 3},
+                    {"slot": 1, "move": "GUST", "target_slot": 0}]}}},
+                {"raw": {"actor": "B", "turn_offset": -1, "action": {"kind": "double", "actions": [{"slot": 0, "move": "EMBER", "target_slot": 0},
+                    {"slot": 1, "move": "GUST", "target_slot": 0}]}}},
+                # Refused: numbers that are not whole numbers in range, a party index that is not a number.
+                {"raw": {"actor": "A", "action": {"kind": "double", "actions": [{"slot": "0", "move": "THUNDERBOLT", "target_slot": 0},
+                    {"slot": 1, "move": "MAGNITUDE", "target_slot": 0}]}}},
+                {"raw": {"actor": "B", "action": {"kind": "double", "actions": [{"slot": 0, "move": "EMBER", "target_slot": 0.5},
+                    {"slot": 1, "move": "GUST", "target_slot": 0}]}}},
+                {"raw": {"actor": "A", "action": {"kind": "double", "actions": [{"slot": 0, "kind": "use_item", "item": "POTION", "index": {"x": 1}},
+                    {"slot": 1, "move": "MAGNITUDE", "target_slot": 0}]}}},
+                {"A": {"kind": "double", "actions": [{"slot": 0, "move": "QUICK_ATTACK", "target_side": "enemy", "target_slot": 1},
+                        {"slot": 1, "move": "DEFENSE_CURL", "target_side": "player", "target_slot": 1}]},
+                    "B": {"kind": "double", "actions": [{"slot": 0, "move": "EMBER", "target_side": "enemy", "target_slot": 0},
+                        {"slot": 1, "move": "GUST", "target_side": "enemy", "target_slot": 1}]}},
+                {"A": {"kind": "double", "actions": [{"slot": 0, "kind": "switch", "switch_index": 2},
+                        {"slot": 1, "kind": "use_item", "item": "POTION", "index": 1}]},
+                    "B": {"kind": "double", "actions": [{"slot": 0, "move": "SLASH", "target_side": "enemy", "target_slot": 1},
+                        {"slot": 1, "move": "SAND_ATTACK", "target_side": "enemy", "target_slot": 0}]}},
+                {"A": {"kind": "double", "actions": [{"slot": 0, "move": "TOXIC", "target_side": "enemy", "target_slot": 0},
+                        {"slot": 1, "move": "ROCK_THROW", "target_side": "enemy", "target_slot": 1}]},
+                    "B": {"kind": "double", "actions": [{"slot": 0, "move": "EMBER", "target_side": "enemy", "target_slot": 0},
+                        {"slot": 1, "kind": "use_item", "item": "SUPER POTION", "index": 1}]}},
+                {"A": {"kind": "double", "actions": [{"slot": 0, "move": "WATER_GUN", "target_side": "enemy", "target_slot": 0},
+                        {"slot": 1, "move": "SELFDESTRUCT", "target_side": "enemy", "target_slot": -1}]}},
+                {"A": {"kind": "double", "actions": [{"slot": 0, "kind": "use_item", "item": "REVIVE", "index": 1},
+                        {"slot": 1, "move": "THUNDERBOLT", "target_side": "enemy", "target_slot": 0}]}},
+                {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}],
+            "picks": {"A": [0], "B": [2]}},
     ]
