@@ -7,6 +7,7 @@ const MAGIC := "POKEWILDS_SAVE_1\n"
 const MAX_FILE := 268435456
 const MAX_TOTAL := 1073741824
 const Cache = preload("res://scripts/source_world_cache.gd")
+const WorldSaves = preload("res://scripts/world_saves.gd")
 static var selected_root := ""
 static var last_error := ""
 
@@ -125,7 +126,7 @@ static func copy_file(source: String, target: String) -> Error:
     return OK if success else ERR_FILE_CANT_WRITE
 
 static func export_save(save_path: String, destination: String) -> String:
-    var data = JSON.parse_string(FileAccess.get_file_as_string(save_path))
+    var data := WorldSaves.read_file(save_path)
     if not save_valid(data): return "Invalid save: " + save_path.get_file()
     var sources := {"save.json": save_path}
     for cache in required_caches(data): sources[cache] = "user://" + cache
@@ -209,7 +210,7 @@ static func import_save(path: String) -> String:
 
 static func _install_staged(staging: String, names: Dictionary) -> String:
     var save_path := staging.path_join("save.json")
-    var data = JSON.parse_string(FileAccess.get_file_as_string(save_path))
+    var data := WorldSaves.read_file(save_path)
     if not save_valid(data): return "Unsupported or invalid saved game."
     var required := required_caches(data)
     if names.size() != required.size() + 1: return "Save contains unexpected world data."
@@ -223,7 +224,7 @@ static func _install_staged(staging: String, names: Dictionary) -> String:
             data.world_name = original_name + " Imported " + str(suffix)
             destination = "user://saves/" + safe_name(data.world_name) + ".json"
             suffix += 1
-        if write_bytes(save_path, JSON.stringify(data).to_utf8_buffer()) != OK:
+        if write_bytes(save_path, WorldSaves.encode(data)) != OK:
             return "Cannot prepare imported save name."
     for cache in required:
         if not names.has(cache): return "Save is missing a neighboring world."
