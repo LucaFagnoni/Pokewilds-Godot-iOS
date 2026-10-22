@@ -70,6 +70,9 @@ func receive_expired(state:Dictionary, now:int)->bool:
 
 ## Traffic counters for benchmarks: null unless a test sets a Dictionary.
 ## key -> [messages, bytes, microseconds spent encoding or decoding].
+## enc:KIND sent (bytes before packing, once per recipient), tx all frames as
+## sent, zstd the packed ones, rx:KIND received (decode time), apply:KIND the
+## game's handling of it, proc:transport this node's whole frame.
 static var stats=null
 
 static func count(key:String,bytes:int,started_usec:int)->void:
@@ -94,7 +97,9 @@ const COMPRESS_FROM := 2048
 
 static func pack(bytes:PackedByteArray)->PackedByteArray:
     if bytes.size() < COMPRESS_FROM or bytes[0] == Remote.WIRE_TAG: return bytes
+    var started := Time.get_ticks_usec()
     var packed := bytes.compress(FileAccess.COMPRESSION_ZSTD)
+    count("zstd", packed.size(), started)
     if packed.is_empty() or packed.size() + 5 > bytes.size() * 9 / 10: return bytes
     var out := PackedByteArray([ZSTD_TAG, 0, 0, 0, 0])
     out.encode_u32(1, bytes.size())
@@ -127,6 +132,11 @@ func send_encoded(peer:int, bytes:PackedByteArray)->Error:
     return OK
 
 func _process(_delta:float)->void:
+    var frame_started := Time.get_ticks_usec()
+    _poll()
+    if stats != null: count("proc:transport", 0, frame_started)
+
+func _poll()->void:
     if hosting and server.is_connection_available():
         var socket := server.take_connection()
         if peers.size() >= max_peers:
@@ -196,7 +206,10 @@ func _process(_delta:float)->void:
                 _drop(peer,"invalid_frame_json")
                 break
             if stats != null: count("rx:"+str(decoded.get("kind","")), length + 4, started)
-            if str(decoded.get("kind", "")) != "keepalive": received.emit(peer, decoded)
+            if str(decoded.get("kind", "")) != "keepalive":
+                started = Time.get_ticks_usec()
+                received.emit(peer, decoded)
+                if stats != null: count("apply:"+str(decoded.get("kind","")), 0, started)
         if not peers.has(peer): continue
         _write(peer, FRAME_BUDGET)
 

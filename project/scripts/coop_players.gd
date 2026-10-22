@@ -3,6 +3,7 @@ const TexturePixels = preload("res://scripts/texture_pixels.gd")
 signal presence_received(actor:String,packet:Dictionary)
 ## Area-scoped visual replication. The host decides which peers share an area.
 const Remote=preload("res://scripts/coop_remote_player.gd")
+const Transport=preload("res://scripts/coop_transport.gd")
 const SEND_INTERVAL_MS:=50
 const HEARTBEAT_MS:=1000
 const AFK_MS:=180000
@@ -39,6 +40,11 @@ func _input(event:InputEvent)->void:
     _last_input=Time.get_ticks_msec()
 
 func _process(_delta:float)->void:
+    var started:=Time.get_ticks_usec()
+    _send_visual()
+    if Transport.stats!=null:Transport.count("proc:players",0,started)
+
+func _send_visual()->void:
     if main==null or session==null or not session.trusted or area.is_empty() or not main.started or main.generating or Server.active:return
     var now=Time.get_ticks_msec()
     if now-_last_send<SEND_INTERVAL_MS:return

@@ -75,7 +75,12 @@ func receive(snapshot:Dictionary,received_ms:int=-1)->void:
     while _frames.size()>8:_frames.pop_front()
 
 func _process(_delta:float)->void:
+    var started:=Time.get_ticks_usec()
     render_at(Time.get_ticks_msec()-INTERPOLATION_MS)
+    if _transport==null:_transport=load("res://scripts/coop_transport.gd") # it preloads this script
+    if _transport.stats!=null:_transport.count("proc:remote",0,started)
+
+static var _transport:GDScript
 
 func render_at(time_ms:int)->void:
     if _frames.is_empty():return
