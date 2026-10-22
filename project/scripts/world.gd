@@ -7559,33 +7559,39 @@ func _create_wild_pokemon(
     if layer == null:
         return
 
-    var sprite := Sprite2D.new()
-    sprite.texture = texture
-    sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-    sprite.position = _cell_center(cell)
-    if species.to_lower() in ["aexeggutor", "exeggutor_alolan"]:
-        sprite.scale = Vector2.ONE
-        sprite.offset = Vector2(0, -16)
-    sprite.z_as_relative = false
-    sprite.z_index = _depth_z(cell)
-    if is_burrowed:
-        sprite.hframes = 2
-        sprite.vframes = 1
-        sprite.frame = 0
-        sprite.visible = false
-    else:
-        _configure_overworld_sprite(sprite)
+    # A dedicated server draws nothing: its wild Pokemon get no sprites (every
+    # use of one checks is_instance_valid first), so no node, material or
+    # tween per Pokemon or per step either.
+    var drawn := not preload("res://scripts/dedicated_server.gd").active
+    var sprite: Sprite2D = null
+    if drawn:
+        sprite = Sprite2D.new()
+        sprite.texture = texture
+        sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+        sprite.position = _cell_center(cell)
         if species.to_lower() in ["aexeggutor", "exeggutor_alolan"]:
-            sprite.hframes = 6
+            sprite.scale = Vector2.ONE
+            sprite.offset = Vector2(0, -16)
+        sprite.z_as_relative = false
+        sprite.z_index = _depth_z(cell)
+        if is_burrowed:
+            sprite.hframes = 2
             sprite.vframes = 1
-            sprite.frame = 4
-            sprite.set_meta("alolan_exeggutor_walk", true)
-    layer.add_child(sprite)
-    preload("res://scripts/shiny_sparkles.gd").attach(sprite, ecology_source)
+            sprite.frame = 0
+            sprite.visible = false
+        else:
+            _configure_overworld_sprite(sprite)
+            if species.to_lower() in ["aexeggutor", "exeggutor_alolan"]:
+                sprite.hframes = 6
+                sprite.vframes = 1
+                sprite.frame = 4
+                sprite.set_meta("alolan_exeggutor_walk", true)
+        layer.add_child(sprite)
+        preload("res://scripts/shiny_sparkles.gd").attach(sprite, ecology_source)
 
     var whirl_sprite: Sprite2D = null
     var sand_sprite: Sprite2D = null
-    if is_burrowed:
+    if is_burrowed and drawn:
         whirl_sprite = Sprite2D.new()
         whirl_sprite.texture = DESERT_WHIRLPOOL
         whirl_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -8130,20 +8136,22 @@ func _update_wild_pokemon(delta: float) -> void:
         data["cell"] = target
         _wild_cell_moved(wild_id, target)
         if online:coordinator.wild.mark_motion(wild_id)
+        # The step's pace and facing are the Pokemon's own, sprite or not (a
+        # dedicated server has none).
+        var move_seconds = 0.20
+        if bool(behavior.get("flee", false)) or (scared and fleeing):
+            move_seconds = 16.0 / (2.0 * 60.0)
+        elif pursuing:
+            move_seconds = 16.0 / (1.5 * 60.0)
+        data["ball_facing"] = Vector2(direction)
         if is_instance_valid(sprite):
             _set_overworld_motion_frame(sprite, direction, phase)
             sprite.z_index = _depth_z(target)
-            var move_seconds = 0.20
-            if bool(behavior.get("flee", false)) or (scared and fleeing):
-                move_seconds = 16.0 / (2.0 * 60.0)
-            elif pursuing:
-                move_seconds = 16.0 / (1.5 * 60.0)
-            data["ball_facing"] = Vector2(direction)
             var movement = create_tween()
             data["ball_move_tween"] = movement
             movement.tween_property(sprite, "position", _cell_center(target), move_seconds).set_trans(Tween.TRANS_LINEAR)
-            if pursuing or fleeing:
-                data["move_timer"] = move_seconds
+        if pursuing or fleeing:
+            data["move_timer"] = move_seconds
         if bool(behavior.get("flee", false)):
             data["flee_steps"] = int(data.get("flee_steps", 0)) + 1
             if int(data["flee_steps"]) >= 3 and _is_tall_grass_cell(target):
