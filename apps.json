@@ -19,6 +19,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "0.10.236",
+          "buildVersion": "236",
+          "date": "2026-10-22T11:23:12Z",
+          "localizedDescription": "Merge: cheaper weather drawing, deep forest shade loaded on a thread",
+          "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0042/Pokewilds-unsigned.ipa",
+          "size": 63305947,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.10.228",
           "buildVersion": "228",
           "date": "2026-10-22T02:02:48Z",
@@ -98,15 +107,6 @@
           "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0030/Pokewilds-unsigned.ipa",
           "size": 57591636,
           "minOSVersion": "15.0"
-        },
-        {
-          "version": "0.10.185",
-          "buildVersion": "185",
-          "date": "2026-10-21T16:50:06Z",
-          "localizedDescription": "Title screen: trees bending in the wind, clouds, logo intro and shine, SOLO / CO-OP, version\n\n- title_background.png: six frames; the two trees bend with the wind\n  (0-3 pixels at the top down to none at the bottom row), leaves flutter\n  and the lake glitters, every 0.2 s while the title shows.\n- title_clouds.png: three pixel-art clouds that drift across the sky,\n  behind the logo, on the background's pixel grid.\n- The logo drops in with a bounce when the title first opens (the boot\n  splash is now the landscape alone) and catches the light every 6 s.\n- The choices read SOLO and CO-OP, with one trainer and two trainers left of\n  the words; the cursor sits by the chosen row's trainers. The mode labels\n  elsewhere follow (SOLO, CO-OP).\n- The version, small in the bottom right corner: CI and tools/ios_xtool\n  write build_version.txt next to build_id.txt.\n- title_screen.gd on StartupSplash runs all of it; coop_menu.gd only asks\n  for the intro.",
-          "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0027/Pokewilds-unsigned.ipa",
-          "size": 57577853,
-          "minOSVersion": "15.0"
         }
       ],
       "appPermissions": {
@@ -117,11 +117,11 @@
           "NSPhotoLibraryUsageDescription": "Not used by the game (Godot's default key)."
         }
       },
-      "version": "0.10.228",
-      "versionDate": "2026-10-22T02:02:48Z",
-      "versionDescription": "Merge server ping and version check",
-      "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0041/Pokewilds-unsigned.ipa",
-      "size": 63297288
+      "version": "0.10.236",
+      "versionDate": "2026-10-22T11:23:12Z",
+      "versionDescription": "Merge: cheaper weather drawing, deep forest shade loaded on a thread",
+      "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0042/Pokewilds-unsigned.ipa",
+      "size": 63305947
     }
   ],
   "news": []
