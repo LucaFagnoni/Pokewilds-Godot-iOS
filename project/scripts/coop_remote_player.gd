@@ -2,10 +2,35 @@ extends Node2D
 ## Visual-only remote actor. It never reads local input or changes world collision.
 const Pokemon=preload("res://scripts/pokemon_data.gd")
 const MountLayers=preload("res://scripts/mount_layers.gd")
-const INTERPOLATION_MS:=100
+## Snapshot interpolation. Every packet says when its sender captured it
+## ("sent", the sender's clock). The player is drawn as they were at `_clock`,
+## a time on that clock which follows (now - _base - delay): _base is the
+## shortest time a packet has taken to get here, the delay covers the jitter
+## seen since (DELAY_MIN_MS to DELAY_MAX_MS). Packets held up on the way and
+## arriving together are played through faster (up to CATCH_UP) instead of
+## skipped; with none left, a walking player goes on for EXTRAPOLATE_MS (at
+## most EXTRAPOLATE_PX, not into a tile they could not enter) and is then
+## held. The clock never runs backwards.
 ## coop_players.gd SEND_INTERVAL_MS, and a gap that means nothing was sent.
 const SEND_INTERVAL_MS:=50
 const HOLD_GAP_MS:=200
+const DELAY_MIN_MS:=100.0
+const DELAY_MAX_MS:=200.0
+const EXTRAPOLATE_MS:=150.0
+## Half a tile: a guess past a corner they turned at is that far off at most.
+const EXTRAPOLATE_PX:=8.0
+const CATCH_UP:=1.5
+## How far behind (ms) before the clock gives up playing through and jumps.
+const RESYNC_MS:=3000.0
+## A step faster than twice anyone moves (120 px/s riding or flying), plus a
+## ledge hop, is a teleport (recall, warp): drawn there at once, not flown to.
+const TELEPORT_PX_PER_MS:=0.24
+const TELEPORT_SLACK_PX:=32.0
+## Off screen by more than this (a sprite's size and 2 tiles), nothing is drawn.
+const CULL_MARGIN_PX:=64.0
+## Half the widest light (Flash: 160 px at 1.2x, world_environment_system.gd):
+## one giving light is drawn until that far out.
+const LIGHT_REACH_PX:=96.0
 
 static func _number(value:Variant)->bool:
     return (value is int or value is float) and is_finite(float(value))
@@ -26,8 +51,25 @@ var _afk:Label
 var _in_battle:=false
 var _pose_cache:Dictionary={}
 var _night=preload("res://scripts/coop_night_visuals.gd").new()
-## What render_at last drew: [first, second, weight, local z, local y].
-var _drawn:Array=[null,null,-1.0,0,0.0]
+## What advance last drew: [first, second, weight, local z, local y, offset].
+var _drawn:Array=[null,null,-1.0,0,0.0,Vector2.ZERO]
+var _clock:=-1.0
+var _base:=INF
+var _jitter:=0.0
+var _wrap:=0.0
+var _last_now:=-1
+var _last_heard:=-1
+## What was drawn last frame (INF: nothing, off screen) and the clock then.
+var _last_clock:=0.0
+var _last_raw:=Vector2.INF
+var _heard:=0
+var _used:=0
+## Drawn this far from the packets for a moment, so a guess past the newest
+## one that turned out wrong is eased away instead of jumped back.
+var _offset:=Vector2.ZERO
+var _lit:=false
+## _carries() for the packets as they are (they change only in receive).
+var _walking:=false
 ## The look each part's texture was last set for (_draw_frames).
 var _looks:Dictionary={}
 
@@ -65,42 +107,166 @@ func configure(main:Node)->void:
 
 func receive(snapshot:Dictionary,received_ms:int=-1)->void:
     if _main==null or not snapshot.get("parts") is Dictionary:return
-    var now=Time.get_ticks_msec() if received_ms<0 else received_ms
+    var now:=float(Time.get_ticks_msec() if received_ms<0 else received_ms)
+    # The sender's clock wraps every 1000 s (coop_players.gd); without it
+    # (an older game) the time it came is all there is.
+    var sent:=now
+    if _number(snapshot.get("sent")):
+        sent=float(snapshot.sent)+_wrap
+        if not _frames.is_empty() and sent<float(_frames[-1].sent)-500000.0:_wrap+=1000000.0;sent+=1000000.0
+    if not _frames.is_empty() and sent<=float(_frames[-1].sent):return
+    var since:=now-_last_heard if _last_heard>=0 else 0.0
+    _last_heard=int(now)
+    # The quickest trip so far, let go of slowly (clocks drift, routes change),
+    # and how much later than that packets have come lately.
+    _base=minf(_base+since*0.01,now-sent)
+    _jitter=maxf(now-sent-_base,_jitter-since*0.02)
     # A player standing still sends nothing new (coop_players.gd). When they
-    # move again, the last pose is held until one send interval ago, as the
-    # steady stream used to, so the first step is not drawn early. "sent" is
-    # the sender's clock: a gap there is a pause, not a slow network.
-    if not _frames.is_empty() and _number(snapshot.get("sent")) and _number(_frames[-1].data.get("sent")) \
-            and float(snapshot.sent)-float(_frames[-1].data.sent)>HOLD_GAP_MS and now-int(_frames[-1].time)>SEND_INTERVAL_MS:
-        _frames.append({"time":now-SEND_INTERVAL_MS,"data":_frames[-1].data})
-    _frames.append({"time":now,"data":snapshot}) # the caller's own copy (coop_players.gd _show)
-    while _frames.size()>8:_frames.pop_front()
+    # move again, the last pose is held until one send interval before this,
+    # so the first step is not drawn early or slowed down over the pause. A
+    # gap while walking is the sender's game held up: walked through.
+    if not _frames.is_empty() and not _walking and sent-float(_frames[-1].sent)>HOLD_GAP_MS:
+        _frames.append(_frame(sent-SEND_INTERVAL_MS,_frames[-1].data,true))
+    _frames.append(_frame(sent,snapshot)) # the caller's own copy (coop_players.gd _show)
+    while _frames.size()>64:_frames.pop_front()
+    if _clock<0.0:_clock=sent
+    _heard+=1
+    _walking=_carries()
+
+## A packet as kept: when it was sent, and a box round all it draws (culling).
+func _frame(sent:float,data:Dictionary,hold:=false)->Dictionary:
+    var points:Array=data.parts.values()
+    if data.get("shadow") is Dictionary and not data.shadow.is_empty():points.append(data.shadow)
+    if data.get("night") is Array:points.append_array(data.night)
+    var box=null
+    for point in points:
+        var at:=Vector2(float(point.get("x",0)),float(point.get("y",0)))
+        box=Rect2(at,Vector2.ZERO) if box==null else box.expand(at)
+    return {"sent":sent,"data":data,"hold":hold,"box":box}
 
 func _process(_delta:float)->void:
     var started:=Time.get_ticks_usec()
-    render_at(Time.get_ticks_msec()-INTERPOLATION_MS)
+    advance(Time.get_ticks_msec())
     if _transport==null:_transport=load("res://scripts/coop_transport.gd") # it preloads this script
     if _transport.stats!=null:_transport.count("proc:remote",0,started)
 
 static var _transport:GDScript
 
-func render_at(time_ms:int)->void:
+## Moves the clock on to `now_ms` and draws the player as they were then;
+## off screen only the clock and the packets are kept up.
+func advance(now_ms:int)->void:
     if _frames.is_empty():return
-    while _frames.size()>2 and int(_frames[1].time)<=time_ms:_frames.pop_front()
-    var first:Dictionary=_frames[0]
-    var second:Dictionary=_frames[1] if _frames.size()>1 else first
-    var weight=clampf(float(time_ms-int(first.time))/maxi(1,int(second.time)-int(first.time)),0.0,1.0)
+    var elapsed:=clampf(now_ms-_last_now,0.0,250.0) if _last_now>=0 else 0.0
+    _last_now=now_ms
+    # New packets can say the last frame was drawn a little off (carried on
+    # past the newest one): kept there, and eased to where the player really was.
+    if _heard!=_used and _last_raw.x!=INF:
+        _used=_heard
+        var miss:=_last_raw-_raw(_sample(_last_clock))
+        _offset=_offset+miss if miss.length()<24.0 else Vector2.ZERO
+    _offset=_offset*exp(-elapsed/120.0) if _offset.length_squared()>0.01 else Vector2.ZERO
+    var target:=now_ms-_base-clampf(_jitter+SEND_INTERVAL_MS,DELAY_MIN_MS,DELAY_MAX_MS)
+    # Across a pause (the pose held to the next packet) nothing moves: skipped.
+    var index:=_index(_clock)
+    if index+1<_frames.size() and _frames[index+1].hold:_clock=maxf(_clock,minf(target,float(_frames[index+1].sent)))
+    var behind:=target-_clock
+    var was:=_clock
+    if behind>RESYNC_MS:_clock=target
+    else:_clock+=elapsed*clampf(1.0+behind/400.0,0.75,CATCH_UP)
+    _clock=maxf(was,minf(_clock,float(_frames[-1].sent)+(EXTRAPOLATE_MS if _walking else 0.0)))
+    while _frames.size()>2 and float(_frames[1].sent)<=_clock:_frames.pop_front()
+    # Off screen (with a margin, wider for one giving light), only the clock
+    # runs: drawn again where it should be on the frame it comes into view.
+    var box=_frames[-1].box if _frames.size()<3 else _frames[1].box
+    if box!=null and _frames[0].box!=null:box=box.merge(_frames[0].box)
+    var view:=get_viewport().get_canvas_transform().affine_inverse()*get_viewport().get_visible_rect()
+    if box!=null and not view.intersects(box.grow(CULL_MARGIN_PX+(LIGHT_REACH_PX if _lit else 0.0))):
+        if visible:hide()
+        _last_raw=Vector2.INF
+        return
+    if not visible:show();_drawn[0]=null
+    var sample:=_sample(_clock)
+    _last_clock=_clock
+    var first:Dictionary=sample[0];var second:Dictionary=sample[1];var weight:float=sample[2]
     # Standing still, nothing below changes between packets: drawn again only
     # when a packet, the blend or the local player's depth has moved on.
     var mine=_main.world.player
-    if not (is_same(first,_drawn[0]) and is_same(second,_drawn[1]) and weight==_drawn[2] and mine.z_index==_drawn[3] and mine.sprite.global_position.y==_drawn[4]):
-        _drawn=[first,second,weight,mine.z_index,mine.sprite.global_position.y]
+    if not (is_same(first,_drawn[0]) and is_same(second,_drawn[1]) and weight==_drawn[2] and mine.z_index==_drawn[3] and mine.sprite.global_position.y==_drawn[4] and _offset==_drawn[5]):
+        _drawn=[first,second,weight,mine.z_index,mine.sprite.global_position.y,_offset]
         _draw_frames(first,second,weight)
     _update_light(second.data)
 
-## Draws the blend `weight` of the way from packet `first` to `second`.
+## The last packet sent at or before `clock` (the first if none is).
+func _index(clock:float)->int:
+    var index:=0
+    while index+1<_frames.size() and float(_frames[index+1].sent)<=clock:index+=1
+    return index
+
+## [first, second, weight]: drawn `weight` of the way from packet `first` to
+## `second`; past 1 it is carried on past the newest packet, `second`.
+func _sample(clock:float)->Array:
+    var index:=_index(clock)
+    var first:Dictionary=_frames[index]
+    if index+1<_frames.size():
+        var second:Dictionary=_frames[index+1]
+        return [first,second,clampf((clock-float(first.sent))/maxf(1.0,float(second.sent)-float(first.sent)),0.0,1.0)]
+    if index==0:return [first,first,1.0]
+    var before:Dictionary=_frames[index-1]
+    var ahead:=minf(clock-float(first.sent),EXTRAPOLATE_MS)
+    if ahead<=0.0 or not _walking:return [before,first,1.0]
+    var span:=float(first.sent)-float(before.sent)
+    var a:Dictionary=before.data.parts.player;var b:Dictionary=first.data.parts.player
+    var step:=Vector2(float(b.get("x",0)),float(b.get("y",0))).distance_to(Vector2(float(a.get("x",0)),float(a.get("y",0))))
+    ahead=minf(ahead,EXTRAPOLATE_PX*span/step)
+    return [before,first,1.0+_open_ahead(before.data,first.data,span,ahead)/span]
+
+## Walking when the last packet came: the last two a send interval or so
+## apart, and the trainer moved between them (not a teleport). Stopping sends
+## the same pose once more (coop_players.gd), which is not walking.
+func _carries()->bool:
+    if _frames.size()<2:return false
+    var before:Dictionary=_frames[-2];var last:Dictionary=_frames[-1]
+    var span:=float(last.sent)-float(before.sent)
+    var a=before.data.parts.get("player");var b=last.data.parts.get("player")
+    if before.hold or span>3.0*SEND_INTERVAL_MS or not a is Dictionary or not b is Dictionary:return false
+    var step:=Vector2(float(b.get("x",0)),float(b.get("y",0))).distance_to(Vector2(float(a.get("x",0)),float(a.get("y",0))))
+    return step>0.01 and step<=TELEPORT_SLACK_PX+TELEPORT_PX_PER_MS*span
+
+## How far (ms, up to `ahead`) the player can be carried on without going
+## into a tile they could not have entered: up to the edge of their own.
+func _open_ahead(before:Dictionary,last:Dictionary,span:float,ahead:float)->float:
+    var world=_main.world
+    if not _main.started or String(last.get("move",""))=="FLY" or not _number(last.get("bx")) or not _number(before.get("bx")):return ahead
+    var from:=Vector2(float(last.bx),float(last.by))
+    var velocity:=(from-Vector2(float(before.bx),float(before.by)))/span
+    var cell:=Vector2i((from/16.0).floor())
+    var to:=Vector2i(((from+velocity*ahead)/16.0).floor())
+    if to==cell or world._is_walkable(to)==world._is_walkable(cell):return ahead
+    for axis in 2:
+        if absf(velocity[axis])<0.0001:continue
+        var edge:=(cell[axis]+(1 if velocity[axis]>0.0 else 0))*16.0
+        ahead=minf(ahead,(edge-from[axis])/velocity[axis]-0.5/absf(velocity[axis]))
+    return maxf(0.0,ahead)
+
+## Where the trainer is in a _sample, before rounding and the eased offset.
+func _raw(sample:Array)->Vector2:
+    var own=(sample[1] if sample[2]>=0.5 else sample[0]).data.parts.get("player")
+    if not own is Dictionary:return _last_raw
+    return _between(sample[0].data.parts.get("player"),sample[1].data.parts.get("player"),own,sample[2],float(sample[1].sent)-float(sample[0].sent))
+
+## `weight` of the way from part `a` to `b`, or where `own` (the nearer
+## packet's) is when they are a teleport apart or one is missing.
+static func _between(a:Variant,b:Variant,own:Dictionary,weight:float,span:float)->Vector2:
+    var at:=Vector2(float(own.get("x",0)),float(own.get("y",0)))
+    if not a is Dictionary or not b is Dictionary or a.is_empty() or b.is_empty():return at
+    var from:=Vector2(float(a.get("x",0)),float(a.get("y",0)));var to:=Vector2(float(b.get("x",0)),float(b.get("y",0)))
+    return from.lerp(to,weight) if from.distance_to(to)<=TELEPORT_SLACK_PX+TELEPORT_PX_PER_MS*span else at
+
+## Draws the blend `weight` of the way from packet `first` to `second`: where
+## things are in between, what they look like as in the nearer of the two.
 func _draw_frames(first:Dictionary,second:Dictionary,weight:float)->void:
-    var data:Dictionary=second.data
+    var data:Dictionary=second.data if weight>=0.5 else first.data
+    var span:=float(second.sent)-float(first.sent)
     var model=clampi(int(data.get("model",0)),0,_main.PLAYER_MODEL_WALK_TEXTURES.size()-1)
     var color=clampi(int(data.get("color",0)),0,_main.PLAYER_COLOR_VALUES.size()-1)
     active_field_move=String(data.get("move",""))
@@ -152,11 +318,9 @@ func _draw_frames(first:Dictionary,second:Dictionary,weight:float)->void:
         sprite.centered=bool(part.get("centered",true))
         sprite.offset=Vector2(float(part.get("ox",0)),float(part.get("oy",0)))
         if key=="thrown":sprite.scale=Vector2.ONE*clampf(float(part.get("s",1.0)),0.0,2.0)
-        var destination=Vector2(float(part.get("x",0)),float(part.get("y",0)))
-        var previous:Dictionary=first.data.parts.get(key,part)
-        var origin=Vector2(float(previous.get("x",destination.x)),float(previous.get("y",destination.y)))
-        # Area jumps/teleports snap instead of flying across the screen.
-        sprite.global_position=(origin.lerp(destination,weight) if origin.distance_to(destination)<128 else destination).round()
+        var at:=_between(first.data.parts.get(key),second.data.parts.get(key),part,weight,span)
+        if key=="player":_last_raw=at
+        sprite.global_position=(at+_offset).round()
         sprite.z_index=clampi(int(part.get("z",0)),-4096,4094)
         # Two trainers on the ground: the one standing lower on the screen is
         # nearer the camera and is drawn in front, on both players' screens.
@@ -174,13 +338,10 @@ func _draw_frames(first:Dictionary,second:Dictionary,weight:float)->void:
     var shadow:Dictionary=data.get("shadow",{})
     _shadow.visible=not shadow.is_empty()
     if _shadow.visible:
-        var destination=Vector2(float(shadow.get("x",0)),float(shadow.get("y",0)))
-        var previous:Dictionary=first.data.get("shadow",shadow)
-        var origin=Vector2(float(previous.get("x",destination.x)),float(previous.get("y",destination.y)))
-        _shadow.global_position=(origin.lerp(destination,weight) if origin.distance_to(destination)<128 else destination).round()
+        _shadow.global_position=(_between(first.data.get("shadow"),second.data.get("shadow"),shadow,weight,span)+_offset).round()
         _shadow.z_index=clampi(int(shadow.get("z",0)),-4096,4094)
     _status.global_position=player.sprite.global_position+Vector2(0,-19)
-    _night.draw(self,data.get("night",[]),first.data.get("night",[]),weight)
+    _night.draw(self,second.data.get("night",[]),first.data.get("night",[]),minf(weight,1.0))
     var battle=bool(data.get("battle",false))
     if battle!=_in_battle:_in_battle=battle;_status.queue_redraw()
     _afk.visible=not battle and (bool(data.get("afk",false)) or bool(data.get("sleeping",false)))
@@ -190,6 +351,7 @@ func _update_light(data:Dictionary)->void:
     if is_instance_valid(environment):
         var flash=active_field_move in ["FLASH","POWER"]
         var fire=follower_sprite.visible and "FIRE" in Pokemon.info(String(data.get("follower_species",""))).get("types",[])
+        _lit=flash or fire
         var darkness:Color=environment.canvas_modulate.color
         # Drawn into the world's light map with the other lights.
         if (flash or fire) and maxf(darkness.r,maxf(darkness.g,darkness.b))<0.94:

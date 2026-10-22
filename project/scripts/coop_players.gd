@@ -21,6 +21,13 @@ var _last_received:Dictionary={}
 var _last_cells:Dictionary={}
 var _last_sent:Dictionary={}
 var _last_sent_at:=0
+var _repeated:=false
+## Per sender: [positions that may still be relayed at once, when last topped up].
+var _relay_budget:Dictionary={}
+## A sender may average 40 positions a second (2x what is sent), and after a
+## held-up link pass on 2 s of them at once.
+const RELAY_EVERY_MS:=25.0
+const RELAY_BURST:=40.0
 
 func configure(game:Node,connection:Node,host_state=null)->void:
     main=game;session=connection;state=host_state
@@ -64,7 +71,10 @@ func _send_visual()->void:
         if now-int(_last_received.get(actor,now))>5000:_remove(actor)
     # Only what changed goes out; standing still, a reminder once a second
     # keeps this player from being dropped by the others (after 5 s, above).
-    if packet==_last_sent and now-_last_sent_at<HEARTBEAT_MS:return
+    # The first unchanged one goes too: it tells the others this player has
+    # stopped, not that the link is slow (coop_remote_player.gd _carries).
+    if packet==_last_sent and _repeated and now-_last_sent_at<HEARTBEAT_MS:return
+    _repeated=packet==_last_sent
     _last_sent=packet;_last_sent_at=now
     # When it was sent, by this device's clock: lets the others tell a pause
     # from a late packet (coop_remote_player.gd). Wrapped to stay a small number.
@@ -86,8 +96,14 @@ func _message(peer:int,actor:String,packet:Dictionary)->void:
     if not valid_packet(packet):return
     if session.hosting:
         if state==null or state.members.get(actor,{}).get("area","")!=packet.area:return
+        # Held up on a phone's link, positions come in bunches: all of them
+        # are passed on (the others play them through), unless a sender
+        # sends far more than a game does.
         var now=Time.get_ticks_msec()
-        if now-int(_last_received.get(actor,0))<25:return
+        var budget:Array=_relay_budget.get_or_add(actor,[RELAY_BURST,now])
+        budget[0]=minf(RELAY_BURST,float(budget[0])+(now-int(budget[1]))/RELAY_EVERY_MS);budget[1]=now
+        if budget[0]<1.0:return
+        budget[0]-=1.0
         _relay(peer,actor,packet)
     else:
         var remote_actor=packet.get("actor")
@@ -129,6 +145,8 @@ func _show(actor:String,packet:Dictionary)->void:
     var visual:Dictionary=packet.visual.duplicate()
     visual["battle"]=bool(packet.get("battle",false));visual["afk"]=bool(packet.get("afk",false))
     if packet.has("t"):visual["sent"]=packet.t
+    # Where the trainer stands, for not carrying them on into a wall.
+    visual["bx"]=float(packet.get("body_x",0.0));visual["by"]=float(packet.get("body_y",0.0))
     actors[actor].receive(visual)
     # Other players leave the same sand and snow footprints the local player does.
     var cell:=Vector2i(int(packet.get("cell_x",0)),int(packet.get("cell_y",0)))
@@ -230,7 +248,7 @@ func _remove(actor:String)->void:
     if actors.has(actor):
         if is_instance_valid(actors[actor]):actors[actor].queue_free()
         actors.erase(actor)
-    last_packets.erase(actor);_last_received.erase(actor);_last_cells.erase(actor)
+    last_packets.erase(actor);_last_received.erase(actor);_last_cells.erase(actor);_relay_budget.erase(actor)
 
 static func valid_packet(packet:Dictionary)->bool:
     if not _number(packet.get("field_level",1)) or float(packet.get("field_level",1))<1 or float(packet.get("field_level",1))>100:return false
