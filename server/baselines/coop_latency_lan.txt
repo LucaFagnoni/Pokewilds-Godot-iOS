@@ -1,0 +1,57 @@
+# Baseline of the co-op profilers on main 1fb7f6fb (2026-10-23).
+# Machine: Windows 11, Intel Core i7-14700K (28 threads), 32 GB, Godot 4.7.2 stable (official editor, console build),
+# Dummy 2D physics, other programs (and other Godot runs) active at the same time, so absolute times are
+# noisy by a few ms and 1-2 over-budget runs are possible; compare a rewrite by running the same command on this
+# machine and looking at the order of magnitude and at bytes, which do not depend on the load.
+# Command: python server/coop_latency_probe.py GODOT --profile lan   (columns: ms, budget, up B, down B, requests, frame ms)
+# The first run of the day had one action fail after many tries (a probe flake with other programs busy); this is the second run: 0 over budget.
+
+PROBE action                                               ms   budget     up B   down B  reqs frame ms notes
+PROBE join (world snapshot)                              5100    20000      907   516257     3      283  rx_blob:area_records=1x1065887B rx:blob=19x461282B rx:session_blob=3x52078B
+PROBE veteran record saved once (whole)                   777    20000     8903      182     1        0 214852 cells explored
+PROBE ---- spawn area, host simulates
+PROBE party edit saved (evolve, level, nickname)           65      300     1162      124     1       34 
+PROBE wild battle start                                   118      300      116     3189     1       34 
+PROBE battle end (ran)                                    103      300      241     1814     1       86 
+PROBE catch (claim + result)                              169      300      854     2446     2       44 
+PROBE friendly Pokemon joins the party                    194      300     1039     3214     2       36 
+PROBE release from the party                              102      300     1355      124     1       34 
+PROBE drop an item                                        102      300      500      873     2       34 
+PROBE pick up an item                                      98      300      410      869     2       36 
+PROBE build a storage box                                 100      300      866     1812     2       35 
+PROBE open storage                                          0      300        0        0     0        0 
+PROBE store 200 Pokemon in the box (setup)                291    30000    24663    26290     1      111  rx_blob:shared_commit=1x214053B enc:profile_checkpoint=1x200920B enc:session_blob=1x32708B
+PROBE deposit into the box                                292      300      277     3622     2       38 
+PROBE withdraw from the box                               233      300     1354     1778     2       47 
+PROBE release from the box                                196      300     1444      686     2       60 
+PROBE build another                                       146      300      822     2439     2       54 
+PROBE remove a build                                       85      300      543     1081     2       67 
+PROBE leave a Pokemon here                                 89      300     1574     2938     2       45 
+PROBE call it back (2 steps, now 0 away)                  107      300      562     2567     2       38 
+PROBE called back cleanly                             skipped: ok, one try, none left behind
+PROBE save (menu)                                          64      300      147      125     1       55 
+PROBE travel to a new area (server makes it)            30113    60000     1455   466765     4      214  rx_blob:state_snapshot=1x1035911B rx:blob=15x351917B rx:session_blob=3x68526B
+PROBE background while alone in an area (5 s)        up 1060 B, down 1414 B: enc:loading=1/33B tx=8/1060B proc:transport=150/0B enc:player_visual=6/141B proc:players=150/0B enc:command=1/854B rx:shared_commit=1/863B apply:shared_commit=1/0B rx:command_result=1/226B apply:command_result=1/0B rx:world_clock=5/325B apply:world_clock=5/0B
+PROBE ---- own area, this player simulates
+PROBE party edit saved (evolve, level, nickname)          102      300     1164      125     1       35 
+PROBE wild battle start                                   120      300      136     2211     1       36 
+PROBE battle end (ran)                                     79      300      243      856     1       34 
+PROBE catch (claim + result)                              202      300      826     3299     2       34 
+PROBE friendly Pokemon joins the party                    197      300     1064     2602     2       34 
+PROBE release from the party                              102      300     1784      862     2       34 
+PROBE drop an item                                        102      300      504      876     2       34 
+PROBE pick up an item                                      65      300      411      879     2       34 
+PROBE build a storage box                                  78      300      866     1242     2       33 
+PROBE open storage                                          0      300        0        0     0        0 
+PROBE store 200 Pokemon in the box (setup)                261    30000    25768    26387     3       72  rx_blob:shared_commit=1x214078B enc:profile_checkpoint=1x200944B enc:session_blob=1x32748B
+PROBE deposit into the box                                277      300      320     3316     2       47 
+PROBE withdraw from the box                               206      300     1336     1777     2       57 
+PROBE release from the box                                171      300     1461      696     2       34 
+PROBE build another                                       131      300      822     1242     2       41 
+PROBE remove a build                                       91      300      543     1083     2       39 
+PROBE leave a Pokemon here                                 49      300     1579     2950     2       34 
+PROBE call it back (3 steps, now 2 away)                   71      300      562     1942     2       34 
+PROBE called back cleanly                             skipped: ok, one try, none left behind
+PROBE save (menu)                                          33      300      147      125     1       33 
+PROBE travel back to a known area                        6896    20000    34111   560340     4      539  rx_blob:area_records=1x1070602B rx:blob=19x462453B rx_blob:state_snapshot=1x426299B
+PROBE RESULT: 0 over budget

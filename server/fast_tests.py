@@ -12,6 +12,7 @@ import concurrent.futures, os, re, subprocess, sys, time
 # (script, arguments after "--"). Slowest first, so the last test does not start late.
 TESTS = [
     ("fixture_load_test", ["--touch-ui"]),
+    ("journal_batch_test", []),
     ("save_format_test", ["--touch-ui"]),
     ("coop_ui_test", ["--touch-ui"]),
     ("coop_chat_test", ["--touch-ui"]),
@@ -31,8 +32,9 @@ TESTS = [
     ("recall_test", []),
     ("coop_traffic_check", []),
     ("world_save_test", []),
+    ("coop_state_index_test", []),
 ]
-TIMEOUT = 900
+TIMEOUT = 420 # the slowest takes ~1 minute on a loaded machine
 
 
 def run(godot, test, args):
@@ -59,7 +61,8 @@ def one(godot, test, args):
     name = test + (" " + " ".join(args) if args else "")
     ok, seconds, output = run(godot, test, args)
     first = output
-    if not ok:
+    # A script error or a hang is not a missed timer: no second run.
+    if not ok and "SCRIPT ERROR" not in output and "TIMEOUT" not in output:
         ok, again, output = run(godot, test, args)
         seconds += again
         if ok:
@@ -77,16 +80,20 @@ def main():
     only = sys.argv[sys.argv.index("--only") + 1:] if "--only" in sys.argv else []
     picked = [t for t in TESTS if not only or t[0] in only]
     failed = []
+    table = ["| test | result | seconds |", "|---|---|---|"]
     started = time.time()
     with concurrent.futures.ThreadPoolExecutor(jobs) as pool:
         for name, ok, seconds, output, flaky in pool.map(lambda t: one(godot, *t), picked):
             print(f"{'PASS' if ok else 'FAIL'} {name} ({seconds:.0f} s){' (flaky: passed on the second run)' if flaky else ''}", flush=True)
+            table.append(f"| {name} | {'passed (flaky: second run)' if ok and flaky else 'passed' if ok else '**FAILED**'} | {seconds:.0f} |")
             if not ok:
                 failed.append(name)
                 print("::group::" + name + " output", flush=True)
                 print("\n".join(output.splitlines()[-60:]), flush=True)
                 print("::endgroup::", flush=True)
     print(f"{len(picked) - len(failed)} of {len(picked)} passed in {time.time() - started:.0f} s")
+    if os.environ.get("GITHUB_STEP_SUMMARY"):
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary: summary.write(chr(10).join(table) + chr(10))
     sys.exit(1 if failed else 0)
 
 

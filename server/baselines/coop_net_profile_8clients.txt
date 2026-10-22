@@ -1,0 +1,222 @@
+# Baseline of the co-op profilers on main 1fb7f6fb (2026-10-23).
+# Machine: Windows 11, Intel Core i7-14700K (28 threads), 32 GB, Godot 4.7.2 stable (official editor, console build),
+# Dummy 2D physics, other programs (and other Godot runs) active at the same time, so absolute times are
+# noisy by a few ms and 1-2 over-budget runs are possible; compare a rewrite by running the same command on this
+# machine and looking at the order of magnitude and at bytes, which do not depend on the load.
+# Command: python server/coop_net_profile.py GODOT --clients 8   (per message kind: rate, bytes/s, ms/s; SUMMARY and FRAMES lines of every player)
+# Phases: idle1 walk1 join8 idle8 walk8 walk8split walk8away. The server's lines are first, then the 8 players'.
+
+PROFILE SERVER idle1 apply:player_visual               1.0/s          0 B/s    0.060 ms/s
+PROFILE SERVER idle1 enc:shared_commit                 2.0/s       1333 B/s    0.215 ms/s
+PROFILE SERVER idle1 enc:world_clock                   1.0/s         52 B/s    0.017 ms/s
+PROFILE SERVER idle1 proc:players                     30.0/s          0 B/s    0.129 ms/s
+PROFILE SERVER idle1 proc:transport                   30.0/s          0 B/s    0.904 ms/s
+PROFILE SERVER idle1 rx:player_visual                  1.0/s         17 B/s    0.031 ms/s
+PROFILE SERVER idle1 tx                                2.9/s       1397 B/s    0.003 ms/s
+PROFILE SERVER idle1 FRAMES n 468 mean 1.02 p50 0.86 p95 1.79 p99 2.77 max 17.8 ms, over 16/33/100 ms: 1/0/0
+PROFILE SERVER idle1 INTERVALS p50 33.3 p99 33.5 max 33.7 ms, over 50/100 ms: 0/0
+PROFILE SERVER idle1 SPIKES (untimed)                                   1 frames,     17.8 ms, longest 17.8 ms
+PROFILE SERVER idle1 SUMMARY 15.6 s, up 1397 B/s, down 17 B/s, frames 29.9/s, process 1.015 ms/frame (median 0.86, max 17.8), netcode 0.034 ms/frame
+PROFILE SERVER walk1 apply:player_visual              12.8/s          0 B/s    0.846 ms/s
+PROFILE SERVER walk1 apply:profile_checkpoint          0.1/s          0 B/s    0.031 ms/s
+PROFILE SERVER walk1 enc:profile_result                0.1/s          8 B/s    0.001 ms/s
+PROFILE SERVER walk1 enc:shared_commit                 2.0/s       1104 B/s    0.217 ms/s
+PROFILE SERVER walk1 enc:world_clock                   1.0/s         60 B/s    0.020 ms/s
+PROFILE SERVER walk1 proc:players                     30.0/s          0 B/s    0.094 ms/s
+PROFILE SERVER walk1 proc:transport                   30.0/s          0 B/s    2.278 ms/s
+PROFILE SERVER walk1 rx:player_visual                 12.8/s        418 B/s    0.496 ms/s
+PROFILE SERVER walk1 rx:profile_checkpoint             0.1/s         44 B/s    0.002 ms/s
+PROFILE SERVER walk1 tx                                3.1/s       1184 B/s    0.003 ms/s
+PROFILE SERVER walk1 FRAMES n 467 mean 1.04 p50 0.92 p95 1.76 p99 2.96 max 4.5 ms, over 16/33/100 ms: 0/0/0
+PROFILE SERVER walk1 INTERVALS p50 33.3 p99 33.4 max 33.5 ms, over 50/100 ms: 0/0
+PROFILE SERVER walk1 SUMMARY 15.6 s, up 1184 B/s, down 463 B/s, frames 29.9/s, process 1.036 ms/frame (median 0.92, max 4.5), netcode 0.079 ms/frame
+PROFILE SERVER join8 apply:area_request                0.1/s          0 B/s    0.826 ms/s
+PROFILE SERVER join8 apply:command                     0.1/s          0 B/s    0.032 ms/s
+PROFILE SERVER join8 apply:entered                     0.1/s          0 B/s    0.047 ms/s
+PROFILE SERVER join8 apply:hello                       0.3/s          0 B/s    0.445 ms/s
+PROFILE SERVER join8 apply:loading                     0.3/s          0 B/s    0.001 ms/s
+PROFILE SERVER join8 apply:player_visual               7.5/s          0 B/s    0.932 ms/s
+PROFILE SERVER join8 apply:profile_checkpoint          0.1/s          0 B/s    0.187 ms/s
+PROFILE SERVER join8 enc:area_authorities              1.1/s        133 B/s    0.004 ms/s
+PROFILE SERVER join8 enc:area_metadata                 0.1/s         38 B/s    0.002 ms/s
+PROFILE SERVER join8 enc:area_records                  0.1/s     117565 B/s    0.667 ms/s
+PROFILE SERVER join8 enc:blob                          2.6/s      82466 B/s    0.253 ms/s
+PROFILE SERVER join8 enc:challenge                     0.1/s         20 B/s    0.002 ms/s
+PROFILE SERVER join8 enc:command_result                0.1/s         14 B/s    0.001 ms/s
+PROFILE SERVER join8 enc:entered_reply                 0.1/s         20 B/s    0.001 ms/s
+PROFILE SERVER join8 enc:game_begin                    0.1/s        438 B/s    0.013 ms/s
+PROFILE SERVER join8 enc:player_notice                 1.9/s        103 B/s    0.007 ms/s
+PROFILE SERVER join8 enc:player_visual                 8.4/s        272 B/s    0.307 ms/s
+PROFILE SERVER join8 enc:profile_result                0.1/s         16 B/s    0.001 ms/s
+PROFILE SERVER join8 enc:session_blob                  0.4/s       9144 B/s    0.025 ms/s
+PROFILE SERVER join8 enc:shared_commit                 2.2/s       1125 B/s    0.260 ms/s
+PROFILE SERVER join8 enc:state_snapshot                0.1/s         98 B/s    0.002 ms/s
+PROFILE SERVER join8 enc:welcome                       0.1/s         25 B/s    0.001 ms/s
+PROFILE SERVER join8 enc:world_clock                   7.2/s        432 B/s    0.040 ms/s
+PROFILE SERVER join8 proc:players                     26.3/s          0 B/s    0.100 ms/s
+PROFILE SERVER join8 proc:transport                   26.3/s          0 B/s    4.843 ms/s
+PROFILE SERVER join8 rx:area_request                   0.1/s          5 B/s    0.001 ms/s
+PROFILE SERVER join8 rx:command                        0.1/s         13 B/s    0.001 ms/s
+PROFILE SERVER join8 rx:entered                        0.1/s          5 B/s    0.002 ms/s
+PROFILE SERVER join8 rx:hello                          0.3/s         96 B/s    0.006 ms/s
+PROFILE SERVER join8 rx:loading                        0.3/s         10 B/s    0.002 ms/s
+PROFILE SERVER join8 rx:player_visual                  7.5/s        154 B/s    0.216 ms/s
+PROFILE SERVER join8 rx:profile_checkpoint             0.1/s        293 B/s    0.032 ms/s
+PROFILE SERVER join8 tx                               77.3/s      79916 B/s    0.041 ms/s
+PROFILE SERVER join8 zstd                              3.0/s      68967 B/s    0.346 ms/s
+PROFILE SERVER join8 FRAMES n 193 mean 1.52 p50 1.24 p95 2.96 p99 6.23 max 7.2 ms, over 16/33/100 ms: 0/0/0
+PROFILE SERVER join8 INTERVALS p50 33.3 p99 33.6 max 33.6 ms, over 50/100 ms: 0/0
+PROFILE SERVER join8 SUMMARY 7.4 s, up 79916 B/s, down 577 B/s, frames 26.2/s, process 1.521 ms/frame (median 1.24, max 7.2), netcode 0.189 ms/frame
+PROFILE SERVER idle8 apply:player_visual               8.2/s          0 B/s    1.127 ms/s
+PROFILE SERVER idle8 enc:player_visual                 8.2/s        126 B/s    0.303 ms/s
+PROFILE SERVER idle8 enc:shared_commit                 1.4/s        793 B/s    0.146 ms/s
+PROFILE SERVER idle8 enc:world_clock                   8.2/s        501 B/s    0.051 ms/s
+PROFILE SERVER idle8 proc:players                     30.0/s          0 B/s    0.111 ms/s
+PROFILE SERVER idle8 proc:transport                   30.0/s          0 B/s    3.877 ms/s
+PROFILE SERVER idle8 rx:player_visual                  8.2/s        159 B/s    0.253 ms/s
+PROFILE SERVER idle8 tx                               76.9/s       8038 B/s    0.037 ms/s
+PROFILE SERVER idle8 FRAMES n 467 mean 1.22 p50 1.07 p95 2.25 p99 3.13 max 3.7 ms, over 16/33/100 ms: 0/0/0
+PROFILE SERVER idle8 INTERVALS p50 33.3 p99 33.6 max 33.7 ms, over 50/100 ms: 0/0
+PROFILE SERVER idle8 SUMMARY 15.6 s, up 8038 B/s, down 159 B/s, frames 29.9/s, process 1.215 ms/frame (median 1.07, max 3.7), netcode 0.133 ms/frame
+PROFILE SERVER walk8 apply:player_visual              44.9/s          0 B/s    5.227 ms/s
+PROFILE SERVER walk8 apply:profile_checkpoint          0.3/s          0 B/s    0.135 ms/s
+PROFILE SERVER walk8 enc:player_visual                44.9/s       1241 B/s    1.746 ms/s
+PROFILE SERVER walk8 enc:profile_result                0.3/s         38 B/s    0.002 ms/s
+PROFILE SERVER walk8 enc:shared_commit                 1.8/s       1039 B/s    0.189 ms/s
+PROFILE SERVER walk8 enc:world_clock                   7.6/s        465 B/s    0.045 ms/s
+PROFILE SERVER walk8 proc:players                     29.5/s          0 B/s    0.099 ms/s
+PROFILE SERVER walk8 proc:transport                   29.5/s          0 B/s    9.868 ms/s
+PROFILE SERVER walk8 rx:player_visual                 44.9/s       1421 B/s    1.284 ms/s
+PROFILE SERVER walk8 rx:profile_checkpoint             0.3/s        159 B/s    0.007 ms/s
+PROFILE SERVER walk8 tx                              336.4/s      18851 B/s    0.156 ms/s
+PROFILE SERVER walk8 FRAMES n 464 mean 1.40 p50 1.31 p95 2.38 p99 3.20 max 3.5 ms, over 16/33/100 ms: 0/0/0
+PROFILE SERVER walk8 INTERVALS p50 33.3 p99 33.6 max 34.0 ms, over 50/100 ms: 0/0
+PROFILE SERVER walk8 SUMMARY 15.7 s, up 18851 B/s, down 1580 B/s, frames 29.5/s, process 1.405 ms/frame (median 1.31, max 3.5), netcode 0.338 ms/frame
+PROFILE SERVER walk8split-travel FRAMES n 758 mean 1.59 p50 1.26 p95 2.73 p99 4.45 max 54.7 ms, over 16/33/100 ms: 2/2/0
+PROFILE SERVER walk8split-travel SPIKES (untimed)                                   2 frames,    105.1 ms, longest 54.7 ms
+PROFILE SERVER walk8split apply:player_visual              36.2/s          0 B/s    4.235 ms/s
+PROFILE SERVER walk8split apply:profile_checkpoint          0.1/s          0 B/s    0.050 ms/s
+PROFILE SERVER walk8split enc:player_visual                36.2/s       1018 B/s    1.539 ms/s
+PROFILE SERVER walk8split enc:profile_result                0.1/s         16 B/s    0.001 ms/s
+PROFILE SERVER walk8split enc:shared_commit                 1.8/s        957 B/s    0.186 ms/s
+PROFILE SERVER walk8split enc:world_clock                   8.2/s        501 B/s    0.045 ms/s
+PROFILE SERVER walk8split proc:players                     29.9/s          0 B/s    0.103 ms/s
+PROFILE SERVER walk8split proc:transport                   29.9/s          0 B/s    8.507 ms/s
+PROFILE SERVER walk8split rx:player_visual                 36.2/s       1163 B/s    1.165 ms/s
+PROFILE SERVER walk8split rx:profile_checkpoint             0.1/s         29 B/s    0.002 ms/s
+PROFILE SERVER walk8split tx                              124.2/s       7896 B/s    0.069 ms/s
+PROFILE SERVER walk8split FRAMES n 466 mean 1.38 p50 1.29 p95 2.26 p99 3.53 max 4.2 ms, over 16/33/100 ms: 0/0/0
+PROFILE SERVER walk8split INTERVALS p50 33.3 p99 33.4 max 33.8 ms, over 50/100 ms: 0/0
+PROFILE SERVER walk8split SUMMARY 15.6 s, up 7896 B/s, down 1192 B/s, frames 29.9/s, process 1.378 ms/frame (median 1.29, max 4.2), netcode 0.288 ms/frame
+PROFILE SERVER walk8away-travel FRAMES n 227 mean 1.96 p50 1.07 p95 6.98 p99 23.03 max 28.7 ms, over 16/33/100 ms: 4/0/0
+PROFILE SERVER walk8away-travel SPIKES (untimed)                                   4 frames,     98.5 ms, longest 28.7 ms
+PROFILE SERVER walk8away apply:player_visual               7.6/s          0 B/s    2.004 ms/s
+PROFILE SERVER walk8away enc:player_visual                 7.6/s        121 B/s    0.536 ms/s
+PROFILE SERVER walk8away enc:world_clock                   7.6/s        466 B/s    0.073 ms/s
+PROFILE SERVER walk8away proc:players                     27.5/s          0 B/s    0.205 ms/s
+PROFILE SERVER walk8away proc:transport                   27.5/s          0 B/s    7.261 ms/s
+PROFILE SERVER walk8away rx:player_visual                  7.6/s        152 B/s    0.378 ms/s
+PROFILE SERVER walk8away tx                               60.7/s       1559 B/s    0.061 ms/s
+PROFILE SERVER walk8away FRAMES n 431 mean 1.75 p50 1.51 p95 3.41 p99 5.82 max 11.5 ms, over 16/33/100 ms: 0/0/0
+PROFILE SERVER walk8away INTERVALS p50 31.4 p99 47.8 max 49.7 ms, over 50/100 ms: 0/0
+PROFILE SERVER walk8away SUMMARY 15.7 s, up 1559 B/s, down 152 B/s, frames 27.5/s, process 1.753 ms/frame (median 1.51, max 11.5), netcode 0.272 ms/frame
+PROFILE CLIENT0 idle1 FRAMES n 462 mean 1.20 p50 1.16 p95 1.64 p99 1.91 max 2.1 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT0 idle1 SUMMARY 15.4 s, up 17 B/s, down 1358 B/s, frames 29.9/s, process 1.197 ms/frame (median 1.16, max 2.1), netcode 0.072 ms/frame
+PROFILE CLIENT0 walk1 FRAMES n 720 mean 1.39 p50 1.30 p95 2.20 p99 2.78 max 9.9 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT0 walk1 SUMMARY 15.8 s, up 462 B/s, down 1169 B/s, frames 45.6/s, process 1.388 ms/frame (median 1.30, max 9.9), netcode 0.077 ms/frame
+PROFILE CLIENT0 join8 FRAMES n 199 mean 1.73 p50 1.56 p95 3.04 p99 3.83 max 4.2 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT0 join8 SUMMARY 7.3 s, up 22 B/s, down 1385 B/s, frames 27.4/s, process 1.726 ms/frame (median 1.56, max 4.2), netcode 0.188 ms/frame remote steps 1199, max 0.0 px, p99 0.0 px, over 8 px 0
+PROFILE CLIENT0 idle8 FRAMES n 473 mean 1.59 p50 1.50 p95 2.22 p99 3.65 max 3.8 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT0 idle8 SUMMARY 15.8 s, up 20 B/s, down 1024 B/s, frames 29.9/s, process 1.592 ms/frame (median 1.50, max 3.8), netcode 0.171 ms/frame remote steps 3311, max 0.0 px, p99 0.0 px, over 8 px 0
+PROFILE CLIENT0 walk8 FRAMES n 750 mean 1.51 p50 1.45 p95 2.14 p99 2.73 max 3.6 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT0 walk8 SUMMARY 15.4 s, up 213 B/s, down 2364 B/s, frames 48.5/s, process 1.509 ms/frame (median 1.45, max 3.6), netcode 0.249 ms/frame remote steps 5250, max 5.0 px, p99 4.0 px, over 8 px 0
+PROFILE CLIENT0 walk8split-travel FRAMES n 1168 mean 1.56 p50 1.50 p95 2.18 p99 2.75 max 3.2 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT0 walk8split FRAMES n 753 mean 1.47 p50 1.41 p95 2.13 p99 2.68 max 3.4 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT0 walk8split SUMMARY 15.4 s, up 298 B/s, down 1853 B/s, frames 48.7/s, process 1.474 ms/frame (median 1.41, max 3.4), netcode 0.193 ms/frame remote steps 2259, max 4.0 px, p99 3.0 px, over 8 px 0
+PROFILE CLIENT0 walk8away-travel FRAMES n 231 mean 4.88 p50 2.03 p95 15.32 p99 26.79 max 138.7 ms, over 16/33/100 ms: 11/1/1
+PROFILE CLIENT0 walk8away FRAMES n 431 mean 3.41 p50 2.58 p95 8.10 p99 11.93 max 17.4 ms, over 16/33/100 ms: 2/0/0
+PROFILE CLIENT0 walk8away SUMMARY 15.7 s, up 20 B/s, down 194 B/s, frames 27.5/s, process 3.414 ms/frame (median 2.58, max 17.4), netcode 0.320 ms/frame remote steps 3017, max 0.0 px, p99 0.0 px, over 8 px 0
+PROFILE CLIENT1 join8 FRAMES n 193 mean 1.54 p50 1.38 p95 2.58 p99 4.18 max 4.3 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT1 join8 SUMMARY 7.3 s, up 22 B/s, down 1386 B/s, frames 26.4/s, process 1.538 ms/frame (median 1.38, max 4.3), netcode 0.197 ms/frame remote steps 1163, max 0.0 px, p99 0.0 px, over 8 px 0
+PROFILE CLIENT1 idle8 FRAMES n 463 mean 1.35 p50 1.30 p95 1.82 p99 2.12 max 2.9 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT1 idle8 SUMMARY 15.5 s, up 21 B/s, down 1009 B/s, frames 29.9/s, process 1.354 ms/frame (median 1.30, max 2.9), netcode 0.170 ms/frame remote steps 3241, max 0.0 px, p99 0.0 px, over 8 px 0
+PROFILE CLIENT1 walk8 FRAMES n 926 mean 1.47 p50 1.39 p95 2.11 p99 2.87 max 4.2 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT1 walk8 SUMMARY 15.7 s, up 215 B/s, down 2361 B/s, frames 59.0/s, process 1.470 ms/frame (median 1.39, max 4.2), netcode 0.247 ms/frame remote steps 6482, max 5.0 px, p99 2.0 px, over 8 px 0
+PROFILE CLIENT1 walk8split-travel FRAMES n 756 mean 2.34 p50 1.26 p95 12.76 p99 17.96 max 140.9 ms, over 16/33/100 ms: 10/2/1
+PROFILE CLIENT1 walk8split FRAMES n 465 mean 1.68 p50 1.13 p95 3.39 p99 3.90 max 4.9 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT1 walk8split SUMMARY 15.6 s, up 19 B/s, down 124 B/s, frames 29.8/s, process 1.678 ms/frame (median 1.13, max 4.9), netcode 0.107 ms/frame remote steps 1395, max 0.0 px, p99 0.0 px, over 8 px 0
+PROFILE CLIENT1 walk8away-travel FRAMES n 233 mean 0.92 p50 0.85 p95 1.39 p99 1.97 max 3.2 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT1 walk8away FRAMES n 456 mean 1.66 p50 1.48 p95 3.29 p99 5.57 max 7.6 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT1 walk8away SUMMARY 15.6 s, up 19 B/s, down 196 B/s, frames 29.3/s, process 1.662 ms/frame (median 1.48, max 7.6), netcode 0.317 ms/frame remote steps 3192, max 0.0 px, p99 0.0 px, over 8 px 0
+PROFILE CLIENT2 join8 FRAMES n 188 mean 1.56 p50 1.37 p95 2.70 p99 3.69 max 4.5 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT2 join8 SUMMARY 7.4 s, up 19 B/s, down 1361 B/s, frames 25.4/s, process 1.555 ms/frame (median 1.37, max 4.5), netcode 0.205 ms/frame remote steps 1138, max 0.0 px, p99 0.0 px, over 8 px 0
+PROFILE CLIENT2 idle8 FRAMES n 467 mean 1.41 p50 1.32 p95 1.95 p99 3.03 max 4.2 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT2 idle8 SUMMARY 15.6 s, up 21 B/s, down 1000 B/s, frames 29.9/s, process 1.406 ms/frame (median 1.32, max 4.2), netcode 0.165 ms/frame remote steps 3269, max 0.0 px, p99 0.0 px, over 8 px 0
+PROFILE CLIENT2 walk8 FRAMES n 716 mean 1.58 p50 1.50 p95 2.32 p99 2.93 max 3.9 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT2 walk8 SUMMARY 15.5 s, up 189 B/s, down 2421 B/s, frames 46.2/s, process 1.577 ms/frame (median 1.50, max 3.9), netcode 0.266 ms/frame remote steps 5012, max 10.0 px, p99 3.0 px, over 8 px 3
+PROFILE CLIENT2 walk8split-travel FRAMES n 1138 mean 1.62 p50 1.53 p95 2.35 p99 2.67 max 4.0 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT2 walk8split FRAMES n 777 mean 1.44 p50 1.37 p95 2.12 p99 2.85 max 3.5 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT2 walk8split SUMMARY 15.7 s, up 275 B/s, down 1867 B/s, frames 49.5/s, process 1.437 ms/frame (median 1.37, max 3.5), netcode 0.186 ms/frame remote steps 2331, max 4.0 px, p99 4.0 px, over 8 px 0
+PROFILE CLIENT2 walk8away-travel FRAMES n 225 mean 4.81 p50 1.81 p95 15.19 p99 24.47 max 134.3 ms, over 16/33/100 ms: 10/1/1
+PROFILE CLIENT2 walk8away FRAMES n 449 mean 3.29 p50 2.56 p95 7.13 p99 11.96 max 14.0 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT2 walk8away SUMMARY 15.6 s, up 19 B/s, down 195 B/s, frames 28.7/s, process 3.287 ms/frame (median 2.56, max 14.0), netcode 0.298 ms/frame remote steps 3143, max 0.0 px, p99 0.0 px, over 8 px 0
+PROFILE CLIENT3 join8 FRAMES n 187 mean 1.62 p50 1.36 p95 2.92 p99 5.03 max 10.8 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT3 join8 SUMMARY 7.4 s, up 17 B/s, down 1368 B/s, frames 25.3/s, process 1.616 ms/frame (median 1.36, max 10.8), netcode 0.202 ms/frame remote steps 1131, max 0.0 px, p99 0.0 px, over 8 px 0
+PROFILE CLIENT3 idle8 FRAMES n 467 mean 1.44 p50 1.34 p95 2.02 p99 3.77 max 4.5 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT3 idle8 SUMMARY 15.6 s, up 21 B/s, down 1000 B/s, frames 29.9/s, process 1.443 ms/frame (median 1.34, max 4.5), netcode 0.163 ms/frame remote steps 3269, max 0.0 px, p99 0.0 px, over 8 px 0
+PROFILE CLIENT3 walk8 FRAMES n 920 mean 1.38 p50 1.32 p95 1.85 p99 2.26 max 3.2 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT3 walk8 SUMMARY 15.4 s, up 211 B/s, down 2424 B/s, frames 59.7/s, process 1.376 ms/frame (median 1.32, max 3.2), netcode 0.233 ms/frame remote steps 6440, max 5.0 px, p99 2.0 px, over 8 px 0
+PROFILE CLIENT3 walk8split-travel FRAMES n 762 mean 2.35 p50 1.33 p95 11.42 p99 17.43 max 146.0 ms, over 16/33/100 ms: 9/1/1
+PROFILE CLIENT3 walk8split FRAMES n 466 mean 1.67 p50 1.30 p95 3.27 p99 3.66 max 5.2 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT3 walk8split SUMMARY 15.6 s, up 19 B/s, down 124 B/s, frames 29.8/s, process 1.673 ms/frame (median 1.30, max 5.2), netcode 0.107 ms/frame remote steps 1398, max 0.0 px, p99 0.0 px, over 8 px 0
+PROFILE CLIENT3 walk8away-travel FRAMES n 233 mean 0.92 p50 0.84 p95 1.36 p99 2.70 max 3.3 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT3 walk8away FRAMES n 457 mean 1.67 p50 1.48 p95 3.18 p99 5.59 max 14.1 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT3 walk8away SUMMARY 15.6 s, up 19 B/s, down 196 B/s, frames 29.4/s, process 1.669 ms/frame (median 1.48, max 14.1), netcode 0.329 ms/frame remote steps 3199, max 0.0 px, p99 0.0 px, over 8 px 0
+PROFILE CLIENT4 join8 FRAMES n 187 mean 1.54 p50 1.38 p95 2.72 p99 3.87 max 4.0 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT4 join8 SUMMARY 7.4 s, up 17 B/s, down 1367 B/s, frames 25.3/s, process 1.542 ms/frame (median 1.38, max 4.0), netcode 0.201 ms/frame remote steps 1131, max 0.0 px, p99 0.0 px, over 8 px 0
+PROFILE CLIENT4 idle8 FRAMES n 468 mean 1.38 p50 1.32 p95 1.90 p99 2.16 max 4.1 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT4 idle8 SUMMARY 15.6 s, up 20 B/s, down 1002 B/s, frames 29.9/s, process 1.376 ms/frame (median 1.32, max 4.1), netcode 0.167 ms/frame remote steps 3276, max 0.0 px, p99 0.0 px, over 8 px 0
+PROFILE CLIENT4 walk8 FRAMES n 923 mean 1.41 p50 1.35 p95 2.02 p99 2.61 max 3.6 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT4 walk8 SUMMARY 15.4 s, up 179 B/s, down 2405 B/s, frames 59.9/s, process 1.413 ms/frame (median 1.35, max 3.6), netcode 0.239 ms/frame remote steps 6461, max 5.0 px, p99 2.0 px, over 8 px 0
+PROFILE CLIENT4 walk8split-travel FRAMES n 1527 mean 1.37 p50 1.30 p95 1.95 p99 2.33 max 3.4 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT4 walk8split FRAMES n 935 mean 1.32 p50 1.25 p95 1.84 p99 2.62 max 3.5 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT4 walk8split SUMMARY 15.6 s, up 284 B/s, down 1881 B/s, frames 59.8/s, process 1.325 ms/frame (median 1.25, max 3.5), netcode 0.171 ms/frame remote steps 2805, max 6.0 px, p99 2.0 px, over 8 px 0
+PROFILE CLIENT4 walk8away-travel FRAMES n 227 mean 4.65 p50 1.67 p95 15.16 p99 28.29 max 135.1 ms, over 16/33/100 ms: 11/2/1
+PROFILE CLIENT4 walk8away FRAMES n 423 mean 3.65 p50 3.17 p95 6.85 p99 12.26 max 21.3 ms, over 16/33/100 ms: 2/0/0
+PROFILE CLIENT4 walk8away SUMMARY 15.5 s, up 18 B/s, down 194 B/s, frames 27.3/s, process 3.652 ms/frame (median 3.17, max 21.3), netcode 0.327 ms/frame remote steps 2961, max 0.0 px, p99 0.0 px, over 8 px 0
+PROFILE CLIENT5 join8 FRAMES n 193 mean 1.50 p50 1.38 p95 2.57 p99 3.59 max 3.6 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT5 join8 SUMMARY 7.3 s, up 20 B/s, down 1387 B/s, frames 26.4/s, process 1.501 ms/frame (median 1.38, max 3.6), netcode 0.193 ms/frame remote steps 1163, max 0.0 px, p99 0.0 px, over 8 px 0
+PROFILE CLIENT5 idle8 FRAMES n 467 mean 1.38 p50 1.33 p95 1.74 p99 2.53 max 8.5 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT5 idle8 SUMMARY 15.6 s, up 19 B/s, down 1001 B/s, frames 29.9/s, process 1.377 ms/frame (median 1.33, max 8.5), netcode 0.173 ms/frame remote steps 3269, max 0.0 px, p99 0.0 px, over 8 px 0
+PROFILE CLIENT5 walk8 FRAMES n 923 mean 1.40 p50 1.33 p95 2.01 p99 2.71 max 3.6 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT5 walk8 SUMMARY 15.4 s, up 168 B/s, down 2416 B/s, frames 59.9/s, process 1.403 ms/frame (median 1.33, max 3.6), netcode 0.241 ms/frame remote steps 6461, max 5.0 px, p99 2.0 px, over 8 px 0
+PROFILE CLIENT5 walk8split-travel FRAMES n 756 mean 2.33 p50 1.26 p95 13.17 p99 16.99 max 143.8 ms, over 16/33/100 ms: 11/1/1
+PROFILE CLIENT5 walk8split FRAMES n 465 mean 1.70 p50 1.31 p95 3.29 p99 3.70 max 5.7 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT5 walk8split SUMMARY 15.6 s, up 19 B/s, down 124 B/s, frames 29.8/s, process 1.700 ms/frame (median 1.31, max 5.7), netcode 0.109 ms/frame remote steps 1395, max 0.0 px, p99 0.0 px, over 8 px 0
+PROFILE CLIENT5 walk8away-travel FRAMES n 233 mean 0.90 p50 0.85 p95 1.33 p99 1.68 max 3.1 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT5 walk8away FRAMES n 458 mean 1.63 p50 1.48 p95 2.94 p99 4.93 max 11.4 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT5 walk8away SUMMARY 15.6 s, up 19 B/s, down 196 B/s, frames 29.3/s, process 1.629 ms/frame (median 1.48, max 11.4), netcode 0.301 ms/frame remote steps 3206, max 0.0 px, p99 0.0 px, over 8 px 0
+PROFILE CLIENT6 join8 FRAMES n 187 mean 1.53 p50 1.34 p95 2.86 p99 4.58 max 5.2 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT6 join8 SUMMARY 7.3 s, up 17 B/s, down 1380 B/s, frames 25.6/s, process 1.527 ms/frame (median 1.34, max 5.2), netcode 0.187 ms/frame remote steps 1128, max 0.0 px, p99 0.0 px, over 8 px 0
+PROFILE CLIENT6 idle8 FRAMES n 467 mean 1.41 p50 1.30 p95 1.86 p99 3.94 max 9.6 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT6 idle8 SUMMARY 15.6 s, up 19 B/s, down 1037 B/s, frames 29.9/s, process 1.407 ms/frame (median 1.30, max 9.6), netcode 0.162 ms/frame remote steps 3269, max 0.0 px, p99 0.0 px, over 8 px 0
+PROFILE CLIENT6 walk8 FRAMES n 926 mean 1.41 p50 1.36 p95 1.97 p99 2.55 max 3.4 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT6 walk8 SUMMARY 15.6 s, up 233 B/s, down 2350 B/s, frames 59.2/s, process 1.411 ms/frame (median 1.36, max 3.4), netcode 0.235 ms/frame remote steps 6482, max 5.0 px, p99 2.0 px, over 8 px 0
+PROFILE CLIENT6 walk8split-travel FRAMES n 1514 mean 1.32 p50 1.27 p95 1.80 p99 2.34 max 2.9 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT6 walk8split FRAMES n 934 mean 1.35 p50 1.28 p95 1.94 p99 2.51 max 3.5 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT6 walk8split SUMMARY 15.6 s, up 253 B/s, down 1862 B/s, frames 59.8/s, process 1.353 ms/frame (median 1.28, max 3.5), netcode 0.178 ms/frame remote steps 2802, max 4.0 px, p99 2.0 px, over 8 px 0
+PROFILE CLIENT6 walk8away-travel FRAMES n 233 mean 4.79 p50 1.83 p95 15.60 p99 25.59 max 135.7 ms, over 16/33/100 ms: 10/1/1
+PROFILE CLIENT6 walk8away FRAMES n 422 mean 3.51 p50 2.89 p95 7.84 p99 13.10 max 18.1 ms, over 16/33/100 ms: 1/0/0
+PROFILE CLIENT6 walk8away SUMMARY 15.5 s, up 18 B/s, down 198 B/s, frames 27.2/s, process 3.514 ms/frame (median 2.89, max 18.1), netcode 0.317 ms/frame remote steps 2954, max 0.0 px, p99 0.0 px, over 8 px 0
+PROFILE CLIENT7 join8 FRAMES n 106 mean 8.90 p50 5.87 p95 20.82 p99 59.91 max 114.1 ms, over 16/33/100 ms: 8/3/1
+PROFILE CLIENT7 join8 SUMMARY 3.6 s, up 897 B/s, down 142289 B/s, frames 29.1/s, process 8.896 ms/frame (median 5.87, max 114.1), netcode 0.308 ms/frame remote steps 56, max 0.0 px, p99 0.0 px, over 8 px 0
+PROFILE CLIENT7 idle8 FRAMES n 468 mean 1.56 p50 1.38 p95 3.25 p99 4.08 max 4.4 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT7 idle8 SUMMARY 15.6 s, up 18 B/s, down 1004 B/s, frames 29.9/s, process 1.562 ms/frame (median 1.38, max 4.4), netcode 0.165 ms/frame remote steps 3276, max 0.0 px, p99 0.0 px, over 8 px 0
+PROFILE CLIENT7 walk8 FRAMES n 717 mean 1.55 p50 1.50 p95 2.20 p99 2.79 max 3.5 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT7 walk8 SUMMARY 15.5 s, up 190 B/s, down 2415 B/s, frames 46.2/s, process 1.548 ms/frame (median 1.50, max 3.5), netcode 0.259 ms/frame remote steps 5019, max 9.0 px, p99 3.0 px, over 8 px 2
+PROFILE CLIENT7 walk8split-travel FRAMES n 761 mean 2.36 p50 1.33 p95 12.11 p99 17.22 max 138.1 ms, over 16/33/100 ms: 11/1/1
+PROFILE CLIENT7 walk8split FRAMES n 465 mean 1.67 p50 1.12 p95 3.36 p99 3.56 max 4.2 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT7 walk8split SUMMARY 15.6 s, up 19 B/s, down 124 B/s, frames 29.8/s, process 1.671 ms/frame (median 1.12, max 4.2), netcode 0.104 ms/frame remote steps 1395, max 0.0 px, p99 0.0 px, over 8 px 0
+PROFILE CLIENT7 walk8away-travel FRAMES n 233 mean 1.02 p50 0.92 p95 1.50 p99 3.65 max 5.7 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT7 walk8away FRAMES n 454 mean 1.80 p50 1.54 p95 3.85 p99 6.24 max 10.3 ms, over 16/33/100 ms: 0/0/0
+PROFILE CLIENT7 walk8away SUMMARY 15.7 s, up 19 B/s, down 195 B/s, frames 28.9/s, process 1.804 ms/frame (median 1.54, max 10.3), netcode 0.326 ms/frame remote steps 3178, max 0.0 px, p99 0.0 px, over 8 px 0
