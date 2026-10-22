@@ -8,6 +8,7 @@ extends SceneTree
 
 const NativeWorldGen = preload("res://scripts/native_world_gen.gd")
 const SourceLibGDXMath = preload("res://scripts/source_libgdx_math.gd")
+const DataPaths = preload("res://scripts/game_data_paths.gd")
 # Seed 1's first attempt fails validation: its steps still match.
 const STAGE_WORLDS := [[12345, 0], [1, 0], [424242, 1]]
 
@@ -26,6 +27,7 @@ func _initialize() -> void:
     _check_hash_order(native, rng)
     for world: Array in STAGE_WORLDS:
         _check_stages(world[0], world[1])
+    _check_cache(12345, 0)
     print("NATIVE TEST: failed %d" % _failures)
     quit(1 if _failures else 0)
 
@@ -142,3 +144,23 @@ func _check_stages(seed_value: int, size_index: int) -> void:
         if not ok:
             return
     print("NATIVE TEST: world %d size %d, %d steps match" % [seed_value, size_index, expected.size()])
+
+## The world cache a world is saved as (and sent in co-op area snapshots):
+## the same bytes from either generator (worldgen_check's hashes do not see
+## how a cache encodes typed arrays).
+func _check_cache(seed_value: int, size_index: int) -> void:
+    DataPaths.directory = OS.get_user_data_dir().path_join("native_worldgen_test")
+    var caches: Array[PackedByteArray] = []
+    for choice in ["1", "0"]:
+        OS.set_environment("POKEWILDS_NATIVE_WORLDGEN", choice)
+        var result := SourceWorldGenerator.generate_exact_source_world(seed_value, size_index)
+        var world := SourceExactWorldAdapter.from_generator_result(result, SourceJavaRandom.new(seed_value ^ 0x535041574E))
+        SourceWorldCache.save_world(seed_value, size_index, world, result)
+        var path := SourceWorldCache.cache_path(seed_value, size_index)
+        caches.append(FileAccess.get_file_as_bytes(path))
+        DirAccess.remove_absolute(path)
+    OS.set_environment("POKEWILDS_NATIVE_WORLDGEN", "1")
+    var same := not caches[0].is_empty() and caches[0] == caches[1]
+    _expect(same, "world %d size %d: the world caches differ (%d and %d bytes)" % [seed_value, size_index, caches[0].size(), caches[1].size()])
+    if same:
+        print("NATIVE TEST: world %d size %d, the same world cache (%d bytes)" % [seed_value, size_index, caches[0].size()])

@@ -537,7 +537,7 @@ public:
 	std::vector<std::string> already_used_dungeons;
 	std::vector<ValidationRecord> validation_records;
 	// Results of generate_complete.
-	Array burrowed_pokemon;
+	TypedArray<Dictionary> burrowed_pokemon; // Array[Dictionary], as in GDScript (a cache encodes the type)
 	Array landmark_origins;
 	// QA: stage lines (empty unless asked for).
 	bool qa = false;
