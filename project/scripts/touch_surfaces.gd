@@ -80,6 +80,9 @@ func build() -> Dictionary:
     if m.touch_config.visible:
         # The touch settings panel has real sliders and buttons.
         return {"modal": false, "hide_pad": true}
+    # A co-op TRADE / BATTLE / request / BEACON box takes the input first (coop_game.handle_input).
+    if is_instance_valid(m.coop_game) and is_instance_valid(m.coop_game.interaction_ui) and m.coop_game.interaction_ui.visible:
+        return _coop_interaction(m.coop_game.interaction_ui)
     if is_instance_valid(m.waypoint_ui) and m.waypoint_ui.naming: return _waypoint_naming()
     if m.progression_active: return _progression()
     if m.quit_prompt_open: return _yes_no(m.quit_prompt, func(i): m.quit_prompt_index = i; m._update_quit_prompt_cursor())
@@ -648,6 +651,15 @@ func _field_prompt() -> Dictionary:
         return {"tap_at": advance, "back": cancel}
     if m.trainer_tip_open: return {"tap_at": advance, "back": cancel}
     return {}
+
+## A tap on a row picks and confirms it; a drag scrolls a long list of beacons.
+func _coop_interaction(box: Control) -> Dictionary:
+    return {
+        "rows": box.row_rects(),
+        "tap": func(i): box.selection = box.first + i; box.refresh(); press("confirm"),
+        "scroll": func(d): press("move_down" if d > 0 else "move_up"),
+        "back": func(): press("cancel"),
+    }
 
 func _wild_choice(i: int) -> void:
     main.wild_pokemon_prompt_confirm_armed = true

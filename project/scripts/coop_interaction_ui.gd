@@ -1,11 +1,24 @@
 extends Control
-## Player-to-player choices use the same menu frame and font as the rest of the game.
+## Player-to-player choices use the same menu frame, font and tick as the game's
+## other in-game dialogs (QUIT GAME?, KICK): a box as big as its text, centred
+## and clear of the HUD's top row and minimap. On a touch screen every row is a
+## finger-sized target (touch_surfaces.gd), the X button cancels and the A/B
+## hints are left out.
 signal battle_accepted(session:Dictionary)
+const HudStyle=preload("res://scripts/hud_style.gd")
+const FONT_SIZE:=10
+const LINE:=13
+const PITCH:=16
+const PAD:=12
+const ROW_X:=24
+const MIN_WIDTH:=96
 var main:Node
 var game:Node
 var target:=""
 var phase:=""
 var selection:=0
+## The first choice on screen, when there are more than fit.
+var first:=0
 var busy:=false
 var stick_y:=0
 var interaction:Dictionary={}
@@ -17,18 +30,19 @@ var footer:Label
 
 func configure(owner_main:Node,coordinator:Node)->void:
     main=owner_main;game=coordinator;z_index=350;size=Vector2(320,180)
-    panel=Panel.new();panel.position=Vector2(34,12);panel.size=Vector2(252,156);add_child(panel)
-    title=main._source_ui_label(panel,"Title",Vector2(14,9),Vector2(224,24),9,"")
+    panel=Panel.new();add_child(panel)
+    title=main._source_ui_label(panel,"Title",Vector2(PAD,9),Vector2(224,LINE),FONT_SIZE,"")
     title.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
     for i in range(6):
-        var label:Label=main._source_ui_label(panel,"Choice%d"%i,Vector2(26,36+i*15),Vector2(210,15),8,"")
+        var label:Label=main._source_ui_label(panel,"Choice%d"%i,Vector2(ROW_X,0),Vector2(210,PITCH),FONT_SIZE,"")
+        label.vertical_alignment=VERTICAL_ALIGNMENT_CENTER
         label.mouse_filter=Control.MOUSE_FILTER_STOP
         label.gui_input.connect(func(event):
             if event is InputEventMouseButton and event.pressed and event.button_index==MOUSE_BUTTON_LEFT:
-                selection=maxi(0,selection-rows.size()+1)+i;activate();accept_event())
+                selection=first+i;activate();accept_event())
         rows.append(label)
-    tick=main._source_texture_rect(panel,"Tick",Vector2(14,36),Vector2(5,7),main.source_command_cursor.texture)
-    footer=main._source_ui_label(panel,"Footer",Vector2(14,133),Vector2(224,15),7,"A: SELECT   B: CANCEL")
+    tick=main._source_texture_rect(panel,"Tick",Vector2(PAD,0),Vector2(5,7),main.source_command_cursor.texture)
+    footer=main._source_ui_label(panel,"Footer",Vector2(PAD,0),Vector2(224,12),7,"A: SELECT   B: CANCEL")
     hide()
     visibility_changed.connect(_sync_gameplay)
 
@@ -55,36 +69,63 @@ func choices()->Array:
 func refresh()->void:
     panel.add_theme_stylebox_override("panel",main._classic_dialogue_style())
     var names=choices();selection=clampi(selection,0,maxi(0,names.size()-1))
-    title.text={"choose":"CHOOSE AN ACTION","invite":"%s REQUEST"%String(interaction.get("kind","")),
+    title.text={"invite":"%s REQUEST"%String(interaction.get("kind","")),
         "trade":"CHOOSE YOUR POKEMON","wait":"WAITING FOR THE OTHER PLAYER...","confirm":"CONFIRM THIS TRADE?"}.get(phase,"")
     if phase=="beacons":title.text="SAVING BEACONS..." if game.beacons.busy else ("NO BEACONS" if names.is_empty() else "CHOOSE A BEACON")
-    # Compact action/wait panels retain the same font, frame and tick helper.
-    var compact=phase=="choose"
-    var waiting=phase=="wait"
-    panel.size=Vector2(96,54) if compact else Vector2(220,64) if waiting else Vector2(252,156)
-    panel.position=(Vector2(320,180)-panel.size)*0.5
-    title.visible=not compact
-    title.size=Vector2(panel.size.x-28,28 if waiting else 24)
-    footer.visible=not compact
-    footer.text="B: CANCEL" if waiting else "A: SELECT   B: CANCEL"
-    footer.position=Vector2(14,panel.size.y-23)
-    footer.size.x=panel.size.x-28
-    for i in range(rows.size()):
-        rows[i].position=Vector2(26,(12 if compact else 36)+i*(18 if compact else 15))
-        rows[i].size.x=panel.size.x-40
-    var first=maxi(0,selection-rows.size()+1)
     if phase=="confirm":
         var offers:Dictionary=interaction.get("offers",{})
         var other=String(interaction.b) if interaction.get("a")==game.session.actor else String(interaction.get("a",""))
         if offers.has(other):title.text="RECEIVE "+main.PokemonState.display_name(offers[other].pokemon)+"?"
+    _layout(names)
+
+## The box fits its text: centred, under the HUD's top row, and no wider than
+## the room between the minimap and the same margin on the right.
+func _layout(names:Array)->void:
+    var touch:bool=is_instance_valid(main.touch_ui) and main.touch_ui.enabled
+    var safe:Rect2=main.touch_controls.usable_rect
+    var screen:=get_viewport_rect().size
+    var top:=safe.position.y+HudStyle.MARGIN+float(main.status_hud.row_height())+HudStyle.GAP
+    var centre:=screen.x/2.0
+    var widest:float=2.0*(centre-(safe.position.x+HudStyle.MARGIN+main.M3924_MINIMAP_SIZE.x+HudStyle.GAP))
+    # TRADE / BATTLE needs no title, but shows why an action failed.
+    title.visible=not title.text.is_empty()
+    # Keyboard and controller hints; a touch screen has the rows and the X instead.
+    footer.visible=phase!="choose" and not touch
+    footer.text="B: CANCEL" if phase=="wait" else "A: SELECT   B: CANCEL"
+    var font:Font=main.JOHTO_FONT
+    var width:=float(MIN_WIDTH)
+    for name in names:width=maxf(width,ROW_X+font.get_string_size(String(name),HORIZONTAL_ALIGNMENT_LEFT,-1,FONT_SIZE).x+PAD)
+    if title.visible:width=maxf(width,2*PAD+font.get_string_size(title.text,HORIZONTAL_ALIGNMENT_LEFT,-1,FONT_SIZE).x)
+    if footer.visible:width=maxf(width,2*PAD+font.get_string_size(footer.text,HORIZONTAL_ALIGNMENT_LEFT,-1,7).x)
+    width=roundf(minf(width,widest))
+    var y:=9.0
+    if title.visible:
+        title.position=Vector2(PAD,y);title.size=Vector2(width-2*PAD,LINE)
+        var lines:=title.get_line_count()
+        title.size.y=lines*LINE;y+=lines*LINE+3
+    var room:=safe.end.y-HudStyle.MARGIN-top-y-(14.0 if footer.visible else 0.0)-7.0
+    var shown:=mini(names.size(),mini(rows.size(),int(room/PITCH)))
+    first=clampi(selection-shown+1,0,maxi(0,names.size()-shown))
     for i in range(rows.size()):
-        rows[i].visible=i+first<names.size()
-        if i+first<names.size():
-            rows[i].text=String(names[i+first])
-            var width=rows[i].get_theme_font("font").get_string_size(rows[i].text,HORIZONTAL_ALIGNMENT_LEFT,-1,8).x
-            rows[i].scale.x=minf(1.0,rows[i].size.x/maxf(1.0,width))
-    tick.visible=not names.is_empty()
+        rows[i].visible=i<shown
+        if not rows[i].visible:continue
+        rows[i].text=String(names[first+i])
+        rows[i].position=Vector2(ROW_X,y+i*PITCH);rows[i].size.x=width-ROW_X-PAD
+        var text_width=font.get_string_size(rows[i].text,HORIZONTAL_ALIGNMENT_LEFT,-1,FONT_SIZE).x
+        rows[i].scale.x=minf(1.0,rows[i].size.x/maxf(1.0,text_width))
+    y+=shown*PITCH
+    if footer.visible:footer.position=Vector2(PAD,y+2);footer.size=Vector2(width-2*PAD,12);y+=14
+    panel.size=Vector2(width,y+7)
+    panel.position=Vector2(roundf(centre-width/2.0),maxf(top,roundf((screen.y-panel.size.y)/2.0)))
+    tick.visible=shown>0
     if tick.visible:main._align_menu_tick(tick,rows[selection-first])
+
+## Where a finger picks each row on screen: the box's whole width, PITCH tall.
+func row_rects()->Array:
+    var rects:=[]
+    for row in rows:
+        if row.visible:rects.append(Rect2(panel.global_position.x+4,row.global_position.y,panel.size.x-8,PITCH))
+    return rects
 
 func update(result:Dictionary)->void:
     if result.get("kind") in ["closed","trade_complete"]:
@@ -119,7 +160,7 @@ func activate()->void:
     var result:Dictionary=await game.command(operation,args)
     busy=false
     if not result.get("ok",false):
-        title.text=String(result.get("reason","COULD NOT COMPLETE ACTION")).replace("_"," ").to_upper();return
+        title.text=String(result.get("reason","COULD NOT COMPLETE ACTION")).replace("_"," ").to_upper();_layout(choices());return
     if result.get("waiting",false):phase="wait";refresh()
 
 func handle(event:InputEvent)->void:

@@ -1094,11 +1094,12 @@ func kick(peer:int,ban:bool=false)->bool:
 ## Without it a player can arrive in a public game and nobody would know.
 var _notice_names:Dictionary={}
 var _notice_label:Label
-var _notice_box:PanelContainer
-const NOTICE_FONT_SIZE:=12
-## The font sits high in its line, so less padding below keeps the text centred.
-const NOTICE_PAD_TOP:=8
-const NOTICE_PAD_BOTTOM:=5
+## A HUD chip (hud_style.gd) under the top row: the same glass, ring and white
+## pixel font as the clock above it, the text wrapped to the room the minimap leaves.
+var _notice_box:Control
+const HudStyle=preload("res://scripts/hud_style.gd")
+## Line pitch: the capitals' 6 px of ink and a 4 px gap.
+const NOTICE_LINE:=10
 var _notice_fade:Tween
 
 ## "loading" when a player connects, "joined" once their world has loaded and
@@ -1126,18 +1127,22 @@ func _player_notice(peer:int,player:String,event:String)->void:
 func show_notice(player:String,event:String)->void:
     if not NOTICE_TEXT.has(event):return
     if not is_instance_valid(_notice_label):
-        # Built like the game's own text boxes and placed in its UI layer, so
-        # it wears the player's chosen frame and follows dark mode.
-        var row:=CenterContainer.new();row.name="OnlineNotice";main.get_node("UI").add_child(row)
-        row.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-        row.offset_top=4;row.mouse_filter=Control.MOUSE_FILTER_IGNORE
-        _notice_box=PanelContainer.new();row.add_child(_notice_box)
-        _notice_box.mouse_filter=Control.MOUSE_FILTER_IGNORE
-        var frame:StyleBoxTexture=main._classic_dialogue_style()
-        frame.content_margin_left=10;frame.content_margin_right=10;frame.content_margin_top=NOTICE_PAD_TOP;frame.content_margin_bottom=NOTICE_PAD_BOTTOM
-        _notice_box.add_theme_stylebox_override("panel",frame)
-        _notice_label=main._source_ui_label(_notice_box,"Text",Vector2.ZERO,Vector2.ZERO,NOTICE_FONT_SIZE)
-    _notice_label.text=String(NOTICE_TEXT[event]).replace("%s",player.strip_edges().left(24).to_upper())
+        _notice_box=HudStyle.chip(main.get_node("UI"),"OnlineNotice");_notice_box.z_index=340
+        _notice_label=_notice_box.get_node("Text")
+        _notice_label.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER;_notice_label.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
+        _notice_label.add_theme_constant_override("line_spacing",NOTICE_LINE-roundi(HudStyle.FONT.get_height(HudStyle.FONT_SIZE)))
+    var text:=String(NOTICE_TEXT[event]).replace("%s",player.strip_edges().left(24).to_upper())
+    var safe:Rect2=main.touch_controls.usable_rect
+    var centre:float=main.get_viewport().get_visible_rect().size.x/2.0
+    var room:float=2.0*(centre-(safe.position.x+HudStyle.MARGIN+main.M3924_MINIMAP_SIZE.x+HudStyle.GAP+HudStyle.PAD))
+    var ink:=HudStyle.FONT.get_multiline_string_size(text,HORIZONTAL_ALIGNMENT_CENTER,room,HudStyle.FONT_SIZE,-1,
+        TextServer.BREAK_MANDATORY|TextServer.BREAK_WORD_BOUND|TextServer.BREAK_ADAPTIVE|TextServer.BREAK_TRIM_EDGE_SPACES)
+    _notice_label.text=text;_notice_label.size=Vector2(ink.x,0)
+    # Ink PAD from every edge, as on the chips (glyphs leave their last column blank).
+    _notice_label.position=Vector2(HudStyle.PAD,HudStyle.PAD+HudStyle.INK_HEIGHT/2.0-HudStyle.INK_CENTRE)
+    _notice_box.size=Vector2(ink.x-1+2*HudStyle.PAD,2*HudStyle.PAD+HudStyle.INK_HEIGHT+(_notice_label.get_line_count()-1)*NOTICE_LINE)
+    _notice_box.position=Vector2(roundf(centre-_notice_box.size.x/2.0),safe.position.y+HudStyle.MARGIN+float(main.status_hud.row_height())+HudStyle.GAP)
+    _notice_box.queue_redraw()
     _notice_box.modulate.a=1.0;_notice_box.visible=true
     if _notice_fade!=null and _notice_fade.is_valid():_notice_fade.kill()
     _notice_fade=create_tween();_notice_fade.set_speed_scale(1.0/maxf(Engine.time_scale,0.01))
