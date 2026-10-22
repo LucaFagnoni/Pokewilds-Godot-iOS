@@ -3818,6 +3818,13 @@ func _choose_move_to_forget(pokemon: Dictionary,
             return selected_index
     return -1
 
+## A battle's experience screens are main.gd's own: the choices made on them
+## (a move to forget, an evolution let through or stopped) go in the battle's
+## history so a replay of it makes the same ones.
+func _note_battle_choice(choice: Variant) -> void:
+    if battle_active and battle_session != null and battle_session.running:
+        battle_session.history.append(choice)
+
 func _learn_level_moves(pokemon: Dictionary, moves_to_learn: Array) -> void:
     var display_name := PokemonState.display_name(pokemon).to_upper()
     for raw_move in moves_to_learn:
@@ -3834,6 +3841,7 @@ func _learn_level_moves(pokemon: Dictionary, moves_to_learn: Array) -> void:
             display_name, move_name.replace("_", " ")])
         await _type_battle_text("Which move should be forgotten?")
         var replace_index := await _choose_move_to_forget(pokemon, move_name)
+        _note_battle_choice(replace_index)
         if replace_index < 0:
             await _type_battle_text("%s did not learn %s." % [
                 display_name, move_name.replace("_", " ")])
@@ -4276,6 +4284,7 @@ func _run_evolution_sequence(pokemon: Dictionary, new_species: String,
     world.environment_system.resume_music_after_evolution(evolution_music_states)
     progression_mode = "EVOLUTION_DONE"
     progression_animation.texture = null
+    _note_battle_choice(not evolution_cancel_requested)
 
     if evolution_cancel_requested:
         _set_evolution_sprite_halves(old_texture, old_texture, {}, true)
@@ -6399,6 +6408,12 @@ func _show_battle_message_screen() -> void:
     _set_battle_message_width(true)
 
 # --- the battle screen plays the battle session's events -------------------------
+
+## The battle just fought as the co-op host can replay it (battle_session.gd
+## replay_log(); coop_wild_runtime.gd sends it with a wild battle's result),
+## or {} when no battle session fought it (the Safari encounter).
+func battle_report() -> Dictionary:
+    return battle_session.replay_log() if battle_session != null and battle_session.finished else {}
 
 ## This screen's copies of what the battle session holds (the HUD, sprites,
 ## menus and co-op read them).

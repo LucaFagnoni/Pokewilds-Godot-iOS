@@ -80,6 +80,7 @@ func _initialize() -> void:
         for scenario in singles:
             await _record_single(scenario)
         _set_speed(1.0)
+    failures.append_array(replay_failures)
     print("TRANSCRIPTS: %s, %d failed%s" % ["checked" if check else "recorded",
         failures.size(), "" if failures.is_empty() else ": " + ", ".join(failures)])
     quit(1 if not failures.is_empty() else 0)
@@ -121,6 +122,7 @@ func _record_single(scenario: Dictionary) -> void:
     var frames := 0
     var command_count := 0
     var evolving := false
+    current_name = String(scenario.name)
     if verbose: print("SCENARIO ", scenario.name)
     while frames < 400000:
         await process_frame
@@ -192,7 +194,32 @@ func _record_single(scenario: Dictionary) -> void:
 
 func _on_battle_ended(outcome: String) -> void:
     ended = true
-    transcript_log.append({"end": outcome, "state": _state()})
+    var state := _state()
+    transcript_log.append({"end": outcome, "state": state})
+    _check_replay(outcome, state)
+
+## The battle just fought, replayed from its own log with no view (as the
+## co-op host checks a reported wild battle): it must end the same way in the
+## same state, the choices made on main.gd's experience screens included.
+func _check_replay(outcome: String, state: Dictionary) -> void:
+    var session = main.get("battle_session")
+    if session == null or not session.finished:
+        return
+    var report: Dictionary = _plain(session.replay_log(true))
+    var replay = Session.new()
+    var fitted: bool = Session.valid_report(report) and replay.replay(String(report.rng).to_int(),
+        Session.whole_numbers(report.context), Session.whole_numbers(report.party),
+        Session.whole_numbers(report.bag), Session.whole_numbers(report.facts),
+        Session.whole_numbers(report.inputs))
+    var again := digest(full_state(replay.party, replay.enemy_party, [replay.party_index,
+        replay.partner_index, replay.enemy_index, replay.enemy_partner_index], replay.field,
+        [replay.turn_count, replay.run_attempts, replay.enemy_action_count, replay.boss_action_count],
+        replay.participants, replay.context, replay.inventory, replay.rng))
+    if not fitted or replay.outcome != outcome or again.sha != state.sha:
+        replay_failures.append("%s replay (%s)" % [current_name, "refused" if not fitted else replay.outcome])
+
+var replay_failures: Array[String] = []
+var current_name := ""
 
 ## Script inputs name moves; the transcript keeps the index the input chose.
 func _resolve_input(input: Dictionary) -> Dictionary:

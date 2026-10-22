@@ -43,6 +43,13 @@ func _initialize() -> void:
         else:
             failures.append(String(fixture.name))
             printerr("SESSION DIFFERS: %s: %s" % [fixture.name, difference])
+    if only.is_empty():
+        var host := _check_host(JSON.parse_string(FileAccess.get_file_as_string(folder.path_join("trainer_single.json"))))
+        if host.is_empty():
+            print("SESSION HOST CHECK: a reported battle passes, changed ones do not")
+        else:
+            failures.append("host check")
+            printerr("SESSION HOST CHECK FAILS: ", host)
     print("BATTLE SESSION TEST: %d battles, %d differ%s" % [checked, failures.size(),
         "" if failures.is_empty() else ": " + ", ".join(failures)])
     quit(1 if not failures.is_empty() or checked == 0 else 0)
@@ -50,6 +57,40 @@ func _initialize() -> void:
 ## JSON numbers come back as floats: whole ones are ints again, as in the game.
 static func _ints(value) -> Variant:
     return Session.whole_numbers(value)
+
+class FakeState extends RefCounted:
+    var records := {}
+
+class FakeGame extends Node:
+    var state := FakeState.new()
+
+## The co-op host's check of a reported wild battle (coop_wild_runtime.gd
+## check_battle(), fed as it is over the network): the true report passes; a
+## changed outcome, a made-up input, an input after the end, a malformed
+## report and none at all are each told apart.
+func _check_host(fixture: Dictionary) -> String:
+    _play_single(fixture)
+    var report: Dictionary = Record._plain(session.replay_log())
+    var outcome: String = session.outcome
+    var runtime = preload("res://scripts/coop_wild_runtime.gd").new()
+    var game := FakeGame.new()
+    game.state.records["player/A"] = {"party": Record._plain(session.begin_party),
+        "inventory": Record._plain(session.begin_bag)}
+    runtime.game = game
+    var made_up: Dictionary = report.duplicate(true)
+    made_up.inputs[0] = {"kind": "move", "move": "HYPER_BEAM"}
+    var longer: Dictionary = report.duplicate(true)
+    longer.inputs.append({"kind": "run"})
+    var verdicts := [runtime.check_battle("A", {"battle": report, "outcome": outcome}),
+        runtime.check_battle("A", {"battle": report, "outcome": "ran"}),
+        runtime.check_battle("A", {"battle": made_up, "outcome": outcome}),
+        runtime.check_battle("A", {"battle": longer, "outcome": outcome}),
+        runtime.check_battle("A", {"battle": {"rng": "x"}, "outcome": outcome}),
+        runtime.check_battle("A", {"outcome": outcome})]
+    runtime.free()
+    game.free()
+    var expected := ["ok", "replay_" + outcome, "inputs_do_not_fit", "inputs_do_not_fit", "malformed", "unreported"]
+    return "" if verdicts == expected else "verdicts %s, expected %s" % [verdicts, expected]
 
 # --- PvP -----------------------------------------------------------------------------------
 
