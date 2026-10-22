@@ -17,7 +17,7 @@ what took the most (SPIKES: the sections a test build times into Engine meta
 "probe_frame", name -> microseconds this frame, "_top" the outermost summed).
 
     python server/coop_net_profile.py GODOT [--clients N] [--seconds S] [--long S] [--autosave MINUTES] [--breakdown]
-        [--project DIR] [--world-from DIR] [--world NAME] [--keep]
+        [--project DIR] [--world-from DIR] [--world NAME] [--port N] [--keep]
 
 --world-from copies a server data folder (a server_data, or a server folder
 kept with --keep) and --world names the world in it to load.
@@ -34,7 +34,7 @@ long_seconds = float(sys.argv[sys.argv.index("--long") + 1]) if "--long" in sys.
 world = sys.argv[sys.argv.index("--world") + 1] if "--world" in sys.argv else "Profile"
 autosave = sys.argv[sys.argv.index("--autosave") + 1] if "--autosave" in sys.argv else "5"
 work = tempfile.mkdtemp(prefix="pw-netprofile-")
-port = 54793
+port = int(sys.argv[sys.argv.index("--port") + 1]) if "--port" in sys.argv else 54793
 script = os.path.abspath("server/coop_net_profile.gd")
 phase_file = os.path.join(work, "phase.txt")
 project = sys.argv[sys.argv.index("--project") + 1] if "--project" in sys.argv else "project"

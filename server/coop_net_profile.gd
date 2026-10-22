@@ -3,7 +3,7 @@
 # phase the Python side writes to --phase=FILE ("name"), and when it changes
 # print the phase just ended: per message kind the count and bytes per second
 # and the time spent encoding, decoding and applying (coop_transport.gd stats),
-# and ms per frame (Performance TIME_PROCESS, the netcode's own share). A player
+# and ms per frame (the frame's own work, see _frame_ended; the netcode's own share). A player
 # walks in phases named walk*, travels east once in a phase named *split when
 # its --index is odd (in *away whatever it is), and records where it draws each other player, every
 # frame, for the smoothness numbers (largest step, steps over 8 px).
@@ -38,6 +38,8 @@ var _listening := false
 ## "_top" the outermost ones summed): name -> [frames it was the largest in,
 ## its ms in all such frames, its longest ms].
 var _spikes: Dictionary = {}
+## Every timed section's microseconds this phase, for its cost per frame.
+var _sections: Dictionary = {}
 
 func _initialize() -> void:
 	for arg in OS.get_cmdline_user_args():
@@ -46,7 +48,55 @@ func _initialize() -> void:
 	Transport.stats = {}
 	# When this frame's resumed coroutines began (a test build's probe times them).
 	process_frame.connect(func(): Engine.set_meta("probe_t0", Time.get_ticks_usec()))
+	# A frame's work: from its first physics step (or its process step) to the
+	# end of its last node's _process and the calls deferred to after it.
+	# Performance TIME_PROCESS is no use for this: it is the longest frame of
+	# the last second, updated once a second.
+	physics_frame.connect(func(): if _frame_started == 0: _frame_started = Time.get_ticks_usec())
+	var end := EndOfFrame.new()
+	end.process_priority = 2147483647
+	end.process_mode = Node.PROCESS_MODE_ALWAYS
+	end.ended = _frame_ended
+	root.add_child.call_deferred(end)
 	change_scene_to_file("res://scenes/main.tscn")
+
+class EndOfFrame extends Node:
+	var ended: Callable
+	func _process(_delta: float) -> void:
+		Engine.set_meta("probe_nodes_end", Time.get_ticks_usec())
+		ended.call_deferred()
+
+var _frame_started := 0
+var _process_started := 0
+var _reported := false
+## From one frame's start to the next, sleep included: a frame over the frame
+## rate's budget shows here too, with what runs after the deferred calls.
+var _last_start := 0
+var _intervals: Array = []
+
+func _frame_ended() -> void:
+	var ms := (Time.get_ticks_usec() - _frame_started) / 1000.0 if _frame_started > 0 else 0.0
+	# A test build's probe: the parts of the frame no script's _process covers.
+	if Engine.has_meta("probe_frame") and _frame_started > 0:
+		var sections: Dictionary = Engine.get_meta("probe_frame")
+		for part in [["(physics, main loop)", _frame_started, _process_started], ["(deferred calls)", int(Engine.get_meta("probe_nodes_end", 0)), Time.get_ticks_usec()]]:
+			if part[1] > 0 and part[2] >= part[1]:
+				sections[part[0]] = part[2] - part[1]
+				sections["_top"] = sections.get("_top", 0) + part[2] - part[1]
+	if _last_start > 0 and _frame_started > 0 and phase_started > 0 and not _reported: _intervals.append((_frame_started - _last_start) / 1000.0)
+	_last_start = _frame_started
+	_frame_started = 0
+	# The frame that printed the last phase's report is not the game's.
+	if phase_started > 0 and not _reported:
+		frames += 1
+		process_ms += ms
+		max_frame_ms = maxf(max_frame_ms, ms)
+		_frame_ms.append(ms)
+		if ms > 16.0: _spike(ms)
+		var sections: Dictionary = Engine.get_meta("probe_frame", {})
+		for name in sections: _sections[name] = _sections.get(name, 0) + sections[name]
+	_reported = false
+	if Engine.has_meta("probe_frame"): Engine.get_meta("probe_frame").clear()
 
 func _role() -> String:
 	return "SERVER" if "--server" in OS.get_cmdline_args() else "CLIENT%d" % index
@@ -54,23 +104,17 @@ func _role() -> String:
 func _process(_delta: float) -> bool:
 	var now := Time.get_ticks_msec()
 	if main == null and current_scene != null and current_scene.get("started"): main = current_scene
-	if phase_started > 0:
-		frames += 1
-		var ms := (Performance.get_monitor(Performance.TIME_PROCESS) + Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)) * 1000.0
-		process_ms += ms
-		max_frame_ms = maxf(max_frame_ms, ms)
-		_frame_ms.append(ms)
-		if ms > 16.0: _spike(ms)
-	if Engine.has_meta("probe_frame"): Engine.get_meta("probe_frame").clear()
+	if _frame_started == 0: _frame_started = Time.get_ticks_usec()
+	_process_started = Time.get_ticks_usec()
 	if now - _checked >= 200:
 		_checked = now
 		var next := FileAccess.get_file_as_string(phase_file).strip_edges() if FileAccess.file_exists(phase_file) else ""
 		if next != phase:
-			if phase_started > 0: _report()
+			if phase_started > 0: _report(); _reported = true
 			phase = next
 			phase_started = now
 			frames = 0; process_ms = 0.0; max_frame_ms = 0.0
-			_steps.clear(); _seen.clear(); _frame_ms.clear(); _commits.clear(); _spikes.clear()
+			_steps.clear(); _seen.clear(); _frame_ms.clear(); _commits.clear(); _spikes.clear(); _sections.clear(); _intervals.clear()
 			Transport.stats = {}
 	if main != null and is_instance_valid(main) and main.started and not "--server" in OS.get_cmdline_args():
 		_play(now)
@@ -226,6 +270,17 @@ func _report() -> void:
 			for i in 3: if ms > [16.0, 33.0, 100.0][i]: over[i] += 1
 		print("PROFILE %s %s FRAMES n %d mean %.2f p50 %.2f p95 %.2f p99 %.2f max %.1f ms, over 16/33/100 ms: %d/%d/%d" % [_role(), phase, sorted_ms.size(),
 			process_ms / frames_n, median, sorted_ms[int(sorted_ms.size() * 0.95)], sorted_ms[int(sorted_ms.size() * 0.99)], sorted_ms[-1], over[0], over[1], over[2]])
+	var costly: Array = _sections.keys().filter(func(name): return _sections[name] / 1000.0 / frames_n >= 0.05 and name != "_top")
+	costly.sort_custom(func(a, b): return _sections[a] > _sections[b])
+	for name in costly.slice(0, 15):
+		print("PROFILE %s %s SECTION %-40s %8.3f ms/frame" % [_role(), phase, name, _sections[name] / 1000.0 / frames_n])
+	if not _intervals.is_empty():
+		var gaps := _intervals.duplicate(); gaps.sort()
+		var long := [0, 0]
+		for gap in gaps:
+			if gap > 50.0: long[0] += 1
+			if gap > 100.0: long[1] += 1
+		print("PROFILE %s %s INTERVALS p50 %.1f p99 %.1f max %.1f ms, over 50/100 ms: %d/%d" % [_role(), phase, gaps[gaps.size() / 2], gaps[int(gaps.size() * 0.99)], gaps[-1], long[0], long[1]])
 	for name in _spikes:
 		print("PROFILE %s %s SPIKES %-40s %4d frames, %8.1f ms, longest %.1f ms" % [_role(), phase, name, _spikes[name][0], _spikes[name][1], _spikes[name][2]])
 	print("PROFILE %s %s SUMMARY %.1f s, up %.0f B/s, down %.0f B/s, frames %.1f/s, process %.3f ms/frame (median %.2f, max %.1f), netcode %.3f ms/frame%s" % [
