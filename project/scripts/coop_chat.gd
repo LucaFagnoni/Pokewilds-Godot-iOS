@@ -7,9 +7,10 @@ extends Control
 ## only ever shown as the text of plain Labels: no BBCode, no translation
 ## lookup, never a format string, never parsed or evaluated.
 ## This node is the open chat (T, or the chat button on a touch screen): the
-## last HISTORY lines over the line being typed, in the HUD's glass. New lines
-## also show for a few seconds in a chip beside the minimap, and light a red dot
-## on the chat button until the chat is opened.
+## last HISTORY lines over the line being typed, in the HUD's glass. The newest
+## message also shows for a few seconds in a chip centred under the clock (and
+## under coop_game.gd's notice), and lights a red dot on the chat button until
+## the chat is opened.
 const HudStyle=preload("res://scripts/hud_style.gd")
 const Icons=preload("res://scripts/touch_icons.gd")
 const BADGE:=Color8(232,56,40)
@@ -26,8 +27,8 @@ const GLYPHS:=" !%',-./0123456789:?ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqr
 const SPACES:=[9,10,11,12,13,32,0x85,0xA0,0x1680,0x2028,0x2029,0x202F,0x205F,0x3000]
 ## Line pitch, as the notice chip: the capitals' 6 px of ink and a 4 px gap.
 const LINE:=10
-const LOG_MESSAGES:=3
-const LOG_LINES:=4
+## The newest message: at most LOG_LINES lines (then "..."), for LOG_SECONDS.
+const LOG_LINES:=3
 const LOG_SECONDS:=6.0
 var main:Node
 var game:Node
@@ -148,25 +149,21 @@ func _add(name:String,line:String,mine:bool=false)->void:
     history.append(line if name.is_empty() else name+": "+line)
     while history.size()>HISTORY:history.pop_front()
     if main==null or not main.started:return
-    if visible:_refresh();return
-    _show_log()
-    if not name.is_empty() and not mine:unread=true
+    # This game's own notes (Too fast) only show in the open chat.
+    if visible or name.is_empty():
+        if visible:_refresh()
+        return
+    _show_log(name+": "+line)
+    if not mine:unread=true
 
-# --- the log beside the minimap -------------------------------------------------
+# --- the newest message under the clock ----------------------------------------------
 
-func _show_log()->void:
-    _log_text.text="\n".join(history.slice(-LOG_MESSAGES))
-    var room:=_log_room()
-    var ink:=HudStyle.FONT.get_multiline_string_size(_log_text.text,HORIZONTAL_ALIGNMENT_LEFT,room,HudStyle.FONT_SIZE,-1,
-        TextServer.BREAK_MANDATORY|TextServer.BREAK_WORD_BOUND|TextServer.BREAK_ADAPTIVE|TextServer.BREAK_TRIM_EDGE_SPACES)
-    _log_text.size=Vector2(ink.x,0)
-    # The newest lines when the last messages wrap to more than LOG_LINES.
-    _log_text.max_lines_visible=-1
-    var count:=_log_text.get_line_count()
-    _log_text.lines_skipped=maxi(0,count-LOG_LINES);_log_text.max_lines_visible=LOG_LINES
-    _log_text.position=Vector2(HudStyle.PAD,HudStyle.PAD+HudStyle.INK_HEIGHT/2.0-HudStyle.INK_CENTRE)
-    _log.size=Vector2(ink.x-1+2*HudStyle.PAD,2*HudStyle.PAD+HudStyle.INK_HEIGHT+(mini(count,LOG_LINES)-1)*LINE)
-    _place_log();_log.queue_redraw()
+## The newest message, centred under the clock (under a notice while one
+## shows), wrapped as the notice and cut to LOG_LINES lines (the open chat
+## keeps it whole); LOG_SECONDS later it fades. A new one replaces it.
+func _show_log(text:String)->void:
+    fit(_log,text,room(),LINE,LOG_LINES)
+    _place_log()
     _log.modulate.a=1.0;_log.visible=true
     if _log_fade!=null and _log_fade.is_valid():_log_fade.kill()
     _log_fade=create_tween();_log_fade.set_speed_scale(1.0/maxf(Engine.time_scale,0.01))
@@ -174,20 +171,66 @@ func _show_log()->void:
     _log_fade.tween_property(_log,"modulate:a",0.0,1.0)
     _log_fade.tween_callback(_log.hide)
 
-## Right of the minimap, under the top row (and under a joined/left notice
-## while one shows).
-func _log_left()->float:
-    return main.touch_controls.usable_rect.position.x+HudStyle.MARGIN+main.M3924_MINIMAP_SIZE.x+HudStyle.GAP
+## Where the notice and the newest message centre: on the clock, or mid-screen without it.
+func centre()->float:
+    var clock:Control=main.status_hud.clock_chip
+    return clock.position.x+clock.size.x/2.0 if is_instance_valid(clock) and clock.visible else main.get_viewport().get_visible_rect().size.x/2.0
 
-func _log_room()->float:
-    return main.touch_controls.usable_rect.end.x-HudStyle.MARGIN-_log_left()-2*HudStyle.PAD
+## Their wrap width: the room the minimap leaves either side of the middle, at
+## most what a 320 px screen has, so a wider phone wraps them the same way.
+func room()->float:
+    var left:float=main.get_viewport().get_visible_rect().size.x/2.0-main.touch_controls.usable_rect.position.x
+    return 2.0*(minf(left,160.0)-(HudStyle.MARGIN+main.M3924_MINIMAP_SIZE.x+HudStyle.GAP+HudStyle.PAD))
 
+static func _advance(text:String)->float:
+    return HudStyle.FONT.get_string_size(text,HORIZONTAL_ALIGNMENT_LEFT,-1,HudStyle.FONT_SIZE).x
+
+## Lines no wider than `width`: whole words, a word longer than a line cut inside it.
+## Broken here, not by the Label, so the chip is sized to exactly what it shows.
+static func wrap_lines(text:String,width:float)->PackedStringArray:
+    var lines:=PackedStringArray()
+    for part in text.split("\n"):
+        var line:=""
+        for word in part.split(" ",false):
+            var joined:=word if line.is_empty() else line+" "+word
+            if _advance(joined)<=width:line=joined;continue
+            if _advance(word)>width:line=joined
+            else:lines.append(line);line=word
+            while _advance(line)>width:
+                var cut:=line.length()-1
+                while cut>1 and _advance(line.left(cut))>width:cut-=1
+                lines.append(line.left(cut).strip_edges());line=line.substr(cut).strip_edges()
+        lines.append(line)
+    return lines
+
+## A HUD chip of centred text in lines no wider than `width`, `line` px apart;
+## past `most` lines it is cut and the last ends in "...". The ink PAD from
+## every edge, as on the chips (glyphs leave their last column blank).
+static func fit(box:Control,text:String,width:float,line:int,most:int=0)->void:
+    var lines:=wrap_lines(text,width)
+    if most>0 and lines.size()>most:
+        lines.resize(most)
+        var last:String=lines[most-1]
+        while not last.is_empty() and _advance(last+"...")>width:
+            var space:int=last.rfind(" ")
+            last=last.left(space) if space>0 else last.left(-1)
+        lines[most-1]=last+"..."
+    var ink:=0.0
+    for shown in lines:ink=maxf(ink,_advance(shown))
+    var label:=box.get_node("Text") as Label
+    label.autowrap_mode=TextServer.AUTOWRAP_OFF;label.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER
+    label.text="\n".join(lines);label.size=Vector2(ink,0)
+    label.position=Vector2(HudStyle.PAD,HudStyle.PAD+HudStyle.INK_HEIGHT/2.0-HudStyle.INK_CENTRE)
+    box.size=Vector2(ink-1+2*HudStyle.PAD,2*HudStyle.PAD+HudStyle.INK_HEIGHT+(lines.size()-1)*line)
+    box.queue_redraw()
+
+## GAP under the clock, or under the notice while one shows: it follows the
+## notice coming and going.
 func _place_log()->void:
-    var safe:Rect2=main.touch_controls.usable_rect
-    var y:float=safe.position.y+HudStyle.MARGIN+float(main.status_hud.row_height())+HudStyle.GAP
+    var y:float=main.touch_controls.usable_rect.position.y+HudStyle.MARGIN+float(main.status_hud.row_height())+HudStyle.GAP
     var notice:Control=game._notice_box
     if is_instance_valid(notice) and notice.visible and notice.modulate.a>0.0:y=notice.position.y+notice.size.y+HudStyle.GAP
-    var at:=Vector2(_log_left(),y)
+    var at:=Vector2(roundf(centre()-_log.size.x/2.0),y)
     if _log.position!=at:_log.position=at
 
 func _process(_delta:float)->void:
