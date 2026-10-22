@@ -90,6 +90,8 @@ static func button_style(selected: bool) -> StyleBoxFlat:
 func make_button(parent: Node, text: String, size: Vector2, font_size: int = 10) -> Control:
     var button := Panel.new()
     button.size = size
+    # Its text keeps the button's own colours in dark mode (dark_mode.gd).
+    button.set_meta("touch_button", true)
     button.mouse_filter = Control.MOUSE_FILTER_IGNORE
     button.add_theme_stylebox_override("panel", button_style(false))
     var label := Label.new()

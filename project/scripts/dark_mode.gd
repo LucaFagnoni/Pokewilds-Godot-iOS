@@ -130,6 +130,11 @@ func _apply(node: Node) -> void:
             var desired_color: Color = INK if active else original_colors[key]
             if node.get_theme_color(key) != desired_color: node.add_theme_color_override(key,desired_color)
     elif node is Label:
+        # A touch button's text: the button sets its own ink for its white,
+        # selected or HUD look; light ink on the white panel was unreadable.
+        if node.get_parent() != null and node.get_parent().has_meta("touch_button"):
+            updating = false
+            return
         if not node.has_meta("dark_original_font"):
             node.set_meta("dark_original_font",node.get_theme_font("font"))
         var source_font: Font = node.get_meta("dark_original_font")
