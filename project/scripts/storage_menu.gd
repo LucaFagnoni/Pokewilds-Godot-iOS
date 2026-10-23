@@ -43,7 +43,7 @@ func build_storage_menu_ui() -> void:
     storage_footer.add_theme_stylebox_override("panel", main._classic_dialogue_style())
     storage_menu.add_child(storage_footer)
     for index in range(6):
-        var row := main._create_party_list_row(storage_menu, index)
+        var row := main.party_menu.create_party_list_row(storage_menu, index)
         var skills := main._source_ui_label(row.root,"FieldMoves",Vector2(30,19),Vector2(132,9),8)
         row["field_moves"] = skills
         row.gender.position.x = 166
@@ -225,7 +225,7 @@ func refresh_storage_menu() -> void:
     main.storage_index = clampi(main.storage_index, 0, maxi(0, entries.size() - 1))
     main.storage_box_window_start = clampi(main.storage_box_window_start,
         maxi(0, main.storage_index - 5), main.storage_index)
-    main._refresh_party_list_rows(main.storage_rows,
+    main.party_menu.refresh_party_list_rows(main.storage_rows,
         entries.slice(main.storage_box_window_start, main.storage_box_window_start + 6),
         main.storage_index - main.storage_box_window_start)
     for row_index in range(main.storage_rows.size()):
@@ -302,7 +302,7 @@ func _storage_choose_action() -> void:
     if main.storage_pending == "CANCEL":
         main.storage_mode = "LIST"
     elif main.storage_pending == "STATS":
-        main._open_pokemon_stats(pokemon, "STORAGE")
+        main.party_menu.open_pokemon_stats(pokemon, "STORAGE")
     elif main.storage_pending == "SWITCH":
         main.storage_switch_from = main.storage_index
         main.storage_mode = "SWITCH"
@@ -375,7 +375,7 @@ func handle_storage_menu_input(event: InputEvent) -> void:
     if is_instance_valid(main.coop_game) and main.coop_game.active and main.coop_game.storage.busy:
         main.get_viewport().set_input_as_handled();return
     if main.pokemon_stats_open:
-        main._handle_pokemon_stats_input(event)
+        main.party_menu.handle_pokemon_stats_input(event)
         return
     if main.storage_mode == "NICKNAME":
         if event.is_action_pressed("cancel") and not (event is InputEventKey and event.unicode > 0):
