@@ -219,6 +219,7 @@ func _initialize() -> void:
             for offset in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(-1, 1), Vector2i(1, 1)]:
                 if placed.x == -2147483648 and world.call("place_structure", piece, inside + offset): placed = inside + offset
             visits.append([piece, placed])
+        await _shot("house_inside")
         await _walk("move_up", 30)
         await _walk("move_down", 90)
         visits.append([world.get("active_area_id"), world.call("_player_cell")])
@@ -243,6 +244,7 @@ func _initialize() -> void:
         for step in [["move_down", 40], ["move_right", 40], ["move_up", 40]]:
             await _walk(step[0], step[1])
         trip.append(world.call("_player_cell"))
+        await _shot("cave")
         trip.append(world.call("use_escape_rope"))
         await _frames(180)
         trip.append([world.get("active_area_id"), world.call("_player_cell")])
