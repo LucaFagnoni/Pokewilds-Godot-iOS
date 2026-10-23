@@ -1334,7 +1334,7 @@ func publish_current(own_population:bool=false)->bool:
     var committed:bool=not own_population and (not area_authority.is_empty() or (hosting and state.records.has("area/"+_area())))
     var parts=Snapshot.split(main.world.get_crafting_save_state(not committed),false)
     var picked:Array=Snapshot.population_records(_area(),registry) if committed else []
-    parts.shared["_coop_build_base"]=building.known(_area(),registry).duplicate(true)
+    parts.shared["_coop_build_base"]=building.known(_area(),registry,state.keys_by_area.get(_area(),{}) if hosting else null).duplicate(true)
     # Unpacked and packed on a worker: a long-played area and its terrain
     # cache are megabytes. A guest leaves out the terrain cache: the host has
     # it (Snapshot.refill).
