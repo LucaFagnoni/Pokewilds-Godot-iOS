@@ -210,7 +210,8 @@ func remove(group:String,cell:Vector2i)->void:
     if is_instance_valid(sprite):sprite.queue_free()
     var tween=record.get("ball_move_tween")
     if tween is Tween and tween.is_valid():tween.kill()
-    values.erase(cell)
+    if group=="deployed_pokemon":game.main.world.habitat_population.take(cell)
+    else:values.erase(cell)
 func apply(group:String,cell:Vector2i,record:Variant)->void:
     remove(group,cell)
     if not record is Dictionary:return
@@ -243,7 +244,7 @@ func committed(changes:Array,source_actor:String="",request_id:String="")->void:
         var identity=String(old.get("ecology_id",""))
         if identity.is_empty():continue
         reusable[identity]=old
-        world.deployed_pokemon.erase(cell)
+        world.habitat_population.take(cell)
     # One Pokemon stands on one tile. A record can arrive for a tile other than
     # the one this game shows it on (an item taken from it a step away); the
     # copy shown elsewhere is the same Pokemon and must not stay behind as a
@@ -259,7 +260,7 @@ func committed(changes:Array,source_actor:String="",request_id:String="")->void:
             var shown:Dictionary=world.deployed_pokemon[cell]
             var identity=String(shown.get("ecology_id",""))
             if not arriving.has(identity):continue
-            world.deployed_pokemon.erase(cell)
+            world.habitat_population.take(cell)
             if not reusable.has(identity):reusable[identity]=shown
             else:
                 var spare=shown.get("ball_move_tween") as Tween
@@ -282,7 +283,7 @@ func committed(changes:Array,source_actor:String="",request_id:String="")->void:
             var data:Dictionary=reusable[identity];reusable.erase(identity)
             var old_cell:Vector2i=data.cell
             data.merge(record,true);data["cell"]=cell
-            world.deployed_pokemon[cell]=data
+            world.habitat_population.place(cell,data)
             var sprite=data.get("sprite") as Sprite2D
             if is_instance_valid(sprite):
                 sprite.visible=world._house_pokemon_visible(data) if data.has("house_door") else world.active_area_id=="OVERWORLD"

@@ -23,10 +23,6 @@ var players:Dictionary={}
 var motion_dirty:Dictionary={}
 var _whole_motion:=false
 const Server=preload("res://scripts/dedicated_server.gd")
-## For idle_frame: where the players who can be chased stand, and whether one
-## of them could charm a wild Pokemon. Made with `players`.
-var _chased_cells:Array=[]
-var _charm_near:=false
 
 func mark_motion(wild_id:int)->void:
     motion_dirty[wild_id]=true
@@ -50,37 +46,6 @@ func refresh_players()->void:
         var cell:Vector2i=game.main.world._player_cell()
         players[game.session.actor]={"area":game._area()+"|OVERWORLD","x":cell.x,"y":cell.y,"battle":game.main.battle_active or game.main.battle_entry_pending,"move":game.main.world.active_field_move}
     else:players.erase(game.session.actor)
-    _chased_cells.clear();_charm_near=false
-    for player in players.values():
-        if player.battle:continue
-        _chased_cells.append(Vector2i(player.x,player.y))
-        if player.move=="CHARM":_charm_near=true
-
-## Tests turn idle_frame off to compare with the full update.
-static var idle_frames:=true
-
-## Dedicated server: true when a wild Pokemon's update this frame
-## (world._update_wild_pokemon) would change nothing but its move timer, which
-## is counted down here exactly as there, and the look of the server's own
-## sprite for it, which nobody sees. That is a calm one in play near every
-## player who could chase it, that nothing can charm, frighten or set on
-## anyone, and whose timer does not run out this frame. Every other frame,
-## and any other Pokemon, gets the full update, so records, saves and the
-## random numbers drawn are the same. Most of a server's frames were these.
-func idle_frame(data:Dictionary,delta:float)->bool:
-    if not idle_frames or not Server.active or _chased_cells.is_empty() or _charm_near:return false
-    if bool(data.get("aggro_player",false)) or not data.has("charmed") or bool(data.charmed) or not data.has("coop_target") or not String(data.coop_target).is_empty():return false
-    if not String(data.get("source_record",{}).get("coop_horde","")).is_empty():return false
-    var now:float=game.main.world.world_elapsed_seconds
-    if now<float(data.get("ball_flee_until",0.0)) or float(data.get("ball_charm_until",0.0))>now:return false
-    var cell:Vector2i=data.get("cell",Vector2i.ZERO)
-    var reach:int=game.main.world.ECOLOGY_ACTIVE_RADIUS
-    for at in _chased_cells:
-        if absi(cell.x-at.x)>reach or absi(cell.y-at.y)>reach:return false
-    var left:=float(data.get("move_timer",0.0))-delta
-    if left<=0.0:return false
-    data["move_timer"]=left
-    return true
 
 func target_for(data:Dictionary,cell:Vector2i)->Dictionary:
     var scope=game._area()+"|OVERWORLD"
