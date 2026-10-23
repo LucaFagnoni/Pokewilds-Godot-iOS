@@ -27,6 +27,7 @@ const SETUP_SAVE_PATH := "user://m3_setup.cfg"
 const DataPaths = preload("res://scripts/game_data_paths.gd")
 const WorldSaves = preload("res://scripts/world_saves.gd")
 var saves := WorldSaves.new("user://saves")
+var crafting_menu := preload("res://scripts/crafting_menu.gd").new(self)
 var move_wheel := preload("res://scripts/field_move_wheel.gd").new(self)
 var minimap := preload("res://scripts/minimap.gd").new(self)
 const CraftingData = preload("res://scripts/crafting_data.gd")
@@ -1033,8 +1034,6 @@ var planting_bag_target: Variant = null
 var field_item_busy := false
 var sleeping_bag_heal_accumulator := 0.0
 var craft_menu_open := false
-var craft_station := ""
-var craft_index := 0
 var build_menu_open := false
 var build_menu_index := 0
 var resource_popup_timer := 0.0
@@ -1345,7 +1344,7 @@ func _ready() -> void:
             "_show_trainer_tip_message"))
     if world.has_signal("item_collected"):
         world.connect("item_collected", Callable(self, "_on_item_collected"))
-    world.crafting_station_requested.connect(_open_crafting_menu)
+    world.crafting_station_requested.connect(crafting_menu.open_crafting_menu)
     world.material_collected.connect(_on_material_collected)
     world.connect("dig_reward_collected", Callable(self, "_on_dig_reward_collected"))
     if world.has_signal("material_bundle_collected"):
@@ -2445,7 +2444,7 @@ func _process(delta: float) -> void:
             var world_build_index := int(world.call("get_build_selection_index"))
             if world_build_index != build_menu_index:
                 build_menu_index = world_build_index
-                _apply_build_hud_selection()
+                crafting_menu.apply_build_hud_selection()
 
     if generating:
         generation_tip_timer -= delta
@@ -3562,7 +3561,7 @@ func _input(event: InputEvent) -> void:
             move_wheel.close_field_move_wheel(false)
             field_wheel_wait_for_release = true
             if build_menu_open:
-                _close_build_menu()
+                crafting_menu.close_build_menu()
             elif not world.active_field_move.is_empty():
                 world.clear_active_field_move()
         get_viewport().set_input_as_handled()
@@ -3570,7 +3569,7 @@ func _input(event: InputEvent) -> void:
 
 
     if build_menu_open and not field_move_wheel_open and not battle_active and not battle_entry_pending and not quit_prompt_open and event.is_action_pressed("cancel"):
-        _close_build_menu()
+        crafting_menu.close_build_menu()
         get_viewport().set_input_as_handled()
         return
     if started and event.is_action_pressed("cancel") and not world.active_field_move.is_empty() and not _field_ui_blocks_gameplay() and not _sleeping_bag_active() and not world.house_transition_active and not is_instance_valid(world.stool_seated_sprite):
@@ -3757,11 +3756,11 @@ func _unhandled_input(event: InputEvent) -> void:
         return
 
     if build_menu_open:
-        _handle_build_menu_input(event)
+        crafting_menu.handle_build_menu_input(event)
         return
 
     if craft_menu_open:
-        _handle_crafting_input(event)
+        crafting_menu.handle_crafting_input(event)
         return
 
     if started:
@@ -3794,7 +3793,7 @@ func _unhandled_input(event: InputEvent) -> void:
             return
 
         if event.is_action_pressed("build_menu"):
-            _open_build_menu()
+            crafting_menu.open_build_menu()
             get_viewport().set_input_as_handled()
             return
 
@@ -4831,7 +4830,7 @@ func _start_battle_context(context: Dictionary, source_alert: bool = false) -> v
         if coop_game.active and coop_game.events.eligible(prepared_context):
             if not await coop_game.events.begin(prepared_context):return
         if build_menu_open:
-            _close_build_menu()
+            crafting_menu.close_build_menu()
         safari_ui = preload("res://scripts/source_safari_encounter.gd").new()
         $UI.add_child(safari_ui)
         await safari_ui.start(self, prepared_context, source_alert)
@@ -4847,7 +4846,7 @@ func _start_battle_context(context: Dictionary, source_alert: bool = false) -> v
             battle_entry_pending=false;world.set_gameplay_enabled(true);return
         raw_party=prepared_context.party
     if build_menu_open:
-        _close_build_menu()
+        crafting_menu.close_build_menu()
     move_wheel.close_field_move_wheel(false)
     world.set_gameplay_enabled(false)
     while progression_active or mansion_switch_open:
@@ -8079,7 +8078,7 @@ func _activate_selected_field_move() -> void:
     world.set_gameplay_enabled(true)
     touch_controls.set_game_active(true)
     if move == "BUILD":
-        _open_build_menu()
+        crafting_menu.open_build_menu()
     elif move == "FOLLOW":
         _show_message("%s is following you." % PokemonData.battle_display_name(species))
     else:
@@ -8701,275 +8700,10 @@ func _restore_game_save(data) -> void:
     _recover_hidden_party_overflow()
     _sync_pokedex_owned()
 
-func _open_crafting_menu(station: String) -> void:
-    if craft_menu_open or game_menu_open or battle_active:
-        return
-    craft_station = station
-    craft_index = 0
-    craft_menu_open = true
-    crafting_panel.visible = true
-    world.set_gameplay_enabled(false)
-    touch_controls.set_game_active(true)
-    world.call("play_source_sound", "menu_open1")
-    _refresh_crafting_menu()
-
-func _close_crafting_menu() -> void:
-    craft_menu_open = false
-    crafting_panel.visible = false
-    world.set_gameplay_enabled(true)
-    touch_controls.set_game_active(true)
-
-func _find_party_builder_index() -> int:
-    for index in range(caught_pokemon.size()):
-        var raw_pokemon = caught_pokemon[index]
-        if typeof(raw_pokemon) != TYPE_DICTIONARY:
-            continue
-        var pokemon := raw_pokemon as Dictionary
-        if bool(pokemon.get("is_egg", false)) or int(pokemon.get("hp", 1)) <= 0:
-            continue
-        if FieldMoveData.field_moves_for(String(pokemon.get("species", "")), String(pokemon.get("form", ""))).has("BUILD"):
-            return index
-    return -1
-
-func _open_build_menu() -> void:
-    if build_menu_open or craft_menu_open or game_menu_open or battle_active or not started:
-        return
-    var builder_index := _find_party_builder_index()
-    if builder_index < 0:
-        _show_message("A FIGHTING-type Pokemon is needed to BUILD.")
-        return
-
-    _ensure_party_ecology_id(builder_index)
-    var builder := caught_pokemon[builder_index] as Dictionary
-    var active_move := String(world.get("active_field_move"))
-    var active_builder := String(world.get("active_field_species"))
-    var helper_missing := (world.get("field_helper_pokemon") as Dictionary).is_empty()
-    if active_move != "BUILD" or active_builder != String(builder.get("species", "")).to_lower() or helper_missing:
-        if not bool(world.set_active_field_move(builder, "BUILD")):
-            _show_message("There is no room for %s to BUILD here." % PokemonData.battle_display_name(String(builder.get("species", "POKEMON"))))
-            return
-
-    build_menu_index = int(world.call("get_build_selection_index"))
-    build_menu_open = true
-    build_panel.visible = true
-    message_panel.visible = false
-    world.call("set_build_preview_active", true)
-    world.set_gameplay_enabled(true)
-    touch_controls.set_game_active(true)
-    _refresh_build_menu()
-
-func _close_build_menu(stop_building: bool = true) -> void:
-    build_menu_open = false
-    build_panel.visible = false
-    world.call("set_build_preview_active", false)
-    if stop_building and String(world.get("active_field_move")) == "BUILD":
-        world.call("clear_active_field_move", true)
-    world.set_gameplay_enabled(not _field_ui_blocks_gameplay())
-    touch_controls.set_game_active(true)
-
-func _handle_build_menu_input(event: InputEvent) -> void:
-    var recipe_count := CraftingData.build_recipes().size()
-    if event.is_action_pressed("shoulder_left"):
-        if recipe_count > 0:
-            build_menu_index = wrapi(build_menu_index - 1, 0, recipe_count)
-            _refresh_build_menu()
-        get_viewport().set_input_as_handled()
-    elif event.is_action_pressed("shoulder_right"):
-        if recipe_count > 0:
-            build_menu_index = wrapi(build_menu_index + 1, 0, recipe_count)
-            _refresh_build_menu()
-        get_viewport().set_input_as_handled()
-    elif event.is_action_pressed("confirm"):
-        if recipe_count > 0:
-            world.call("set_build_selection_index", build_menu_index)
-            var recipe := CraftingData.build_recipes()[build_menu_index] as Dictionary
-            var build_name := String(recipe.get("name", ""))
-            var target: Vector2i = world.call("get_build_execution_cell")
-            _on_build_requested(build_name, target)
-            _refresh_build_menu()
-        get_viewport().set_input_as_handled()
-    elif event.is_action_pressed("cancel") or event.is_action_pressed("build_menu"):
-        _close_build_menu()
-        get_viewport().set_input_as_handled()
-
-func _refresh_build_menu() -> void:
-    var recipes := CraftingData.build_recipes()
-    if recipes.is_empty():
-        build_list.text = "NO BUILD RECIPES"
-        build_cost.text = ""
-        build_cursor.visible = false
-        return
-    build_menu_index = clampi(build_menu_index, 0, recipes.size() - 1)
-    _apply_build_hud_selection()
-    world.call("set_build_selection_index", build_menu_index)
-    world.call("set_build_preview_active", true)
-
-func _apply_build_hud_selection() -> void:
-    var recipes := CraftingData.build_recipes()
-    if recipes.is_empty():
-        return
-    build_menu_index = clampi(build_menu_index, 0, recipes.size() - 1)
-    var selected := recipes[build_menu_index] as Dictionary
-    var cost: Dictionary = selected.get("cost", {})
-    build_title.text = String(selected.get("display_name", selected.get("name", ""))).to_upper()
-    build_list.text = ""
-    build_cursor.visible = false
-    build_cost.text = _format_need_box(cost)
-    # Four lines for the three-material recipe still fit the matched 48px box.
-    var compact_cost := cost.size() > 2
-    build_cost.position.y = 6.0 if compact_cost else 8.0
-    build_cost.size.y = 36.0 if compact_cost else 34.0
-    build_cost.add_theme_constant_override("line_separation", -3 if compact_cost else 0)
-
-func _on_world_build_selection_changed(index: int) -> void:
-    if not build_menu_open or CraftingData.build_recipes().is_empty():
-        return
-    var normalized := wrapi(index, 0, CraftingData.build_recipes().size())
-    if normalized == build_menu_index:
-        return
-    build_menu_index = normalized
-    # World input can receive shoulder events first while gameplay stays live
-    # in BUILD mode.  Update the two visible boxes from that authoritative
-    # selection without sending the value back and causing a signal loop.
-    _apply_build_hud_selection()
-
-func _handle_crafting_input(event: InputEvent) -> void:
-    var recipes := CraftingData.recipes_for_station(craft_station)
-    if event.is_action_pressed("move_up"):
-        if not recipes.is_empty():
-            craft_index = wrapi(craft_index - 1, 0, recipes.size())
-            world.call("play_source_sound", "menu_switch2")
-            _refresh_crafting_menu()
-        get_viewport().set_input_as_handled()
-    elif event.is_action_pressed("move_down"):
-        if not recipes.is_empty():
-            craft_index = wrapi(craft_index + 1, 0, recipes.size())
-            world.call("play_source_sound", "menu_switch2")
-            _refresh_crafting_menu()
-        get_viewport().set_input_as_handled()
-    elif event.is_action_pressed("move_left") or event.is_action_pressed("shoulder_left"):
-        if not recipes.is_empty():
-            craft_index = wrapi(craft_index - 1, 0, recipes.size())
-            world.call("play_source_sound", "menu_switch2")
-            _refresh_crafting_menu()
-        get_viewport().set_input_as_handled()
-    elif event.is_action_pressed("move_right") or event.is_action_pressed("shoulder_right"):
-        if not recipes.is_empty():
-            craft_index = wrapi(craft_index + 1, 0, recipes.size())
-            world.call("play_source_sound", "menu_switch2")
-            _refresh_crafting_menu()
-        get_viewport().set_input_as_handled()
-    elif event.is_action_pressed("confirm"):
-        _craft_selected_recipe()
-        get_viewport().set_input_as_handled()
-    elif event.is_action_pressed("cancel") or event.is_action_pressed("start"):
-        _close_crafting_menu()
-        get_viewport().set_input_as_handled()
-
-func _refresh_crafting_menu() -> void:
-    var recipes := CraftingData.recipes_for_station(craft_station)
-    if recipes.is_empty():
-        crafting_title.text = "No recipes"
-        crafting_list.text = "NO RECIPES"
-        crafting_cost.text = ""
-        crafting_cursor.visible = false
-        return
-
-    craft_index = clampi(craft_index, 0, recipes.size() - 1)
-    var selected: Dictionary = recipes[craft_index]
-    crafting_title.text = String(selected.get("name", "")).capitalize()
-    crafting_list.text = ""
-    crafting_cursor.visible = false
-    var crafting_cost_data: Dictionary = selected.get("cost", {})
-    crafting_cost.text = _format_need_box(crafting_cost_data)
-
-func _format_need_box(cost: Dictionary) -> String:
-    var lines: Array[String] = ["NEED"]
-    for raw_name in cost.keys():
-        var item_name := String(raw_name).to_upper()
-        var required := int(cost[raw_name])
-        var enough := int(inventory.get(raw_name, 0)) >= required
-        if enough:
-            lines.append("%s x%d" % [item_name, required])
-        else:
-            lines.append("[font=res://assets/source_text_font_gray.fnt]%s x%d[/font]" % [
-                item_name, required])
-    return "\n".join(lines)
-
-func _craft_selected_recipe() -> void:
-    var recipes := CraftingData.recipes_for_station(craft_station)
-    if recipes.is_empty():
-        return
-    var recipe: Dictionary = recipes[craft_index]
-    var cost: Dictionary = recipe.get("cost", {})
-    var output := String(recipe.get("name", ""))
-    if not CraftingData.can_afford(inventory, cost):
-        world.call("play_source_sound", "error1")
-        _show_message("Not enough materials for %s." % output)
-        return
-    if (
-            bool(recipe.get("event", false))
-            and craft_station == "REGI FORGE"
-            and world.has_method("can_awaken_regi")
-            and not bool(world.call("can_awaken_regi", output))
-        ):
-        _show_message("That Regi has already answered the pedestal.")
-        return
-    CraftingData.consume(inventory, cost)
-    world.call("play_source_sound", "click1")
-    if bool(recipe.get("event", false)):
-        if craft_station == "REGI FORGE":
-            if world.complete_regi_forge(output):
-                _close_crafting_menu()
-            else:
-                _show_message("The pedestal did not respond.")
-        elif craft_station == "FOSSIL REVIVER":
-            _close_crafting_menu()
-            _revive_fossil(output)
-        else:
-            _show_message("%s awakened!" % output)
-    else:
-        CraftingData.grant(inventory, output, 1)
-        _show_message("Crafted %s." % output)
-    if craft_menu_open:
-        _refresh_crafting_menu()
-
-func _revive_fossil(fossil_name: String) -> void:
-    var species := String(SourceEventData.FOSSIL_SPECIES.get(fossil_name, ""))
-    if species.is_empty():
-        _show_message("The machine could not read that fossil.")
-        return
-    var level_total := 0
-    var level_count := 0
-    for raw_pokemon in caught_pokemon:
-        if typeof(raw_pokemon) != TYPE_DICTIONARY:
-            continue
-        var pokemon := raw_pokemon as Dictionary
-        if bool(pokemon.get("is_egg", false)):
-            continue
-        level_total += maxi(1, int(pokemon.get("level", 1)))
-        level_count += 1
-    var average_level := 5 if level_count == 0 else int(floor(float(level_total) / float(level_count)))
-    var revived_level := clampi(average_level - 3 + battle_rng.randi_range(0, 2), 1, 50)
-    var revived := BattleEngine.make_pokemon(species, revived_level)
-    if String(world.get("active_field_move")) == "CHARM":
-        var destination := _route_received_pokemon(revived)
-        if not caught_species.has(species):
-            caught_species.append(species)
-        var notice := _received_pokemon_notice(revived, destination)
-        _show_message("%s was revived from the %s!" % [PokemonData.battle_display_name(species), fossil_name] if notice.is_empty() else notice)
-        return
-    _show_message("%s was revived... and attacked!" % PokemonData.battle_display_name(species))
-    _start_battle_context({
-        "id": "fossil_%s" % species,
-        "kind": "fossil",
-        "intro": "%s was revived... and attacked!" % PokemonData.battle_display_name(species),
-        "can_run": true,
-        "can_catch": true,
-        "clear_on_capture": false,
-        "clear_on_defeat": false,
-        "party": [{"species": species, "level": revived_level}]
-    })
+## crafting_menu.gd under its old names, for the scripts and tests that call them on main.
+func _open_build_menu() -> void: crafting_menu.open_build_menu()
+func _close_build_menu(stop_building: bool = true) -> void: crafting_menu.close_build_menu(stop_building)
+func _on_world_build_selection_changed(index: int) -> void: crafting_menu.on_world_build_selection_changed(index)
 
 func _on_dig_reward_collected(items: Dictionary, grant_items: bool = true) -> void:
     if is_instance_valid(coop_game) and coop_game.active and coop_game.building.collect(items):return

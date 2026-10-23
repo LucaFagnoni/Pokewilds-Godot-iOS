@@ -216,7 +216,7 @@ func _activate_field_move_wheel_selection(selection: int) -> void:
         return
     main.world.call("present_field_move_pokemon")
     if move_name == "BUILD":
-        main._open_build_menu()
+        main.crafting_menu.open_build_menu()
     elif move_name not in ["CUT", "DIG"]:
         main._show_message("%s is using %s." % [
             PokemonData.battle_display_name(String(pokemon.get("species", "POKEMON"))), move_name])
