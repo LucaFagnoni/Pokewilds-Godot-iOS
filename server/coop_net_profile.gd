@@ -49,6 +49,8 @@ func _initialize() -> void:
 		if arg.begins_with("--phase="): phase_file = arg.trim_prefix("--phase=")
 		if arg.begins_with("--index="): index = int(arg.trim_prefix("--index="))
 	Transport.stats = {}
+	# SPIKES name the frame's untimed parts even without a test build's probe.
+	if not Engine.has_meta("probe_frame"): Engine.set_meta("probe_frame", {})
 	# When this frame's resumed coroutines began (a test build's probe times them).
 	process_frame.connect(func(): Engine.set_meta("probe_t0", Time.get_ticks_usec()))
 	# A frame's work: from its first physics step (or its process step) to the
@@ -137,11 +139,34 @@ func _process(_delta: float) -> bool:
 	if main != null and is_instance_valid(main) and main.started and not "--server" in OS.get_cmdline_args():
 		_play(now)
 	if phase == "walk-breakdown" and not _breaking and "--server" in OS.get_cmdline_args(): _breakdown()
+	if phase == "pad" and not _padded and "--server" in OS.get_cmdline_args() and main != null: _pad()
+	# coop_net_profile.py --save-phase: the journal folded into a world save at 7 s and 17 s.
+	if phase.ends_with("save") and "--server" in OS.get_cmdline_args() and main != null and _folds < 2 and now - phase_started >= 7000 + 10000 * _folds:
+		_folds += 1
+		main.coop_game._fold_journal(main._capture_game_save())
 	return false
 
 ## The server's frame by script: each script's nodes stop processing for a
 ## second, between two seconds with them on; the difference is what they cost.
 var _breaking := false
+var _folds := 0
+var _padded := false
+
+## coop_net_profile.py --pad N: N more records of 300 bytes, committed (and
+## journaled) 2000 a frame, each 2000 an area no one goes to, as the records
+## of the areas a long-played world has.
+func _pad() -> void:
+	_padded = true
+	var args := OS.get_cmdline_args()
+	var count := int(args[args.find("--pad") + 1]) if "--pad" in args else 0
+	var state = main.coop_game.state
+	var filler := "x".repeat(300)
+	for start in range(0, count, 2000):
+		var changes := []
+		for i in range(start, mini(count, start + 2000)): changes.append(state.change("world/1000,%d/pad/%d" % [start / 2000, i], filler))
+		if not state.transact(main.coop_game.session.actor, "pad/%d" % start, changes).get("ok", false): print("PROFILE SERVER pad refused"); break
+		await process_frame
+	print("PROFILE SERVER padded %d records" % count)
 func _breakdown() -> void:
 	_breaking = true
 	var groups := {}
