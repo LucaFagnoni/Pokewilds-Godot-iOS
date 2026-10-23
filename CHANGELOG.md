@@ -12,6 +12,7 @@ the version description in Feather. Write it for players, not developers.
 - **New worlds are much faster to create:** world generation is about 15 times faster and uses far less memory.
 - **Lighter saves:** save files are about 14 times smaller, saving pauses the game for half as long, and the LOAD list opens instantly. Old saves still load as before.
 - **Smooth nights:** the game no longer drops frames at night or when a new day starts.
+- **Smooth tides:** the tide coming in or going out now costs about 6 times less work, and no longer slows the game down while it turns.
 - **Smoother players in co-op:** other players move smoothly even when 4G stutters, with no teleporting.
 - **Less battery:** players off screen are no longer drawn.
 - **Cheaper walking:** the game does much less work on every step, especially in tall grass.
