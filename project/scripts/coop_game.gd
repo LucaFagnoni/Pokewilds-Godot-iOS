@@ -303,7 +303,6 @@ func configure(game:Node)->void:
     commands.build_action=building.execute
     rules=preload("res://scripts/coop_rules_runtime.gd").new();add_child(rules);rules.configure(self)
     commands.rules_action=rules.execute
-    session.caps=preload("res://scripts/rules/rules.gd").capabilities()
     wild=preload("res://scripts/coop_wild_runtime.gd").new();add_child(wild);wild.configure(self)
     commands.wild_action=wild.execute
     population=preload("res://scripts/coop_population_runtime.gd").new();add_child(population);population.configure(self)
@@ -445,10 +444,8 @@ func _checkpoint_done(id:String,response:Dictionary)->void:
     if response.get("revisions") is Dictionary:profile_revisions=response.revisions.duplicate()
     profile.save.coop_pending_pokemon=response.get("pending",[]).duplicate(true)
     shared_records["player/"+session.actor]=profile.duplicate(true)
-    _berry_profile_base=profile_base
     storage.settle(sent.sent_pending,response.get("pending",[]))
 
-var _berry_profile_base:=""
 var _send_whole_profile:=false
 var _private_box_synced:=false
 
@@ -531,13 +528,6 @@ func _party_and_bag_stamp()->Array:
         else:party.append(hash(entry))
     return [party,main.inventory.hash()]
 
-func _berry_profile_is_current()->bool:
-    # A berry grants inventory only. Reuse the last durable profile when its
-    # party/inventory still match; movement is saved by the regular checkpoint.
-    # Any local party or inventory edit still takes the normal checkpoint path.
-    var profile:Dictionary=(state.records if hosting else shared_records).get("player/"+session.actor,{})
-    return not profile.is_empty() and profile.get("party",[])==main.caught_pokemon and profile.get("inventory",{})==main.inventory and (state.print_of("player/"+session.actor,{})==profile_base if hosting else _berry_profile_base==profile_base)
-
 ## Sent by an area's simulation on its own, several times a second while
 ## creatures move. They touch no player's record and have their own busy
 ## flags. They used to take the one-at-a-time slot below as well: a guest
@@ -561,31 +551,32 @@ func wait_free(limit_ms:int=8000)->bool:
 ## The parts of the player's record (coop_state.gd PARTS) each command reads:
 ## those saved first when they changed here, alone, and checked by their
 ## revisions (_part_checkpoint). A command in the rules' form (args "cmd",
-## coop_rules_runtime.gd) reads none: the host adds and takes what it gives as
-## a change to the bag, applied here the same way, with no save of the record
-## before it and no wait for another command to finish. Commands not listed
-## save the whole record first, as before.
+## coop_rules_runtime.gd) reads none, or only the bag when it pays from it
+## (rules.gd pays): the host adds and takes what it gives as a change to the
+## bag, applied here the same way, with no wait for another command to finish.
+## Commands not listed save the whole record first, as before.
 const OP_PARTS:={"drop":["bag"],"pickup":["bag"],"deposit":["party"],"deposit_type":["party"],"withdraw":["party"],
     "storage_edit":["party"],"storage_swap":["party"],"recall_population":["party"],"harvest_population":["bag"]}
 
-func command(operation:String,args:Dictionary,berry_pickup:bool=false)->Dictionary:
+func command(operation:String,args:Dictionary)->Dictionary:
     var background:bool=operation in BACKGROUND_COMMANDS or args.get("cmd") is Dictionary
     if (_request_busy and not background) or not active or not session.trusted:return {"ok":false,"reason":"busy"}
     if not background:_request_busy=true
     while _checkpoint_running and not background:
         await get_tree().process_frame
         if not session.trusted:_request_busy=false;return {"ok":false,"reason":"disconnected"}
-    var reuse_berry_profile:=berry_pickup and operation=="field_dig" and _berry_profile_is_current()
-    var save_first:bool=not reuse_berry_profile and not background and operation not in NO_CHECKPOINT
+    var save_first:bool=not background and operation not in NO_CHECKPOINT
+    var bag_first:bool=args.get("cmd") is Dictionary and preload("res://scripts/rules/rules.gd").pays(operation,args.cmd)
     # A guest's save goes just in front of the command instead of a round trip
     # before it: the host runs the command only if the save worked, and checks
     # it against the record that save made (coop_commands.gd "after").
     var ahead:Dictionary={}
-    if save_first and not hosting:
+    if (save_first or bag_first) and not hosting:
         while _profile_write_busy:
             await get_tree().process_frame
             if not session.trusted:_request_busy=false;return {"ok":false,"reason":"disconnected"}
-        if OP_PARTS.has(operation):ahead=_part_checkpoint(OP_PARTS[operation])
+        if bag_first:ahead=_part_checkpoint(["bag"])
+        elif OP_PARTS.has(operation):ahead=_part_checkpoint(OP_PARTS[operation])
         else:
             var profile:Dictionary=_personal_profile()
             ahead=_checkpoint_packet(profile,profile.save.coop_pending_pokemon.duplicate(true))
@@ -593,13 +584,13 @@ func command(operation:String,args:Dictionary,berry_pickup:bool=false)->Dictiona
             if session.send_host(ahead)!=OK:
                 _sent_checkpoints.erase(ahead.id);_request_busy=false;return {"ok":false,"reason":"connection_busy"}
             _profile_write_busy=true
-    elif save_first and not await checkpoint_player():
+    elif (save_first or bag_first) and not await checkpoint_player():
         print("ONLINE command not sent: ",operation," (player record could not be saved)")
         _request_busy=false;return {"ok":false,"reason":"save_failed"}
     var cell:Vector2i=main.world._player_cell()
     var packet={"kind":"command","id":_id(),"op":operation,"args":args}
     if not ahead.is_empty():packet["after"]=ahead.id
-    if operation in ["build","remove_build","paint","field_cut","field_dig"]:args["profile_hash"]=profile_base
+    if operation in ["build","remove_build","paint"]:args["profile_hash"]=profile_base
     if operation=="deploy":args["base"]=profile_base
     var result:Dictionary
     # A dedicated server's own player is nowhere: no presence to be found by.
@@ -723,40 +714,37 @@ func _committed(commit:Dictionary)->void:
         if peer==1:continue
         var actor=String(session.players[peer].actor)
         var areas:Array=_watched(actor)
-        var binary:bool=session.peer_can(peer,"bin:area")
-        var group:String=(actor if personal else "")+"|"+",".join(areas)+("|bin" if binary else "")
-        if not encoded.has(group):encoded[group]=_visible_frames(commit,actor,areas,personal,deltas,binary)
+        var group:String=(actor if personal else "")+"|"+",".join(areas)
+        if not encoded.has(group):encoded[group]=_visible_frames(commit,actor,areas,personal,deltas)
         for bytes in encoded[group]:session.send_bytes_to(peer,bytes)
     var own:Dictionary=Commands.visible_result(commit,session.actor)
     own["profile_base"]=state.print_of("player/"+session.actor,{})
     _apply_visible(own)
 
-## What `actor` is sent of a commit, frame by frame. A player whose hello said
-## "bin:area" gets the built and dug ground of each area it watches as a
-## binary frame (area_state.gd encode_records: the records' own bytes, no
-## base64 in JSON), ahead of the rest as a shared_commit (none when nothing
-## is left for it).
+## What `actor` is sent of a commit, frame by frame: the built and dug ground
+## of each area it watches as a binary frame (area_state.gd encode_records:
+## the records' own bytes, no base64 in JSON), ahead of the rest as a
+## shared_commit (none when nothing is left for it).
 const Wire=preload("res://scripts/area_state.gd")
-func _visible_frames(commit:Dictionary,actor:String,areas:Array,personal:bool,deltas:Dictionary,binary:bool)->Array:
+func _visible_frames(commit:Dictionary,actor:String,areas:Array,personal:bool,deltas:Dictionary)->Array:
     var frames:Array=[]
     var rest:=commit
-    if binary:
-        var by_area:Dictionary={}
-        var others:Array=[]
-        for change in commit.get("changes",[]):
-            var key:=String(change.get("key",""))
-            var area:=_key_area(key)
-            if area in areas and building.is_build_key(key) and change.get("after") is String:
-                if not by_area.has(area):by_area[area]=[]
-                by_area[area].append([key.get_slice("/",2),key.get_slice("/",3).uri_decode(),change.after])
-            else:others.append(change)
-        for area in by_area:
-            var started:=Time.get_ticks_usec()
-            frames.append(Wire.encode_records(area,int(commit.get("revision",0)),by_area[area]))
-            Session.Transport.count("enc:world_records",frames.back().size(),started)
-        if not by_area.is_empty():
-            if others.is_empty() and not personal and not commit.get("session") is Dictionary:return frames
-            rest=commit.duplicate();rest["changes"]=others
+    var by_area:Dictionary={}
+    var others:Array=[]
+    for change in commit.get("changes",[]):
+        var key:=String(change.get("key",""))
+        var area:=_key_area(key)
+        if area in areas and building.is_build_key(key) and change.get("after") is String:
+            if not by_area.has(area):by_area[area]=[]
+            by_area[area].append([key.get_slice("/",2),key.get_slice("/",3).uri_decode(),change.after])
+        else:others.append(change)
+    for area in by_area:
+        var started:=Time.get_ticks_usec()
+        frames.append(Wire.encode_records(area,int(commit.get("revision",0)),by_area[area]))
+        Session.Transport.count("enc:world_records",frames.back().size(),started)
+    if not by_area.is_empty():
+        if others.is_empty() and not personal and not commit.get("session") is Dictionary:return frames
+        rest=commit.duplicate();rest["changes"]=others
     var json:=_visible_bytes(rest,actor,areas,personal,deltas)
     if not json.is_empty():frames.append(json)
     return frames
@@ -938,7 +926,6 @@ func _apply_visible(result:Dictionary)->void:
                 main.inventory=change.after.get("inventory",{}).duplicate(true)
             profile_base=String(result.get("profile_base",State.fingerprint(change.after)))
             if result.get("profile_revisions") is Dictionary:profile_revisions=result.profile_revisions.duplicate()
-            _berry_profile_base=profile_base
     if drops_changed:_refresh_drops()
     if storage_changed:storage.refresh()
     building.committed(result.get("changes",[]))

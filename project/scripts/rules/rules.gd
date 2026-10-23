@@ -5,10 +5,6 @@ extends RefCounted
 ## plays its events; online the player predicts with the same call and sends
 ## the command, and the authority (the host) runs it again on its own copy of
 ## the area with its own random numbers, which decide the rewards.
-##
-## Peers that send and take commands this way say so with "cmd:<op>" among
-## the capabilities of their hello and welcome (coop_session.gd); the older
-## messages (patches and the rewards the player claimed) remain for the rest.
 
 const OPS := {
     "field_dig": preload("res://scripts/rules/field_dig.gd"),
@@ -22,10 +18,11 @@ const CUT_TARGETS := ["", "grass", "resource"]
 ## already played with its prediction.
 const ANSWERED := ["dig_reward", "material", "bundle", "item", "message", "encounter"]
 
-static func capabilities() -> Array:
-    var caps := ["bin:area"]
-    for op in OPS: caps.append("cmd:" + op)
-    return caps
+## True when the command pays from the bag (a fill, a planting): the player's
+## bag is then saved just ahead of it (coop_game.gd command), so the authority
+## reads the bag as the player has it. The others only add to it.
+static func pays(op: String, cmd: Variant) -> bool:
+    return op == "field_dig" and cmd is Dictionary and String(cmd.get("action", "")) in ["fill", "plant"]
 
 static func apply(op: String, state, player: Dictionary, cmd: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
     var rule = OPS.get(op)

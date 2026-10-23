@@ -7,16 +7,6 @@ const GROUPS=["structures","built_house_floor_tiles","built_house_paintings",
     "built_house_decorations","built_house_origins","source_interior_mutations","source_plant_farms","removed_resources","terrain_changes"]
 var game:Node
 var busy:=false
-var last_result:Dictionary={}
-var collecting:=false
-var field_rewards:Dictionary={}
-var field_choice:=""
-var field_encounter:Dictionary={}
-
-func collect(items:Dictionary)->bool:
-    if not collecting:return false
-    for item in items:field_rewards[item]=int(field_rewards.get(item,0))+int(items[item])
-    return true
 
 func configure(coordinator:Node)->void:game=coordinator
 
@@ -163,11 +153,7 @@ func execute(actor:String,id:String,args:Dictionary)->Dictionary:
     var transaction=Transaction.new()
     transaction.state=game.state;transaction.areas=game.service.areas;transaction.world_delta=model()
     var result:Dictionary
-    if args.get("field_dig",false):
-        result=transaction.dig(actor,id,area,args.patches,args.rewards,String(args.choice),String(args.profile_hash))
-    elif args.get("field_cut",false):
-        result=transaction.cut(actor,id,area,args.patches,args.rewards,String(args.profile_hash),String(args.get("move","CUT")))
-    elif args.get("paint",false):
+    if args.get("paint",false):
         result=transaction.paint(actor,id,area,args.patches,String(args.profile_hash))
     elif args.get("remove",false) and args.get("decoration",false):
         result=transaction.remove_decoration(actor,id,area,args.patches,String(args.profile_hash))
@@ -188,39 +174,12 @@ func execute(actor:String,id:String,args:Dictionary)->Dictionary:
         result["authoritative"]=authoritative
     return result
 
+## The field moves are commands the host decides (coop_rules_runtime.gd):
+## predicted here, kept or undone by its answer.
 func cut(cell:Vector2i,move:String="CUT")->void:
     if busy or game._request_busy:return
-    if game.rules.host_takes("field_cut"):
-        # The host runs the cut and decides what it gives (coop_rules_runtime.gd).
-        busy=true
-        await game.rules.predict("field_cut",{"move":move,"cell":cell,"target":"" if move=="CUT" else "resource"},{"species":String(game.main.world.active_field_species)})
-        busy=false
-        return
-    # A host from before the rules: this game cuts and claims what it got.
     busy=true
-    var area=game._area()
-    var cells=cut_cells(cell)
-    var before=Delta.flatten(capture_cut(cells))
-    var prior_encounter:Dictionary=game.main.world.pending_encounter_record.duplicate(true)
-    field_rewards={};field_encounter={};collecting=true
-    game.main.world.area.begin()
-    if move=="CUT":game.main.world._try_cut_target(cell)
-    else:game.main.world._harvest_exact_resource(cell,move)
-    collecting=false
-    var encounter=field_encounter.duplicate(true)
-    game.main.world.pending_encounter_record=prior_encounter
-    var rewards=field_rewards.duplicate(true)
-    var patches=Delta.diff(before,Delta.flatten(capture_cut(cells)))
-    if patches.is_empty():game.main.world.area.commit();busy=false;return
-    var result:Dictionary=await game.command("field_cut",{"area":area,"patches":patches,"rewards":rewards,"move":move})
-    last_result=result.duplicate(true)
-    if result.get("ok",false):
-        game.main.world.area.commit()
-        game.main._on_build_refund_requested(rewards,false)
-        if not encounter.is_empty():
-            game.main.world.pending_encounter_record=encounter.record
-            game.main.world.encounter_requested.emit(encounter.species,int(encounter.level))
-    else:put_back(area,patches,result)
+    await game.rules.predict("field_cut",{"move":move,"cell":cell,"target":"" if move=="CUT" else "resource"},{"species":String(game.main.world.active_field_species)})
     busy=false
 
 func plant(cell:Vector2i,item:String,animate:bool=true)->bool:
@@ -230,196 +189,30 @@ func plant(cell:Vector2i,item:String,animate:bool=true)->bool:
     if world.exact_world==null:return false
     var tile=world.exact_world.tile_at(cell)
     if not world.plants().valid(tile,item):return false
-    if game.rules.host_takes("field_dig"):
-        busy=true
-        var answer:Dictionary=await game.rules.predict("field_dig",{"action":"plant","cell":cell,"item":item})
-        busy=false
-        if answer.get("ok",false) and animate and answer.has("planted"):await world.plants().animate_planted(cell,tile,String(answer.planted),false)
-        return bool(answer.get("ok",false))
     busy=true
-    var before=Delta.flatten(capture_cut(dig_cells(cell)))
-    collecting=true
-    world.area.begin()
-    var planted:bool=await world.plants().plant(cell,item,false)
-    collecting=false
-    if not planted:world.area.rollback();busy=false;return false
-    var upper:String=tile.name_upper
-    var patches=Delta.diff(before,Delta.flatten(capture_cut(dig_cells(cell))))
-    # Say what the tile was by the shared records. A plant grows in each game
-    # by itself and its record drifts (the fruit it will give is random), so
-    # the host refused manure on a grown bush and the manure vanished again.
-    var known:Dictionary=game.state.records if game.hosting else game.shared_records
-    for patch in patches:
-        patch["before"]=game.state.fingerprint(known.get("world/"+game._area()+"/"+String(patch.key),Delta.encode(null)))
-    var result:Dictionary=await game.command("field_dig",{"area":game._area(),"patches":patches,"rewards":{},"choice":"PLANT:"+item})
-    last_result=result.duplicate(true)
-    if not result.get("ok",false):
-        put_back(game._area(),patches,result)
-        busy=false;return false
-    world.area.commit()
-    if animate and item not in ["MANURE","MIRACLE SEED"]:await world.plants().animate_planted(cell,tile,upper,false)
+    var answer:Dictionary=await game.rules.predict("field_dig",{"action":"plant","cell":cell,"item":item})
     busy=false
-    return true
+    if answer.get("ok",false) and animate and answer.has("planted"):await world.plants().animate_planted(cell,tile,String(answer.planted),false)
+    return bool(answer.get("ok",false))
 
 func pick_berry(cell:Vector2i)->void:
     if busy or game._request_busy:return
-    if game.rules.host_takes("field_dig"):
-        busy=true
-        await game.rules.predict("field_dig",{"action":"berry","cell":cell})
-        busy=false
-        return
-    var world=game.main.world
-    var berry:String=world._exact_berry_name(cell)
-    if berry.is_empty():return
-    var key:String=world._cell_key(cell)
-    if world.source_interior_mutations.get(key,{}).get("kind")=="BERRY_AGITATED":return
-    var tile=world.exact_world.tile_at(cell)
-    var before=Delta.flatten(capture_cut([cell]));var after=before.duplicate(true)
-    var encounter:Dictionary={};var rewards:Dictionary={}
-    if tile.route_belongs_to!=null and not tile.route_belongs_to.stored_pokemon.is_empty():
-        encounter=tile.route_belongs_to.stored_pokemon[0].duplicate(true)
-        after["source_interior_mutations/"+key.uri_encode()]=Delta.encode({"kind":"BERRY_AGITATED","base":tile.name,"clear_at":world.world_elapsed_seconds+400.0/60.0})
-        after["source_plant_farms/"+key.uri_encode()]=Delta.encode(null)
-    else:
-        var upper:String=tile.name_upper.replace("_full","_empty")
-        after["source_interior_mutations/"+key.uri_encode()]=Delta.encode({"kind":"BERRY_EMPTY","upper":upper})
-        after["source_plant_farms/"+key.uri_encode()]=Delta.encode({"base":tile.name,"upper":upper,"day":world.plants().day(),"rewards":{}})
-        rewards[berry]=1
     busy=true
-    var result:Dictionary=await game.command("field_dig",{"area":game._area(),"patches":Delta.diff(before,after),"rewards":rewards,"choice":""},true)
-    last_result=result.duplicate(true)
-    if result.get("ok",false):
-        if encounter.is_empty():
-            world.play_source_sound("Berry_Get")
-            game.main._on_dig_reward_collected(rewards,false)
-        else:
-            if tile.route_belongs_to!=null and not tile.route_belongs_to.stored_pokemon.is_empty():tile.route_belongs_to.stored_pokemon.pop_front()
-            world.pending_encounter_record=encounter
-            world.play_source_sound("ledge2")
-            world.world_message.emit("The tree became agitated and attacked!")
-            world.encounter_requested.emit(String(encounter.get("name",encounter.get("species","sudowoodo"))).to_lower(),int(encounter.get("level",1)))
-    elif game.active and result.has("authoritative"):apply_records(game._area(),result.authoritative)
+    await game.rules.predict("field_dig",{"action":"berry","cell":cell})
     busy=false
 
 func collect_item(action:String,cell:Vector2i)->void:
     if busy or game._request_busy:return
-    if game.rules.host_takes("field_dig"):
-        busy=true
-        await game.rules.predict("field_dig",{"action":"take","cell":cell,"item_action":action})
-        busy=false
-        return
-    var parts=action.split(":")
-    if parts.size()!=3:return
-    var world=game.main.world
-    var key:String=world._cell_key(cell)
-    var before=Delta.flatten(capture_cut([cell]))
-    var mutation:Dictionary=world.source_interior_mutations.get(key,{})
-    var tile=world.exact_world.tile_at(cell) if world.exact_world!=null else null
-    if String(world.interior_interactables.get(cell,""))!=action and (tile==null or String(tile.has_item).is_empty()):return
-    # Keep the ground and hole of an excavated item. Ordinary source pickups
-    # use COLLECTED, exactly as the original interaction does.
-    var item=String(mutation.get("dig_item",parts[1])).to_upper()
-    if item.is_empty():item=String(parts[1]).to_upper()
-    var amount=maxi(1,int(mutation.get("dig_item_amount",parts[2])))
-    var next=mutation.duplicate(true) if not String(mutation.get("dig_item","")).is_empty() else {"kind":"COLLECTED"}
-    if next.get("kind")=="TILE_NAMES":
-        next["dig_item"]="";next["dig_item_amount"]=0
-        if String(next.get("upper","")).begins_with("hole1"):next["upper"]="hole1"
-    var after=before.duplicate(true)
-    after["source_interior_mutations/"+key.uri_encode()]=Delta.encode(next)
-    var patches=Delta.diff(before,after)
-    if patches.is_empty():return
     busy=true
-    var rewards={item:amount}
-    var result:Dictionary=await game.command("field_dig",{"area":game._area(),"patches":patches,"rewards":rewards,"choice":""})
-    last_result=result.duplicate(true)
-    if result.get("ok",false):game.main._on_dig_reward_collected(rewards,false)
-    elif game.active and result.has("authoritative"):apply_records(game._area(),result.authoritative)
+    await game.rules.predict("field_dig",{"action":"take","cell":cell,"item_action":action})
     busy=false
-
-func dig_cells(cell:Vector2i)->Array:
-    var cells:Array=[]
-    for y in range(-1,2):
-        for x in range(-1,2):cells.append(cell+Vector2i(x,y))
-    return cells
-
-func capture_dig(cell:Vector2i)->Dictionary:
-    var world=game.main.world
-    var cells=dig_cells(cell)
-    var result=capture_cut(cells)
-    result["terrain_changes"]={};result["built_house_decorations"]={}
-    for at in cells:
-        var key:String=world._cell_key(at)
-        if world.terrain_changes.has(key):result.terrain_changes[key]=world.terrain_changes[key]
-        if world.active_area_id=="HOUSE":
-            var house_key:String=world._built_house_paint_key(at)
-            if world.built_house_decorations.has(house_key):result.built_house_decorations[house_key]=world.built_house_decorations[house_key].duplicate(true)
-    return result
 
 func dig(cell:Vector2i,choice:String="")->void:
     if busy or game._request_busy:return
-    if game.rules.host_takes("field_dig"):
-        busy=true
-        var cmd:={"action":"dig","cell":cell} if choice.is_empty() else {"action":"fill","cell":cell,"choice":choice}
-        await game.rules.predict("field_dig",cmd)
-        busy=false
-        return
-    # A host from before the rules: this game digs and claims what it got.
-    if choice.is_empty() and game.main.world.exact_world!=null:
-        var item_tile=game.main.world.exact_world.tile_at(cell)
-        if item_tile!=null and not String(item_tile.has_item).is_empty():
-            await collect_item("ITEM:%s:%d"%[String(item_tile.has_item).to_upper(),maxi(1,int(item_tile.has_item_amount))],cell)
-            return
     busy=true
-    var world=game.main.world;var area=game._area()
-    var before=Delta.flatten(capture_dig(cell))
-    field_rewards={};field_choice="";collecting=true
-    world.area.begin()
-    if choice.is_empty():world._use_dig(cell)
-    else:game.main._on_dig_requested(choice,cell,String(preload("res://scripts/field_move_data.gd").dig_choice_info(choice).get("material","")))
-    collecting=false
-    var rewards=field_rewards.duplicate(true)
-    var patches=Delta.diff(before,Delta.flatten(capture_dig(cell)))
-    if patches.is_empty():world.area.commit();busy=false;return
-    # Say what each tile was by the shared records, not by this game's own
-    # copy. The two can drift apart (daily dig sites are tidied locally), and
-    # the host then refused the fill as a conflict: the hole stayed although
-    # the game had already said the ground was changed.
-    var known:Dictionary=game.state.records if game.hosting else game.shared_records
-    for patch in patches:
-        patch["before"]=game.state.fingerprint(known.get("world/"+area+"/"+String(patch.key),Delta.encode(null)))
-    var result:Dictionary=await game.command("field_dig",{"area":area,"patches":patches,"rewards":rewards,"choice":field_choice})
-    last_result=result.duplicate(true)
-    if result.get("ok",false):
-        world.area.commit()
-        if not rewards.is_empty():game.main._on_dig_reward_collected(rewards,false)
-    else:put_back(area,patches,result)
+    var cmd:={"action":"dig","cell":cell} if choice.is_empty() else {"action":"fill","cell":cell,"choice":choice}
+    await game.rules.predict("field_dig",cmd)
     busy=false
-
-func cut_cells(cell:Vector2i)->Array:
-    var world=game.main.world
-    var cells:Array=[cell]
-    var anchor:Vector2i=world._exact_resource_anchor(cell)
-    if anchor.x<=-2147483648:anchor=world._resource_object_anchor(cell)
-    if anchor.x>-2147483648 and anchor not in cells:cells.append(anchor)
-    var giant:Vector2i=world._exact_large_tree1_anchor(anchor if anchor.x>-2147483648 else cell)
-    if giant.x>-2147483648:
-        for offset in [Vector2i.ZERO,Vector2i.RIGHT,Vector2i.DOWN,Vector2i(1,1)]:
-            if giant+offset not in cells:cells.append(giant+offset)
-    return cells
-
-func capture_cut(cells:Array)->Dictionary:
-    # CUT edits its target or the source's four-part giant tree. Do not scan
-    # every building, farm and previous terrain edit on every grass cut.
-    var world=game.main.world
-    var result={"source_interior_mutations":{},"source_plant_farms":{},"removed_resources":[]}
-    for cell in cells:
-        var key:String=world._cell_key(cell)
-        for group in ["source_interior_mutations","source_plant_farms"]:
-            var records:Dictionary=world.get(group)
-            if records.has(key):result[group][key]=records[key].duplicate(true)
-        if world.removed_resources.has(key):result.removed_resources.append(key)
-    return result
 
 func paint(picture:int,cell:Vector2i)->void:
     if busy or game._request_busy:return
@@ -431,7 +224,6 @@ func paint(picture:int,cell:Vector2i)->void:
     var patches=Delta.diff(before,Delta.flatten(capture()))
     if patches.is_empty():game.main.world.area.commit();busy=false;return
     var result:Dictionary=await game.command("paint",{"area":area,"patches":patches})
-    last_result=result.duplicate(true)
     if result.get("ok",false):game.main.world.area.commit()
     else:put_back(area,patches,result)
     busy=false
@@ -455,7 +247,6 @@ func remove(cell:Vector2i,move:String,wipe_public:bool=false)->void:
     var request:={"area":area,"remove":true,"move":move,"x":cell.x,"y":cell.y,"patches":patches}
     if wipe_public:request["wipe_public"]=true
     var result:Dictionary=await game.command("remove_build",request)
-    last_result=result.duplicate(true)
     if result.get("ok",false):
         world.area.commit()
         game.main._on_build_refund_requested(result.get("refund",{}),false)
@@ -482,7 +273,6 @@ func remove_decoration(cell:Vector2i)->void:
     var patches=Delta.diff(before,Delta.flatten(capture()))
     var result:Dictionary=await game.command("remove_build",{"area":area,"remove":true,"decoration":true,"move":"CUT",
         "x":cell.x,"y":cell.y,"patches":patches})
-    last_result=result.duplicate(true)
     if result.get("ok",false):
         world.area.commit()
         game.main._on_build_refund_requested(result.get("refund",{}),false)

@@ -18,6 +18,7 @@ TESTS = [
     ("journal_batch_test", []),
     ("save_format_test", ["--touch-ui"]),
     ("coop_ui_test", ["--touch-ui"]),
+    ("host_rules_test", []),
     ("coop_chat_test", ["--touch-ui"]),
     ("autosave_test", ["--touch-ui"]),
     ("coop_menu_flow_test", ["--touch-ui"]),

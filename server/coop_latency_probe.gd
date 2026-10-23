@@ -174,6 +174,7 @@ func _try(action: String, attempt: Callable, budget: int = -1) -> bool:
 
 var _cell := Vector2i.ZERO
 var _box := ""
+var _hole := Vector2i(999999, 999999)
 
 ## Stands the player where the four cells around are open ground, as one
 ## would before building or dropping something, and lets the host see it.
@@ -229,12 +230,12 @@ func _actions(where: String) -> void:
 	# The ground, decided by the host (rules/): a hole dug and grass cut, shown
 	# at once and kept when the host agrees; the reward is the host's own roll,
 	# in the record it sends back.
-	if not coop.rules.host_takes("field_dig"): _skip("dig a hole (host decides the reward)", "the host takes no rule commands")
-	else: await _try("dig a hole (host decides the reward)", _dig)
-	if not coop.rules.host_takes("field_cut"): _skip("cut grass (host decides the reward)", "the host takes no rule commands")
-	elif _grass_near().x == 999999: _skip("cut grass (host decides the reward)", "no grass near")
+	await _try("dig a hole (host decides the reward)", _dig)
+	if _hole.x == 999999: _skip("fill it with soil the host has not seen", "no hole dug")
+	else: await _try("fill it with soil the host has not seen", _fill)
+	if _grass_near().x == 999999: _skip("cut grass (host decides the reward)", "no grass near")
 	else: await _try("cut grass (host decides the reward)", _cut)
-	if coop.rules.host_takes("field_dig"): await _try("refused dig put back (session goes on)", _refused_dig)
+	await _try("refused dig put back (session goes on)", _refused_dig)
 
 	_box = ""
 	if await _try("build a storage box", _build_box):
@@ -344,8 +345,31 @@ func _dig() -> bool:
 		var before := int(main.inventory.get(material, 0))
 		await coop.building.dig(cell)
 		var key := "world/%s/source_interior_mutations/%s" % [coop._area(), ("%d,%d" % [cell.x, cell.y]).uri_encode()]
-		return world.area.tile_at(cell).name_upper.begins_with("hole1") and coop.shared_records.has(key) and int(main.inventory.get(material, 0)) == before + 1
+		var dug: bool = world.area.tile_at(cell).name_upper.begins_with("hole1") and coop.shared_records.has(key) and int(main.inventory.get(material, 0)) == before + 1
+		if dug: _hole = cell
+		return dug
 	return false
+
+## The hole filled with FOREST ground, paid with GRASS this game has and the
+## host's copy of its record does not yet (the bag is saved just ahead of a
+## command that pays): true once the host kept it, one GRASS gone and the bag
+## the record's.
+func _fill() -> bool:
+	if not main.world.area.tile_at(_hole).name_upper.begins_with("hole1"): return false
+	main.inventory["GRASS"] = int(main.inventory.get("GRASS", 0)) + 2
+	var grass := int(main.inventory["GRASS"])
+	await coop.building.dig(_hole, "FOREST")
+	var tile: SourceTile = main.world.area.tile_at(_hole)
+	var record: Dictionary = coop.shared_records.get("player/" + coop.session.actor, {})
+	var same := _same_bag(record.get("inventory", {}), main.inventory)
+	if not same: print("PROBE note: after the fill the bag is not the record's: ", main.inventory.get("GRASS"), " / ", record.get("inventory", {}).get("GRASS"))
+	return tile.name == "green1" and not tile.name_upper.begins_with("hole1") and int(main.inventory.get("GRASS", 0)) == grass - 1 and same
+
+## Two bags alike item by item (one that came as JSON counts in floats).
+static func _same_bag(a: Dictionary, b: Dictionary) -> bool:
+	for item in a.keys() + b.keys():
+		if int(a.get(item, 0)) != int(b.get(item, 0)): return false
+	return true
 
 ## A DIG the host turns away (the cell is too far from the player to reach):
 ## shown here at once, then undone exactly, and the game plays on.

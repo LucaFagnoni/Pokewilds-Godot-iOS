@@ -1080,7 +1080,7 @@ func try_cut_target(cell:Vector2i)->bool:
         world.structure_removal_requested.emit(cell,"CUT")
         return true
     var coordinator=world.get_parent().get("coop_game")
-    if is_instance_valid(coordinator) and coordinator.active and not coordinator.building.collecting and not world.built_structures.has(cell):
+    if is_instance_valid(coordinator) and coordinator.active and not world.built_structures.has(cell):
         var available=world._is_cuttable_grass_cell(cell) or exact_resource_anchor(cell).x>-2147483648 or resource_object_anchor(cell).x>-2147483648
         if not available:return false
         coordinator.building.cut(cell)
@@ -1149,7 +1149,12 @@ func play_rule(result: Dictionary) -> void:
             "agitated":
                 var tile := world.exact_world.tile_at(event[1])
                 if tile != null: _clear_agitated_berry_tree(event[1], tile)
-            "cut_halves": show_cut_halves(event[1], event[2])
+            "cut_halves":
+                show_cut_halves(event[1], event[2])
+                # Online the other players see the same split. Only this
+                # player's own cut plays it here (coop_rules_runtime.gd COSMETIC).
+                var coop = world.get_parent().get("coop_game") if world.get_parent() != null else null
+                if is_instance_valid(coop) and coop.active: coop.visuals.effect({"fx":"cut", "x":event[1].x, "y":event[1].y})
 
 ## An item's own sprites and records go when it is taken.
 func _clear_collected_item(cell: Vector2i) -> void:
@@ -1188,7 +1193,7 @@ func exact_berry_name(cell: Vector2i) -> String:
 
 func pick_exact_berry_tree(cell: Vector2i) -> void:
     var coordinator=world.get_parent().get("coop_game")
-    if is_instance_valid(coordinator) and coordinator.active and not coordinator.building.collecting:
+    if is_instance_valid(coordinator) and coordinator.active:
         coordinator.building.pick_berry(cell)
         return
     play_rule(FieldDig.apply(world.area, rule_player(), {"action":"berry", "cell":cell}, world.rng))
@@ -1288,15 +1293,10 @@ func show_cut_halves(cell: Vector2i, as_it_was: SourceTile = null) -> void:
             holder.visible = true)
         steps.tween_interval(2.0 / 60.0)
     steps.tween_callback(holder.queue_free)
-    # Online, the other players see the same split. `collecting` is set only
-    # while this player's own cut is being carried out.
-    var coop = world.get_parent().get("coop_game") if world.get_parent() != null else null
-    if is_instance_valid(coop) and coop.active and coop.building.collecting:
-        coop.visuals.effect({"fx":"cut", "x":cell.x, "y":cell.y})
 
 func harvest_exact_resource(cell:Vector2i,move:String)->void:
     var coordinator=world.get_parent().get("coop_game")
-    if move in ["SMASH","HEADBUTT"] and is_instance_valid(coordinator) and coordinator.active and not coordinator.building.collecting:
+    if move in ["SMASH","HEADBUTT"] and is_instance_valid(coordinator) and coordinator.active:
         coordinator.building.cut(cell,move)
         return
     if world.exact_world == null:
@@ -1308,7 +1308,7 @@ func contextual_ground_name(cell: Vector2i, biome_hint: String = "") -> String:
 
 func harvest_resource_with_move(cell:Vector2i,move:String)->void:
     var coordinator=world.get_parent().get("coop_game")
-    if move in ["SMASH","HEADBUTT"] and is_instance_valid(coordinator) and coordinator.active and not coordinator.building.collecting:
+    if move in ["SMASH","HEADBUTT"] and is_instance_valid(coordinator) and coordinator.active:
         coordinator.building.cut(cell,move)
         return
     if not world.resource_objects.has(cell):
@@ -1351,7 +1351,7 @@ func use_dig(cell: Vector2i) -> void:
         world.dig_action_pending = true
         return
     var coordinator=world.get_parent().get("coop_game")
-    if is_instance_valid(coordinator) and coordinator.active and not coordinator.building.collecting:
+    if is_instance_valid(coordinator) and coordinator.active:
         coordinator.building.dig(cell)
         return
     if world.active_area_id != "HOUSE" and not world._in_bounds(cell): return

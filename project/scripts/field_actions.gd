@@ -17,7 +17,6 @@ func _init(owner_main: GameMain) -> void:
     main = owner_main
 
 func on_dig_reward_collected(items: Dictionary, grant_items: bool = true) -> void:
-    if is_instance_valid(main.coop_game) and main.coop_game.active and main.coop_game.building.collect(items):return
     if main.world.get_meta("ball_action_reward", false) or main.world.active_field_move != "DIG":
         on_material_bundle_collected(items,grant_items)
         return
@@ -33,13 +32,11 @@ func on_dig_reward_collected(items: Dictionary, grant_items: bool = true) -> voi
     main.minimap.update_dig_hud_and_minimap(0.0)
 
 func on_material_collected(item_name: String, amount: int) -> void:
-    if is_instance_valid(main.coop_game) and main.coop_game.active and main.coop_game.building.collect({ItemData.normalize_name(item_name):amount}):return
     var normalized := ItemData.normalize_name(item_name)
     CraftingData.grant(main.inventory, normalized, amount)
     main.dialogs.show_acquired_resource(normalized, amount)
 
 func on_material_bundle_collected(items: Dictionary, grant_items: bool = true) -> void:
-    if is_instance_valid(main.coop_game) and main.coop_game.active and main.coop_game.building.collect(items):return
     var lines: Array[String] = ["GOT"]
     for raw_name in items.keys():
         var normalized := ItemData.normalize_name(String(raw_name))
@@ -80,13 +77,12 @@ func on_dig_requested(choice: String, cell: Vector2i, material: String) -> void:
     if int(main.inventory.get(material, 0)) <= 0:
         main.dialogs.show_message("DIG needs %s to place %s." % [material, choice])
         return
-    if is_instance_valid(main.coop_game) and main.coop_game.active and not main.coop_game.building.collecting:
+    if is_instance_valid(main.coop_game) and main.coop_game.active:
         main.coop_game.building.dig(cell,choice)
         return
     if main.world.has_method("apply_dig_choice"):
         if bool(main.world.call("apply_dig_choice", cell, choice)):
-            if is_instance_valid(main.coop_game) and main.coop_game.active and main.coop_game.building.collecting:main.coop_game.building.field_choice=choice
-            else:main.inventory[material] = int(main.inventory.get(material, 0)) - 1
+            main.inventory[material] = int(main.inventory.get(material, 0)) - 1
 
 func on_build_refund_requested(refund: Dictionary, grant_items: bool = true) -> void:
     if refund.is_empty():
@@ -240,7 +236,6 @@ func on_structure_action(action: String) -> void:
         main.inventory["LIFE FORCE"] = maxi(0, available - used)
 
 func on_item_collected(item_name: String) -> void:
-    if is_instance_valid(main.coop_game) and main.coop_game.active and main.coop_game.building.collect({ItemData.normalize_name(item_name):1}):return
     if String(main.world.get("active_field_move")) == "DIG":
         on_dig_reward_collected({item_name:1})
         return

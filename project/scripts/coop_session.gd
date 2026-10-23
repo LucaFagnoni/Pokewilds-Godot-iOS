@@ -8,8 +8,12 @@ signal rejected(reason: String)
 signal connection_lost
 const Transport = preload("res://scripts/coop_transport.gd")
 ## coop-9b: record fingerprints hash encoded text directly (coop_state.gd
-## fingerprint). coop-10 is kept for the end of the netcode rewrite.
-const PROTOCOL := "pokewilds-godot-coop-9b"
+## fingerprint). coop-10: the netcode rewrite. The field moves are commands
+## the host decides (rules/, coop_rules_runtime.gd; no patches or rewards
+## claimed by a player), an area's built and dug ground and the wild Pokemon's
+## motion travel as binary frames (area_state.gd WIRE_TAG), a player record is
+## saved by parts with their revisions (coop_state.gd PARTS).
+const PROTOCOL := "pokewilds-godot-coop-10"
 ## Most players one game can have, a phone host included (a dedicated server's
 ## own player does not count). The host relays every position update to each
 ## other player in the same area, so its upload grows with the square of the
@@ -28,13 +32,6 @@ var actor := ""
 var mod_digest := ""
 var profile: Dictionary = {}
 var players: Dictionary = {}
-## What this game can do beyond PROTOCOL, said in its hello (a player) or its
-## welcome (the host): "cmd:<op>" for each field command it takes in the
-## rules' form (rules/rules.gd), "bin:area" for world changes as binary
-## frames. The older messages stay for peers that do not say so.
-## Players' own are players[peer].caps; the host's, as its welcome said, host_caps.
-var caps: Array = []
-var host_caps: Array = []
 var trusted := false
 var loading := false
 ## Host: proof guests must present for a PRIVATE lobby. Guest: proof to send.
@@ -179,7 +176,7 @@ func _hello(peer: int, world: String, nonce: String = "") -> void:
     # A typed address may cross the internet: its proof only ever travels hashed.
     if world.is_empty() and not access_password.is_empty():access = ""
     var hello := {"kind":"hello","protocol":PROTOCOL,"mods":mod_digest,
-        "identity":identity,"profile":profile,"access":access,"build":build_id(),"compat":compat_id(),"version":build_version(),"caps":caps}
+        "identity":identity,"profile":profile,"access":access,"build":build_id(),"compat":compat_id(),"version":build_version()}
     if not account_id.is_empty():
         hello["account"] = account_id
         if not world.is_empty() and _account_challenge.get("salt") is String:
@@ -262,8 +259,8 @@ func _received(peer: int, payload: Dictionary) -> void:
             if not details is Dictionary:_reject(peer,"Invalid player profile.");return
             var clean:Dictionary={"name":String(details.get("name","PLAYER")).strip_edges().substr(0,24),
                 "model":int(details.get("model",0)),"color":int(details.get("color",0))}
-            players[peer]={"actor":id,"profile":clean,"device":device,"account":account if accounts!=null else "","caps":_caps(payload.get("caps"))}
-            transport.send(peer,{"kind":"welcome","world":world_id,"actor":id,"peer":peer,"protocol":PROTOCOL,"caps":caps})
+            players[peer]={"actor":id,"profile":clean,"device":device,"account":account if accounts!=null else ""}
+            transport.send(peer,{"kind":"welcome","world":world_id,"actor":id,"peer":peer,"protocol":PROTOCOL})
             admitted.emit(peer,id,clean)
             return
         if kind in ["hello","welcome","rejected","challenge"]:return
@@ -286,22 +283,10 @@ func _received(peer: int, payload: Dictionary) -> void:
             if not account_id.is_empty() and assigned.length()==64 and assigned.is_valid_hex_number():actor=assigned
             if payload.get("protocol")!=PROTOCOL or payload.get("actor")!=actor:
                 transport.stop();rejected.emit("Invalid host handshake.");return
-            world_id=String(payload.get("world",""));trusted=true;host_caps=_caps(payload.get("caps"))
+            world_id=String(payload.get("world",""));trusted=true
             session_ready.emit(world_id,actor)
             return
         if trusted:message.emit(1,"host",payload)
-
-## A peer's capabilities as sent: up to 64 short strings, anything else dropped.
-static func _caps(value: Variant) -> Array:
-    var kept: Array = []
-    if value is Array:
-        for entry in value:
-            if entry is String and entry.length() <= 48 and kept.size() < 64: kept.append(entry)
-    return kept
-
-## True when the player on `peer` said it can do `cap` (host only).
-func peer_can(peer: int, cap: String) -> bool:
-    return players.has(peer) and cap in players[peer].get("caps", [])
 
 ## Host with accounts: the actor an ID plays, after checking the proof of its
 ## password, or creating the ID on its first login. "" after refusing.
@@ -371,4 +356,4 @@ func _disconnected(peer: int) -> void:
         departed.emit(peer,id)
 
 func stop() -> void:
-    set_process(false);transport.stop();messages.clear();players.clear();_reject_pending.clear();trusted=false;hosting=false;loading=false;access_proof="";access_salt="";access_password="";_nonces.clear();_account_salts.clear();_account_challenge={};host_caps=[]
+    set_process(false);transport.stop();messages.clear();players.clear();_reject_pending.clear();trusted=false;hosting=false;loading=false;access_proof="";access_salt="";access_password="";_nonces.clear();_account_salts.clear();_account_challenge={}

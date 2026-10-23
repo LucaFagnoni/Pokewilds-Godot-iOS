@@ -163,10 +163,6 @@ func _redraw(area_state,cells:Array)->void:
 
 # --- The player's side ---------------------------------------------------------
 
-## True when the host decides `op` by the rules (its welcome said "cmd:<op>").
-func host_takes(op:String)->bool:
-    return game.active and ("cmd:"+op) in game.session.host_caps
-
 var _predicting:=false
 const COSMETIC:=["sound","refresh","refresh_cell","refresh_around","farms","collected","house_decoration","cut_halves"]
 ## Player: `cmd` predicted on this World's area and sent; the answer keeps or

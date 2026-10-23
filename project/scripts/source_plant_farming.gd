@@ -35,7 +35,7 @@ func valid(tile: SourceTile, item: String) -> bool:
 
 func plant(cell: Vector2i, item: String, animate: bool = true) -> bool:
     var coordinator=world.get_parent().get("coop_game")
-    if is_instance_valid(coordinator) and coordinator.active and not coordinator.building.collecting:
+    if is_instance_valid(coordinator) and coordinator.active:
         return await coordinator.building.plant(cell,item,animate)
     if world.exact_world == null: return false
     # The rule (rules/field_dig.gd) plants; its "planted" event is the sprout to show.

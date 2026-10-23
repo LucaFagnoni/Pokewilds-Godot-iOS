@@ -86,13 +86,12 @@ func remote_charm(data:Dictionary,target:Dictionary)->bool:
 ## those WildPopulation marked (moved, added, removed, a new target) and those
 ## marked here, each once it differs from its record. One that only moved (its
 ## record otherwise as last sent) goes as 14 bytes of binary motion instead
-## (WildPopulation.encode_motion, area_state.gd WIRE_WILD_MOTION) when the host
-## takes it: no record packed, compared, fingerprinted or journaled for a step.
+## (WildPopulation.encode_motion, area_state.gd WIRE_WILD_MOTION): no record
+## packed, compared, fingerprinted or journaled for a step.
 func publish_motion()->void:
     var records:Dictionary=game.state.records if game.hosting else game.shared_records
     var world=game.main.world
     for wild_id in world.wild_population.take_dirty():motion_dirty[wild_id]=true
-    var binary:bool=binary_motion()
     var moved:=PackedInt64Array()
     var patches:Array=[]
     var sent:Dictionary={}
@@ -106,7 +105,7 @@ func publish_motion()->void:
             continue
         var data:Dictionary=world.wild_pokemon.get(wild_id,{})
         if data.get("ball_reserved",false):continue
-        if binary and not data.is_empty():
+        if not data.is_empty():
             var signature:=record_signature(data)
             if _sent_signatures.get(wild_id)==signature:
                 moved.append(wild_id);motion_dirty.erase(wild_id);continue
@@ -155,11 +154,6 @@ static func record_signature(data:Dictionary)->int:
     for field in UNSENT:plain.erase(field)
     return plain.hash()
 
-## True when wild motion goes as binary frames: the host said it takes them
-## (a host itself relays them when every player watching can read them).
-func binary_motion()->bool:
-    return game.hosting or "bin:area" in game.session.host_caps
-
 ## The motion of `ids` sent: a host relays it, a player sends it to the host.
 func send_motion(ids:PackedInt64Array)->void:
     var started:=Time.get_ticks_usec()
@@ -172,7 +166,7 @@ func send_motion(ids:PackedInt64Array)->void:
 ## Host: wild motion from the one who simulates `area` (checked: its
 ## authority, this epoch). Kept (`moved`, folded into the records when they
 ## are read whole: fold_motion) and passed on to the players watching the
-## area, as it came. A player who cannot read it gets the records instead.
+## area, as it came.
 var moved:Dictionary={}
 func motion_frame(actor:String,packet:Dictionary)->void:
     if not game.hosting:
@@ -192,23 +186,17 @@ func relay_motion(actor:String,area:String,motion:PackedByteArray,frame:PackedBy
         kept[entry.id]=entry
     # Unsaved wandering: the world is saved for it every MOTION_SAVE_MS (coop_game.gd).
     if not kept.is_empty():game.state.loose+=1
-    var old_readers:=false
     for peer in game.session.players:
         if peer==1 or String(game.session.players[peer].actor)==actor:continue
-        if not area in game._watched(String(game.session.players[peer].actor)):continue
-        if game.session.peer_can(peer,"bin:area"):game.session.send_bytes_to(peer,frame)
-        else:old_readers=true
+        if area in game._watched(String(game.session.players[peer].actor)):game.session.send_bytes_to(peer,frame)
     # The host's own game, when it is there but does not simulate it.
     if area==game._area() and actor!=game.session.actor:apply_motion(entries.filter(func(entry):return not claimed.has(entry.id)))
-    if old_readers:fold_motion(area)
 
 ## Host: what is kept of `area`'s motion, to `peer` as one frame (after the
-## records that say where its Pokemon were). A player who cannot read binary
-## motion gets it written into the records instead.
+## records that say where its Pokemon were).
 func send_moved(peer:int,area:String)->void:
     var kept:Dictionary=moved.get(area,{})
     if kept.is_empty():return
-    if not game.session.peer_can(peer,"bin:area"):fold_motion(area);return
     game.session.send_bytes_to(peer,Wire.encode_motion(area,int(game.service.areas.epochs.get(area,0)),encode_entries(kept.values())))
 
 ## decode_motion's entries packed again (WildPopulation.encode_motion's form).
@@ -263,8 +251,7 @@ func apply_motion(entries:Array)->void:
 ## Host: the motion kept for `area` (every area with "") written into the
 ## records, as commits (not journaled: motion never is) sent to the players
 ## like any other, a few milliseconds of it a frame. Done when the records are
-## read whole: a world or area save, the host going to an area, a player who
-## cannot read binary motion.
+## read whole: a world or area save, the host going to an area.
 func fold_motion(area:String="")->void:
     if not game.hosting or moved.is_empty():return
     var changes:Array=[]

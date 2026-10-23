@@ -5240,7 +5240,7 @@ func _leave_source_area() -> void:
 
 func _use_interior_interactable(action: String, action_cell: Vector2i = Vector2i.ZERO) -> void:
     var coordinator=get_parent().get("coop_game")
-    if action.begins_with("ITEM:") and is_instance_valid(coordinator) and coordinator.active and not coordinator.building.collecting:
+    if action.begins_with("ITEM:") and is_instance_valid(coordinator) and coordinator.active:
         coordinator.building.collect_item(action,action_cell)
         return
     if action.begins_with("ITEM:") and _collect_source_dig_item(action_cell): return
