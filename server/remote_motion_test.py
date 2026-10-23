@@ -13,7 +13,7 @@ screen and back) and one watching. From both players' logs (wall-clock ms):
           shown again when the zoom brings it into view, where it should be
           when it walks back in; the minimap marker keeps moving meanwhile
 
-    python server/remote_motion_test.py GODOT [--profile lan|4g|bad4g] [--report-only] [--keep] [--shots DIR]
+    python server/remote_motion_test.py GODOT [--profile lan|4g|bad4g] [--report-only] [--keep] [--shots DIR] [--port N]
 
 --report-only prints the numbers without failing (to measure the old code).
 --shots DIR runs the observer in a window and saves contact sheets (16 frames)
@@ -26,7 +26,9 @@ from netem_proxy import Proxy, PROFILES
 godot = sys.argv[1]
 profile = sys.argv[sys.argv.index("--profile") + 1] if "--profile" in sys.argv else "4g"
 work = tempfile.mkdtemp(prefix="pw-motion-")
-server_port, proxy_port = 54795, 54796
+# --port N: the server's (the proxy takes the next one), for a run beside other servers.
+server_port = int(sys.argv[sys.argv.index("--port") + 1]) if "--port" in sys.argv else 54795
+proxy_port = server_port + 1
 override = os.path.join("project", "override.cfg")
 made_override = not os.path.exists(override)
 if made_override:
