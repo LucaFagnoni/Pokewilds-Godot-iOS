@@ -16,6 +16,10 @@ const SourceChunkCollisionStreamer = preload("res://scripts/source_resident_coll
 const SourceHouseStyles = preload("res://scripts/source_house_styles.gd")
 const SourceWorldData = preload("res://scripts/source_world_data.gd")
 const TexturePixels = preload("res://scripts/texture_pixels.gd")
+## The rules of building (rules/): this World plays their events.
+const Build = preload("res://scripts/rules/build.gd")
+const Remove = preload("res://scripts/rules/remove.gd")
+const Interact = preload("res://scripts/rules/interact.gd")
 
 var world: World
 
@@ -108,38 +112,36 @@ func show_current_build_selection() -> void:
 ## room: on a floor tile, or on the old row just above the room.
 ## The window or clock hanging on this house wall, or "" when it is bare.
 func house_wall_decoration_at(cell: Vector2i) -> String:
-    if world.active_area_id != "HOUSE" or not world.built_house_paintable_walls.has(cell):
-        return ""
-    var hung := String(world.built_house_decorations.get(world._built_house_paint_key(cell), {}).get("name", ""))
-    return hung if hung == "CLOCK" or _is_window_recipe(hung) else ""
+    return Build.wall_decoration_at(world.area, _player(cell), cell)
 
 ## CUT takes a window or clock off its wall and leaves the wall standing. The
 ## room's own rear wall is not a built piece and could never be cut, so
 ## without this nothing hung on it could ever be removed.
 func remove_house_wall_decoration(cell: Vector2i, refund: bool) -> bool:
-    var hung := house_wall_decoration_at(cell)
-    if hung.is_empty():
-        return false
-    world.area.drop("built_house_decorations", world._built_house_paint_key(cell))
-    var decoration := world.built_house_decoration_sprites.get(cell) as Sprite2D
-    if is_instance_valid(decoration):
-        decoration.queue_free()
-    world.built_house_decoration_sprites.erase(cell)
-    world.play_source_sound("cut1")
-    if refund:
-        world.build_refund_requested.emit((CraftingData.build_recipe(hung).get("cost", {}) as Dictionary).duplicate(true))
-    return true
+    var out := _out()
+    var removed := Remove.remove_decoration(world.area, _player(cell), cell, refund, out)
+    world.field_moves.play_rule(out)
+    return removed
 
 func _is_house_wall_cell(cell: Vector2i) -> bool:
-    return built_house_rear_wall_floor(cell) >= 0 or world._built_house_floor_index_for_cell(cell) >= 0
+    return Build.is_house_wall_cell(house_context(), cell)
 
 func built_house_rear_wall_floor(cell: Vector2i) -> int:
-    for raw_index in world.built_house_floor_origins:
-        var floor_index := int(raw_index)
-        var origin := world._built_house_floor_origin(floor_index)
-        if cell.y == origin.y - 1 and cell.x >= origin.x and cell.x < origin.x + world.built_house_room_size.x:
-            return floor_index
-    return -1
+    return Build.rear_wall_floor(house_context(), cell)
+
+## The inside of the house this World holds (rules/build.gd player.house):
+## its own dictionaries, which the rules read and add floor and walls to.
+func house_context() -> Dictionary:
+    return {"door": world.active_built_house_door, "origin": world.built_house_interior_origin, "size": world.built_house_room_size,
+        "footprint": world.built_house_footprint, "capacity": world.built_house_floor_capacity, "floors": world.built_house_floor_origins,
+        "interior": world.built_house_interior_cells, "walls": world.built_house_paintable_walls, "exits": {}}
+
+## What the rules are told about this World's player (world_field_moves.gd rule_player).
+func _player(cell: Vector2i = Vector2i.ZERO) -> Dictionary:
+    return world.field_moves.rule_player(cell)
+
+static func _out() -> Dictionary:
+    return {"ok": false, "reason": "", "events": [], "grant": {}, "consume": {}}
 
 func snap_build_cell(build_name: String, desired: Vector2i) -> Vector2i:
     if (build_name == "CLOCK" or _is_window_recipe(build_name)) and world.active_area_id == "HOUSE":
@@ -219,24 +221,10 @@ func update_build_preview() -> void:
     world.build_preview_sprite.modulate = Color.WHITE
 
 func _house_style_for_recipe(build_name: String) -> String:
-    for style in SourceHouseStyles.STYLES:
-        if build_name.begins_with(style + " "): return style
-    if build_name.begins_with("SAVANNA "):
-        return "SAVANNA"
-    if build_name.begins_with("TUNDRA "):
-        return "TUNDRA"
-    return "DEFAULT"
+    return Build.house_style_for(build_name)
 
 func _house_piece_name(build_name: String) -> String:
-    if build_name in ["COUCH 2", "COUCH 3", "COUCH 4", "COUCH 5", "PLANT 2", "VANITY 2"]:
-        return build_name.get_slice(" ", 0)
-    for style in SourceHouseStyles.STYLES:
-        if build_name.begins_with(style + " "): return build_name.trim_prefix(style + " ")
-    if build_name.begins_with("SAVANNA "):
-        return build_name.trim_prefix("SAVANNA ")
-    if build_name.begins_with("TUNDRA "):
-        return build_name.trim_prefix("TUNDRA ")
-    return build_name
+    return Build.piece_name(build_name)
 
 func _styled_house_piece_texture(build_name: String) -> Texture2D:
     var style := _house_style_for_recipe(build_name)
@@ -263,190 +251,102 @@ func can_place_structure(
         cell: Vector2i,
         ignore_indoor_requirement: bool = false
     ) -> bool:
-    var recipe: Dictionary = CraftingData.build_recipe(build_name)
-    if recipe.is_empty():
-        return false
-    # The pieces of a house's outside, and fences, are only kept on the open
-    # map. One built inside a house or a cave was lost on the next load, and
-    # online it ended the session for the other players, who could not place
-    # it. They are refused indoors; INTERIOR WALL is the wall for a room.
-    if not ignore_indoor_requirement and world.active_area_id != "OVERWORLD" and _house_piece_name(build_name) in ["FENCE", "WALL", "ROOF", "DOOR"]:
-        world.world_message.emit("%s can only be built outside." % build_name)
-        return false
-    if not ignore_indoor_requirement:
-        if String(world.built_structures.get(cell + Vector2i.DOWN, {}).get("name", "")) == "BED": return false
-        if couch_anchor_at(cell) != Vector2i(2147483647,2147483647): return false
-        if _house_piece_name(build_name) == "COUCH":
-            for occupied in _couch_footprint(build_name, cell):
-                if not world._is_built_house_floor_cell(occupied) or world.built_structures.has(occupied) or world.interior_interactables.has(occupied) or world.deployed_pokemon.has(occupied) or world.wild_eggs.has(occupied) or world.blocked.has(occupied): return false
-    if build_name == "BED" and not ignore_indoor_requirement:
-        var head_cell := cell + Vector2i.UP
-        if not world._is_built_house_floor_cell(head_cell) or world.built_structures.has(head_cell) or world.interior_interactables.has(head_cell) or world.deployed_pokemon.has(head_cell) or world.wild_eggs.has(head_cell):
-            return false
-    if _is_window_recipe(build_name) and world.active_area_id == "OVERWORLD":
-        var wall: Dictionary = world.built_structures.get(cell, {})
-        return String(wall.get("name", "")) == "WALL" and not bool(wall.get("window", false))
-    # A torch goes on the ground or, as in the source game, on a wall.
-    if build_name == "TORCH" and not ignore_indoor_requirement and _torch_wall_at(cell):
-        var torch_wall: Dictionary = world.built_structures[cell]
-        return not bool(torch_wall.get("torch", false)) and not bool(torch_wall.get("window", false))
-    if _is_house_decoration(build_name) and not (build_name == "CLOCK" and ignore_indoor_requirement):
-        if world.active_area_id != "HOUSE": return false
-        var on_wall := _is_window_recipe(build_name) or build_name == "CLOCK"
-        if on_wall and not world.built_house_paintable_walls.has(cell): return false
-        if not on_wall and not (world._is_built_house_floor_cell(cell) or world._built_house_floor_can_expand(cell)): return false
-        return String(world.built_house_decorations.get(world._built_house_paint_key(cell), {}).get("name", "")) != build_name
-    if build_name in ["WINDOW", "CHIMNEY"] and world.active_area_id == "OVERWORLD" and not ignore_indoor_requirement:
-        var shell: Dictionary = world.built_structures.get(cell, {})
-        var required := "WALL" if build_name == "WINDOW" else "ROOF"
-        return world.active_area_id == "OVERWORLD" and String(shell.get("name", "")) == required and not bool(shell.get(build_name.to_lower(), false))
-    if not ignore_indoor_requirement and String(world.built_structures.get(cell + Vector2i.DOWN, {}).get("name", "")) == "BED":
-        return false
-    if build_name == "FLOOR" and world.active_area_id == "HOUSE":
-        return world._built_house_floor_can_expand(cell)
-    var in_built_house: bool = world._is_built_house_floor_cell(cell)
-    if build_name == "STAIRS" and world.active_area_id == "HOUSE" and not ignore_indoor_requirement:
-        var stair_floor: int = world._built_house_floor_index_for_cell(cell)
-        if stair_floor < 0 or stair_floor >= world.built_house_floor_capacity - 1:
-            world.world_message.emit("This house needs to be taller.")
-            return false
-        var stair_local: Vector2i = cell - world._built_house_floor_origin(stair_floor)
-        var upper_cell: Vector2i = world._built_house_global_cell(stair_floor + 1, stair_local)
-        if world.built_structures.has(upper_cell):
-            world.world_message.emit("The floor above is blocked.")
-            return false
-    # Saved indoor structures live in the generated house coordinate space,
-    # outside overworld bounds. Permit only an indoor recipe on restore there.
-    var restoring_indoor: bool = (
-        ignore_indoor_requirement and (bool(recipe.get("indoors", false)) or build_name in ["TORCH", "STORAGE BOX", "PRIVATE CHEST", "SIGN", "STATUE", "PLANT", "GRAVE", "FLOWERS", "CAMPFIRE"])
-        and not world._in_bounds(cell)
-    )
-    if not world._in_bounds(cell) and not in_built_house and not restoring_indoor:
-        return false
-    if (
-            world.built_structures.has(cell)
-            or world.landmarks.has(cell)
-            or world.resource_objects.has(cell)
-            or world.deployed_pokemon.has(cell)
-            or world.wild_eggs.has(cell)
-            or world.interior_interactables.has(cell)
-            or world._wild_id_at_cell(cell) >= 0
-        ):
-        return false
-    if world._is_tall_grass_cell(cell) and not (build_name == "BRIDGE" and _bridge_surface_at(cell)):
-        return false
-
-    if (
-            bool(recipe.get("indoors", false))
-            and not ignore_indoor_requirement
-            and not world._is_cell_indoors(cell)
-        ):
-        world.world_message.emit("That must be built indoors.")
-        return false
-
-    # Every recorded built-house interior cell is authored floor. It is valid
-    # for indoor furniture and linked stairs even though it is off the overworld.
-    if in_built_house or restoring_indoor:
-        return true
-
-    if build_name == "BRIDGE":
-        return _bridge_surface_at(cell)
-    if world.terrain_kind_at(cell) == 0:
-        return false
-    return not world.blocked.has(cell)
+    var out := _out()
+    var allowed := Build.can_place(world.area, _player(cell), build_name, cell, ignore_indoor_requirement, out)
+    world.field_moves.play_rule(out)
+    return allowed
 
 func _bridge_surface_at(cell: Vector2i) -> bool:
-    if world.exact_world != null:
-        var tile := world.exact_world.tile_at(cell)
-        return tile != null and ("water" in tile.name or "_tidal" in tile.name or "lava" in tile.name) and not "bridge" in tile.name
-    return world._in_bounds(cell) and world.terrain_kind_at(cell) == 0
+    return Build.bridge_surface_at(world.area, cell)
 
+## The recipe drawn for a piece's data: a styled house's walls, roof and door by its style.
+static func _display_name(data: Dictionary) -> String:
+    var style := String(data.get("house_style", "DEFAULT"))
+    var name := String(data.get("name", ""))
+    if style != "DEFAULT" and name in ["WALL", "ROOF", "DOOR"]: return "%s %s" % [style, name]
+    return String(data.get("recipe_name", name))
+
+## A new piece is placed by the rules (rules/build.gd) and drawn from what
+## they did; a saved one (`restoring`) is laid again from its record, and one
+## the co-op host has placed (`committed_online`) without the checks.
 func place_structure(build_name: String, cell: Vector2i, restoring: bool = false, restored_state: Dictionary = {}, committed_online: bool = false) -> bool:
     # The map draws a building with the tiles within 4 of it.
     world._bump_map_art([cell], 4)
     if not restoring:
         cell = snap_build_cell(build_name, cell)
-    # Persisted exterior pieces are authoritative. Reconstructed terrain,
-    # regrowth and actors must not silently delete walls/roofs during loading.
-    # Keep ordinary placement validation for newly built pieces.
-    var saved_exterior := restoring and _house_piece_name(build_name) in ["FENCE", "WALL", "ROOF", "DOOR"]
-    if saved_exterior:
-        if not world._in_bounds(cell) or world.built_structures.has(cell):
-            return false
-    elif not committed_online and not can_place_structure(build_name, cell, restoring):
+    # A piece with no picture is not placed at all.
+    if _whole_piece(build_name, cell, restoring) and structure_display_texture(_display_name(_drawn(build_name, restoring, restored_state)), int(restored_state.get("variant", 0))) == null:
         return false
-    if _is_window_recipe(build_name) and world.active_area_id == "OVERWORLD" and not restoring:
-        world.built_structures[cell]["window"] = true
-        world.built_structures[cell]["window_recipe"] = build_name
-        world.built_structures[cell]["window_variant"] = 0
-        refresh_shell_attachment(cell)
-        return true
-    if build_name == "TORCH" and not restoring and _torch_wall_at(cell):
-        world.built_structures[cell]["torch"] = true
-        refresh_shell_attachment(cell)
-        return true
-    if _is_house_decoration(build_name) and not (build_name == "CLOCK" and restoring):
-        if build_name.begins_with("CARPET ") and not world.built_house_interior_cells.has(cell):
-            var floor_index := world._built_house_floor_index_for_cell(cell)
-            if not world._add_built_house_floor_cell(floor_index, cell - world._built_house_floor_origin(floor_index), true): return false
-        world.area.put("built_house_decorations", world._built_house_paint_key(cell), {"name":build_name, "variant":0})
-        draw_house_decoration(cell)
-        if build_name.begins_with("CARPET "):
-            for bed_cell in [cell, cell + Vector2i.DOWN]:
-                var bed: Dictionary = world.built_structures.get(bed_cell, {})
-                if String(bed.get("name", "")) != "BED": continue
-                bed["bed_carpet"] = int(build_name.get_slice(" ", 1))
-                var bed_sprite := bed.get("sprite") as Sprite2D
-                if is_instance_valid(bed_sprite): bed_sprite.texture = colored_bed_texture(int(bed.bed_carpet))
-        return true
-    if build_name in ["WINDOW", "CHIMNEY"] and world.active_area_id == "OVERWORLD" and not restoring:
-        world.built_structures[cell][build_name.to_lower()] = true
-        refresh_shell_attachment(cell)
-        pass # Successful construction is silent.
-        return true
-    if build_name == "FLOOR" and world.active_area_id == "HOUSE" and not restoring:
-        return world._place_built_house_floor(cell)
+    var out := _out()
+    var placed: bool
+    if restoring:
+        placed = Build.place(world.area, _player(cell), build_name, cell, true, restored_state, committed_online, out)
+    else:
+        out = Build.apply(world.area, _player(cell), {"recipe": build_name, "cell": cell}, world.rng)
+        placed = out.ok
+    world.field_moves.play_rule(out)
+    return placed
 
-    var recipe := CraftingData.build_recipe(build_name)
-    var requested_name := build_name
-    var house_style := String(restored_state.get("house_style", _house_style_for_recipe(requested_name)))
-    var structure_name := String(restored_state.get("name", _house_piece_name(requested_name)))
-    if restoring and restored_state.has("recipe_name"):
-        requested_name = String(restored_state.get("recipe_name", requested_name))
-        house_style = String(restored_state.get("house_style", _house_style_for_recipe(requested_name)))
-        structure_name = String(restored_state.get("name", _house_piece_name(requested_name)))
-    var sprite := Sprite2D.new()
-    var display_recipe_name := requested_name
-    if restoring and house_style != "DEFAULT" and structure_name in ["WALL", "ROOF", "DOOR"]:
-        display_recipe_name = "%s %s" % [house_style, structure_name]
+## Whether placing `build_name` makes a piece of its own (not something hung
+## on a wall or a floor tile), so that it needs a picture.
+func _whole_piece(build_name: String, cell: Vector2i, restoring: bool) -> bool:
+    if Build.is_window(build_name) and world.active_area_id == "OVERWORLD" and not restoring: return false
+    if build_name == "TORCH" and not restoring and Build.torch_wall_at(world.area, cell): return false
+    if Build.is_house_decoration(build_name) and not (build_name == "CLOCK" and restoring): return false
+    if build_name in ["WINDOW", "CHIMNEY"] and world.active_area_id == "OVERWORLD" and not restoring: return false
+    if build_name == "FLOOR" and world.active_area_id == "HOUSE" and not restoring: return false
+    return true
+
+## The fields of the piece `build_name` would make that decide its picture.
+static func _drawn(build_name: String, restoring: bool, restored_state: Dictionary) -> Dictionary:
+    var requested := build_name
+    if restoring and restored_state.has("recipe_name"): requested = String(restored_state.recipe_name)
+    return {"name": String(restored_state.get("name", Build.piece_name(requested))), "recipe_name": requested,
+        "house_style": String(restored_state.get("house_style", Build.house_style_for(requested)))}
+
+## The piece at `cell` drawn from its data (rules/build.gd "structure"): made
+## when it has no sprite yet, its look and attachments brought up to date.
+func draw_structure(cell: Vector2i) -> void:
+    var data: Dictionary = world.built_structures.get(cell, {})
+    if data.is_empty(): return
+    world._bump_map_art([cell], 4)
+    var name := String(data.get("name", ""))
+    var sprite := data.get("sprite") as Sprite2D
+    if is_instance_valid(sprite):
+        if name == "BED" and int(data.get("bed_carpet", 0)) > 0: sprite.texture = colored_bed_texture(int(data.bed_carpet))
+        elif name == "WINDOW": sprite.texture = structure_display_texture("WINDOW", int(data.get("variant", 0)))
+        elif name == "TORCH": sprite.modulate = Color.WHITE if bool(data.get("lit", true)) else Color(0.45, 0.45, 0.45)
+        refresh_shell_attachment(cell)
+        return
+    var layer := world.get_node_or_null("LandmarkLayer") as Node2D
+    if layer == null: return
+    sprite = Sprite2D.new()
+    sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+    sprite.centered = false
+    sprite.z_as_relative = false
+    if bool(data.get("generated_stair_pair", false)):
+        sprite.texture = SourceWorldData.texture_for("stairs_down1")
+        sprite.position = Vector2(cell.x * World.TILE, cell.y * World.TILE)
+        sprite.z_index = World.HOUSE_STAIRS_Z
+        layer.add_child(sprite)
+        data["sprite"] = sprite
+        data["collision"] = null
+        return
     # Player-placed stairs use the normal source STAIRS artwork (`stairs_up1`);
     # only the automatically generated landing on the floor above uses the
     # source house down-stair artwork. This mirrors the direction of travel.
-    sprite.texture = structure_display_texture(
-        display_recipe_name, int(restored_state.get("variant", 0))
-    )
-    if structure_name == "BED" and int(restored_state.get("bed_carpet", 0)) > 0:
-        sprite.texture = colored_bed_texture(int(restored_state.bed_carpet))
+    sprite.texture = structure_display_texture(_display_name(data), int(data.get("variant", 0)))
+    if name == "BED" and int(data.get("bed_carpet", 0)) > 0:
+        sprite.texture = colored_bed_texture(int(data.bed_carpet))
     if sprite.texture == null:
-        return false
-    sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-    sprite.centered = false
+        sprite.free()
+        return
     sprite.position = Vector2(cell.x * World.TILE, cell.y * World.TILE - maxi(0, int(sprite.texture.get_height()) - World.TILE))
-    sprite.z_as_relative = false
     # A beacon is a floor tile that is stood on, like a bridge.
-    sprite.z_index = 10 if structure_name in ["BRIDGE", "BEACON"] else world._depth_z(cell)
-
-    var layer := world.get_node_or_null("LandmarkLayer") as Node2D
-    if layer == null:
-        return false
+    sprite.z_index = 10 if name in ["BRIDGE", "BEACON"] else world._depth_z(cell)
     layer.add_child(sprite)
-
     var collision: CollisionBox = null
-    var solid := bool(recipe.get("solid", false))
-    var bridged_water := false
-
-    if structure_name == "BRIDGE" and _bridge_surface_at(cell):
-        bridged_water = true
+    if bool(data.get("bridged_water", false)):
         var exact_collision := world.get_node_or_null("ExactCollisionStream") as SourceChunkCollisionStreamer
         if exact_collision != null:
             exact_collision.set_cell_passable(cell, true)
@@ -454,63 +354,58 @@ func place_structure(build_name: String, cell: Vector2i, restoring: bool = false
         if is_instance_valid(water_collision):
             water_collision.queue_free()
         world.ground_collisions.erase(cell)
-        world.blocked.erase(cell)
-    elif solid:
+    elif bool(data.get("solid", false)):
         var body := world.get_node_or_null("WorldCollision") as CollisionBody
         if body != null:
             collision = world._add_block_collision(body, cell.x, cell.y)
-            world.blocked[cell] = true
-
+    data["sprite"] = sprite
+    data["collision"] = collision
     world.grass_exclusion[cell] = true
-    var structure_state := restored_state.duplicate(true)
-    for runtime_key in ["sprite", "collision", "solid", "bridged_water", "x", "y"]:
-        structure_state.erase(runtime_key)
-    structure_state.merge({
-        "name": structure_name,
-        "recipe_name": requested_name,
-        "house_style": house_style,
-        "sprite": sprite,
-        "collision": collision,
-        "solid": solid,
-        "bridged_water": bridged_water,
-        "open": bool(structure_state.get("open", false)),
-        "variant": int(structure_state.get("variant", 0)),
-        "text": String(structure_state.get("text", "")),
-        "last_harvest_day": int(structure_state.get("last_harvest_day", -1))
-    }, true)
-    if structure_name == "STAIRS" and world.active_area_id == "HOUSE" and not restoring:
-        var stair_metadata: Dictionary = world._built_house_stair_metadata(cell)
-        for key in stair_metadata:
-            structure_state[key] = stair_metadata[key]
-        structure_state["generated_stair_pair"] = false
-    world.built_structures[cell] = structure_state
-    world.area.mark("structures", cell)
-    if structure_name == "COUCH":
-        var footprint := _couch_footprint(requested_name, cell)
-        for occupied in footprint: world.blocked[occupied] = true
-        if is_instance_valid(collision):
-            var width := 32 if requested_name == "COUCH" else 16
-            var height := 16 if requested_name in ["COUCH", "COUCH 3", "COUCH 5"] else 32
-            collision.rect = Rect2(Vector2(cell * World.TILE) + Vector2(0, World.TILE-height), Vector2(width,height))
-    if structure_name == "INTERIOR WALL" and _is_house_wall_cell(cell):
-        world.built_house_paintable_walls[cell] = true
-
-    if structure_name == "STAIRS" and world.active_area_id == "HOUSE" and not restoring:
-        world._create_generated_house_stair_pair(cell)
-    if structure_name == "DOOR":
-        var door_open := bool(structure_state.get("open", false))
-        _set_structure_solid(cell, not door_open)
-        sprite.visible = not door_open
-    elif structure_name == "TORCH":
-        sprite.modulate = Color.WHITE if bool(structure_state.get("lit", true)) else Color(0.45, 0.45, 0.45)
-
-    if structure_name == "FLOWERS":
+    if name == "COUCH" and is_instance_valid(collision):
+        var recipe_name := String(data.get("recipe_name", "COUCH"))
+        var width := 32 if recipe_name == "COUCH" else 16
+        var height := 16 if recipe_name in ["COUCH", "COUCH 3", "COUCH 5"] else 32
+        collision.rect = Rect2(Vector2(cell * World.TILE) + Vector2(0, World.TILE-height), Vector2(width,height))
+    if name == "DOOR":
+        sprite.visible = not bool(data.get("open", false))
+    elif name == "TORCH":
+        sprite.modulate = Color.WHITE if bool(data.get("lit", true)) else Color(0.45, 0.45, 0.45)
+    if name == "FLOWERS":
         world.flower_cells[cell] = true
-
-    # Successful construction is silent.
-    refresh_connected_structures_around(cell)
     refresh_shell_attachment(cell)
-    return true
+
+## A piece gone (rules "unbuilt"): its nodes go, unless the piece now at
+## `cell` (put back by a rollback) still uses them.
+func undraw_structure(cell: Vector2i, piece: Dictionary) -> void:
+    world._bump_map_art([cell], 4)
+    var current: Dictionary = world.built_structures.get(cell, {})
+    var sprite := piece.get("sprite") as Sprite2D
+    if is_instance_valid(sprite) and current.get("sprite") != sprite:
+        sprite.queue_free()
+    var collision := piece.get("collision") as CollisionBox
+    if is_instance_valid(collision) and current.get("collision") != collision:
+        collision.queue_free()
+    if bool(piece.get("bridged_water", false)) and not bool(current.get("bridged_water", false)):
+        var stream := world.get_node_or_null("ExactCollisionStream") as SourceChunkCollisionStreamer
+        if stream != null: stream.set_cell_passable(cell, false)
+    if current.is_empty():
+        world.grass_exclusion.erase(cell)
+        world.flower_cells.erase(cell)
+
+## The pieces at these cells drawn again after a rollback put their data
+## back: what `shown` (each cell's piece as drawn before it) used and the
+## piece there now does not goes, a piece with no sprite is drawn, and they
+## join up again.
+func redraw_structures(shown: Dictionary) -> void:
+    for cell in shown:
+        var before: Dictionary = shown[cell]
+        var current: Dictionary = world.built_structures.get(cell, {})
+        if before.get("sprite") != current.get("sprite") or before.get("collision") != current.get("collision"):
+            undraw_structure(cell, before)
+        if not current.is_empty():
+            draw_structure(cell)
+            _sync_collision(cell)
+    for cell in shown: restyle_around(cell)
 
 func structure_display_texture(build_name: String, variant: int = 0) -> Texture2D:
     if build_name == "INTERIOR WALL":
@@ -649,23 +544,9 @@ func interact_built_structure(cell: Vector2i) -> void:
         else:
             toggle_structure_door(cell)
     elif build_name == "WINDOW":
-        data["variant"] = wrapi(int(data.get("variant", 0)) + 1, 0, 3)
-        world.built_structures[cell] = data
-        world.area.mark("structures", cell)
-        var window_sprite := data.get("sprite") as Sprite2D
-        if is_instance_valid(window_sprite):
-            window_sprite.texture = structure_display_texture("WINDOW", int(data["variant"]))
-        world.world_message.emit("You adjusted the WINDOW.")
+        _interact(cell, "window")
     elif build_name == "PLANT":
-        var day := world._world_day_index()
-        if int(data.get("last_harvest_day", -1)) < day:
-            data["last_harvest_day"] = day
-            world.built_structures[cell] = data
-            world.area.mark("structures", cell)
-            world.material_collected.emit("MIRACLE SEED", 1)
-            world.world_message.emit("The PLANT yielded a MIRACLE SEED.")
-        else:
-            world.world_message.emit("The PLANT needs another day to grow.")
+        _interact(cell, "plant")
     elif build_name == "CLOCK":
         var total_minutes := world.clock_minutes()
         world.world_message.emit("The CLOCK reads %02d:%02d on day %d." % [total_minutes / 60, total_minutes % 60, world._world_day_index() + 1])
@@ -684,27 +565,15 @@ func interact_built_structure(cell: Vector2i) -> void:
     elif build_name == "STAIRS":
         use_linked_stairs(cell)
     elif build_name == "TORCH":
-        data["lit"] = not bool(data.get("lit", true))
-        world.built_structures[cell] = data
-        world.area.mark("structures", cell)
-        var torch_sprite := data.get("sprite") as Sprite2D
-        if is_instance_valid(torch_sprite):
-            torch_sprite.modulate = Color.WHITE if bool(data["lit"]) else Color(0.45, 0.45, 0.45)
-        world.world_message.emit("The TORCH is now %s." % ("lit" if bool(data["lit"]) else "out"))
+        _interact(cell, "torch")
     else:
         world.world_message.emit("You inspect the %s." % build_name)
 
 func _couch_footprint(recipe: String, cell: Vector2i) -> Array[Vector2i]:
-    if recipe in ["COUCH 3", "COUCH 5"]:
-        return [cell]
-    return [cell, cell + (Vector2i.RIGHT if recipe == "COUCH" else Vector2i.UP)]
+    return Build.couch_footprint(recipe, cell)
 
 func couch_anchor_at(cell: Vector2i) -> Vector2i:
-    for candidate in [cell, cell + Vector2i.DOWN, cell + Vector2i.LEFT]:
-        var data: Dictionary = world.built_structures.get(candidate, {})
-        if String(data.get("name", "")) == "COUCH" and cell in _couch_footprint(String(data.get("recipe_name", "COUCH")), candidate):
-            return candidate
-    return Vector2i(2147483647,2147483647)
+    return Build.couch_anchor_at(world.area, cell)
 
 func sit_on_stool(cell: Vector2i) -> void:
     if is_instance_valid(world.stool_seated_sprite):
@@ -746,29 +615,21 @@ func end_stool_sitting() -> void:
     world.set_gameplay_enabled(true)
 
 func set_structure_sign_text(cell: Vector2i, value: String) -> void:
-    if not world.built_structures.has(cell):
-        return
-    var data: Dictionary = world.built_structures[cell]
-    if String(data.get("name", "")) != "SIGN":
-        return
-    data["text"] = value.strip_edges().left(64)
-    world.built_structures[cell] = data
-    world.area.mark("structures", cell)
-    world.world_message.emit("The SIGN now reads: %s" % String(data["text"]))
+    _interact(cell, "sign", value)
 
 func set_structure_beacon_label(cell: Vector2i, value: String) -> void:
-    if not world.built_structures.has(cell):
+    _interact(cell, "beacon", value)
+
+## A built piece changed for everyone (rules/interact.gd): online it is the
+## host's to decide, sent as a command; alone the rule is played here.
+func _interact(cell: Vector2i, action: String, text: String = "") -> void:
+    var cmd := {"cell": cell, "action": action}
+    if action in ["sign", "beacon"]: cmd["text"] = text
+    var coordinator = world.get_parent().get("coop_game") if world.get_parent() != null else null
+    if is_instance_valid(coordinator) and coordinator.active:
+        coordinator.building.interact(cmd)
         return
-    var data: Dictionary = world.built_structures[cell]
-    if String(data.get("name", "")) != "BEACON":
-        return
-    data["label"] = value.strip_edges().left(32)
-    world.built_structures[cell] = data
-    world.area.mark("structures", cell)
-    if String(data["label"]).is_empty():
-        world.world_message.emit("The BEACON name was cleared.")
-    else:
-        world.world_message.emit("BEACON named %s." % String(data["label"]))
+    world.field_moves.play_rule(Interact.apply(world.area, _player(cell), cmd, world.rng))
 
 func _set_structure_solid(cell: Vector2i, solid: bool) -> void:
     if not world.built_structures.has(cell):
@@ -790,53 +651,7 @@ func _set_structure_solid(cell: Vector2i, solid: bool) -> void:
     world.area.mark("structures", cell)
 
 func built_house_state(door_cell: Vector2i) -> Dictionary:
-    # Source smart-building follows connected house pieces from the door. It
-    # does not impose M73's invented minimum counts/height. A connected door
-    # with a roof and structural body is a completed enterable house.
-    var house_names: Array[String] = ["WALL", "ROOF", "DOOR", "WINDOW", "CHIMNEY"]
-    var visited: Dictionary = {}
-    var queue: Array[Vector2i] = [door_cell]
-    var queue_index := 0
-    var has_door := false
-    var has_roof := false
-    var has_body := false
-    var wall_rows: Dictionary = {}
-    var cells: Array[Vector2i] = []
-    var directions: Array[Vector2i] = [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]
-    while queue_index < queue.size():
-        var current: Vector2i = queue[queue_index]
-        queue_index += 1
-        if visited.has(current) or not world.built_structures.has(current):
-            continue
-        var name := String((world.built_structures[current] as Dictionary).get("name", ""))
-        if name not in house_names:
-            continue
-        visited[current] = true
-        cells.append(current)
-        has_door = has_door or name == "DOOR"
-        has_roof = has_roof or name in ["ROOF", "CHIMNEY"]
-        has_body = has_body or name in ["WALL", "WINDOW", "DOOR"]
-        if name in ["WALL", "WINDOW"]:
-            wall_rows[current.y] = true
-        for direction in directions:
-            var neighbor: Vector2i = current + direction
-            if not visited.has(neighbor):
-                queue.append(neighbor)
-    if not has_door or not has_body:
-        return {"ready":false, "message":"This house still needs connected walls and a door.", "cells":cells}
-    if not has_roof:
-        return {"ready":false, "message":"This house still needs a connected roof.", "cells":cells}
-    var door_style := "DEFAULT"
-    if world.built_structures.has(door_cell):
-        door_style = String((world.built_structures[door_cell] as Dictionary).get("house_style", "DEFAULT"))
-    # Source house height rule: every exterior wall row permits one interior
-    # floor. A basic one-row house therefore has only its ground floor; stairs
-    # require another wall row before the roof.
-    var floor_count: int = maxi(1, wall_rows.size())
-    return {
-        "ready":true, "message":"", "cells":cells,
-        "house_style":door_style, "floor_count":floor_count
-    }
+    return Build.house_state(world.area, door_cell)
 
 func toggle_structure_door(cell: Vector2i) -> void:
     var data: Dictionary = world.built_structures[cell]
@@ -929,29 +744,10 @@ func use_linked_stairs(source: Vector2i) -> void:
     )
 
 func _house_connection_piece(cell: Vector2i) -> String:
-    var data: Dictionary = world.built_structures.get(cell, {})
-    var name := String(data.get("name", ""))
-    if name != "DOOR" or bool(data.get("gate", false)): return name
-    var left := String(world.built_structures.get(cell + Vector2i.LEFT, {}).get("name", ""))
-    var right := String(world.built_structures.get(cell + Vector2i.RIGHT, {}).get("name", ""))
-    var up := String(world.built_structures.get(cell + Vector2i.UP, {}).get("name", ""))
-    var down := String(world.built_structures.get(cell + Vector2i.DOWN, {}).get("name", ""))
-    # PkmnMap.adjustTile: roof-sandwiched doors become roof with a north rug.
-    if left in ["ROOF", "DOOR"] and right in ["ROOF", "DOOR"] and (left == "ROOF" or right == "ROOF"):
-        return "ROOF"
-    if up in ["WALL", "ROOF", "DOOR"] and down in ["WALL", "ROOF", "DOOR"] and (up != "DOOR" or down != "DOOR"):
-        return "ROOF" if left == "ROOF" or right == "ROOF" else "WALL"
-    return name
+    return Build.connection_piece(world.area, cell)
 
 func _house_connection_style(cell: Vector2i) -> String:
-    var data: Dictionary = world.built_structures.get(cell, {})
-    var style := String(data.get("house_style", "DEFAULT"))
-    if String(data.get("name", "")) == "DOOR" and style == "DEFAULT":
-        for direction in [Vector2i.LEFT,Vector2i.RIGHT,Vector2i.UP,Vector2i.DOWN]:
-            var neighbor: Dictionary = world.built_structures.get(cell + direction, {})
-            if String(neighbor.get("name", "")) in ["ROOF", "WALL"]:
-                return String(neighbor.get("house_style", "DEFAULT"))
-    return style
+    return Build.connection_style(world.area, cell)
 
 func house_exit_clear(cell: Vector2i) -> bool:
     if world.built_structures.has(cell) or world.blocked.has(cell) or world.resource_objects.has(cell) or world.landmarks.has(cell): return false
@@ -972,6 +768,14 @@ func house_door_outward(cell: Vector2i) -> Vector2i:
     return Vector2i.DOWN
 
 func refresh_connected_structures_around(center: Vector2i) -> void:
+    var out := _out()
+    Build.connect_around(world.area, _player(center), center, out)
+    world.field_moves.play_rule(out)
+
+## The look of the pieces joined around `center` (rules/build.gd "restyle"):
+## each drawn the way its data and its neighbours say it connects, with the
+## door rugs and bridge supports that go with them.
+func restyle_around(center: Vector2i) -> void:
     var refresh_cells: Array[Vector2i] = [center, center + Vector2i.LEFT, center + Vector2i.RIGHT, center + Vector2i.UP, center + Vector2i.DOWN]
     # Source desert roof inner corners also depend on diagonal neighbors.
     for offset in [Vector2i(-1,-1),Vector2i(1,-1),Vector2i(-1,1),Vector2i(1,1)]:
@@ -983,27 +787,24 @@ func refresh_connected_structures_around(center: Vector2i) -> void:
         var data: Dictionary = world.built_structures[cell]
         var name := String(data.get("name", ""))
         if name == "DOOR":
-            var horizontal_gate := is_fence_cell(cell + Vector2i.LEFT) and is_fence_cell(cell + Vector2i.RIGHT)
             var vertical_gate := is_fence_cell(cell + Vector2i.UP) and is_fence_cell(cell + Vector2i.DOWN)
-            data["gate"] = horizontal_gate or vertical_gate
+            var gate := bool(data.get("gate", false))
             var door_sprite := data.get("sprite") as Sprite2D
             if is_instance_valid(door_sprite):
                 door_sprite.visible = true
                 var door_recipe := String(data.get("recipe_name", "DOOR"))
-                if String(data.get("house_style", "DEFAULT")) == "DEFAULT" and not data.gate:
+                if String(data.get("house_style", "DEFAULT")) == "DEFAULT" and not gate:
                     for direction in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
                         var neighbor: Dictionary = world.built_structures.get(cell + direction, {})
                         if String(neighbor.get("name", "")) == "WALL":
                             var neighbor_style := String(neighbor.get("house_style", "DEFAULT"))
                             if neighbor_style != "DEFAULT": door_recipe = neighbor_style + " DOOR"
                             break
-                door_sprite.texture = SourceWorldData.texture_for("fence1gate1_NS" if vertical_gate else "fence1gate1") if data.gate else structure_display_texture(door_recipe)
+                door_sprite.texture = SourceWorldData.texture_for("fence1gate1_NS" if vertical_gate else "fence1gate1") if gate else structure_display_texture(door_recipe)
                 door_sprite.rotation = 0.0
                 door_sprite.position = Vector2(cell * World.TILE) - Vector2(0, maxi(0, int(door_sprite.texture.get_height()) - World.TILE))
-                door_sprite.z_index = world._depth_z(cell) + (0 if data.gate else 1)
-                _set_structure_solid(cell, false if data.gate else not bool(data.get("open", false)))
-            world.built_structures[cell] = data
-            world.area.mark("structures", cell)
+                door_sprite.z_index = world._depth_z(cell) + (0 if gate else 1)
+                _sync_collision(cell)
             var old_rug := door_sprite.get_node_or_null("SideEntrance") if is_instance_valid(door_sprite) else null
             if is_instance_valid(old_rug):
                 door_sprite.remove_child(old_rug)
@@ -1029,49 +830,23 @@ func refresh_connected_structures_around(center: Vector2i) -> void:
                     rug.z_index = 10
                     door_sprite.add_child(rug)
         if name == "INTERIOR WALL":
-            var wall_suffix := ""
-            for direction in [Vector2i.UP,Vector2i.DOWN,Vector2i.RIGHT,Vector2i.LEFT]:
-                var neighbor: Vector2i = cell + direction
-                var joined := String(world.built_structures.get(neighbor,{}).get("name","")) == "INTERIOR WALL"
-                if direction == Vector2i.UP:
-                    joined = joined or built_house_rear_wall_floor(neighbor) >= 0
-                elif direction.x != 0 and world._is_built_house_floor_cell(cell):
-                    joined = joined or not world._is_built_house_floor_cell(neighbor)
-                if joined: wall_suffix += "N" if direction == Vector2i.UP else "S" if direction == Vector2i.DOWN else "E" if direction == Vector2i.RIGHT else "W"
             var wall_sprite := data.get("sprite") as Sprite2D
             if is_instance_valid(wall_sprite):
                 wall_sprite.texture = SOURCE_HOUSE5_WALL
                 wall_sprite.position = Vector2(cell*World.TILE)
                 wall_sprite.rotation = 0.0
                 wall_sprite.z_index = world._depth_z(cell)
-            data["wall_connections"] = wall_suffix
-            world.built_structures[cell] = data
-            world.area.mark("structures", cell)
             continue
         if name not in ["FENCE", "WALL", "INTERIOR WALL", "ROOF", "TABLE"]:
             continue
-        var connection_names: Array[String] = [name]
-        if name in ["WALL", "INTERIOR WALL"]:
-            connection_names = ["WALL", "INTERIOR WALL", "DOOR", "WINDOW"]
-        elif name == "ROOF":
-            connection_names = ["ROOF", "CHIMNEY"]
-        elif name == "FENCE":
-            connection_names = ["FENCE", "DOOR"]
-        var north := _house_connection_piece(cell + Vector2i.UP) in connection_names
-        var south := _house_connection_piece(cell + Vector2i.DOWN) in connection_names
-        var east := _house_connection_piece(cell + Vector2i.RIGHT) in connection_names
-        var west := _house_connection_piece(cell + Vector2i.LEFT) in connection_names
+        var sides := Build.connected_sides(world.area, cell, name)
+        var north: bool = sides[0]
+        var south: bool = sides[1]
+        var east: bool = sides[2]
+        var west: bool = sides[3]
         var source_style := _house_connection_style(cell)
-        if SourceHouseStyles.STYLES.has(source_style):
-            north = north and (String(world.built_structures.get(cell+Vector2i.UP,{}).get("name","")) == "DOOR" or String(world.built_structures.get(cell+Vector2i.UP,{}).get("house_style","")) == source_style)
-            south = south and (String(world.built_structures.get(cell+Vector2i.DOWN,{}).get("name","")) == "DOOR" or String(world.built_structures.get(cell+Vector2i.DOWN,{}).get("house_style","")) == source_style)
-            east = east and (String(world.built_structures.get(cell+Vector2i.RIGHT,{}).get("name","")) == "DOOR" or String(world.built_structures.get(cell+Vector2i.RIGHT,{}).get("house_style","")) == source_style)
-            west = west and (String(world.built_structures.get(cell+Vector2i.LEFT,{}).get("name","")) == "DOOR" or String(world.built_structures.get(cell+Vector2i.LEFT,{}).get("house_style","")) == source_style)
         var horizontal := east or west
         var vertical := north or south
-        data["connections"] = (1 if horizontal else 0) | (2 if vertical else 0)
-        world.built_structures[cell] = data
-        world.area.mark("structures", cell)
         var sprite := data.get("sprite") as Sprite2D
         if is_instance_valid(sprite):
             var suffix := ("N" if north else "") + ("S" if south else "") + ("E" if east else "") + ("W" if west else "")
@@ -1131,6 +906,21 @@ func refresh_connected_structures_around(center: Vector2i) -> void:
     _refresh_bridge_support(center)
     _refresh_bridge_support(center+Vector2i.UP)
 
+## The collision of the piece at `cell` as its data says it is solid.
+func _sync_collision(cell: Vector2i) -> void:
+    var data: Dictionary = world.built_structures.get(cell, {})
+    if data.is_empty(): return
+    var collision := data.get("collision") as CollisionBox
+    var solid := bool(data.get("solid", false))
+    if solid and not is_instance_valid(collision):
+        var body := world.get_node_or_null("WorldCollision") as CollisionBody
+        if body != null:
+            collision = world._add_block_collision(body, cell.x, cell.y)
+    elif not solid and is_instance_valid(collision):
+        collision.queue_free()
+        collision = null
+    data["collision"] = collision
+
 func _refresh_bridge_support(cell: Vector2i) -> void:
     var data: Dictionary = world.built_structures.get(cell,{})
     if String(data.get("name","")) != "BRIDGE": return
@@ -1151,191 +941,23 @@ func _refresh_bridge_support(cell: Vector2i) -> void:
         deck.add_child(lower)
     if lower != null: lower.visible = visible_support
 
-## The connected pieces of a house reached from `start`, as if the piece at
-## `without` were already gone.
-func _house_pieces_from(start: Vector2i, without: Vector2i) -> Array[Vector2i]:
-    var pieces: Array[Vector2i] = []
-    var seen: Dictionary = {}
-    var queue: Array[Vector2i] = [start]
-    var index := 0
-    while index < queue.size():
-        var current: Vector2i = queue[index]
-        index += 1
-        if seen.has(current) or current == without or not world.built_structures.has(current):
-            continue
-        if String(world.built_structures[current].get("name", "")) not in ["WALL", "ROOF", "DOOR", "WINDOW", "CHIMNEY"]:
-            continue
-        seen[current] = true
-        pieces.append(current)
-        for direction in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
-            queue.append(current + direction)
-    return pieces
-
 ## What is built inside a house on the tile behind one piece of its outside,
-## on every floor. Cutting the piece cuts these with it, and nothing else:
-## whatever stands elsewhere in the house stays, reachable or not, for when
-## the way to it is rebuilt. A door is a piece like any other. Empty for a
-## piece that is not part of a house, and for a house nobody has been inside.
+## on every floor (rules/remove.gd interior_cells_behind).
 func house_interior_cells_behind(cell: Vector2i) -> Array[Vector2i]:
-    var result: Array[Vector2i] = []
-    if world.active_area_id != "OVERWORLD":
-        return result
-    var house: Array[Vector2i] = _house_pieces_from(cell, Vector2i(2147483647, 2147483647))
-    if house.is_empty():
-        return result
-    var origin_y := -1
-    var corner := Vector2i(2147483647, 2147483647)
-    var far_corner := Vector2i(-2147483648, -2147483648)
-    for piece in house:
-        corner.x = mini(corner.x, piece.x)
-        corner.y = mini(corner.y, piece.y)
-        far_corner.x = maxi(far_corner.x, piece.x)
-        far_corner.y = maxi(far_corner.y, piece.y)
-        if origin_y < 0 and String(world.built_structures[piece].get("name", "")) == "DOOR" and world.built_house_origins.has(world._cell_key(piece)):
-            origin_y = int(world.built_house_origins[world._cell_key(piece)])
-    # The first cut into a house fixes where its room is measured from, so
-    # that cutting away its corner does not move every later tile along by one.
-    if origin_y >= 0 and not world.built_house_rooms_seen.has(origin_y):
-        world.built_house_rooms_seen[origin_y] = [corner, far_corner - corner + Vector2i.ONE]
-    # The room as it was last walked into decides which tile is behind the
-    # piece. Joined pieces alone cannot: a piece cut off from the door belongs
-    # to no house by that test, and a house whose corner has been cut away
-    # measures from a different place than its room was drawn from.
-    for seen_origin in world.built_house_rooms_seen:
-        var seen: Array = world.built_house_rooms_seen[seen_origin]
-        if Rect2i(seen[0], seen[1]).has_point(cell) and (origin_y < 0 or int(seen_origin) == origin_y):
-            origin_y = int(seen_origin)
-            corner = seen[0]
-            break
-    if origin_y < 0:
-        return result
-    var behind := cell - corner
-    for raw_cell in world.built_structures:
-        var built_cell := Vector2i(raw_cell)
-        var offset := built_cell - Vector2i(world.map_w + 9, origin_y)
-        if offset.x < 0 or offset.y != behind.y or offset.x % World.BUILT_HOUSE_FLOOR_STRIDE != behind.x:
-            continue
-        if not bool(world.built_structures[built_cell].get("generated_stair_pair", false)):
-            result.append(built_cell)
-    return result
+    return Remove.interior_cells_behind(world.area, _player(cell), cell)
 
 func remove_structure(cell: Vector2i, refund: bool) -> void:
-    world._bump_map_art([cell], 4)
-    if not world.built_structures.has(cell):
-        return
-    # As in the Java game, a piece cut out of the outside of a house takes its
-    # tile of the room with it, and whatever was built on that tile.
-    for inside_cell in house_interior_cells_behind(cell):
-        if world.built_structures.has(inside_cell):
-            remove_structure(inside_cell, refund)
-    if world.active_area_id == "HOUSE" and String(world.built_structures[cell].get("name","")) == "INTERIOR WALL":
-        var key := world._built_house_paint_key(cell)
-        var hung := String(world.built_house_decorations.get(key,{}).get("name",""))
-        # A wall on a floor tile takes its window or clock with it, and the
-        # bare floor left behind is no longer somewhere to hang one.
-        var on_floor := world._built_house_floor_index_for_cell(cell) >= 0
-        if _is_window_recipe(hung) or (on_floor and hung == "CLOCK"):
-            world.area.drop("built_house_decorations", key)
-            var window := world.built_house_decoration_sprites.get(cell) as Sprite2D
-            if is_instance_valid(window): window.queue_free()
-            world.built_house_decoration_sprites.erase(cell)
-        if on_floor:
-            world.built_house_paintable_walls.erase(cell)
-    var data: Dictionary = world.built_structures[cell]
-    var build_name := String(data.get("name", ""))
-    if build_name == "STAIRS" and world.active_area_id == "HOUSE" and \
-            world._stair_belongs_to_active_house(data):
-        var primary_cell: Vector2i = cell
-        if bool(data.get("generated_stair_pair", false)):
-            primary_cell = Vector2i(
-                int(data.get("stair_primary_x", -2147483648)),
-                int(data.get("stair_primary_y", -2147483648))
-            )
-            if not world.built_structures.has(primary_cell):
-                primary_cell = cell
-        # Remove the generated mirror first; it is not a separately paid build.
-        var pair_cells: Array[Vector2i] = []
-        for raw_pair in world.built_structures.keys():
-            var pair_cell: Vector2i = Vector2i(raw_pair)
-            var pair_data: Dictionary = world.built_structures[pair_cell]
-            if bool(pair_data.get("generated_stair_pair", false)) and \
-                    int(pair_data.get("stair_primary_x", -1)) == primary_cell.x and \
-                    int(pair_data.get("stair_primary_y", -1)) == primary_cell.y:
-                pair_cells.append(pair_cell)
-        for pair_cell in pair_cells:
-            var pair_data: Dictionary = world.built_structures[pair_cell]
-            var pair_sprite: Sprite2D = pair_data.get("sprite") as Sprite2D
-            if is_instance_valid(pair_sprite):
-                pair_sprite.queue_free()
-            world.built_structures.erase(pair_cell)
-            world.area.mark("structures", pair_cell)
-        if cell != primary_cell and world.built_structures.has(primary_cell):
-            cell = primary_cell
-            data = world.built_structures[cell]
-            build_name = "STAIRS"
-    var sprite: Sprite2D = data.get("sprite") as Sprite2D
-    var collision: CollisionBox = data.get("collision") as CollisionBox
-    if is_instance_valid(sprite):
-        sprite.queue_free()
-    if is_instance_valid(collision):
-        collision.queue_free()
-
-    if build_name == "COUCH":
-        for occupied in _couch_footprint(String(data.get("recipe_name", "COUCH")), cell):
-            if occupied == cell or not world.built_structures.has(occupied): world.blocked.erase(occupied)
-    if bool(data.get("solid", false)):
-        world.blocked.erase(cell)
-    if bool(data.get("bridged_water", false)):
-        var stream := world.get_node_or_null("ExactCollisionStream") as SourceChunkCollisionStreamer
-        if stream != null: stream.set_cell_passable(cell, false)
-
-    world.built_structures.erase(cell)
-    world.area.mark("structures", cell)
-    # A restored shell can cover regenerated grass. Cutting that shell must
-    # leave its previously cleared building ground usable for a new doorway.
-    if build_name in ["WALL", "ROOF", "DOOR"] and world.active_area_id == "OVERWORLD" and world.exact_world != null:
-        var underneath := world.exact_world.tile_at(cell)
-        if underneath != null and underneath.is_grass:
-            var cleared := world._cuttable_grass_replacement(underneath, cell)
-            underneath.set_names(String(cleared.base), String(cleared.upper))
-            world.area.put("source_interior_mutations", world._cell_key(cell), {
-                "kind":"TILE_NAMES", "base":underneath.name, "upper":underneath.name_upper
-            })
-            world._refresh_exact_streams()
-    world.grass_exclusion.erase(cell)
-    world.flower_cells.erase(cell)
-    refresh_connected_structures_around(cell)
-
-    if refund:
-        var refund_name := String(data.get("recipe_name", build_name))
-        var recipe := CraftingData.build_recipe(refund_name)
-        var cost: Dictionary = recipe.get("cost", {})
-        world.build_refund_requested.emit(cost.duplicate(true))
+    var out := _out()
+    Remove.remove(world.area, _player(cell), cell, refund, out)
+    world.field_moves.play_rule(out)
 
 func remove_structure_with_field_move(cell: Vector2i, move: String) -> bool:
-    if not world.built_structures.has(cell):
-        return false
-    var build_name := String((world.built_structures[cell] as Dictionary).get("name", ""))
-    if move == "CUT" and build_name in ["GRAVE", "STATUE"]:
-        return false
-    if move == "SMASH" and build_name not in ["GRAVE", "STATUE"]:
-        return false
-    remove_structure(cell, true)
-    if build_name == "GRAVE" and world.rng.randi_range(0, 8) == 0:
-        var spooky_pool := ["gastly", "misdreavus", "duskull", "shuppet"]
-        var spooky := String(spooky_pool[world.rng.randi_range(0, spooky_pool.size() - 1)])
-        world.world_message.emit("Something rose from the shattered GRAVE!")
-        world.encounter_requested.emit(spooky, 22)
-    return true
+    var result := Remove.apply(world.area, _player(cell), {"cell": cell, "move": move}, world.rng)
+    world.field_moves.play_rule(result)
+    return result.ok
 
 func is_fence_cell(cell: Vector2i) -> bool:
-    var structure: Dictionary = world.built_structures.get(cell, {})
-    if String(structure.get("name", "")) == "FENCE" or bool(structure.get("gate", false)):
-        return true
-    if world.exact_world != null:
-        var tile: SourceTile = world.exact_world.tile_at(cell)
-        return tile != null and ("fence" in tile.name or "fence" in tile.name_upper)
-    return false
+    return Build.is_fence_cell(world.area, cell)
 
 func refresh_shell_attachment(cell: Vector2i) -> void:
     var data: Dictionary = world.built_structures.get(cell, {})
@@ -1413,13 +1035,20 @@ func refresh_shell_attachment(cell: Vector2i) -> void:
         part.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 
 func _is_house_decoration(build_name: String) -> bool:
-    return build_name == "CLOCK" or build_name.begins_with("CARPET ") or _is_window_recipe(build_name)
+    return Build.is_house_decoration(build_name)
 
 func _torch_wall_at(cell: Vector2i) -> bool:
-    return String(world.built_structures.get(cell, {}).get("name", "")) in ["WALL", "INTERIOR WALL"]
+    return Build.torch_wall_at(world.area, cell)
 
 func _is_window_recipe(build_name: String) -> bool:
-    return build_name == "WINDOW" or build_name.begins_with("INDOOR WINDOW ")
+    return Build.is_window(build_name)
+
+## A window, clock or carpet gone (rules "decoration_gone").
+func undraw_decoration(cell: Vector2i) -> void:
+    var decoration := world.built_house_decoration_sprites.get(cell) as Sprite2D
+    if is_instance_valid(decoration):
+        decoration.queue_free()
+    world.built_house_decoration_sprites.erase(cell)
 
 func draw_house_decoration(cell: Vector2i) -> void:
     var data: Dictionary = world.built_house_decorations.get(world._built_house_paint_key(cell), {})
@@ -1459,25 +1088,8 @@ func restore_house_decorations() -> void:
     for cell in world.built_house_paintable_walls: draw_house_decoration(cell)
 
 func interact_house_window(cell: Vector2i) -> bool:
-    if world.active_area_id == "OVERWORLD":
-        var wall: Dictionary = world.built_structures.get(cell, {})
-        var kind := String(wall.get("window_recipe", ""))
-        if not bool(wall.get("window", false)) or not kind.begins_with("INDOOR WINDOW "):
-            return false
-        wall["window_variant"] = wrapi(int(wall.get("window_variant", 0)) + 1, 0, 3 if kind.ends_with("1") else 2)
-        refresh_shell_attachment(cell)
-        world.play_source_sound("seed1")
-        return true
-    if world.active_area_id != "HOUSE": return false
-    var key := world._built_house_paint_key(cell)
-    var data: Dictionary = world.built_house_decorations.get(key,{})
-    var build_name := String(data.get("name",""))
-    if not _is_window_recipe(build_name): return false
-    if build_name == "INDOOR WINDOW 1": return true
-    data.variant = wrapi(int(data.get("variant",0))+1,0,2 if build_name.ends_with("2") else 3)
-    world.area.put("built_house_decorations", key, data)
-    draw_house_decoration(cell)
-    world.play_source_sound("seed1")
+    if not Interact.has_glass(world.area, _player(cell), cell): return false
+    _interact(cell, "glass")
     return true
 
 func _private_chest_texture(source:Texture2D)->Texture2D:

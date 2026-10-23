@@ -12,6 +12,7 @@ the version description in Feather. Write it for players, not developers.
 - **New worlds are much faster to create:** world generation is about 15 times faster and uses far less memory.
 - **Lighter saves:** save files are about 14 times smaller, saving pauses the game for half as long, and the LOAD list opens instantly. Old saves still load as before.
 - **Smooth nights:** the game no longer drops frames at night or when a new day starts.
+- **Smooth tides:** the tide coming in or going out now costs about 6 times less work, and no longer slows the game down while it turns.
 - **Smoother players in co-op:** other players move smoothly even when 4G stutters, with no teleporting.
 - **Less battery:** players off screen are no longer drawn.
 - **Cheaper walking:** the game does much less work on every step, especially in tall grass.
@@ -19,6 +20,7 @@ the version description in Feather. Write it for players, not developers.
 - **Digging and cutting in co-op answer at once:** the hole or the cut grass shows straight away, and the host decides what you find, so everyone sees the same ground and gets fair rewards.
 - **Lighter co-op traffic:** wild Pokémon movement and changes to the ground are sent in a compact form; a server with players standing around sends about a fifth of what it did.
 - **Fewer waits in co-op:** digging, cutting, picking up and storing things no longer save your whole game first.
+- **Building in co-op answers at once:** building, painting and cutting down what you built show straight away, you can place several pieces in a row without waiting, and the host checks every piece and pays back what it cost. Signs, beacon names, torches, windows and the PLANT's seed are now the same for every player.
 
 ### Fixes
 - **Dedicated server freezes:** autosaves, a player joining and a new day no longer freeze the server for half a second or more.

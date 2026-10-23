@@ -278,27 +278,72 @@ func _build_tide_transition_bands(lowering: bool, spread := false) -> Array:
             bands.append(band)
     return bands
 
+## The store _beach_kinds and _swaps were settled for (a new world starts over).
+var _kinds_store: WorldTileStore
+## (name, biome, route, water) -> _is_beach_tidal_tile, which reads only those.
+var _beach_kinds := {}
+## A cell's (name, upper, flags, ledge, item, amount) before its tide swap ->
+## [those after, revisions bumped]: set_names gives every such cell the same.
+var _swaps := {}
+
 func _apply_tide_band(band: Array, lowering: bool) -> Array[Vector2i]:
     var changed_cells: Array[Vector2i] = []
+    # A tile proxy per cell (~15 us to make, then the streams made two more)
+    # put a tide turn's frames over their budget: the store's arrays are read,
+    # and written as the first cell of the same kind's set_names wrote them.
+    var store: WorldTileStore = world.exact_world.tiles
+    if store != _kinds_store:
+        _kinds_store = store
+        _beach_kinds = {}
+        _swaps = {}
     for raw_tile in band:
-        var tile: SourceTile = world.exact_world.tile_at(raw_tile) if raw_tile is Vector2i else raw_tile as SourceTile
-        if tile == null or not world._is_beach_tidal_tile(tile):
+        var index := store.index_of(raw_tile * World.TILE) if raw_tile is Vector2i else -1
+        if index < 0:
+            _swap_tile(world.exact_world.tile_at(raw_tile) if raw_tile is Vector2i else raw_tile as SourceTile, lowering, changed_cells)
             continue
-        var next_name: String = tile.name
-        if lowering and "_tidalwater" in next_name:
-            next_name = next_name.replace("_tidalwater", "_tidaloff")
-        elif not lowering and "_tidaloff" in next_name:
-            next_name = next_name.replace("_tidaloff", "_tidalwater")
-        else:
+        var flags := store.flags[index]
+        var kind := Vector4i(store.name_ids[index], store.biome_ids[index], store.route_ids[index], flags & WorldTileStore.WATER)
+        if not _beach_kinds.has(kind): _beach_kinds[kind] = world._is_beach_tidal_tile(store.cursor(index))
+        if not _beach_kinds[kind]:
             continue
-        tile.set_names(next_name, tile.name_upper)
-        changed_cells.append(SourceWorldData.pixel_to_cell(tile.position))
+        var before := [store.name_ids[index], store.upper_ids[index], flags, store.ledge_dir_ids[index], store.has_item_ids[index], store.amounts[index]]
+        var swap: Variant = _swaps.get(before)
+        if swap == null or store.has_live_proxy(index):
+            # The first of its kind, or a cell with a live tile (kept in step).
+            var revision := store.revisions[index]
+            var edits := store.edit_count
+            if not _swap_tile(store.proxy(index), lowering, changed_cells):
+                swap = false
+            else:
+                swap = [store.name_ids[index], store.upper_ids[index], store.flags[index], store.ledge_dir_ids[index],
+                    store.has_item_ids[index], store.amounts[index], store.revisions[index] - revision, store.edit_count - edits]
+            _swaps[before] = swap
+            continue
+        if not swap:
+            continue
+        store.write_tide_swap(index, swap)
+        changed_cells.append(raw_tile)
     if not changed_cells.is_empty():
         # The suffix swap changes only tidal surface state. Shoreline activity is
         # derived live from neighboring cells, so rebuilding 3x3 coast metadata
         # for every transition band is redundant and caused the tide hitch.
         _redraw_exact_tide_streams(changed_cells)
     return changed_cells
+
+## Swaps `tile`'s tide suffix through the tile (true when it changed).
+func _swap_tile(tile: SourceTile, lowering: bool, changed_cells: Array[Vector2i]) -> bool:
+    if tile == null or not world._is_beach_tidal_tile(tile):
+        return false
+    var next_name: String = tile.name
+    if lowering and "_tidalwater" in next_name:
+        next_name = next_name.replace("_tidalwater", "_tidaloff")
+    elif not lowering and "_tidaloff" in next_name:
+        next_name = next_name.replace("_tidaloff", "_tidalwater")
+    else:
+        return false
+    tile.set_names(next_name, tile.name_upper)
+    changed_cells.append(SourceWorldData.pixel_to_cell(tile.position))
+    return true
 
 ## per-frame
 func update_tide_state(force: bool = false, delta: float = 0.0, spread := false) -> void:
@@ -341,12 +386,19 @@ func update_tide_state(force: bool = false, delta: float = 0.0, spread := false)
         if world.tide_band_cursor == 0:
             world.tide_transition_accumulator = maxf(0.0,world.tide_transition_accumulator-frontier_seconds)
         var band: Array = world.tide_transition_bands[world.tide_transition_band_index]
-        var deadline := Time.get_ticks_usec()+1200
+        # 1.2 ms a frame: a chunk is started only when one as slow as the
+        # slowest so far still fits (24 cells were 1.4 ms, over it every frame).
+        var now := Time.get_ticks_usec()
+        var deadline := now+1200
+        var slowest := 0
         while world.tide_band_cursor < band.size():
-            var end := mini(world.tide_band_cursor+24,band.size())
+            var end := mini(world.tide_band_cursor+8,band.size())
             _apply_tide_band(band.slice(world.tide_band_cursor,end),desired_low_tide)
             world.tide_band_cursor=end
-            if Time.get_ticks_usec()>=deadline: break
+            var started := now
+            now = Time.get_ticks_usec()
+            slowest = maxi(slowest, now-started)
+            if now+slowest>=deadline: break
         if world.tide_band_cursor>=band.size():
             world.tide_band_cursor=0
             world.tide_transition_band_index+=1

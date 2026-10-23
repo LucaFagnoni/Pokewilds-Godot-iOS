@@ -4,6 +4,9 @@
 # command that pays, rules.gd pays) and grass cut, each kept in the host's
 # World, in its records and in its bag exactly once: the bag the game shows is
 # the bag its record holds after every one, and nothing is left recording.
+# A FENCE built and cut the same way (rules/build.gd, remove.gd): drawn, in
+# the records, paid and paid back once; the same command id sent twice
+# builds once; a build the bag cannot pay for is refused and says why.
 # Run: godot --headless --path project -s ../server/host_rules_test.gd
 #      (headless needs project/override.cfg: [physics] 2d/physics_engine="Dummy")
 extends SceneTree
@@ -59,6 +62,7 @@ func _initialize() -> void:
         await _frames(20)
     await _dig_and_fill()
     await _cut()
+    await _build_and_remove()
     _finish()
 
 func _finish() -> void:
@@ -120,3 +124,58 @@ func _cut() -> void:
     check(not world._is_cuttable_grass_cell(cell), "the host's CUT takes the grass from its World")
     check(int(main.inventory.get("GRASS", 0)) > before, "GRASS in the bag: %d -> %d" % [before, int(main.inventory.get("GRASS", 0))])
     _bag_kept("CUT")
+
+## A cell beside the host a FENCE may go on, none taken in `skip`.
+func _build_cell(skip: Array = []) -> Vector2i:
+    var world: Node = main.world
+    var here: Vector2i = world._player_cell()
+    for step in [Vector2i.RIGHT, Vector2i.LEFT, Vector2i.DOWN, Vector2i.UP, Vector2i(1, 1), Vector2i(-1, 1), Vector2i(1, -1), Vector2i(-1, -1)]:
+        var cell: Vector2i = here + step
+        if not cell in skip and world.can_place_structure("FENCE", cell) and not world.wild_eggs.has(cell) and not world.deployed_pokemon.has(cell): return cell
+    return Vector2i(999999, 999999)
+
+## No such record, or one that says the thing is gone.
+func _gone(key: String) -> bool:
+    return preload("res://scripts/coop_world_delta.gd").decode(coop.state.records.get(key, preload("res://scripts/coop_world_delta.gd").encode(null))) == null
+
+func _build_and_remove() -> void:
+    var world: Node = main.world
+    var cell := _build_cell()
+    check(cell.x != 999999, "a cell for a FENCE beside the host at %s" % world._player_cell())
+    if cell.x == 999999: return
+    var key := "world/%s/structures/%s" % [coop._area(), ("%d,%d" % [cell.x, cell.y]).uri_encode()]
+    for item in ["LOG", "GRASS"]: main.inventory[item] = int(main.inventory.get(item, 0)) + 3
+    var logs := int(main.inventory["LOG"])
+    await coop.building.build("FENCE", cell)
+    var piece: Dictionary = world.built_structures.get(cell, {})
+    check(piece.get("name") == "FENCE" and is_instance_valid(piece.get("sprite")) and world.blocked.has(cell), "the host's FENCE stands in its World, drawn and solid")
+    check(coop.state.records.has(key), "the FENCE is in the records")
+    check(int(main.inventory.get("LOG", 0)) == logs - 1, "one LOG paid: %d -> %d" % [logs, int(main.inventory.get("LOG", 0))])
+    _bag_kept("BUILD")
+    # The same command twice (an id sent again): one FENCE, one LOG, the same answer.
+    var other := _build_cell([cell])
+    if other.x != 999999:
+        var packet := {"kind":"command", "id":"host-rules-twice", "op":"build", "args":{"area":coop._area(), "cmd":{"recipe":"FENCE", "cell":[other.x, other.y]}}}
+        logs = int(main.inventory.get("LOG", 0))
+        var first: Dictionary = coop.commands.execute(coop.session.actor, packet.duplicate(true))
+        var again: Dictionary = coop.commands.execute(coop.session.actor, packet.duplicate(true))
+        check(first.get("ok", false) and again.get("ok", false) and again.get("revision") == first.get("revision"), "the same id twice: the same answer (%s / %s)" % [first.get("reason", ""), again.get("reason", "")])
+        check(int(main.inventory.get("LOG", 0)) == logs - 1 and world.built_structures.has(other), "the same id twice: built and paid once")
+        _bag_kept("BUILD sent twice")
+    # Cut: its cost back once.
+    logs = int(main.inventory.get("LOG", 0))
+    var grass := int(main.inventory.get("GRASS", 0))
+    await coop.building.remove(cell, "CUT")
+    check(not world.built_structures.has(cell) and _gone(key) and not world.blocked.has(cell), "the FENCE cut from the World and the records")
+    check(int(main.inventory.get("LOG", 0)) == logs + 1 and int(main.inventory.get("GRASS", 0)) == grass + 1, "its LOG and GRASS back once")
+    _bag_kept("CUT a FENCE")
+    # Not enough: refused, nothing placed, the bag as it was.
+    main.inventory["LOG"] = 0
+    var said := []
+    var listen := func(text: String) -> void: said.append(text)
+    world.world_message.connect(listen)
+    await coop.building.build("FENCE", cell)
+    world.world_message.disconnect(listen)
+    check(not world.built_structures.has(cell) and _gone(key), "a FENCE with no LOG: not built")
+    check("Not enough materials for FENCE." in said, "and the host is told why: %s" % [said])
+    _bag_kept("refused BUILD")

@@ -304,7 +304,6 @@ func configure(game:Node)->void:
     storage=preload("res://scripts/coop_storage.gd").new();add_child(storage);storage.configure(self)
     beacons=preload("res://scripts/coop_beacons.gd").new();add_child(beacons);beacons.configure(self)
     building=preload("res://scripts/coop_build_runtime.gd").new();add_child(building);building.configure(self)
-    commands.build_action=building.execute
     rules=preload("res://scripts/coop_rules_runtime.gd").new();add_child(rules);rules.configure(self)
     commands.rules_action=rules.execute
     wild=preload("res://scripts/coop_wild_runtime.gd").new();add_child(wild);wild.configure(self)
@@ -555,8 +554,9 @@ func wait_free(limit_ms:int=8000)->bool:
 ## The parts of the player's record (coop_state.gd PARTS) each command reads:
 ## those saved first when they changed here, alone, and checked by their
 ## revisions (_part_checkpoint). A command in the rules' form (args "cmd",
-## coop_rules_runtime.gd) reads none, or only the bag when it pays from it
-## (rules.gd pays): the host adds and takes what it gives as a change to the
+## coop_rules_runtime.gd: a field move, a build, a picture, a removal) reads
+## the parts it declares (rules.gd reads: the bag when it pays from it, else
+## none): the host adds and takes what it gives as a change to the
 ## bag, applied here the same way, with no wait for another command to finish.
 ## Commands not listed save the whole record first, as before.
 const OP_PARTS:={"drop":["bag"],"pickup":["bag"],"deposit":["party"],"deposit_type":["party"],"withdraw":["party"],
@@ -570,7 +570,8 @@ func command(operation:String,args:Dictionary)->Dictionary:
         await get_tree().process_frame
         if not session.trusted:_request_busy=false;return {"ok":false,"reason":"disconnected"}
     var save_first:bool=not background and operation not in NO_CHECKPOINT
-    var bag_first:bool=args.get("cmd") is Dictionary and preload("res://scripts/rules/rules.gd").pays(operation,args.cmd)
+    var reads:Array=preload("res://scripts/rules/rules.gd").reads(operation,args.get("cmd"))
+    var bag_first:bool=not reads.is_empty()
     # A guest's save goes just in front of the command instead of a round trip
     # before it: the host runs the command only if the save worked, and checks
     # it against the record that save made (coop_commands.gd "after").
@@ -579,7 +580,7 @@ func command(operation:String,args:Dictionary)->Dictionary:
         while _profile_write_busy:
             await get_tree().process_frame
             if not session.trusted:_request_busy=false;return {"ok":false,"reason":"disconnected"}
-        if bag_first:ahead=_part_checkpoint(["bag"])
+        if bag_first:ahead=_part_checkpoint(reads)
         elif OP_PARTS.has(operation):ahead=_part_checkpoint(OP_PARTS[operation])
         else:
             var profile:Dictionary=_personal_profile()
@@ -594,7 +595,6 @@ func command(operation:String,args:Dictionary)->Dictionary:
     var cell:Vector2i=main.world._player_cell()
     var packet={"kind":"command","id":_id(),"op":operation,"args":args}
     if not ahead.is_empty():packet["after"]=ahead.id
-    if operation in ["build","remove_build","paint"]:args["profile_hash"]=profile_base
     if operation=="deploy":args["base"]=profile_base
     var result:Dictionary
     # A dedicated server's own player is nowhere: no presence to be found by.
@@ -616,6 +616,11 @@ func command(operation:String,args:Dictionary)->Dictionary:
     # Refusals are otherwise silent: the action just visibly undoes itself.
     if not result.get("ok",false):print("ONLINE command refused: ",operation," reason=",result.get("reason","unknown")," key=",result.get("key",""))
     return result
+
+## True when the bag here holds what the host's copy of it does not have
+## yet (crafted, say): a command that pays saves it first (_part_checkpoint).
+func bag_unsaved()->bool:
+    return not Patch.diff(shared_records.get("player/"+session.actor,{}).get("inventory",{}),main.inventory).is_empty()
 
 ## A battle's result carries the player's whole record: 80 KB and more for a
 ## long-played one, over a second of a phone's uplink after every battle and

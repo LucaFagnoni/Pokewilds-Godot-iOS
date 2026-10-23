@@ -12,8 +12,11 @@ const Transport = preload("res://scripts/coop_transport.gd")
 ## the host decides (rules/, coop_rules_runtime.gd; no patches or rewards
 ## claimed by a player), an area's built and dug ground and the wild Pokemon's
 ## motion travel as binary frames (area_state.gd WIRE_TAG), a player record is
-## saved by parts with their revisions (coop_state.gd PARTS).
-const PROTOCOL := "pokewilds-godot-coop-10"
+## saved by parts with their revisions (coop_state.gd PARTS). coop-10b:
+## building, paint and taking built pieces away are rule commands as well
+## (rules/build.gd, paint.gd, remove.gd: {"area", "cmd"}, no patches or record
+## fingerprint), several of a player's in flight at once.
+const PROTOCOL := "pokewilds-godot-coop-10b"
 ## Most players one game can have, a phone host included (a dedicated server's
 ## own player does not count). The host relays every position update to each
 ## other player in the same area, so its upload grows with the square of the
