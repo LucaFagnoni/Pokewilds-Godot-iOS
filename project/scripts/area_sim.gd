@@ -27,6 +27,7 @@ const CraftingData = preload("res://scripts/crafting_data.gd")
 const Megas = preload("res://scripts/biome_megas.gd")
 ## The record groups of an area's Pokemon, in the order a World puts them back.
 const POPULATION := ["deployed_pokemon", "wild_pokemon", "wild_eggs"]
+const NO_CELL := Vector2i(-2147483648, -2147483648)
 ## The order the World lays overlays on its tiles when it loads.
 const LOAD_ORDER := ["terrain_changes", "removed_resources", "structures", "built_house_floor_tiles",
     "built_house_paintings", "built_house_decorations", "built_house_origins", "event_progress",
@@ -48,6 +49,13 @@ var _to_load: Array = []
 ## this area last heard or told them: one taken from its tile is found by it
 ## wherever it has walked to here since.
 var habitat_ids := {}
+## Ecology id -> [cell, record] of a habitat Pokemon the records put on a cell
+## another stands on here (a step not sent yet): put in once it is free.
+var habitat_waiting := {}
+## Wild id -> its record, for one whose cell another stands on: put in once
+## the cell is free (as a player's game keeps them, coop_wild_runtime.gd
+## pending_additions).
+var waiting := {}
 
 func _init() -> void:
     state.wild = WildPopulation.new(null, state)
@@ -171,6 +179,7 @@ func apply_population(group: String, key: String, value: Variant) -> bool:
     match group:
         "wild_pokemon":
             var wild_id := int(key)
+            waiting.erase(wild_id)
             if not value is Dictionary:
                 state.wild.remove(wild_id)
                 return false
@@ -181,19 +190,10 @@ func apply_population(group: String, key: String, value: Variant) -> bool:
                 data["cell"] = cell
                 state.wild.refresh(wild_id)
                 return true
-            var at := Vector2i(int(value.get("x", -1)), int(value.get("y", -1)))
-            PopulationRules.add_wild(state, String(value.get("species", "pidgey")), int(value.get("level", 2)), at,
-                String(value.get("home_biome", PopulationRules.biome_at(state, at))), wild_id,
-                value.get("source_record", {}) as Dictionary, value)
+            if not _add_wild(wild_id, value) and state.wild.id_at(Vector2i(int(value.get("x", -1)), int(value.get("y", -1)))) >= 0:
+                waiting[wild_id] = value
         "deployed_pokemon":
-            var cell := AreaState.key_cell(key)
-            var identity := String(habitat_ids.get(cell, ""))
-            habitat_ids.erase(cell)
-            if value is Dictionary:
-                identity = String(value.get("ecology_id", ""))
-            _take_habitat(cell, identity)
-            if value is Dictionary and state.habitat.restore(value, cell):
-                habitat_ids[cell] = identity
+            _apply_habitat(AreaState.key_cell(key), value)
         "wild_eggs":
             var cell := AreaState.key_cell(key)
             state.eggs.take(cell)
@@ -201,14 +201,77 @@ func apply_population(group: String, key: String, value: Variant) -> bool:
                 PopulationRules.add_egg(state, String(value.get("species", "pidgey")), cell, value, -1, false)
     return false
 
-## The habitat Pokemon on `cell`, and the one with `identity` wherever it stands.
-func _take_habitat(cell: Vector2i, identity: String) -> void:
-    state.habitat.take(cell)
+func _add_wild(wild_id: int, record: Dictionary) -> bool:
+    var at := Vector2i(int(record.get("x", -1)), int(record.get("y", -1)))
+    return PopulationRules.add_wild(state, String(record.get("species", "pidgey")), int(record.get("level", 2)), at,
+        String(record.get("home_biome", PopulationRules.biome_at(state, at))), wild_id,
+        record.get("source_record", {}) as Dictionary, record)
+
+## A habitat Pokemon's record on `cell` as the records now hold it (null:
+## none there any more). The records may be a step behind this area (a step
+## here not sent yet), so a Pokemon is found by its ecology id: one taken from
+## the cell the records had it on goes from wherever it walked to; one whose
+## record changed keeps where it stands here and takes the rest; a new one is
+## put on its cell, or waits while another stands there (habitat_waiting).
+func _apply_habitat(cell: Vector2i, value: Variant) -> void:
+    var was := String(habitat_ids.get(cell, ""))
+    habitat_ids.erase(cell)
+    if not value is Dictionary:
+        _take_habitat(was)
+        return
+    var identity := String(value.get("ecology_id", ""))
+    # One record of it: the cell the records had it on before is not its any more.
+    var before := recorded_cell(identity)
+    if before != NO_CELL and before != cell: habitat_ids.erase(before)
+    habitat_ids[cell] = identity
+    habitat_waiting.erase(identity)
+    if was != identity: _take_habitat(was)
+    var at := habitat_cell(identity) if not identity.is_empty() else (cell if state.habitat.records.has(cell) else NO_CELL)
+    if at != NO_CELL:
+        var data: Dictionary = state.habitat.records[at]
+        data.merge(value, true)
+        data["cell"] = at
+        data["x"] = at.x
+        data["y"] = at.y
+        # Both cells go out again: the records follow where it stands here.
+        state.habitat.mark(at)
+        state.habitat.mark(cell)
+        return
+    if state.habitat.records.has(cell):
+        # Another stepped there here and the step has not been sent: back it
+        # goes to where the records have it, if that is free; else this one
+        # waits for the cell.
+        var other: Dictionary = state.habitat.records[cell]
+        var home := recorded_cell(String(other.get("ecology_id", "")))
+        if home == NO_CELL or home == cell or state.habitat.records.has(home):
+            habitat_waiting[identity] = [cell, value]
+            return
+        state.habitat.move(cell, home)
+        other["cell"] = home
+        other["x"] = home.x
+        other["y"] = home.y
+    state.habitat.restore(value, cell)
+
+## Where the records have the habitat Pokemon with this ecology id, as this
+## area last heard or told them; NO_CELL if nowhere.
+func recorded_cell(identity: String) -> Vector2i:
+    if identity.is_empty(): return NO_CELL
+    for at in habitat_ids:
+        if habitat_ids[at] == identity: return at
+    return NO_CELL
+
+## Where the habitat Pokemon with this ecology id stands here; NO_CELL if nowhere.
+func habitat_cell(identity: String) -> Vector2i:
+    for at in state.habitat.records:
+        if String(state.habitat.records[at].get("ecology_id", "")) == identity: return at
+    return NO_CELL
+
+## The habitat Pokemon with this ecology id goes, wherever it stands.
+func _take_habitat(identity: String) -> void:
     if identity.is_empty(): return
-    for other in state.habitat.records.keys():
-        if String(state.habitat.records[other].get("ecology_id", "")) == identity:
-            state.habitat.take(other)
-            habitat_ids.erase(other)
+    habitat_waiting.erase(identity)
+    var at := habitat_cell(identity)
+    if at != NO_CELL: state.habitat.take(at)
 
 ## A wild Pokemon claimed for a battle (held where it is) or let go: true when
 ## let go (where it stands is to be told again).
@@ -224,6 +287,14 @@ func apply_claim(wild_id: int, claimed: bool) -> bool:
 func tick(delta: float, observers: Array) -> void:
     var centers: Array = []
     for observer in observers: centers.append(Vector2i(int(observer.x), int(observer.y)))
+    for identity in habitat_waiting.keys():
+        var entry: Array = habitat_waiting[identity]
+        if not state.habitat.records.has(entry[0]):
+            habitat_waiting.erase(identity)
+            state.habitat.restore(entry[1], entry[0])
+    for wild_id in waiting.keys():
+        if _add_wild(wild_id, waiting[wild_id]) or state.wild.id_at(Vector2i(int(waiting[wild_id].get("x", -1)), int(waiting[wild_id].get("y", -1)))) < 0:
+            waiting.erase(wild_id)
     PopulationRules.run_ecology_step(state, delta, centers, _outdoors, true, {}, _outdoors)
     state.habitat.tick(delta, state.rng)
     state.wild.tick(delta, observers, state.rng)

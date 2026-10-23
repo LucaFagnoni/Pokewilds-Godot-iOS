@@ -354,6 +354,58 @@ func _initialize() -> void:
     check(placed, "a Pokemon left in a habitat is the server's to run")
     _same("1,0", "after a Pokemon is left in a habitat")
 
+    # The records a step behind the server: a habitat Pokemon steps (not sent
+    # yet), then its record is changed where the records still have it (an
+    # item taken from it): it keeps its place and takes the change; the
+    # records follow, one record of it.
+    var walker := "coop_owned:alice:9"
+    var recorded_at: Vector2i = copies["1,0"].habitat.find_key(walker)
+    var free_beside := Vector2i(-1, -1)
+    for step in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+        if not sim.state.habitat.records.has(recorded_at + step) and sim.state.wild.id_at(recorded_at + step) < 0: free_beside = recorded_at + step; break
+    check(free_beside.x >= 0, "a free cell beside it")
+    var walker_record: Dictionary = sim.state.habitat.records[_habitat_cell(sim, walker)]
+    sim.state.habitat.move(_habitat_cell(sim, walker), free_beside)
+    walker_record["cell"] = free_beside
+    walker_record["x"] = free_beside.x
+    walker_record["y"] = free_beside.y
+    var changed_record: Dictionary = Delta.decode(String(state.records[Records.key("1,0", "deployed_pokemon", recorded_at)]))
+    changed_record["held_item"] = "ORAN BERRY"
+    game._committed(state.transact("alice", "harvest1", [state.change(Records.key("1,0", "deployed_pokemon", recorded_at), Delta.encode(changed_record))]))
+    check(_habitat_cell(sim, walker) == free_beside and String(sim.state.habitat.records[free_beside].get("held_item", "")) == "ORAN BERRY",
+        "a record changed a step behind: it keeps its place and takes the change")
+    _run(1.0)
+    var copies_of := 0
+    for key in game.record_keys("world/1,0/deployed_pokemon/"):
+        var record = Delta.decode(String(state.records[key]))
+        if record is Dictionary and String(record.get("ecology_id", "")) == walker:
+            copies_of += 1
+            check(Vector2i(int(record.x), int(record.y)) == _habitat_cell(sim, walker) and String(record.get("held_item", "")) == "ORAN BERRY", "the records follow it, item and all")
+    check(copies_of == 1, "one record of it (%d)" % copies_of)
+    _same("1,0", "after a change a step behind")
+
+    # A Pokemon left on a cell another has just stepped onto (not sent yet):
+    # that one goes back to where the records have it, and both stay.
+    var stepper := _habitat_cell(sim, walker)
+    var target := Vector2i(-1, -1)
+    for step in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+        if not sim.state.habitat.records.has(stepper + step) and sim.state.wild.id_at(stepper + step) < 0 and not sim.state.eggs.records.has(stepper + step): target = stepper + step; break
+    var stepper_record: Dictionary = sim.state.habitat.records[stepper]
+    sim.state.habitat.move(stepper, target)
+    stepper_record["cell"] = target
+    stepper_record["x"] = target.x
+    stepper_record["y"] = target.y
+    var newcomer := {"species": "rattata", "level": 7, "gender": "female", "x": target.x, "y": target.y, "ecology_id": "coop_owned:alice:10", "shiny": false}
+    game._committed(state.transact("alice", "deploy2", [state.change(Records.key("1,0", "deployed_pokemon", target), Delta.encode(newcomer))]))
+    check(_habitat_cell(sim, "coop_owned:alice:10") == target and _habitat_cell(sim, walker) == stepper, "the one there steps back, the new one takes the cell")
+    _run(2.0)
+    var both := {}
+    for key in game.record_keys("world/1,0/deployed_pokemon/"):
+        var record = Delta.decode(String(state.records[key]))
+        if record is Dictionary: both[String(record.get("ecology_id", ""))] = both.get(String(record.get("ecology_id", "")), 0) + 1
+    check(both.get(walker, 0) == 1 and both.get("coop_owned:alice:10", 0) == 1, "both are in the records, once each (%s)" % both)
+    _same("1,0", "after a Pokemon is left on a cell just stepped onto")
+
     # Bob takes the egg in his area: its parents nearby are angered.
     records.presence.bob.x = 20
     records.presence.bob.y = 21

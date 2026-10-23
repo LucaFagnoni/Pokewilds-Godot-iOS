@@ -49,6 +49,11 @@ var _turn:=0
 ## A horde's id -> the clock it comes at (ten seconds after it is called, as
 ## the players are warned: coop_horde_runtime.gd).
 var _horde_at:Dictionary={}
+## Area -> when its AreaSim may be asked for again: asked every frame until
+## the area is made, then once per LOAD_RETRY_MS (a load that fails is not
+## tried again every frame).
+var _asked:Dictionary={}
+const LOAD_RETRY_MS:=5000
 
 ## An area's sending: what of its Pokemon is to go out, and what went.
 class Beat extends RefCounted:
@@ -99,7 +104,9 @@ func _process(delta:float)->void:
         var area:String=occupied[(index+_turn)%occupied.size()]
         var sim=game.rules.sims.get(area)
         if sim==null:
-            game.rules.load_area(area)
+            if Time.get_ticks_msec()>=int(_asked.get(area,0)):
+                if (game.state.records.get("area/"+area,{}) as Dictionary).get("sha256") is String:_asked[area]=Time.get_ticks_msec()+LOAD_RETRY_MS
+                game.rules.load_area(area)
             continue
         var beat:Beat=_beats.get(area)
         if beat==null:beat=_begin(area,sim)
@@ -121,10 +128,14 @@ func _process(delta:float)->void:
             _publish_habitats(area,sim,beat)
             _publish_events(area,sim,beat)
         _horde(area,sim)
-    # How long the areas took (the net profile's SPIKES name it).
+    # What the areas took of the frame, for the net profile (coop_net_profile.gd
+    # prints t_ and tmax_ metas per phase; a test build's SPIKES name it).
+    var spent:=Time.get_ticks_usec()-started
+    Engine.set_meta("t_areas_pokemon",int(Engine.get_meta("t_areas_pokemon",0))+spent)
+    if spent>int(Engine.get_meta("tmax_areas_pokemon",0)):Engine.set_meta("tmax_areas_pokemon",spent)
     if Engine.has_meta("probe_frame"):
         var sections:Dictionary=Engine.get_meta("probe_frame")
-        sections["@areas' Pokemon"]=int(sections.get("@areas' Pokemon",0))+Time.get_ticks_usec()-started
+        sections["@areas' Pokemon"]=int(sections.get("@areas' Pokemon",0))+spent
 
 ## The area's roaming Megas, and Mega Gengar at night, take their steps when
 ## their time comes (as biome_megas.gd update and source_forest_boss.gd
@@ -254,6 +265,8 @@ func _publish_wild(area:String,sim,beat:Beat)->void:
             beat.dirty.erase(wild_id);continue
         var data:Dictionary=sim.state.wild.records.get(wild_id,{})
         beat.dirty.erase(wild_id)
+        # Not put in yet (its cell taken): its record stands as it is.
+        if data.is_empty() and sim.waiting.has(wild_id):continue
         var signature:=WildRuntime.record_signature(data) if not data.is_empty() else 0
         if not data.is_empty() and beat.signatures.get(wild_id)==signature:
             moved.append(wild_id);continue
@@ -267,8 +280,11 @@ func _publish_wild(area:String,sim,beat:Beat)->void:
         kept.erase(wild_id)
         if changes.size()>=Delta.MAX_PATCHES:break
     if not moved.is_empty():
+        var started:=Time.get_ticks_usec()
         var motion:PackedByteArray=sim.state.wild.encode_motion(moved)
-        game.wild.relay_motion(game.session.actor,area,motion,Wire.encode_motion(area,int(game.service.areas.epochs.get(area,0)),motion))
+        var frame:=Wire.encode_motion(area,int(game.service.areas.epochs.get(area,0)),motion)
+        WildRuntime.Session.Transport.count("enc:wild_motion_bin",frame.size(),started)
+        game.wild.relay_motion(game.session.actor,area,motion,frame)
     _commit(changes,durable)
 
 ## The habitat Pokemon and eggs that changed (placed, taken, moved, their
@@ -291,6 +307,9 @@ func _publish_habitats(area:String,sim,beat:Beat)->void:
         var group:String=check[key][0]
         var cell:Vector2i=check[key][1]
         var population=sim.state.habitat if group=="deployed_pokemon" else sim.state.eggs
+        # One commit holds so many: the rest go with the next.
+        if changes.size()>=Delta.MAX_PATCHES:
+            population.mark(cell);continue
         beat.checked[group][cell]=now
         var data=population.records.get(cell)
         var held=records.get(key)
@@ -300,6 +319,10 @@ func _publish_habitats(area:String,sim,beat:Beat)->void:
         if data==null and before!=nothing:
             var old=Delta.decode_shared(before)
             if old is Dictionary and old.has("house_door"):continue
+        # The records hold one there that waits for this cell here: its record stands.
+        if before!=nothing and not sim.habitat_waiting.is_empty():
+            var recorded=Delta.decode_shared(before)
+            if recorded is Dictionary and sim.habitat_waiting.has(String(recorded.get("ecology_id",""))):continue
         var serial:Variant=null
         if data is Dictionary:serial=PopulationRules.serializable_egg(data,cell) if group=="wild_eggs" else PopulationRules.serializable_record(sim.state,data,cell)
         var next:=Delta.encode(serial)
@@ -312,7 +335,6 @@ func _publish_habitats(area:String,sim,beat:Beat)->void:
             else:sim.habitat_ids[cell]=String(data.get("ecology_id",""))
         durable=durable or not Delta.only_motion(before,next)
         changes.append(game.state.change(key,next))
-        if changes.size()>=Delta.MAX_PATCHES:break
     if beat.timers_sent.size()>4096:beat.timers_sent.clear()
     _commit(changes,durable)
 
