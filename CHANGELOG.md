@@ -6,7 +6,10 @@ the version description in Feather. Write it for players, not developers.
 ## Next version
 
 ### Improvements
-- **Long-played worlds load faster:** the ground you have cut, dug, planted and built on is kept in a lighter form. Loading a world with a lot of it takes about 40% less time, saving it is quicker, and the short pause it caused once a second is less than half as long. Old saves still load as before.
+- **Long-played worlds load faster:** the ground you have cut, dug, planted and built on is kept in a lighter form. Loading a world with a lot of it takes about 40% less time, saving it is quicker, and the short pause it caused once a second is gone. Old saves still load as before.
+
+### Fixes
+- **Dig sites no longer multiply when you load:** loading a world, or joining one in co-op, added a second set of the day's dig sites each time. A loaded world now has exactly the dig sites it was saved with.
 
 ## 0.10.419
 
