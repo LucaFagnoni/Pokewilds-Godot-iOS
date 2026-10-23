@@ -19,6 +19,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "0.10.436",
+          "buildVersion": "436",
+          "date": "2026-10-23T23:02:38Z",
+          "localizedDescription": "### Improvements\n- **Smoother near lots of Pokémon:** wild Pokémon, habitat Pokémon and eggs now run in the game's engine itself. The habitat check, every second and a half, takes about a twelfth of the time it did, so the game no longer hitches near habitats, and the wild Pokémon around you cost about a third as much every frame. A dedicated server running areas full of players and Pokémon no longer takes a long frame for that check either.\n- **Long-played worlds load faster:** the ground you have cut, dug, planted and built on is kept in a lighter form. Loading a world with a lot of it takes about 40% less time, saving it is quicker, and the short pause it caused once a second is gone. Old saves still load as before.\n\n### Fixes\n- **Dig sites no longer multiply when you load:** loading a world, or joining one in co-op, added a second set of the day's dig sites each time. A loaded world now has exactly the dig sites it was saved with.",
+          "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0051/Pokewilds-unsigned.ipa",
+          "size": 63967633,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.10.419",
           "buildVersion": "419",
           "date": "2026-10-23T20:28:45Z",
@@ -98,15 +107,6 @@
           "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0034/Pokewilds-unsigned.ipa",
           "size": 62841158,
           "minOSVersion": "15.0"
-        },
-        {
-          "version": "0.10.196",
-          "buildVersion": "196",
-          "date": "2026-10-21T21:27:28Z",
-          "localizedDescription": "Merge map-zoom-perf: the map opens at once, no dropped frames at minimum zoom",
-          "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0033/Pokewilds-unsigned.ipa",
-          "size": 57594779,
-          "minOSVersion": "15.0"
         }
       ],
       "appPermissions": {
@@ -117,11 +117,11 @@
           "NSPhotoLibraryUsageDescription": "Not used by the game (Godot's default key)."
         }
       },
-      "version": "0.10.419",
-      "versionDate": "2026-10-23T20:28:45Z",
-      "versionDescription": "### New\n- **Double battles against other players:** when you challenge another player there is now DOUBLE BATTLE next to TRADE and BATTLE. If either of you has fewer than two Pokémon able to fight, it becomes a single battle.\n\n### Improvements\n- **New worlds are much faster to create:** world generation is about 15 times faster and uses far less memory.\n- **Lighter saves:** save files are about 14 times smaller, saving pauses the game for half as long, and the LOAD list opens instantly. Old saves still load as before.\n- **Smooth nights:** the game no longer drops frames at night or when a new day starts.\n- **Smooth tides:** the tide coming in or going out now costs about 6 times less work, and no longer slows the game down while it turns.\n- **Smoother players in co-op:** other players move smoothly even when 4G stutters, with no teleporting.\n- **Less battery:** players off screen are no longer drawn.\n- **Cheaper walking:** the game does much less work on every step, especially in tall grass.\n- **Lighter wild Pokémon:** areas full of wild Pokémon, habitats and eggs cost far less: only the Pokémon on screen get a sprite, and finding nearby Pokémon is up to 40 times faster.\n- **Digging and cutting in co-op answer at once:** the hole or the cut grass shows straight away, and the host decides what you find, so everyone sees the same ground and gets fair rewards.\n- **Lighter co-op traffic:** wild Pokémon movement and changes to the ground are sent in a compact form; a server with players standing around sends about a fifth of what it did.\n- **Fewer waits in co-op:** digging, cutting, picking up and storing things no longer save your whole game first.\n- **Building in co-op answers at once:** building, painting and cutting down what you built show straight away, you can place several pieces in a row without waiting, and the host checks every piece and pays back what it cost. Signs, beacon names, torches, windows and the PLANT's seed are now the same for every player.\n- **No hitches when players change areas:** a server no longer stutters for everyone while players walk into another area or a new one is made.\n- **No hitches when a server saves:** autosaves no longer make a server stutter for everyone, even on a long-played world, and a save cut short by a crash or a power cut still loses nothing.\n\n### Fixes\n- **Dedicated server freezes:** autosaves, a player joining and a new day no longer freeze the server for half a second or more.\n- **4G disconnects:** a player is only dropped after 30 seconds without signal, not 20.\n- **Battles:** all battle logic now lives in one place, shared by wild, trainer, boss and PvP battles. It behaves exactly as before, checked against 30 recorded battles.\n- **No more \"REJOIN THE WORLD\":** when the host turns down a dig, a cut or a build, the action is simply undone and you keep playing.\n- **Wild battles in co-op:** when the host does not accept a battle's result, your party and bag go back to how they were and the game goes on instead of ending the session.\n- **Server backups:** if a server's world file gets damaged, the server's backup copy is no longer overwritten by the damaged one at the next save.\n\n### Downloads\n- **The Android file is now called `Pokewilds-arm64.apk`:** it runs on 64-bit ARM phones, which is nearly every Android phone from the last years.\n\n### Server and multiplayer\n- **Update the server and the app together:** this version uses a new co-op protocol.\n- **Automatic cleanup:** the server deletes old area files by itself after each save.\n- **The server checks wild battles:** a win or a catch only counts when the server's own replay of the battle ends the same way (`enforce_battles` in server.cfg).\n- **New areas made inside the server:** with the fast world generator the server makes new areas itself instead of starting a second copy of the game (`area_generation` in server.cfg).\n- **The server moves every area's Pokémon:** on a dedicated server the wild and habitat Pokémon, their eggs, hordes and the roaming Megas are run by the server in every area, not by the first player's phone. Phones only show them: less battery and almost no upload, and a slow connection no longer freezes the Pokémon for everyone else (`population_authority` in server.cfg).\n- **New areas arrive ready:** on a dedicated server, the first Pokémon and the roaming Megas of a new area are placed by the server, so your phone no longer places and uploads them when you walk into a new area, and every player sees the same Megas there. Items dropped on the ground now also stop the server's Pokémon from walking over them.",
-      "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0049/Pokewilds-unsigned.ipa",
-      "size": 63865946
+      "version": "0.10.436",
+      "versionDate": "2026-10-23T23:02:38Z",
+      "versionDescription": "### Improvements\n- **Smoother near lots of Pokémon:** wild Pokémon, habitat Pokémon and eggs now run in the game's engine itself. The habitat check, every second and a half, takes about a twelfth of the time it did, so the game no longer hitches near habitats, and the wild Pokémon around you cost about a third as much every frame. A dedicated server running areas full of players and Pokémon no longer takes a long frame for that check either.\n- **Long-played worlds load faster:** the ground you have cut, dug, planted and built on is kept in a lighter form. Loading a world with a lot of it takes about 40% less time, saving it is quicker, and the short pause it caused once a second is gone. Old saves still load as before.\n\n### Fixes\n- **Dig sites no longer multiply when you load:** loading a world, or joining one in co-op, added a second set of the day's dig sites each time. A loaded world now has exactly the dig sites it was saved with.",
+      "downloadURL": "https://github.com/LucaFagnoni/pokewilds-mobile/releases/download/build-0051/Pokewilds-unsigned.ipa",
+      "size": 63967633
     }
   ],
   "news": []
