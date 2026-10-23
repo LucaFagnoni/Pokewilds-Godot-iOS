@@ -27,6 +27,8 @@ const SETUP_SAVE_PATH := "user://m3_setup.cfg"
 const DataPaths = preload("res://scripts/game_data_paths.gd")
 const WorldSaves = preload("res://scripts/world_saves.gd")
 var saves := WorldSaves.new("user://saves")
+## The screens open over the field (screen_stack.gd); the *_open flags are views of it.
+var screens := preload("res://scripts/screen_stack.gd").new()
 var saving := preload("res://scripts/game_saving.gd").new(self)
 var dialogs := preload("res://scripts/dialogs.gd").new(self)
 var start_menu := preload("res://scripts/game_menu.gd").new(self)
@@ -801,7 +803,9 @@ var started := false
 var generating := false
 var generation_tip_timer := 0.0
 var generation_tip_index := -1
-var battle_active := false
+var battle_active: bool:
+    get: return screens.is_open(&"battle")
+    set(value): screens.set_open(&"battle", value)
 var battle_turn_busy := false
 var battle_player: Dictionary = {}
 var battle_enemy: Dictionary = {}
@@ -875,10 +879,14 @@ var battle_capture_ball: TextureRect = null
 var battle_text_full := ""
 var battle_text_busy := false
 var battle_text_accumulator := 0.0
-var mansion_switch_open := false
+var mansion_switch_open: bool:
+    get: return screens.is_open(&"mansion_switch")
+    set(value): screens.set_open(&"mansion_switch", value)
 var mansion_switch_stage := 0
 var mansion_switch_index := 0
-var battle_entry_pending := false
+var battle_entry_pending: bool:
+    get: return screens.is_open(&"battle_entry")
+    set(value): screens.set_open(&"battle_entry", value)
 var progression_move_frame: Panel
 var progression_type_frame: Panel
 var progression_choice_frame: Panel
@@ -890,7 +898,9 @@ var progression_yes_no_cursor: Label
 var overworld_evolution_item := ""
 var overworld_evolution_running := false
 var capture_experience_presenting := false
-var progression_active := false
+var progression_active: bool:
+    get: return screens.is_open(&"progression")
+    set(value): screens.set_open(&"progression", value)
 var progression_mode := ""
 var hatch_skip_requested := false
 const HATCH_PLAYBACK_SPEED := 1.2
@@ -906,7 +916,9 @@ var setup_load_panel: Control
 var setup_load_name: Label
 var setup_load_index := 0
 var setup_load_entries: Array[Dictionary] = []
-var setup_load_open := false
+var setup_load_open: bool:
+    get: return screens.is_open(&"setup_load")
+    set(value): screens.set_open(&"setup_load", value)
 var setup_load_committed := false
 var setup_load_path := ""
 var pokemon_action_list: Label
@@ -921,7 +933,9 @@ var progression_stats_fields: Array[Label] = []
 var pokemon_stats_overlay: Control
 var pokemon_stats_body_left: Label
 var pokemon_stats_body_right: Label
-var pokemon_stats_open := false
+var pokemon_stats_open: bool:
+    get: return screens.is_open(&"pokemon_stats")
+    set(value): screens.set_open(&"pokemon_stats", value)
 var battle_party_view: Control
 var battle_party_cursor: Label
 var battle_party_sprite: TextureRect
@@ -979,13 +993,17 @@ var storage_switch_from := -1
 const POKEMON_STORAGE_CAPACITY := 0 # 0 retains the source unlimited chest.
 var overflow_recovery_notice := ""
 var storage_pooled := false
-var storage_menu_open := false
+var storage_menu_open: bool:
+    get: return screens.is_open(&"storage")
+    set(value): screens.set_open(&"storage", value)
 var storage_box_key := ""
 var preferred_storage_box := ""
 var storage_column := 0
 var storage_index := 0
 var storage_box_window_start := 0
-var trainer_tip_open := false
+var trainer_tip_open: bool:
+    get: return screens.is_open(&"trainer_tip")
+    set(value): screens.set_open(&"trainer_tip", value)
 var trainer_tip_continue: Label
 var item_menu_names: Array[String] = []
 var item_menu_index := 0
@@ -995,10 +1013,16 @@ var safari_ui: Control
 ## The full map's picture, kept up to date while playing (source_map_raster.gd).
 var map_raster = preload("res://scripts/source_map_raster.gd").new(self)
 var planting_bag_target: Variant = null
-var field_item_busy := false
+var field_item_busy: bool:
+    get: return screens.is_open(&"field_item")
+    set(value): screens.set_open(&"field_item", value)
 var sleeping_bag_heal_accumulator := 0.0
-var craft_menu_open := false
-var build_menu_open := false
+var craft_menu_open: bool:
+    get: return screens.is_open(&"crafting")
+    set(value): screens.set_open(&"crafting", value)
+var build_menu_open: bool:
+    get: return screens.is_open(&"build_menu")
+    set(value): screens.set_open(&"build_menu", value)
 var build_menu_index := 0
 var resource_popup_timer := 0.0
 var resource_popup_name := ""
@@ -1028,7 +1052,9 @@ var build_wheel_page := 0
 var field_wheel_wait_for_release := false
 const BUILD_WHEEL_PAGE_SIZE := 12
 var last_android_back_msec := -10000
-var game_menu_open := false
+var game_menu_open: bool:
+    get: return screens.is_open(&"game_menu")
+    set(value): screens.set_open(&"game_menu", value)
 var game_menu_detail_open := false
 var game_menu_index := 0
 var guide_menu_open := false
@@ -1041,9 +1067,13 @@ var friendship_step_timer := 0
 var next_party_ecology_id := 1
 var save_confirm_open := false
 var save_confirm_index := 0
-var quit_prompt_open := false
+var quit_prompt_open: bool:
+    get: return screens.is_open(&"quit_prompt")
+    set(value): screens.set_open(&"quit_prompt", value)
 var quit_prompt_index := 0 # 0 = YES, 1 = NO
-var egg_pickup_open := false
+var egg_pickup_open: bool:
+    get: return screens.is_open(&"egg_prompt")
+    set(value): screens.set_open(&"egg_prompt", value)
 var egg_pickup_stage := 0 # 0 = discovery text, 1 = YES/NO
 var egg_pickup_index := 0 # 0 = YES, 1 = NO
 var egg_pickup_cell := Vector2i(-2147483648, -2147483648)
@@ -1052,7 +1082,9 @@ var egg_dialogue_label: Label
 var egg_dialogue_arrow: Label
 var egg_choice_panel: Panel
 var egg_choice_cursor: Label
-var wild_pokemon_prompt_open := false
+var wild_pokemon_prompt_open: bool:
+    get: return screens.is_open(&"wild_prompt")
+    set(value): screens.set_open(&"wild_prompt", value)
 var wild_pokemon_prompt_stage := 0
 var wild_pokemon_prompt_index := 0
 var wild_pokemon_prompt_id := -1
@@ -1203,6 +1235,7 @@ var shared_save_folder: Node
 var dark_mode_ui: Node
 
 func _ready() -> void:
+    _watch_screens()
     # Keep initialization and Android folder synchronization offscreen.
     $UI.hide()
     world.hide()
@@ -1968,20 +2001,20 @@ func _field_ui_blocks_gameplay(ignore_build_hud: bool = false) -> bool:
     if is_instance_valid(coop_game) and coop_game.active and (coop_game.raids.active or coop_game.events.active or not coop_game.population_battles.claim.is_empty()):return true
     if is_instance_valid(coop_game) and coop_game.active and (coop_game.wild.encounter_pending or not coop_game.wild.encounter.is_empty()):return true
     if is_instance_valid(coop_game) and coop_game.active and not coop_game.session.trusted and started:return true
-    if is_instance_valid(coop_game) and is_instance_valid(coop_game.interaction_ui) and coop_game.interaction_ui.visible:return true
-    if is_instance_valid(coop_game) and is_instance_valid(coop_game.chat) and coop_game.chat.visible:return true
-    return ((is_instance_valid(pokedex_menu) and pokedex_menu.visible)
-        or battle_active or battle_entry_pending or progression_active
-        or mansion_switch_open or field_item_busy or game_menu_open
-        or craft_menu_open or (build_menu_open and not ignore_build_hud) or quit_prompt_open
-        or wild_pokemon_prompt_open or egg_pickup_open or storage_menu_open
-        or trainer_tip_open or setup_load_open or pokemon_stats_open
-        or touch_config.visible or touch_controls.edit_mode
-        or (is_instance_valid(game_files_menu) and game_files_menu.visible)
-        or (is_instance_valid(mod_menu_panel) and mod_menu_panel.visible)
-        # OPTIONS can be open without the game menu (back from MOVE BUTTONS):
-        # the field's ball icons and HUD stay away from it too.
-        or (is_instance_valid(options_menu) and options_menu.visible))
+    return screens.blocks_gameplay(&"build_menu" if ignore_build_hud else &"")
+
+## The screens other scripts draw: open while their node is shown.
+func _watch_screens() -> void:
+    screens.watch(&"coop_interaction", func(): return is_instance_valid(coop_game) and is_instance_valid(coop_game.interaction_ui) and coop_game.interaction_ui.visible)
+    screens.watch(&"coop_chat", func(): return is_instance_valid(coop_game) and is_instance_valid(coop_game.chat) and coop_game.chat.visible)
+    screens.watch(&"pokedex", func(): return is_instance_valid(pokedex_menu) and pokedex_menu.visible)
+    screens.watch(&"touch_config", func(): return touch_config.visible)
+    screens.watch(&"touch_layout_edit", func(): return touch_controls.edit_mode)
+    screens.watch(&"game_files", func(): return is_instance_valid(game_files_menu) and game_files_menu.visible)
+    screens.watch(&"mods", func(): return is_instance_valid(mod_menu_panel) and mod_menu_panel.visible)
+    # OPTIONS can be open without the game menu (back from MOVE BUTTONS):
+    # the field's ball icons and HUD stay away from it too.
+    screens.watch(&"options", func(): return is_instance_valid(options_menu) and options_menu.visible)
 
 func _stop_fainted_active_field_move() -> void:
     if not started or battle_active:
