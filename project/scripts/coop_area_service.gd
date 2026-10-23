@@ -7,6 +7,7 @@ signal failed(actor:String, reason:String)
 const Areas=preload("res://scripts/coop_areas.gd")
 const SnapshotStore=preload("res://scripts/coop_snapshot_store.gd")
 const Blob=preload("res://scripts/coop_blob.gd")
+const Snapshot=preload("res://scripts/coop_world_snapshot.gd")
 var areas=Areas.new()
 var snapshots:Node
 var blobs=Blob.new()
@@ -19,6 +20,8 @@ var _received_metadata:Dictionary={}
 var _reading:=false
 var refresh_area:Callable
 var register_objects:Callable
+## Runs a Callable on a worker and waits for it (coop_game.gd _off_thread).
+var off_thread:Callable
 var uploads=Blob.new()
 var _upload_headers:Dictionary={}
 var _upload_results:Dictionary={}
@@ -42,11 +45,12 @@ func upload(area:String,token:String,epoch:int,bytes:PackedByteArray)->Dictionar
 func may_publish(actor:String,area:String,epoch:int)->bool:
     return areas.can_publish(actor,area,epoch) or (spawners.get(area,"")==actor and areas.occupants.get(actor,"")==area)
 
-func publish(actor:String,area:String,epoch:int,bytes:PackedByteArray)->Dictionary:
+## `decoded` and `saved`: the snapshot already decoded and saved (_receive_upload).
+func publish(actor:String,area:String,epoch:int,bytes:PackedByteArray,decoded:Dictionary={},saved:Dictionary={})->Dictionary:
     if not may_publish(actor,area,epoch):return {"ok":false,"reason":"not_authority"}
-    var decoded=preload("res://scripts/coop_world_snapshot.gd").decode(bytes)
+    if decoded.is_empty():decoded=await _worker(func():return Snapshot.decode(bytes))
     if decoded.is_empty():return {"ok":false,"reason":"invalid_snapshot"}
-    var saved:Dictionary=await snapshots.save_bytes(bytes)
+    if saved.is_empty():saved=await snapshots.save_bytes(bytes)
     if not saved.get("ok",false):return saved
     if not may_publish(actor,area,epoch):return {"ok":false,"reason":"stale_authority"}
     var previous:Dictionary=state.records.get("area/"+area,{})
@@ -72,25 +76,39 @@ func _receive_upload(peer:int,actor:String,packet:Dictionary)->void:
     _upload_headers.erase(peer)
     var bytes:PackedByteArray=result.bytes
     var digest:String=result.sha256
+    var resave:=String(header.token).is_empty()
     # A re-save comes without the terrain cache: put back the one stored here.
-    if String(header.token).is_empty() and Blob.digest(bytes)==digest:
-        var whole:=await _refill(String(header.area),bytes)
-        if not whole.is_empty():bytes=whole;digest=Blob.digest(whole)
+    # Hashed, made whole and decoded on a worker, once: an area is megabytes,
+    # and doing it here (and decoding it twice) took the host 20-35 ms a frame.
+    var stored:=PackedByteArray()
+    if resave:stored=await _stored(String(header.area))
+    var made:Array=await _worker(func():
+        var whole:=bytes;var hashed:=digest
+        if resave and not stored.is_empty() and Blob.digest(bytes)==digest:
+            var refilled:=Snapshot.refill(bytes,stored)
+            if not refilled.is_empty():whole=refilled;hashed=Blob.digest(refilled)
+        return [whole,hashed,Snapshot.decode(whole)])
+    bytes=made[0];digest=made[1]
     var verified:Dictionary=await snapshots.save_bytes(bytes)
     var outcome={"ok":false,"reason":"invalid_snapshot"}
     if result.id==header.id and verified.get("ok",false) and verified.get("sha256")==digest:
-        var decoded=preload("res://scripts/coop_world_snapshot.gd").decode(bytes)
+        var decoded:Dictionary=made[2]
         if not decoded.is_empty():
-            if String(header.token).is_empty():outcome=await publish(actor,header.area,int(header.epoch),bytes)
-            else:outcome=await generated(actor,header.area,header.token,{"seed":decoded.seed,"size":decoded["size"]},bytes)
+            if resave:outcome=await publish(actor,header.area,int(header.epoch),bytes,decoded,verified)
+            else:outcome=await generated(actor,header.area,header.token,{"seed":decoded.seed,"size":decoded["size"]},bytes,decoded,verified)
     session.send_to(peer,{"kind":"area_upload_result","id":header.id,"result":outcome})
 
-## `bytes` without a terrain cache, made whole from this area's stored snapshot.
-func _refill(area:String,bytes:PackedByteArray)->PackedByteArray:
+## This area's stored snapshot, which a re-save without the terrain cache is
+## made whole from (Snapshot.refill); empty when there is none.
+func _stored(area:String)->PackedByteArray:
     var record:Dictionary=state.records.get("area/"+area,{})
     if not record.get("sha256") is String:return PackedByteArray()
     var stored:Dictionary=await snapshots.load_bytes(record.sha256)
-    return preload("res://scripts/coop_world_snapshot.gd").refill(bytes,stored.bytes) if stored.get("ok",false) else PackedByteArray()
+    return stored.bytes if stored.get("ok",false) else PackedByteArray()
+
+func _worker(work:Callable)->Variant:
+    if not off_thread.is_valid():return work.call()
+    return await off_thread.call(work)
 
 func configure(model,connection:Node,directory:String)->Error:
     state=model;session=connection;areas.state=state
@@ -124,12 +142,13 @@ func request(actor:String,area:String)->void:
         if actor not in _waiters[area]:_waiters[area].append(actor)
         waiting.emit(actor,area)
 
-func generated(actor:String,area:String,token:String,metadata:Dictionary,bytes:PackedByteArray)->Dictionary:
+## `decoded` and `saved` as for publish.
+func generated(actor:String,area:String,token:String,metadata:Dictionary,bytes:PackedByteArray,decoded:Dictionary={},saved:Dictionary={})->Dictionary:
     if not session.hosting or _saving.has(area):return {"ok":false,"reason":"busy"}
     var reservation:Dictionary=areas.reservations.get(area,{})
     if reservation.get("actor","")!=actor or reservation.get("token","")!=token:return {"ok":false,"reason":"stale_generation"}
     _saving[area]=token
-    var saved:Dictionary=await snapshots.save_bytes(bytes)
+    if saved.is_empty():saved=await snapshots.save_bytes(bytes)
     _saving.erase(area)
     if not saved.get("ok",false):_fail(actor,saved.get("reason","save_failed"));return saved
     # The large file has already been flushed on the worker. Journal metadata next.
@@ -138,7 +157,7 @@ func generated(actor:String,area:String,token:String,metadata:Dictionary,bytes:P
     areas.save_snapshot=Callable()
     if not result.get("ok",false):_fail(actor,result.get("reason","save_failed"));return result
     if register_objects.is_valid():
-        var decoded=preload("res://scripts/coop_world_snapshot.gd").decode(bytes)
+        if decoded.is_empty():decoded=await _worker(func():return Snapshot.decode(bytes))
         if decoded.is_empty() or not await register_objects.call(area,decoded.shared):return {"ok":false,"reason":"registry_save_failed"}
     await _deliver(actor,area,result.metadata,bytes)
     var queued:Array=_waiters.get(area,[])

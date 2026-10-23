@@ -39,6 +39,13 @@ var replaced := {}
 var claims_by_actor := {}
 ## area -> {"world/<area>/wild_pokemon/<id>" key: true}
 var wild_by_area := {}
+## area -> {key: true} for every record, by the area it belongs to
+## ("world/<area>/..." and "wild_claim/<area>/..."; "" for the others), in the
+## order of `records`; and area -> the key_epoch when one of its keys last
+## came or went. A player going to an area is sent its records: walking every
+## record of the world for them took the host 10-18 ms.
+var keys_by_area := {}
+var area_key_epochs := {}
 var _namespace_max := 0
 var _namespace_stale := false
 ## Host option: when false nothing is appended to the journal; the world is
@@ -326,9 +333,15 @@ func restore(data: Dictionary) -> bool:
 ## Builds the indexes again from `records`; for code that sets records directly.
 func reindex() -> void:
     claims_by_actor.clear(); wild_by_area.clear(); _namespace_max = 0; _namespace_stale = false
+    keys_by_area.clear(); area_key_epochs.clear()
     for key in records: _index(key, null, records[key])
 
 func _index(key: String, old: Variant, now: Variant) -> void:
+    if (old == null) != (now == null):
+        var area := key.get_slice("/", 1) if key.begins_with("world/") or key.begins_with("wild_claim/") else ""
+        if now == null: _unlist(keys_by_area, area, key)
+        else: _list(keys_by_area, area, key)
+        area_key_epochs[area] = key_epoch
     if key.begins_with("wild_claim/"):
         if old is Dictionary: _unlist(claims_by_actor, String(old.get("actor", "")), key)
         if now is Dictionary: _list(claims_by_actor, String(now.get("actor", "")), key)

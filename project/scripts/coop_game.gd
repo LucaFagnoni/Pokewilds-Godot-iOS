@@ -120,6 +120,10 @@ func _flush_area(area:String)->bool:
     if owner==session.actor:
         # An area a server runs without drawing it is all in the records.
         if area!=_area():return true
+        # In a frame of its own: the area's Pokemon folded in and the area
+        # captured come to several ms, on top of the request that asked for
+        # it (its records sent to the player): together 15-20 ms.
+        await get_tree().process_frame
         while _publishing:await get_tree().process_frame
         return await publish_current()
     var target=-1
@@ -1243,6 +1247,7 @@ func _create_service()->bool:
     service=Areas.new();add_child(service)
     service.refresh_area=_flush_area
     service.register_objects=storage.register_objects
+    service.off_thread=_off_thread
     service.area_ready.connect(_area_ready)
     service.generation_requested.connect(_generation_requested)
     service.failed.connect(func(failed_actor,reason):
@@ -1329,7 +1334,7 @@ func publish_current(own_population:bool=false)->bool:
     var committed:bool=not own_population and (not area_authority.is_empty() or (hosting and state.records.has("area/"+_area())))
     var parts=Snapshot.split(main.world.get_crafting_save_state(not committed),false)
     var picked:Array=Snapshot.population_records(_area(),registry) if committed else []
-    parts.shared["_coop_build_base"]=building.known(_area(),registry).duplicate(true)
+    parts.shared["_coop_build_base"]=building.known(_area(),registry,state.keys_by_area.get(_area(),{}) if hosting else null).duplicate(true)
     # Unpacked and packed on a worker: a long-played area and its terrain
     # cache are megabytes. A guest leaves out the terrain cache: the host has
     # it (Snapshot.refill).
@@ -1377,6 +1382,9 @@ func save_checkpoint(data:Dictionary)->bool:
     if not active or not hosting:return false
     _world_writing=true
     await wild.fold_motion()
+    # The copy of the state below is 10-18 ms: not after other work in the same frame.
+    await get_tree().process_frame
+    if not active or not hosting:_world_writing=false;return false
     var job:Dictionary=store.prepare(state,{"world_name":String(data.get("world_name","WORLD")),"owner":session.actor})
     var loose:int=state.loose
     # The crafting state is made afresh for each save (main._capture_game_save);
@@ -1660,21 +1668,24 @@ func _shared_key(key:String,actor:String)->bool:
 ## they watch (_watched), but for those of `kept`, which they hold already.
 ## With `going` (an area they have asked to go to) only that area's, which
 ## they then watch too, so it arrives as it is now.
-## The records a player may hold (_shared_key), each with its area and
-## whether every player may, in the order of state.records. Made again only
-## when a record comes or goes: asking every record of a long-played world
-## on each join and arrival took the host up to 90 ms.
-var _sharable:Array=[]
-var _sharable_epoch:=-1
+## The records of `area` ("" for those every player holds, _key_area) a
+## player may hold (_shared_key), each with whether every player may, in the
+## order of state.records. Made again only when a record of that area comes
+## or goes: asking every record of a long-played world on each join and
+## arrival took the host up to 90 ms, and while a new area's records were
+## being written, on every arrival.
+var _sharable:Dictionary={}
 var _sharable_state:=0
-func _sharable_keys()->Array:
-    if _sharable_epoch!=state.key_epoch or _sharable_state!=state.get_instance_id():
-        _sharable_epoch=state.key_epoch;_sharable_state=state.get_instance_id();_sharable=[]
-        for key in state.records:
-            var text:=String(key)
-            var anyone:=_shared_key(text,"")
-            if anyone or text.begins_with("horde_reward/") or text.begins_with("private_box/"):_sharable.append([key,_key_area(text),anyone])
-    return _sharable
+func _sharable_keys(area:String)->Array:
+    if _sharable_state!=state.get_instance_id():_sharable_state=state.get_instance_id();_sharable.clear()
+    var epoch:int=state.area_key_epochs.get(area,-1)
+    if _sharable.get(area,[-2])[0]!=epoch:
+        var entries:Array=[]
+        for key in state.keys_by_area.get(area,{}):
+            var anyone:=_shared_key(key,"")
+            if anyone or key.begins_with("horde_reward/") or key.begins_with("private_box/"):entries.append([key,anyone])
+        _sharable[area]=[epoch,entries]
+    return _sharable[area][1]
 
 func _send_state(peer:int,actor:String,going:String="",kept:String="")->void:
     var deadline=Time.get_ticks_msec()+10000
@@ -1683,10 +1694,10 @@ func _send_state(peer:int,actor:String,going:String="",kept:String="")->void:
         # commits always follow this complete snapshot in the ordered connection.
         var areas:=_watched(actor) if going.is_empty() else [going]
         var records:Dictionary={}
-        for entry in _sharable_keys():
-            if entry[2] or _shared_key(String(entry[0]),actor):
-                var area:String=entry[1]
-                if ((area.is_empty() and going.is_empty()) or area in areas) and (kept.is_empty() or area!=kept):records[entry[0]]=state.records[entry[0]]
+        for area in ([""] if going.is_empty() else [])+areas:
+            if not kept.is_empty() and area==kept:continue
+            for entry in _sharable_keys(area):
+                if entry[1] or _shared_key(String(entry[0]),actor):records[entry[0]]=state.records[entry[0]]
         var packet:={"kind":"state_snapshot","records":records,"kept":kept}
         if not going.is_empty():packet={"kind":"area_records","area":going,"records":records}
         var error:Error=session.send_to(peer,packet)
