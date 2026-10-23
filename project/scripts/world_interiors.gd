@@ -203,13 +203,22 @@ func _built_house_floor_tile_key(
     ]
 
 func built_house_floor_origin(floor_index: int) -> Vector2i:
-    return Build.floor_origin(world.buildings.house_context(), floor_index)
+    if world.built_house_floor_origins.has(floor_index):
+        return Vector2i(world.built_house_floor_origins[floor_index])
+    return world.built_house_interior_origin + Vector2i(maxi(0, floor_index) * World.BUILT_HOUSE_FLOOR_STRIDE, 0)
 
+## Read often (Pokemon and the player's moves ask it): the World's own
+## dictionaries straight, as rules/build.gd floor_index_for_cell reads them.
 func built_house_floor_index_for_cell(cell: Vector2i) -> int:
-    return Build.floor_index_for_cell(world.buildings.house_context(), cell)
+    if world.built_house_room_size.x <= 0 or world.built_house_room_size.y <= 0:
+        return -1
+    for raw_index in world.built_house_floor_origins.keys():
+        if Rect2i(Vector2i(world.built_house_floor_origins[raw_index]), world.built_house_room_size).has_point(cell):
+            return int(raw_index)
+    return -1
 
 func built_house_global_cell(floor_index: int, local_cell: Vector2i) -> Vector2i:
-    return Build.global_cell(world.buildings.house_context(), floor_index, local_cell)
+    return built_house_floor_origin(floor_index) + local_cell
 
 ## This World's player in its house, for the house helpers of the rules.
 func _in_house() -> Dictionary:
@@ -588,7 +597,7 @@ func apply_paint(picture_index: int, cell: Vector2i) -> bool:
     return result.ok
 
 func is_built_house_floor_cell(cell: Vector2i) -> bool:
-    return Build.is_floor_cell(world.area, _in_house(), cell)
+    return world.active_area_id == "HOUSE" and world.built_house_interior_cells.has(cell) and not world.interior_interactables.has(cell)
 
 func active_source_interior_route() -> Dictionary:
     var tile := source_interior_tile_at_world_cell(world._player_cell())
