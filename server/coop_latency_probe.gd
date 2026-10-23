@@ -320,7 +320,10 @@ func _recruit() -> bool:
 	var wild_id := _wild_near(true)
 	if wild_id < 0: return false
 	var before: int = main.caught_pokemon.size()
+	var record: Dictionary = main.world.wild_pokemon[wild_id].duplicate()
 	await main._recruit_friendly_wild(wild_id, String(main.world.wild_pokemon[wild_id].get("species", "")))
+	if main.caught_pokemon.size() <= before:
+		print("PROBE note: recruit of ", wild_id, " ", record.get("species"), " at ", record.get("cell"), " from ", main.world._player_cell(), " failed: refused=", coop.wild.refused, " still there=", main.world.wild_pokemon.has(wild_id), " burrowed=", record.get("burrowed", false))
 	return main.caught_pokemon.size() > before
 
 const TileRules = preload("res://scripts/rules/tile_rules.gd")

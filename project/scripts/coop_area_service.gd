@@ -48,6 +48,8 @@ func publish(actor:String,area:String,epoch:int,bytes:PackedByteArray)->Dictiona
     if previous.get("seed")!=decoded.seed or previous.get("size")!=decoded["size"]:return {"ok":false,"reason":"wrong_area"}
     var metadata={"seed":decoded.seed,"size":decoded["size"],"snapshot":saved.snapshot,"sha256":saved.sha256}
     if register_objects.is_valid() and not register_objects.call(area,decoded.shared):return {"ok":false,"reason":"registry_save_failed"}
+    # Its metadata from now on has no "population_pending": its Pokemon are in.
+    spawners.erase(area)
     return state.transact(actor,"publish/"+preload("res://scripts/coop_random.gd").hex(16),[state.change("area/"+area,metadata)])
 
 func _upload_fragment(_peer:int,packet:Dictionary)->Error:
@@ -145,9 +147,20 @@ func _peer(actor:String)->int:
         if session.players[peer].actor==actor:return int(peer)
     return -1
 
+## An area made with its Pokemon still to place ("population_pending", made
+## by server_area_maker.gd): the one player who places them, area -> actor.
+## The others who arrive meanwhile are sent it without the mark and see its
+## Pokemon when that player sends the area back; one who leaves first passes
+## the task to whoever comes next.
+var spawners:Dictionary={}
+
 func _deliver(actor:String,area:String,metadata:Dictionary,bytes:PackedByteArray)->void:
     var peer:=_peer(actor)
     if peer<0:return
+    if metadata.get("population_pending",false):
+        if String(spawners.get(area,actor))!=actor:
+            metadata=metadata.duplicate();metadata.erase("population_pending")
+        else:spawners[area]=actor
     if peer==1:area_ready.emit(actor,area,metadata,bytes);return
     var id:=preload("res://scripts/coop_random.gd").hex(16)
     if not blobs.start_send(peer,id,bytes,String(metadata.sha256)):_fail(actor,"transfer_busy");return
@@ -207,6 +220,8 @@ func _message(peer:int,actor:String,packet:Dictionary)->void:
 
 func _departed(peer:int,actor:String)->void:
     blobs.drop(peer);_transfers.erase(peer)
+    for area in spawners.keys():
+        if spawners[area]==actor:spawners.erase(area)
     uploads.drop(peer);_upload_headers.erase(peer)
     var abandoned:Array=[]
     for area in areas.reservations:

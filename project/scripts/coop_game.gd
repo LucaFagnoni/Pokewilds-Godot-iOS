@@ -199,6 +199,7 @@ func finish_travel()->bool:
     population.sync_pending=true
     _refresh_drops()
     rest.apply_on_entry()
+    publish_population()
     if hosting and not await save_checkpoint(main._capture_game_save()):return false
     return await checkpoint_player()
 
@@ -1232,7 +1233,7 @@ func nobody_here()->bool:
 func _area()->String:
     return "%d,%d"%[main.current_world_grid.x,main.current_world_grid.y]
 
-func publish_current()->bool:
+func publish_current(own_population:bool=false)->bool:
     if not area_authority.is_empty() and area_authority!=session.actor:return true
     # Do not put an optimistic, not-yet-paid placement into an area snapshot.
     # This waits only for this player's action, never for other players to stop.
@@ -1247,7 +1248,7 @@ func publish_current()->bool:
     var registry:Dictionary=state.records if hosting else shared_records
     # The population then comes from the records, not from the world here,
     # which need not pack its own only to have it replaced.
-    var committed:bool=not area_authority.is_empty() or (hosting and state.records.has("area/"+_area()))
+    var committed:bool=not own_population and (not area_authority.is_empty() or (hosting and state.records.has("area/"+_area())))
     var parts=Snapshot.split(main.world.get_crafting_save_state(not committed),false)
     var picked:Array=Snapshot.population_records(_area(),registry) if committed else []
     parts.shared["_coop_build_base"]=building.known(_area(),registry).duplicate(true)
@@ -1508,7 +1509,9 @@ func _message(_peer:int,actor:String,packet:Dictionary)->void:
         session.send_host({"kind":"area_flush_result","id":packet.id,"ok":saved});return
     if packet.get("kind")=="entered_reply" and packet.get("entry") is Dictionary:
         _entry_reply=packet.entry
-        if _entry_reply.get("ok",false):area_authority=String(_entry_reply.authority);area_epoch=int(_entry_reply.epoch)
+        if _entry_reply.get("ok",false):
+            area_authority=String(_entry_reply.authority);area_epoch=int(_entry_reply.epoch)
+            publish_population.call_deferred()
         return
     if packet.get("kind")=="area_generate" and packet.get("area")==_travel_target and packet.get("token") is String:
         _travel_token=packet.token;_travel_offer={"new":true};return
@@ -1625,6 +1628,7 @@ func _area_ready(actor:String,_area_name:String,_metadata:Dictionary,bytes:Packe
         var arrived=Snapshot.decode(bytes)
         if arrived.is_empty() or not _install_cache(arrived):_travel_offer={"error":"ONLINE AREA COULD NOT LOAD"};return
         _travel_offer={"seed":arrived.seed,"size":arrived["size"],"state":Snapshot.merge(wild.overlay(_area_name,population.overlay(_area_name,building.overlay(_area_name,arrived.shared,state.records if hosting else shared_records),state.records if hosting else shared_records),state.records if hosting else shared_records),_arrival_personal(_area_name))}
+        if _metadata.get("population_pending",false):_travel_offer.state=_placing_population(_area_name,_travel_offer.state)
         return
     if hosting or actor!=session.actor or _guest_game.is_empty():return
     var decoded=Snapshot.decode(bytes)
@@ -1637,11 +1641,32 @@ func _area_ready(actor:String,_area_name:String,_metadata:Dictionary,bytes:Packe
     if error!=OK or DirAccess.rename_absolute(path+".pending",path)!=OK:_failure("ONLINE CACHE COULD NOT SAVE");return
     pending_game=_guest_game;_guest_game={}
     pending_game["crafting_state"]=Snapshot.merge(wild.overlay(_area_name,population.overlay(_area_name,building.overlay(_area_name,decoded.shared,shared_records),shared_records),shared_records),pending_game.get("coop_personal",{}))
+    if _metadata.get("population_pending",false):pending_game.crafting_state=_placing_population(_area_name,pending_game.crafting_state)
     pending_game.erase("coop_personal")
     main.coop_menu.close();main.selected_mode="LOAD";main.setup_load_committed=true
     session.set_loading(true)
     await get_tree().process_frame
     await main._start_game()
+
+## An area made without its Pokemon (server_area_maker.gd: "population_pending"
+## in its metadata, sent only to the player who places them): this game
+## places them as a world just generated does (world.gd
+## restore_crafting_save_state), then sends the area back with them
+## (publish_population). Its saved state without the empty population.
+var _placing:=""
+func _placing_population(area:String,crafting:Dictionary)->Dictionary:
+    for group in ["wild_pokemon","wild_eggs","deployed_pokemon"]:crafting.erase(group)
+    crafting["coop_authoritative_population"]=false
+    _placing=area
+    return crafting
+
+## Once in that area and simulating it: the area sent back with the Pokemon
+## this game placed (the host writes them into its records).
+func publish_population()->void:
+    if _placing.is_empty() or _placing!=_area():return
+    _placing=""
+    if not area_authority.is_empty() and area_authority!=session.actor:return
+    if not await publish_current(true):print("ONLINE the new area's Pokemon could not be sent")
 
 func _failure(reason:String)->void:
     main.menu_status.text=reason.to_upper()

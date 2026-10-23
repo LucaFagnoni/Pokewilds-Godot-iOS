@@ -8,7 +8,9 @@ otherwise).
     python server/coop_latency_probe.py GODOT [--profile 4g|bad4g|lan] [--skip-spawn] [--keep] [--port N]
 
 --port: the server's port (the proxy takes the next one), 54791 by default;
-another for a probe run beside other servers.
+another for a probe run beside other servers. --area-generation auto|on|off:
+how the server makes the new area (server_area_maker.gd; "on" makes it in the
+server's process even with the GDScript generator).
 
 The player is a long-played one (explored map, full Pokedex, party and bag, a
 box of 200 Pokemon). --skip-spawn leaves out the actions in the server's own
@@ -32,7 +34,8 @@ if made_override:
 env = dict(os.environ, POKEWILDS_BUILD_ID="probe", POKEWILDS_COMPAT_ID="probe")
 server_log = os.path.join(work, "server.log")
 server = subprocess.Popen([godot, "--path", "project", "--headless", "--server", "--port", str(server_port), "--world", "Probe", "--size", "S",
-    "--data", os.path.join(work, "server"), "--no-upnp", "--area-size", "S", "--accounts", "off"],
+    "--data", os.path.join(work, "server"), "--no-upnp", "--area-size", "S", "--accounts", "off"]
+    + (["--area-generation", sys.argv[sys.argv.index("--area-generation") + 1]] if "--area-generation" in sys.argv else []),
     stdin=subprocess.PIPE, stdout=open(server_log, "wb"), stderr=subprocess.STDOUT, env=env)
 
 

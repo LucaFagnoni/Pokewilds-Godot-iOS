@@ -61,6 +61,7 @@ func model():
 func seed(area:String,shared:Dictionary)->bool:
     var delta=model()
     if not game.state.records.get("world_ready/"+area,false):return delta.seed(game.session.actor,area,shared)
+    if game.state.records.get("area/"+area,{}).get("population_pending",false) and not seed_population(area,shared):return false
     # Full snapshots can spend time in flight. Only reconcile entries which
     # still match the sender's baseline; never overwrite a newer accepted build.
     if not shared.get("_coop_build_base") is Dictionary:return true
@@ -84,6 +85,27 @@ func seed(area:String,shared:Dictionary)->bool:
         if not result.get("ok",false):return false
         game._committed(result)
     return true
+
+## The Pokemon of an area made without them (server_area_maker.gd), as the
+## player who placed them sent the area back: written into its records, once,
+## and sent to whoever is there.
+func seed_population(area:String,shared:Dictionary)->bool:
+    var picked:Dictionary={}
+    for group in ["wild_pokemon","deployed_pokemon","wild_eggs"]:picked[group]=shared.get(group,[])
+    var flat:Dictionary=Delta.flatten(picked)
+    var batch:Array=[]
+    for key in flat:
+        var full:String="world/"+area+"/"+key
+        if game.state.records.has(full):continue
+        batch.append(game.state.change(full,flat[key]))
+        if batch.size()>=Delta.MAX_PATCHES:
+            var made=game.state.transact(game.session.actor,"population/"+game._id(),batch)
+            if not made.get("ok",false):return false
+            game._committed(made);batch=[]
+    if batch.is_empty():return true
+    var result=game.state.transact(game.session.actor,"population/"+game._id(),batch)
+    if result.get("ok",false):game._committed(result)
+    return bool(result.get("ok",false))
 
 static func known(area:String,records:Dictionary)->Dictionary:
     var result:Dictionary={};var prefix="world/"+area+"/"

@@ -91,6 +91,10 @@ func _init()->void:
     maker=AreaMaker.new()
     var area_size:=_arg(args,"--area-size","").to_upper()
     if area_size in SIZES:maker.area_size=SIZES.find(area_size)
+    # New areas made in this process on a worker (server_area_maker.gd): "auto"
+    # (with the native generator), "on" (with either generator) or "off".
+    var generation:=_arg(args,"--area-generation",String(config.get_value("server","area_generation","auto"))).strip_edges().to_lower()
+    maker.in_process=generation if generation in ["auto","on","off"] else "auto"
     # Everything the server writes (identity, world, area caches) lives here.
     _use_data(data)
 
