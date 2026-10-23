@@ -244,6 +244,10 @@ func apply_committed(commit: Dictionary, staged: Dictionary = {}) -> bool:
             if not records.has(key): key_epoch += 1
             records[key] = change.after.duplicate(true) if change.after is Dictionary or change.after is Array else change.after
         _index(key, old, records.get(key))
+        # For the next world save (snapshot): a key that came (again) moves
+        # to the end, as it did in `records`.
+        if old == null and records.has(key): _saved_dirty.erase(key); _saved_dirty[key] = true
+        elif not _saved_dirty.has(key): _saved_dirty[key] = false
     revision += 1
     var request_key:=String(commit.actor)+"/"+String(commit.id)
     var receipt:Dictionary=commit.duplicate()
@@ -256,8 +260,12 @@ func apply_committed(commit: Dictionary, staged: Dictionary = {}) -> bool:
     if _recent_outcomes.size()>RECENT_RESULTS:
         var older:String=_recent_outcomes.pop_front()
         if outcomes.has(older):
-            outcomes[older].erase("changes")
-            outcomes[older]["resync"]=true
+            # A new stub, not the receipt changed in place: a world save's
+            # snapshot may still hold the receipt.
+            var stub:Dictionary=outcomes[older].duplicate()
+            stub.erase("changes")
+            stub["resync"]=true
+            outcomes[older]=stub
             _old_outcomes.append(older)
     while _old_outcomes.size()>REMEMBERED_RESULTS:
         outcomes.erase(_old_outcomes.pop_front())
@@ -305,9 +313,32 @@ func change_edits(key: String, value: Variant) -> Dictionary:
     if edits.is_empty(): return {}
     return {"key":key,"before":print_of(key),"edits":edits}
 
+## The state now, for a world save written on a worker while the game goes
+## on; valid until the next call (saves run one at a time). Copying every
+## record held the server 10-13 ms (25 ms deep, 8.5 ms shallow at 60,000
+## records), so the records are a copy kept from the last save and brought up
+## to date from the keys changed since (_saved_dirty), in the same order as
+## `records`. Values are shared, not copied: this script never changes a
+## stored value in place, it replaces it (apply_committed; Patch.apply edits a
+## copy), and no one else changes them (see transact). So are receipts (a
+## stub is a new one); members are changed in place, and are few.
+var _saved_records := {}
+var _saved_whole := false
+## key -> true when it came (again) since the last snapshot, false when it
+## only changed or went.
+var _saved_dirty := {}
 func snapshot() -> Dictionary:
-    return {"revision":revision,"records":records.duplicate(true),
-        "outcomes":outcomes.duplicate(true),"members":members.duplicate(true)}
+    if not _saved_whole:
+        _saved_records = records.duplicate()
+        _saved_whole = true
+    else:
+        for key in _saved_dirty:
+            if _saved_dirty[key]: _saved_records.erase(key)
+            if records.has(key): _saved_records[key] = records[key]
+            else: _saved_records.erase(key)
+    _saved_dirty.clear()
+    return {"revision":revision,"records":_saved_records,
+        "outcomes":outcomes.duplicate(),"members":members.duplicate(true)}
 
 func restore(data: Dictionary) -> bool:
     if not data.get("records") is Dictionary or not data.get("outcomes") is Dictionary or not data.get("members") is Dictionary:
@@ -332,6 +363,7 @@ func restore(data: Dictionary) -> bool:
 
 ## Builds the indexes again from `records`; for code that sets records directly.
 func reindex() -> void:
+    _saved_whole = false; _saved_dirty.clear()
     claims_by_actor.clear(); wild_by_area.clear(); _namespace_max = 0; _namespace_stale = false
     keys_by_area.clear(); area_key_epochs.clear()
     for key in records: _index(key, null, records[key])

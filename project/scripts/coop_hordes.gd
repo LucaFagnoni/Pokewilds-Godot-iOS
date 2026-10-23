@@ -72,7 +72,7 @@ func finish(actor:String,id:String,area:String,recipients:Array)->Dictionary:
 func claim_reward(actor:String,id:String,key:String)->Dictionary:
     if not key.begins_with("horde_reward/"+actor+"/"):return {"ok":false,"reason":"not_yours"}
     var previous:Dictionary=state.outcomes.get(actor+"/hordereward/"+id,{})
-    if not previous.is_empty():return previous if previous.get("command_hash")==state.fingerprint(key) else {"ok":false,"reason":"reused_request_id"}
+    if not previous.is_empty():return previous.duplicate(true) if previous.get("command_hash")==state.fingerprint(key) else {"ok":false,"reason":"reused_request_id"}
     var reward:Dictionary=state.records.get(key,{})
     if reward.is_empty():return {"ok":false,"reason":"already_collected"}
     var profile:Dictionary=state.records.get("player/"+actor,{}).duplicate(true)

@@ -1,6 +1,8 @@
 # The record indexes of the co-op state (coop_state.gd claims_by_actor,
 # wild_by_area, namespace_max, keys_by_area in order) match a walk over every record after commits,
-# edits, removals, a restore from a world save and a replay of the journal; and
+# edits, removals, a restore from a world save and a replay of the journal; a
+# world save's copy of the records (snapshot, kept up to date from the keys
+# changed) is the records, in order, and stays as it was while commits go on; and
 # the wild rules that read them (coop_wild_population.gd) still refuse a second
 # claim, hand out fresh namespaces and refuse a second unique Pokemon.
 # Run: godot --headless --path project -s ../server/coop_state_index_test.gd
@@ -66,7 +68,14 @@ func _init() -> void:
 		state.enter(actor, "0,0")
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7
+	var saved := {}
+	var saved_copy := {}
 	for step in 400:
+		if step % 37 == 0:
+			check(saved.is_empty() or (saved.records == saved_copy and saved.records.keys() == saved_copy.keys()), "step %d: a save's records stay as they were" % step)
+			saved = state.snapshot()
+			saved_copy = saved.records.duplicate()
+			check(saved.records == state.records and saved.records.keys() == state.records.keys(), "step %d: a save's records are the records, in order" % step)
 		var actor: String = ACTORS[rng.randi() % ACTORS.size()]
 		var area := "%d,0" % (rng.randi() % 3)
 		var id := rng.randi() % 12 + 1
