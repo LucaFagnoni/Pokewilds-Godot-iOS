@@ -8,8 +8,10 @@ extends SceneTree
 const AreaState = preload("res://scripts/area_state.gd")
 
 var failed := 0
+var checks := 0
 
 func check(ok: bool, what: String) -> void:
+    checks += 1
     if not ok:
         failed += 1
         printerr("AREA STATE TEST FAIL: ", what)
@@ -110,6 +112,33 @@ func _initialize() -> void:
     check(state.tile_at(Vector2i(1, 1)).name == "sand1" and state.terrain_changes.get("1,1") == 1, "commit keeps")
     check(state.rollback().is_empty(), "nothing to undo after commit")
     check(AreaState.key_cell("-4,17") == Vector2i(-4, 17) and AreaState.cell_key(Vector2i(-4, 17)) == "-4,17", "cell keys")
+    # Wild motion on the wire: 14 bytes a Pokemon, read back as sent.
+    var wild := preload("res://scripts/wild_population.gd").new()
+    var big_id := 7 * 4294967296 + 12
+    wild.add(big_id, {"species":"pidgey", "cell":Vector2i(-3, 40), "anim_phase":1, "ball_facing":Vector2(0, -1), "aggro_player":true})
+    wild.add(5, {"species":"rattata", "cell":Vector2i(9, 9)})
+    var motion: PackedByteArray = wild.encode_motion(PackedInt64Array([big_id, 5, 999]))
+    check(motion.size() == 2 + 3 * 14, "14 bytes a Pokemon")
+    var frame := AreaState.encode_motion("-1,2", 3, motion)
+    var moved = AreaState.decode_wire(frame)
+    check(moved is Dictionary and moved.kind == "wild_motion_bin" and moved.area == "-1,2" and moved.epoch == 3 and moved.bytes == motion, "the motion frame read back")
+    if moved is Dictionary and moved.motion.size() == 3:
+        check(moved.motion[0].id == big_id and moved.motion[0].x == -3 and moved.motion[0].y == 40 and moved.motion[0].facing == Vector2i.UP and moved.motion[0].phase == 1 and moved.motion[0].flags & 4 != 0, "a Pokemon's step, facing and pursuit")
+        check(moved.motion[2].id == 999 and moved.motion[2].flags & 8 != 0, "one gone is marked so")
+    check(AreaState.decode_wire(frame.slice(0, frame.size() - 3)) == null, "a cut motion frame: refused")
+    # What makes a wild Pokemon's record go whole again, and what only moves it.
+    var Runtime := preload("res://scripts/coop_wild_runtime.gd")
+    var record := {"id":5, "species":"rattata", "level":4, "cell":Vector2i(1, 1), "x":1, "y":1, "anim_phase":0, "move_timer":2.0, "coop_target":""}
+    var signature: int = Runtime.record_signature(record)
+    var walked := record.duplicate()
+    walked.cell = Vector2i(2, 1); walked.x = 2; walked.anim_phase = 1; walked.move_timer = 0.5; walked["aggro_player"] = true
+    check(Runtime.record_signature(walked) == signature, "a step, a pose, a timer, pursuit: motion only")
+    var chasing := walked.duplicate()
+    chasing.coop_target = "someone"
+    check(Runtime.record_signature(chasing) != signature, "a new target: the record goes whole")
+    var older := record.duplicate()
+    older.level = 5
+    check(Runtime.record_signature(older) != signature, "a new level: the record goes whole")
     check(state.in_bounds(Vector2i(5, 4)) and not state.in_bounds(Vector2i(6, 4)), "bounds by the tiles")
-    print("AREA STATE TEST: %d failed" % failed)
+    print("AREA STATE TEST: %d failed (of %d checks)" % [failed, checks])
     quit(1 if failed else 0)

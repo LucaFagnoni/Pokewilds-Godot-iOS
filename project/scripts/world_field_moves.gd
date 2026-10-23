@@ -8,6 +8,9 @@ const GRASS := preload("res://assets/grass_runtime.png")
 const PokemonData = preload("res://scripts/pokemon_data.gd")
 const PokemonEcology = preload("res://scripts/pokemon_ecology.gd")
 const SourceWorldData = preload("res://scripts/source_world_data.gd")
+const TileRules = preload("res://scripts/rules/tile_rules.gd")
+const FieldDig = preload("res://scripts/rules/field_dig.gd")
+const FieldCut = preload("res://scripts/rules/field_cut.gd")
 
 var world: World
 
@@ -1089,12 +1092,8 @@ func try_cut_target(cell:Vector2i)->bool:
         if build_name not in ["GRAVE", "STATUE"]:
             world.structure_removal_requested.emit(cell, "CUT")
             return true
-    if world._is_cuttable_grass_cell(cell):
-        world._cut_tall_grass(cell)
-        return true
-    var exact_anchor := exact_resource_anchor(cell)
-    if exact_anchor.x > -2147483648:
-        harvest_exact_resource(exact_anchor, "CUT")
+    if world._is_cuttable_grass_cell(cell) or exact_resource_anchor(cell).x > -2147483648:
+        play_rule(FieldCut.apply(world.area, rule_player(), {"move":"CUT", "cell":cell}, world.rng))
         return true
     var resource_anchor := resource_object_anchor(cell)
     if resource_anchor.x > -2147483648:
@@ -1102,70 +1101,70 @@ func try_cut_target(cell:Vector2i)->bool:
         return true
     return false
 
-func exact_resource_kind(cell: Vector2i) -> String:
-    if world.exact_world == null:
-        return ""
-    var tile := world.exact_world.tile_at(cell)
-    if tile == null:
-        return ""
-    var key := (tile.name + " " + tile.name_upper).to_lower()
-    if "aloe_large1" in key:
-        return "tree"
-    if "cactus" in key:
-        return "cactus"
-    if "berrytree_" in key or "bush" in key:
-        return "bush"
-    if "tree" in key:
-        return "tree"
-    if "rock" in key or "stone" in key:
-        return "rock"
-    return ""
+## A grass tuft at `cell` cut (a crop there harvested), nothing else.
+func cut_grass(cell: Vector2i) -> void:
+    if not world._is_cuttable_grass_cell(cell):
+        return
+    play_rule(FieldCut.apply(world.area, rule_player(), {"move":"CUT", "cell":cell, "target":"grass"}, world.rng))
 
-func _exact_savanna_tree_anchor(cell: Vector2i) -> Vector2i:
-    if world.exact_world == null:
-        return Vector2i(-2147483648, -2147483648)
-    # tree_savanna1 is a 48x48 upper-layer sprite anchored one tile to the
-    # right of its visual left edge. Resolve every visible 3x3 footprint cell
-    # back to that authored anchor so CUT works from any side like other big
-    # trees.
-    for y_offset in [0, -1, -2]:
-        for x_offset in [-1, 0, 1]:
-            var candidate: Vector2i = cell + Vector2i(int(x_offset), int(y_offset))
-            var tile: SourceTile = world.exact_world.tile_at(candidate)
-            if tile == null:
-                continue
-            if tile.name_upper.to_lower().trim_suffix(".png") != "tree_savanna1":
-                continue
-            var visual_left: int = candidate.x - 1
-            var visual_top: int = candidate.y
-            if cell.x >= visual_left and cell.x <= visual_left + 2 and \
-                    cell.y >= visual_top and cell.y <= visual_top + 2:
-                return candidate
-    return Vector2i(-2147483648, -2147483648)
+## What the rules (rules/) are told about the player of this game.
+func rule_player(cell: Vector2i = Vector2i.ZERO) -> Dictionary:
+    var player := {"area_id":world.active_area_id, "now":world.world_elapsed_seconds, "species":world.active_field_species}
+    var coordinator = world.get_parent().get("coop_game") if world.get_parent() != null else null
+    if is_instance_valid(coordinator) and coordinator.active: player["shared"] = true
+    if world.active_area_id == "HOUSE":
+        player["house_key"] = world._built_house_paint_key(cell)
+        player["house_floor"] = world._is_built_house_floor_cell(cell)
+    return player
+
+## A rule's result (rules/) as this world shows it: sounds and words, the
+## rewards through the signals main.gd turns into the bag and its popups,
+## redraws. A planting's animation is its caller's to wait for.
+func play_rule(result: Dictionary) -> void:
+    for event in result.get("events", []):
+        match String(event[0]):
+            "sound": world.play_source_sound(String(event[1]))
+            "message": world.world_message.emit(String(event[1]))
+            "dig_reward": world.dig_reward_collected.emit(event[1])
+            "item": world.item_collected.emit(String(event[1]))
+            "material": world.material_collected.emit(String(event[1]), int(event[2]))
+            "bundle": world.material_bundle_collected.emit(event[1])
+            "refresh": world._refresh_exact_tile_streams()
+            "refresh_cell": world._refresh_exact_pickup_cell(event[1])
+            "refresh_around": world.plants()._redraw_around(event[1])
+            "farms": _refresh_dig_farms(event[1])
+            "collected": _clear_collected_item(event[1])
+            "house_decoration": world._draw_house_decoration(event[1])
+            "soil":
+                var choice := _dig_action_choice(event[1])
+                world.dig_requested.emit(choice, event[1], String(FieldMoveData.dig_choice_info(choice).get("material", "GRASS")))
+            "encounter":
+                var cell: Vector2i = event[5] if event.size() > 5 else Vector2i.ZERO
+                if bool(event[4]):
+                    var tile := world.exact_world.tile_at(cell)
+                    if tile != null and tile.route_belongs_to != null and not tile.route_belongs_to.stored_pokemon.is_empty():
+                        tile.route_belongs_to.stored_pokemon.pop_front()
+                world.pending_encounter_record = (event[3] as Dictionary).duplicate(true)
+                world.encounter_requested.emit(String(event[1]), int(event[2]))
+            "agitated":
+                var tile := world.exact_world.tile_at(event[1])
+                if tile != null: _clear_agitated_berry_tree(event[1], tile)
+            "cut_halves": show_cut_halves(event[1], event[2])
+
+## An item's own sprites and records go when it is taken.
+func _clear_collected_item(cell: Vector2i) -> void:
+    SourceMansionRuntime.clear_collected_item(world, cell)
+    World.SourceMineRuntime.clear_collected_item(world, cell)
+    var sprite := world.source_interior_upper_sprites.get(cell) as Sprite2D
+    if is_instance_valid(sprite):
+        sprite.queue_free()
+    world.source_interior_upper_sprites.erase(cell)
+
+func exact_resource_kind(cell: Vector2i) -> String:
+    return TileRules.exact_resource_kind(world.area, cell) if world.exact_world != null else ""
 
 func exact_resource_anchor(cell: Vector2i) -> Vector2i:
-    if world.exact_world == null:
-        return Vector2i(-2147483648, -2147483648)
-    var savanna_anchor: Vector2i = _exact_savanna_tree_anchor(cell)
-    if savanna_anchor.x > -2147483648:
-        return savanna_anchor
-    if not exact_resource_kind(cell).is_empty():
-        return cell
-    # Resolve either visible half of a tall exact-world resource back to the
-    # actual authored tile. Source assets use more than one vertical anchor
-    # convention, so checking both neighbors avoids tree4/palm dead zones.
-    for candidate in [cell + Vector2i.UP, cell + Vector2i.DOWN]:
-        if exact_resource_kind(candidate).is_empty():
-            continue
-        var tile: SourceTile = world.exact_world.tile_at(candidate)
-        if tile == null:
-            continue
-        var spec: Dictionary = SourceWorldData.render_spec(tile, true, 0, 0)
-        var size: Vector2 = spec.get("size", Vector2.ZERO)
-        var origin := Vector2(candidate * World.TILE) + Vector2(spec.get("offset", Vector2.ZERO))
-        if size.y > float(World.TILE) and Rect2(origin, size).has_point(world._cell_center(cell)):
-            return candidate
-    return Vector2i(-2147483648, -2147483648)
+    return TileRules.exact_resource_anchor(world.area, cell)
 
 func resource_object_anchor(cell: Vector2i) -> Vector2i:
     if world.resource_objects.has(cell):
@@ -1185,48 +1184,14 @@ func resource_object_anchor(cell: Vector2i) -> Vector2i:
     return Vector2i(-2147483648, -2147483648)
 
 func exact_berry_name(cell: Vector2i) -> String:
-    if world.exact_world == null:
-        return ""
-    var tile := world.exact_world.tile_at(cell)
-    if tile == null:
-        return ""
-    var upper := tile.name_upper.to_lower()
-    if not upper.begins_with("berrytree_") or "full" not in upper:
-        return ""
-    var parts := upper.split("_")
-    if parts.size() < 2:
-        return ""
-    return "%s BERRY" % String(parts[1]).to_upper()
+    return TileRules.berry_name(world.area, cell) if world.exact_world != null else ""
 
 func pick_exact_berry_tree(cell: Vector2i) -> void:
     var coordinator=world.get_parent().get("coop_game")
     if is_instance_valid(coordinator) and coordinator.active and not coordinator.building.collecting:
         coordinator.building.pick_berry(cell)
         return
-    var berry_name := exact_berry_name(cell)
-    if berry_name.is_empty():
-        world.world_message.emit("There are no ripe BERRIES here.")
-        return
-    var tile := world.exact_world.tile_at(cell)
-    if tile == null:
-        return
-    if tile.route_belongs_to != null and not tile.route_belongs_to.stored_pokemon.is_empty():
-        var record: Dictionary = tile.route_belongs_to.stored_pokemon.pop_front().duplicate(true)
-        world.pending_encounter_record = record
-        world.play_source_sound("ledge2")
-        world.world_message.emit("The tree became agitated and attacked!")
-        world.encounter_requested.emit(String(record.get("name",record.get("species","sudowoodo"))).to_lower(),int(record.get("level",1)))
-        _clear_agitated_berry_tree(cell,tile)
-        return
-    world.item_collected.emit(berry_name)
-    world.play_source_sound("Berry_Get")
-    tile.set_names(tile.name, tile.name_upper.replace("_full", "_empty"))
-    world.plants().store(cell,tile)
-    world.area.put("source_interior_mutations", world._cell_key(cell), {
-        "kind":"BERRY_EMPTY", "upper":tile.name_upper
-    })
-    world._refresh_exact_pickup_cell(cell)
-    world.world_message.emit("You picked a %s." % berry_name)
+    play_rule(FieldDig.apply(world.area, rule_player(), {"action":"berry", "cell":cell}, world.rng))
 
 func _clear_agitated_berry_tree(cell: Vector2i, tile: SourceTile) -> void:
     await world.get_tree().create_timer(400.0/60.0).timeout
@@ -1249,20 +1214,7 @@ func finish_shared_agitated_tree(cell:Vector2i,mutation:Dictionary)->void:
     world._refresh_exact_pickup_cell(cell)
 
 func _exact_tile_is_large_tree(cell: Vector2i) -> bool:
-    if world.exact_world == null:
-        return false
-    var tile := world.exact_world.tile_at(cell)
-    if tile == null:
-        return false
-    var key := (tile.name + " " + tile.name_upper).to_lower()
-    # Part 5 parity: the authored giant forest tree, the 16x32 tundra tree4,
-    # and the full savanna tree all use the evolved-CUT / large-tree yield.
-    # Ordinary tree5/tree6 and aloe tiles remain small-resource vegetation.
-    return (
-        "tree_large1" in key or "tree_large2" in key
-        or "tree_large3" in key or "tree_large4" in key
-        or "tree_savanna1" in key or "tree4" in key
-    )
+    return TileRules.is_large_tree(world.area, cell) if world.exact_world != null else false
 
 ## A giant tree is one visible tile and three invisible ones that only block.
 ## The original generator turns any incomplete giant tree into a bush, and
@@ -1293,45 +1245,10 @@ func repair_orphaned_large_trees() -> void:
             tile.set_names("bush1", "")
 
 func exact_large_tree1_anchor(cell: Vector2i) -> Vector2i:
-    if world.exact_world == null:
-        return Vector2i(-2147483648, -2147483648)
-    # GenForest2 stores the visible giant-tree anchor plus three noSprite
-    # collision cells at +X, +Y and +X+Y. Resolve any quadrant back to the
-    # visible anchor so one CUT removes the complete 2x2 object.
-    var anchor_offsets: Array[Vector2i] = [
-        Vector2i.ZERO, Vector2i.LEFT, Vector2i.UP, Vector2i(-1, -1)
-    ]
-    var part_offsets: Array[Vector2i] = [
-        Vector2i.ZERO, Vector2i.RIGHT, Vector2i.DOWN, Vector2i(1, 1)
-    ]
-    for offset in anchor_offsets:
-        var candidate: Vector2i = cell + offset
-        var tile: SourceTile = world.exact_world.tile_at(candidate)
-        if tile == null:
-            continue
-        if tile.name.to_lower().trim_suffix(".png") != "tree_large1":
-            continue
-        var complete := true
-        for part_offset in part_offsets:
-            var part: SourceTile = world.exact_world.tile_at(candidate + part_offset)
-            if part == null:
-                complete = false
-                break
-            var part_name := part.name.to_lower().trim_suffix(".png")
-            if part_offset == Vector2i.ZERO:
-                complete = complete and part_name == "tree_large1"
-            else:
-                complete = complete and part_name == "tree_large1_nosprite"
-        if complete:
-            return candidate
-    return Vector2i(-2147483648, -2147483648)
+    return TileRules.large_tree1_anchor(world.area, cell)
 
-## The Game Boy CUT effect, as CutTreeAnim.java draws it: the tree is sliced
-## down the middle, the halves sit two pixels apart, then step outward three
-## times with a blink before each step. It is only a picture laid over the
-## cell. The tile itself is cut at once, so nothing waits for it.
-func show_cut_halves(cell: Vector2i) -> void:
-    var tile := world.exact_world.tile_at(cell)
+func show_cut_halves(cell: Vector2i, as_it_was: SourceTile = null) -> void:
+    var tile := as_it_was if as_it_was != null else world.exact_world.tile_at(cell)
     if tile == null:
         return
     var spec: Dictionary = SourceWorldData.render_spec(tile, true)
@@ -1377,165 +1294,17 @@ func show_cut_halves(cell: Vector2i) -> void:
     if is_instance_valid(coop) and coop.active and coop.building.collecting:
         coop.visuals.effect({"fx":"cut", "x":cell.x, "y":cell.y})
 
-func _cut_exact_large_tree1_component(anchor: Vector2i) -> void:
-    var part_offsets: Array[Vector2i] = [
-        Vector2i.ZERO, Vector2i.RIGHT, Vector2i.DOWN, Vector2i(1, 1)
-    ]
-    for offset in part_offsets:
-        var part_cell: Vector2i = anchor + offset
-        var part: SourceTile = world.exact_world.tile_at(part_cell)
-        if part == null:
-            continue
-        var replacement := contextual_ground_name(part_cell, part.biome)
-        if replacement.is_empty() or replacement.begins_with("grass"):
-            replacement = "green1"
-        part.set_names(replacement, "")
-        world.area.put("source_interior_mutations", world._cell_key(part_cell), {
-            "kind":"TILE_NAMES", "base":replacement, "upper":""
-        })
-        world.blocked.erase(part_cell)
-
 func harvest_exact_resource(cell:Vector2i,move:String)->void:
     var coordinator=world.get_parent().get("coop_game")
     if move in ["SMASH","HEADBUTT"] and is_instance_valid(coordinator) and coordinator.active and not coordinator.building.collecting:
         coordinator.building.cut(cell,move)
         return
-    if move == "CUT" and world.plants().harvest(cell):
+    if world.exact_world == null:
         return
-    var tile := world.exact_world.tile_at(cell)
-    if tile == null:
-        return
-    var kind := exact_resource_kind(cell)
-    if move == "CUT" and kind not in ["tree", "bush"]:
-        world.world_message.emit("CUT can't be used on that.")
-        return
-    var exact_resource_key := (tile.name + " " + tile.name_upper).to_lower()
-    if move == "CUT" and kind == "tree" and _exact_tile_is_large_tree(cell) and \
-            "tree4" not in exact_resource_key and \
-            not FieldMoveData.is_fully_evolved(world.active_field_species):
-        world.world_message.emit("This tree needs a fully evolved Pokemon to CUT it.")
-        return
-    if move in ["SMASH", "HEADBUTT"] and kind != "rock":
-        world.world_message.emit("%s can't be used on that." % move)
-        return
-
-    var key := exact_resource_key
-    var smash_encounter: Dictionary = {}
-    var smash_bonus_item := ""
-    if move in ["SMASH", "HEADBUTT"] and tile.route_belongs_to != null and \
-            not tile.route_belongs_to.stored_pokemon.is_empty():
-        var raw_smash = tile.route_belongs_to.stored_pokemon[0]
-        if typeof(raw_smash) == TYPE_DICTIONARY:
-            smash_encounter = (raw_smash as Dictionary).duplicate(true)
-    world.play_source_sound("cut1" if move == "CUT" else ("headbutt1" if move == "HEADBUTT" else "strength1"))
-
-    # Source-parity CUT rewards. Logical palm tree5 renders with tree6 art;
-    # both identities are seed-only and must never leak into the LOG path.
-    if move == "CUT" and "berrytree_" in key:
-        world.material_collected.emit("BERRY SEED", 2)
-    elif move == "CUT" and ("tree5" in key or "tree6" in key):
-        world.material_collected.emit("MIRACLE SEED", 1)
-    elif move == "CUT" and kind == "bush" and (
-            String(tile.biome).to_upper() in ["SNOW", "TUNDRA", "SAVANNA"]
-            or "bush_savanna1" in key
-        ):
-        # Savannah bushes are the source's simple LOG + GRASS resource, with
-        # no Apricorn roll. Tundra keeps its existing identical bundle.
-        world.material_bundle_collected.emit({"GRASS":1, "LOG":1})
-    elif move == "CUT" and "bush2_color" in key:
-        var apricorn := String(CraftingData.APRICORNS[
-            world.rng.randi_range(0, CraftingData.APRICORNS.size() - 1)])
-        world.material_bundle_collected.emit({"LOG":1, apricorn:1})
-    else:
-        var material := "HARD STONE" if kind == "rock" else "LOG"
-        var amount := 1
-        if kind == "tree" and _exact_tile_is_large_tree(cell):
-            amount = world.rng.randi_range(2, 7)
-        world.material_collected.emit(material, amount)
-        if move == "SMASH" and kind == "rock" and \
-                world._source_biome_for_tile(tile) == "MOUNTAIN" and \
-                world.rng.randi_range(0, 15) == 0:
-            smash_bonus_item = "MOON STONE"
-            world.material_collected.emit(smash_bonus_item, 1)
-        if move == "CUT" and "aloe_large1" in key:
-            world.material_collected.emit("MIRACLE SEED", 1)
-
-    var giant_anchor := exact_large_tree1_anchor(cell) if move == "CUT" else Vector2i(-2147483648, -2147483648)
-    if move == "CUT":
-        show_cut_halves(giant_anchor if giant_anchor.x > -2147483648 else cell)
-    if giant_anchor.x > -2147483648:
-        _cut_exact_large_tree1_component(giant_anchor)
-    else:
-        var replacement: Dictionary = _exact_cut_resource_replacement(tile, cell)
-        tile.set_names(String(replacement.get("base", tile.name)),
-            String(replacement.get("upper", "")))
-        world.area.put("source_interior_mutations", world._cell_key(cell), {
-            "kind":"TILE_NAMES", "base":tile.name, "upper":tile.name_upper
-        })
-        world._unblock_ground(cell)
-    world._refresh_exact_tile_streams()
-    # The source acquisition popup is the receipt for berry/Apricorn CUT loot.
-    # Do not add a second bottom dialogue box for those two cases.
-    if move in ["SMASH", "HEADBUTT"]:
-        if smash_encounter.is_empty():
-            if move == "SMASH" and not smash_bonus_item.is_empty():
-                world.world_message.emit(
-                    "SMASH! You gathered HARD STONE and found a %s." % smash_bonus_item
-                )
-            else:
-                world.world_message.emit("%s! You gathered HARD STONE." % move)
-        else:
-            world.pending_encounter_record = smash_encounter.duplicate(true)
-            world.world_message.emit("%s! A Pokemon jumped out of the rock!" % move)
-            world.encounter_requested.emit(
-                String(smash_encounter.get("name", "geodude")).to_lower(),
-                int(smash_encounter.get("level", world._level_for_cell(cell)))
-            )
-
-func _exact_cut_resource_replacement(tile: SourceTile, cell: Vector2i) -> Dictionary:
-    var base := tile.name
-    var upper := tile.name_upper
-    var key := (base + " " + upper).to_lower()
-    # Palm grows on sand and must expose sand when removed.
-    if "tree5" in key or "tree6" in key:
-        return {"base":"sand1", "upper":""}
-    # Objects authored as an upper layer already have the correct biome floor.
-    if not upper.is_empty():
-        return {"base":base, "upper":""}
-    var contextual := contextual_ground_name(cell, tile.biome)
-    if not contextual.is_empty():
-        return {"base":contextual, "upper":""}
-    if "tree_large" in key or "tree5" in key:
-        return {"base":"green1", "upper":""}
-    if "aloe" in key or "cactus" in key:
-        return {"base":"desert4", "upper":""}
-    return {"base":base, "upper":""}
+    play_rule(FieldCut.apply(world.area, rule_player(), {"move":move, "cell":cell, "target":"resource"}, world.rng))
 
 func contextual_ground_name(cell: Vector2i, biome_hint: String = "") -> String:
-    if world.exact_world == null:
-        return ""
-    var counts: Dictionary = {}
-    for offset in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN,
-            Vector2i(-1,-1), Vector2i(1,-1), Vector2i(-1,1), Vector2i(1,1)]:
-        var nearby := world.exact_world.tile_at(cell + offset)
-        if nearby == null or nearby.is_water or nearby.is_solid or nearby.is_ledge:
-            continue
-        if not biome_hint.is_empty() and not String(nearby.biome).is_empty() and \
-                String(nearby.biome) != biome_hint:
-            continue
-        var name := nearby.name
-        var clean := name.to_lower().trim_suffix(".png")
-        if clean.begins_with("grass") or clean.begins_with("green") or \
-                clean.begins_with("sand") or clean.begins_with("desert") or \
-                clean.begins_with("snow") or clean.begins_with("soot"):
-            counts[name] = int(counts.get(name, 0)) + 1
-    var best := ""
-    var best_count := 0
-    for raw_name in counts.keys():
-        if int(counts[raw_name]) > best_count:
-            best = String(raw_name)
-            best_count = int(counts[raw_name])
-    return best
+    return TileRules.contextual_ground_name(world.area, cell, biome_hint)
 
 func harvest_resource_with_move(cell:Vector2i,move:String)->void:
     var coordinator=world.get_parent().get("coop_game")
@@ -1585,182 +1354,25 @@ func use_dig(cell: Vector2i) -> void:
     if is_instance_valid(coordinator) and coordinator.active and not coordinator.building.collecting:
         coordinator.building.dig(cell)
         return
-    if world.active_area_id == "HOUSE":
-        if not _house_dig_target_allowed(cell): return
-        if _dig_target_accepts_soil(cell):
-            var choice := _dig_action_choice(cell)
-            world.dig_requested.emit(choice, cell, String(FieldMoveData.dig_choice_info(choice).get("material", "GRASS")))
-        else:
-            var key := world._built_house_paint_key(cell)
-            var previous: Dictionary = world.built_house_decorations.get(key, {})
-            var old_choice := String(previous.get("dig_choice", "FOREST"))
-            var material := String(FieldMoveData.dig_choice_info(old_choice).get("material", "GRASS"))
-            world.area.put("built_house_decorations", key, {"name":"DIG GROUND", "dig_choice":old_choice, "dig_hole":true, "dig_base_name":String(previous.get("name", "FLOOR")) if String(previous.get("name", "")) != "DIG GROUND" else String(previous.get("dig_base_name", "")), "variant":int(previous.get("variant", 0))})
-            world._draw_house_decoration(cell)
-            world.play_source_sound("dig1")
-            world.dig_reward_collected.emit({material:1})
-        return
-    if not world._in_bounds(cell): return
-    if collect_source_dig_item(cell): return
-    if world.exact_world != null:
-        var tile: SourceTile = world.exact_world.tile_at(cell)
-        if tile != null and not tile.has_item.is_empty():
-            # PlayerStanding gives an item tile priority while DIG is selected:
-            # the ball is collected in place, not left above the new ground.
-            var action := String(world.interior_interactables.get(cell, ""))
-            if not action.begins_with("ITEM:"):
-                action = "ITEM:%s:%d" % [tile.has_item, maxi(1, tile.has_item_amount)]
-            world._use_interior_interactable(action, cell)
-            return
-        if dig_is_mountain(tile):
-            dig_surface(cell)
-            return
-    var choice := _dig_action_choice(cell)
-    if choice == "HOLE":
-        dig_surface(cell)
-        return
-    var info := FieldMoveData.dig_choice_info(choice)
-    world.dig_requested.emit(choice, cell, String(info.get("material", "GRASS")))
+    if world.active_area_id != "HOUSE" and not world._in_bounds(cell): return
+    play_rule(FieldDig.apply(world.area, rule_player(cell), {"action":"dig", "cell":cell}, world.rng))
 
 func apply_dig_choice(cell: Vector2i, choice: String) -> bool:
-    return _apply_dig_choice(cell, choice)
+    var result := FieldDig.apply(world.area, rule_player(cell), {"action":"fill", "cell":cell, "choice":choice}, world.rng)
+    play_rule(result)
+    return bool(result.ok)
 
 func dig_surface(cell: Vector2i) -> void:
-    var exact_tile: SourceTile = null
-    if world.exact_world != null:
-        exact_tile = world.exact_world.tile_at(cell)
-    if collect_source_dig_item(cell): return
-    if exact_tile != null and exact_tile.name_upper.begins_with("hole1") and not dig_is_mountain(exact_tile):
-        world.world_message.emit("There's already a hole here.")
-        return
-    if world.built_structures.has(cell) or world.landmarks.has(cell) or world.resource_objects.has(cell):
-        world.world_message.emit("DIG can't break that tile.")
-        return
-    if world.exact_world != null:
-        if exact_tile == null or not _dig_tile_is_surface(exact_tile):
-            world.world_message.emit("DIG can't break that tile.")
-            return
-        if not dig_tile_is_fossil_site(exact_tile):
-            var exact_resource: Vector2i = exact_resource_anchor(cell)
-            if exact_resource.x > -2147483648:
-                world.world_message.emit("DIG can't break that tile.")
-                return
-    elif world.blocked.has(cell):
-        world.world_message.emit("DIG can't break that tile.")
-        return
-
-    var material: String = "GRASS"
-    var loot: Array = []
-    if world.exact_world != null:
-        var tile: SourceTile = exact_tile
-        var route_name: String = "" if tile.route_belongs_to == null else tile.route_belongs_to.name
-        material = FieldMoveData.dig_material(tile.name, tile.name_upper, tile.biome, route_name)
-        loot = FieldMoveData.cracked_loot(tile.name_upper)
-        if not loot.is_empty():
-            tile.has_item = String(loot[world.rng.randi_range(0, loot.size() - 1)])
-            tile.has_item_amount = 1
-            world.interior_interactables[cell] = "ITEM:%s:1" % tile.has_item
-        loot = [] # Source leaves buried loot for the next interaction.
-        if dig_is_mountain(tile):
-            _clear_dug_mountain(cell, tile)
-        else:
-            _leave_source_dig_hole(cell, tile)
-    else:
-        if world.terrain_kind_at(cell) == 0:
-            world.world_message.emit("DIG can't break water.")
-            return
-        material = "SOFT SAND" if world.terrain_kind_at(cell) == 1 else "GRASS"
-        world.terrain[cell.y][cell.x] = 2
-        world.area.put("terrain_changes", world._cell_key(cell), 2)
-        var sprite: Sprite2D = world.ground_sprites.get(cell) as Sprite2D
-        if is_instance_valid(sprite):
-            sprite.texture = GRASS
-    var rewards := {material:1}
-    world.play_source_sound("dig1")
-    var found: String = ""
-    if not loot.is_empty():
-        found = String(loot[world.rng.randi_range(0, loot.size() - 1)])
-        rewards[found] = int(rewards.get(found, 0)) + 1
-    world.dig_reward_collected.emit(rewards)
-    _refresh_dig_farms(cell)
-
-func _apply_dig_choice(cell: Vector2i, choice: String) -> bool:
-    if world.active_area_id == "HOUSE":
-        if not _house_dig_target_allowed(cell) or not _dig_target_accepts_soil(cell): return false
-        if not FieldMoveData.DIG_TERRAIN.has(choice): return false
-        world.area.put("built_house_decorations", world._built_house_paint_key(cell), {"name":"DIG GROUND", "dig_choice":choice, "dig_hole":false})
-        world._draw_house_decoration(cell)
-        world.play_source_sound("dig1")
-        return true
-    if collect_source_dig_item(cell): return false
-    if world.built_structures.has(cell) or world.resource_objects.has(cell) or world.landmarks.has(cell):
-        world.world_message.emit("DIG can't change that tile.")
-        return false
-    if choice == "HOLE":
-        dig_surface(cell)
-        return true
-    if not _dig_target_accepts_soil(cell):
-        world.world_message.emit("DIG can't change that tile.")
-        return false
-    var info: Dictionary = FieldMoveData.dig_choice_info(choice)
-    if info.is_empty():
-        return false
-    if world.exact_world != null:
-        var tile: SourceTile = world.exact_world.tile_at(cell)
-        if tile == null or not (_dig_tile_is_surface(tile) or _dig_target_accepts_soil(cell)):
-            world.world_message.emit("DIG can't change that tile.")
-            return false
-        if not dig_tile_is_fossil_site(tile) and not tile.name_upper.begins_with("hole1"):
-            var exact_resource: Vector2i = exact_resource_anchor(cell)
-            if exact_resource.x > -2147483648:
-                world.world_message.emit("DIG can't change that tile.")
-                return false
-    elif world.blocked.has(cell):
-        world.world_message.emit("DIG can't change that tile.")
-        return false
-    if world.tall_grass.has(cell):
-        world._remove_resource(cell, false)
-    var tile: SourceTile = world.exact_world.tile_at(cell)
-    FieldMoveData.apply_dig_terrain(tile, choice)
-    if choice == "CLIFF": FieldMoveData.adjust_dig_cliff(tile, world.exact_world.tiles)
-    save_source_dig_tile(cell)
-    world.area.drop("terrain_changes", world._cell_key(cell))
-    connect_source_dig_holes(cell)
-    world._recoastify_exact_cells([cell])
-    world._refresh_exact_tile_streams()
-    _refresh_dig_farms(cell)
-    world.play_source_sound("dig1")
-    world.world_message.emit("DIG changed the ground to %s." % choice)
-    return true
+    play_rule(FieldDig.apply(world.area, rule_player(cell), {"action":"surface", "cell":cell}, world.rng))
 
 # M74.3.9.24 â€” DIG scope only.  Keep the frozen base implementation for every
 # other field move; DIG explicitly recognizes authored soil/fossil surfaces so
 # collision bookkeeping cannot make valid ground impossible to dig.
 func dig_tile_is_fossil_site(tile: SourceTile) -> bool:
-    if tile == null:
-        return false
-    var names: String = (tile.name + " " + tile.name_upper).to_lower()
-    return "_cracked" in names
+    return TileRules.fossil_site(tile)
 
 func _dig_tile_is_surface(tile: SourceTile) -> bool:
-    if tile == null or tile.is_water or tile.is_lava:
-        return false
-    if dig_tile_is_fossil_site(tile):
-        return true
-    var names: String = (tile.name + " " + tile.name_upper).to_lower()
-    if "_tidaloff" in names:
-        return true
-    # These are the authored DIG terrain bases already defined by FieldMoveData.
-    for raw_info in FieldMoveData.DIG_TERRAIN.values():
-        var info: Dictionary = raw_info
-        var authored_base: String = String(info.get("base", "")).to_lower()
-        if not authored_base.is_empty() and tile.name.to_lower() == authored_base:
-            return true
-    # Ordinary non-solid ground remains diggable. Mountain/cliff authored ground
-    # is also legal even when its collision flag describes the ledge edge.
-    if not tile.is_solid and not tile.is_ledge:
-        return true
-    return "mountain" in names or "ledges3" in names
+    return TileRules.dig_surface_ok(tile)
 
 func _refresh_dig_farms(changed_cell: Vector2i) -> void:
     # Deployed-Pokemon farming/habitat records use a 7x7 neighborhood. Refresh
@@ -1808,13 +1420,7 @@ func _dig_target_accepts_soil(cell: Vector2i) -> bool:
         return bool(world.built_house_decorations.get(world._built_house_paint_key(cell), {}).get("dig_hole", false))
     if world.exact_world == null:
         return false
-    var tile: SourceTile = world.exact_world.tile_at(cell)
-    if tile == null:
-        return false
-    # Player.updateBuildTiles / DrawBuildTile: terrain placement is only for
-    # a hole, water2/water5, or lava. Intact ground always selects currDigTile.
-    return "hole" in tile.name_upper or "water2" in tile.name or \
-        "water5" in tile.name or "lava" in tile.name
+    return TileRules.accepts_soil(world.area, cell)
 
 func _dig_action_choice(cell: Vector2i) -> String:
     if not _dig_target_accepts_soil(cell):
@@ -1853,92 +1459,13 @@ func get_dig_hud_state() -> Dictionary:
     }
 
 func save_source_dig_tile(cell: Vector2i) -> void:
-    var tile: SourceTile = world.exact_world.tile_at(cell)
-    if tile == null: return
-    world.area.put("source_interior_mutations", world._cell_key(cell), {
-        "kind":"TILE_NAMES", "base":tile.name, "upper":tile.name_upper,
-        "dig_item":tile.has_item, "dig_item_amount":tile.has_item_amount,
-        "dig_biome":tile.biome,
-        "dig_route":tile.route_belongs_to.name if tile.route_belongs_to != null else "",
-        "dig_route_level":tile.route_belongs_to.level if tile.route_belongs_to != null else 0})
-
-func _leave_source_dig_hole(cell: Vector2i, tile: SourceTile) -> void:
-    tile.set_names(tile.name, "hole1")
-    world.area.drop("terrain_changes", world._cell_key(cell))
-    save_source_dig_tile(cell)
-    connect_source_dig_holes(cell)
-    world._refresh_exact_tile_streams()
+    TileRules.save_dig_tile(world.area, cell)
 
 func dig_is_mountain(tile: SourceTile) -> bool:
-    return tile != null and ("mountain" in tile.name or "ledges3" in tile.name or "ledges3" in tile.name_upper)
-
-func _dig_mountain_ground(cell: Vector2i, tile: SourceTile) -> SourceTile:
-    # A cliff over ordinary soil already has its correct underlying ground.
-    if not "mountain" in tile.name and not "ledges3" in tile.name:
-        return tile
-    # Look outward only until the closest ring containing natural ground.
-    # Never copy neighboring structures, trees, holes, water or mountain faces.
-    var extent := world.exact_world.top_right_cell - world.exact_world.bottom_left_cell
-    for radius in range(1, maxi(extent.x, extent.y) + 2):
-        var choices: Dictionary = {}
-        var samples: Dictionary = {}
-        for step in range(-radius, radius):
-            for offset in [Vector2i(step, -radius), Vector2i(radius, step), Vector2i(-step, radius), Vector2i(-radius, -step)]:
-                var nearby := world.exact_world.tile_at(cell + offset)
-                if nearby == null or dig_is_mountain(nearby) or nearby.is_water or nearby.is_lava or nearby.is_solid or nearby.is_ledge: continue
-                if nearby.name_upper.begins_with("hole1"): continue
-                var ground := nearby.name
-                if not (ground.begins_with("green") or ground.begins_with("sand") or ground.begins_with("desert") or ground.begins_with("snow") or ground.begins_with("volcano") or ground.begins_with("soot")): continue
-                choices[ground] = int(choices.get(ground, 0)) + 1
-                samples[ground] = nearby
-        if not choices.is_empty():
-            var best: String = choices.keys()[0]
-            for name in choices:
-                if int(choices[name]) > int(choices[best]): best = name
-            return samples[best]
-    # No surrounding land exists (isolated all-mountain test/custom worlds).
-    return SourceTile.new("green1", tile.position)
-
-func _clear_dug_mountain(cell: Vector2i, tile: SourceTile) -> void:
-    var ground := _dig_mountain_ground(cell, tile)
-    tile.set_names(ground.name, "")
-    tile.biome = ground.biome
-    tile.route_belongs_to = ground.route_belongs_to
-    tile.is_bottom_mtn_layer = false
-    tile.shore_ocean = ""
-    tile.shore_tidal = ""
-    world.blocked.erase(cell)
-    world.area.drop("terrain_changes", world._cell_key(cell))
-    save_source_dig_tile(cell)
-    world.source_interior_mutations[world._cell_key(cell)]["dig_mountain_cleared"] = true
-    world._recoastify_exact_cells([cell])
-    world._refresh_exact_tile_streams()
-
-func _dig_connects(cell: Vector2i, diagonal: bool = false) -> bool:
-    var tile: SourceTile = world.exact_world.tile_at(cell)
-    if tile == null: return false
-    var names := tile.name + " " + tile.name_upper
-    if diagonal:
-        return "water" in names or "hole" in tile.name_upper
-    return "hole" in names or "water" in names or "lava" in names
+    return TileRules.is_mountain(tile)
 
 func connect_source_dig_holes(changed: Vector2i) -> void:
-    # Java map coordinates are retained: north is +Y in this adapter.
-    var dirs := {"N":Vector2i(0,1), "S":Vector2i(0,-1), "E":Vector2i(1,0), "W":Vector2i(-1,0)}
-    for dy in range(-1,2):
-        for dx in range(-1,2):
-            var cell := changed + Vector2i(dx,dy)
-            var tile: SourceTile = world.exact_world.tile_at(cell)
-            if tile == null or not tile.name_upper.begins_with("hole1"): continue
-            var suffix := ""
-            for direction in ["N", "S", "E", "W"]:
-                if _dig_connects(cell + dirs[direction]): suffix += direction
-            var name := "hole1" + ("_" + suffix if not suffix.is_empty() else "")
-            for corner in ["NE", "SE", "SW", "NW"]:
-                if corner[0] in suffix and corner[1] in suffix and _dig_connects(cell + dirs[corner[0]] + dirs[corner[1]], true):
-                    name += "[" + corner + "]"
-            tile.set_names(tile.name, name)
-            save_source_dig_tile(cell)
+    TileRules.connect_holes(world.area, changed)
 
 func fill_source_dig_holes() -> void:
     if world.exact_world == null or world.active_area_id != "OVERWORLD": return
@@ -1962,7 +1489,7 @@ func fill_source_dig_holes() -> void:
             elif "lava" in names: lava = true
         if water or lava: replacements[cell] = "soot1" if water and lava else "water2" if water else "lava1"
     for cell in replacements:
-        var tile: SourceTile = world.exact_world.tile_at(cell)
+        var tile: SourceTile = world.area.edit(cell)
         tile.set_names(replacements[cell], "")
         if tile.is_lava:
             # PkmnMap.adjustTile selects the source lava-sheet variant.
@@ -1975,29 +1502,19 @@ func fill_source_dig_holes() -> void:
                     suffix += ["S", "", "N"][posmod(cell.y, 3)]
                     suffix += ["W", "", "E"][world.rng.randi_range(0, 2)]
             tile.set_names("lava1" + suffix, "")
-        save_source_dig_tile(cell)
-    for cell in replacements: connect_source_dig_holes(cell)
+        TileRules.save_dig_tile(world.area, cell)
+    for cell in replacements: TileRules.connect_holes(world.area, cell)
     if not replacements.is_empty():
-        var coast_cells: Array[Vector2i] = []
-        coast_cells.assign(replacements.keys())
-        world._recoastify_exact_cells(coast_cells)
+        TileRules.recoastify(world.area, replacements.keys())
         world._refresh_exact_tile_streams()
         world.play_source_sound("sand1")
 
 func collect_source_dig_item(cell: Vector2i) -> bool:
-    var mutation: Dictionary = world.source_interior_mutations.get(world._cell_key(cell), {})
-    var item := String(mutation.get("dig_item", ""))
-    if item.is_empty(): return false
-    var tile: SourceTile = world.exact_world.tile_at(cell)
-    if tile == null: return false
-    var amount := maxi(1, int(mutation.get("dig_item_amount", 1)))
-    tile.has_item = ""
-    tile.has_item_amount = 0
-    world.interior_interactables.erase(cell)
-    save_source_dig_tile(cell)
-    world._refresh_exact_tile_streams()
-    world.dig_reward_collected.emit({item:amount})
-    return true
+    if world.exact_world == null: return false
+    var result := {"events": [], "grant": {}}
+    var taken := FieldDig.collect_buried(world.area, cell, result)
+    play_rule(result)
+    return taken
 
 func _house_dig_target_allowed(cell: Vector2i) -> bool:
     return world._is_built_house_floor_cell(cell) and not world.built_structures.has(cell) and not world.interior_interactables.has(cell) and not world.deployed_pokemon.has(cell) and not world.wild_eggs.has(cell) and not world.blocked.has(cell)

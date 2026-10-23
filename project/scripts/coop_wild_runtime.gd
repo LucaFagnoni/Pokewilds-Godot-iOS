@@ -23,6 +23,9 @@ var players:Dictionary={}
 var motion_dirty:Dictionary={}
 var _whole_motion:=false
 const Server=preload("res://scripts/dedicated_server.gd")
+const Session=preload("res://scripts/coop_session.gd")
+const Wire=preload("res://scripts/area_state.gd")
+const WildPopulation=preload("res://scripts/wild_population.gd")
 
 func mark_motion(wild_id:int)->void:
     motion_dirty[wild_id]=true
@@ -77,13 +80,19 @@ func remote_charm(data:Dictionary,target:Dictionary)->bool:
 
 ## The wild Pokemon that changed here, sent to the shared records (wild_motion):
 ## those WildPopulation marked (moved, added, removed, a new target) and those
-## marked here, each once it differs from its record.
+## marked here, each once it differs from its record. One that only moved (its
+## record otherwise as last sent) goes as 14 bytes of binary motion instead
+## (WildPopulation.encode_motion, area_state.gd WIRE_WILD_MOTION) when the host
+## takes it: no record packed, compared, fingerprinted or journaled for a step.
 func publish_motion()->void:
     var records:Dictionary=game.state.records if game.hosting else game.shared_records
     var world=game.main.world
     for wild_id in world.wild_population.take_dirty():motion_dirty[wild_id]=true
+    var binary:bool=binary_motion()
+    var moved:=PackedInt64Array()
     var patches:Array=[]
     var sent:Dictionary={}
+    var signatures:Dictionary={}
     for wild_id in motion_dirty.keys():
         var key=Population.record_key(game._area(),wild_id)
         if records.has(Population.claim_key(game._area(),wild_id)):
@@ -93,9 +102,14 @@ func publish_motion()->void:
             continue
         var data:Dictionary=world.wild_pokemon.get(wild_id,{})
         if data.get("ball_reserved",false):continue
+        if binary and not data.is_empty():
+            var signature:=record_signature(data)
+            if _sent_signatures.get(wild_id)==signature:
+                moved.append(wild_id);motion_dirty.erase(wild_id);continue
+            signatures[wild_id]=signature
         var next:Variant=null if data.is_empty() else world._serializable_ecology_record(data,data.cell)
         var encoded=Delta.encode(next)
-        if encoded==records[key]:motion_dirty.erase(wild_id);continue
+        if encoded==records[key]:motion_dirty.erase(wild_id);_sent_signatures[wild_id]=signatures.get(wild_id);continue
         # The host has the stored record's fingerprint already worked out.
         var patch:Dictionary={"key":"wild_pokemon/"+str(wild_id),"before":game.state.print_of(key) if game.hosting else game.state.fingerprint(records[key])}
         # From a guest, only what changed in the record (coop_world_delta.gd).
@@ -105,6 +119,7 @@ func publish_motion()->void:
         patches.append(patch)
         sent[wild_id]=motion_stamp(data)
         if patches.size()>=64:break
+    if not moved.is_empty():send_motion(moved)
     if patches.is_empty():return
     motion_busy=true
     var result:Dictionary=await game.command("wild_motion",{"area":game._area(),"epoch":game.area_epoch,"patches":patches})
@@ -117,7 +132,123 @@ func publish_motion()->void:
             var data:Dictionary=world.wild_pokemon.get(wild_id,{})
             var current=motion_stamp(data)
             if current==sent[wild_id]:motion_dirty.erase(wild_id)
+            if signatures.has(wild_id):_sent_signatures[wild_id]=signatures[wild_id]
     if result.get("reason")=="save_failed":game.end_session("POKEMON MOVEMENT COULD NOT BE SAVED.")
+
+## Binary motion: wild Pokemon id -> the signature (record_signature) of the
+## record last sent for it. One whose record is still that only moved.
+var _sent_signatures:Dictionary={}
+## The record fields that change as a Pokemon wanders (Delta.MOTION_FIELDS),
+## and what is never sent: left out of record_signature.
+const UNSENT:=["cell","sprite","burrow_whirl_sprite","burrow_sand_sprite","behavior","previous_mate_id","ball_move_tween",
+    "ball_reserved","ball_facing","source_aggro_emote_seconds","aggro_audio_tick"]
+
+## What of a wild Pokemon's record others must be sent whole when it changes:
+## everything but where it is and what it is doing this moment.
+static func record_signature(data:Dictionary)->int:
+    var plain:=data.duplicate()
+    for field in Delta.MOTION_FIELDS:plain.erase(field)
+    for field in UNSENT:plain.erase(field)
+    return plain.hash()
+
+## True when wild motion goes as binary frames: the host said it takes them
+## (a host itself relays them when every player watching can read them).
+func binary_motion()->bool:
+    return game.hosting or "bin:area" in game.session.host_caps
+
+## The motion of `ids` sent: a host relays it, a player sends it to the host.
+func send_motion(ids:PackedInt64Array)->void:
+    var started:=Time.get_ticks_usec()
+    var motion:PackedByteArray=game.main.world.wild_population.encode_motion(ids)
+    var frame:=Wire.encode_motion(game._area(),game.area_epoch,motion)
+    Session.Transport.count("enc:wild_motion_bin",frame.size(),started)
+    if game.hosting:relay_motion(game.session.actor,game._area(),motion,frame)
+    else:game.session.send_host_bytes(frame)
+
+## Host: wild motion from the one who simulates `area` (checked: its
+## authority, this epoch). Kept (`moved`, folded into the records when they
+## are read whole: fold_motion) and passed on to the players watching the
+## area, as it came. A player who cannot read it gets the records instead.
+var moved:Dictionary={}
+func motion_frame(actor:String,packet:Dictionary)->void:
+    if not game.hosting:
+        if packet.get("area")==game._area() and not authority():apply_motion(packet.get("motion",[]))
+        return
+    var area:=String(packet.get("area",""))
+    if not game.service.areas.can_publish(actor,area,int(packet.get("epoch",-1))):return
+    var motion:PackedByteArray=packet.get("bytes",PackedByteArray())
+    relay_motion(actor,area,motion,Wire.encode_motion(area,int(packet.epoch),motion),packet.get("motion",[]))
+
+func relay_motion(actor:String,area:String,motion:PackedByteArray,frame:PackedByteArray,entries:Array=[])->void:
+    if entries.is_empty():entries=WildPopulation.decode_motion(motion)
+    var kept:Dictionary=moved.get_or_add(area,{})
+    var claimed:Dictionary={}
+    for entry in entries:
+        if game.state.records.has(Population.claim_key(area,int(entry.id))) or not game.state.records.has(Population.record_key(area,int(entry.id))):claimed[entry.id]=true;continue
+        kept[entry.id]=entry
+    # Unsaved wandering: the world is saved for it every MOTION_SAVE_MS (coop_game.gd).
+    if not kept.is_empty():game.state.loose+=1
+    var old_readers:=false
+    for peer in game.session.players:
+        if peer==1 or String(game.session.players[peer].actor)==actor:continue
+        if not area in game._watched(String(game.session.players[peer].actor)):continue
+        if game.session.peer_can(peer,"bin:area"):game.session.send_bytes_to(peer,frame)
+        else:old_readers=true
+    # The host's own game, when it is there but does not simulate it.
+    if area==game._area() and actor!=game.session.actor:apply_motion(entries.filter(func(entry):return not claimed.has(entry.id)))
+    if old_readers:fold_motion(area)
+
+## A player: the wild Pokemon of its area where the one simulating it put them.
+func apply_motion(entries:Array)->void:
+    var world=game.main.world
+    if not world.generated or game.main.generating or game.main.edge_travel_busy:return
+    applying=true
+    for entry in entries:
+        var wild_id:=int(entry.id)
+        var data=world.wild_pokemon.get(wild_id)
+        if data==null or data.get("ball_reserved",false):continue
+        var before:Vector2i=data.cell
+        var target:=Vector2i(int(entry.x),int(entry.y))
+        if before!=target:
+            world.wild_population.begin_step(wild_id,0.1*Engine.time_scale)
+            world.wild_population.move(wild_id,target)
+        var facing:Vector2i=entry.facing
+        data["anim_phase"]=int(entry.phase)
+        data["aggro_player"]=int(entry.flags)&4!=0
+        if facing!=Vector2i.ZERO:data["ball_facing"]=Vector2(facing)
+        if before!=target or facing!=Vector2i.ZERO:
+            world.wild_population.pose(wild_id,facing if facing!=Vector2i.ZERO else world._cardinal_direction(target-before,false),int(entry.phase))
+    applying=false
+
+## Host: the motion kept for `area` (every area with "") written into the
+## records, as one commit (not journaled: motion never is) sent to the
+## players like any other. Done when the records are read whole: a world or
+## area save, a player arriving, an authority handing over, a player who
+## cannot read binary motion.
+func fold_motion(area:String="")->void:
+    if not game.hosting or moved.is_empty():return
+    var changes:Array=[]
+    for each in (moved.keys() if area.is_empty() else [area]):
+        var kept:Dictionary=moved.get(each,{})
+        moved.erase(each)
+        for wild_id in kept:
+            var key:=Population.record_key(each,int(wild_id))
+            var held=game.state.records.get(key)
+            if not held is String or game.state.records.has(Population.claim_key(each,int(wild_id))):continue
+            var record=Delta.decode(held)
+            if not record is Dictionary:continue
+            var entry:Dictionary=kept[wild_id]
+            record["x"]=int(entry.x);record["y"]=int(entry.y);record["anim_phase"]=int(entry.phase)
+            record["aggro_player"]=int(entry.flags)&4!=0
+            var encoded:=Delta.encode(record)
+            if encoded!=held:changes.append(game.state.change(key,encoded))
+            if changes.size()>=Delta.MAX_PATCHES:
+                _commit_fold(changes);changes=[]
+    if not changes.is_empty():_commit_fold(changes)
+
+func _commit_fold(changes:Array)->void:
+    var result:Dictionary=game.state.transact(game.session.actor,"fold/"+game._id(),changes,"",false)
+    if result.get("ok",false):game._committed(result)
 
 ## The Pokemon near enough to touch this player soon, in the world's order.
 ## Walking every wild Pokemon each frame to find the one or two beside the
@@ -414,10 +545,14 @@ func committed(changes:Array,source_actor:String="",request_id:String="")->void:
     if not game.main.started or game.main.generating or game.main.edge_travel_busy:return
     var area=game._area();var prefix="world/"+area+"/wild_pokemon/"
     if pending_area!=area:pending_additions.clear();pending_area=area
+    # Where the one simulating this area put its Pokemon, written into the
+    # records by the host (fold_motion): that one knows it already, and better.
+    var folded:bool=request_id.begins_with("fold/") and authority()
     applying=true
     for change in changes:
         var key=String(change.get("key",""))
         if key.begins_with(prefix):
+            if folded:continue
             var wild_id=int(key.trim_prefix(prefix))
             var record=Delta.decode(String(change.after)) if change.after is String else null
             if source_actor==game.session.actor and (request_id.begins_with("world/") or request_id.begins_with("wildspawn/")) and record is Dictionary and game.main.world.wild_pokemon.has(wild_id):continue

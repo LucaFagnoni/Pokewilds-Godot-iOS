@@ -154,6 +154,7 @@ const FARM_POKEMON_TEXTURES := {
 var rng := RandomNumberGenerator.new()
 
 const AreaState = preload("res://scripts/area_state.gd")
+const TileRules = preload("res://scripts/rules/tile_rules.gd")
 ## This area's world as data (area_state.gd). The overlay dictionaries below
 ## (terrain_changes, removed_resources, source_interior_mutations, ...) are
 ## its own; its tiles, structures, blocked cells and Pokemon are this world's
@@ -2766,30 +2767,7 @@ func _remove_resource(cell: Vector2i, remember: bool) -> void:
         area.put("removed_resources", _cell_key(cell), true)
 
 func _cut_tall_grass(cell: Vector2i) -> void:
-    if not _is_cuttable_grass_cell(cell):
-        return
-    if plants().harvest(cell):
-        return
-    const GRASS_AMOUNT := 1
-    material_collected.emit("GRASS", GRASS_AMOUNT)
-    play_source_sound("cut1")
-    var tile := exact_world.tile_at(cell)
-    if tile != null:
-        var old_base := tile.name.to_lower().trim_suffix(".png")
-        # Preserve the source grass2 Miracle Seed bonus; the harvested
-        # GRASS material itself is always exactly x1 for every grass tile.
-        if old_base == "grass2" and rng.randi_range(0, 255) < 64:
-            material_collected.emit("MIRACLE SEED", 1)
-        var replacement := _cuttable_grass_replacement(tile, cell)
-        tile.set_names(String(replacement.get("base", tile.name)),
-            String(replacement.get("upper", "")))
-        area.put("source_interior_mutations", _cell_key(cell), {
-            "kind":"TILE_NAMES", "base":tile.name, "upper":tile.name_upper
-        })
-        _unblock_ground(cell)
-        # CUT changes this tile; update resident neighbors without scanning
-        # collision revisions for the entire world after every grass tuft.
-        _refresh_exact_tile_streams()
+    field_moves.cut_grass(cell)
 
 func _set_exact_tile_names(cell: Vector2i, base_name: String, upper_name: String) -> void:
     if exact_world == null:
@@ -3845,11 +3823,7 @@ func _pokemon_can_move_between(species: String, origin: Vector2i, target: Vector
 ## roof over ground where grass was once cut stopped blocking every time the
 ## world loaded, and Pokemon walked onto the house.
 func _unblock_ground(cell: Vector2i) -> void:
-    if bool(built_structures.get(cell, {}).get("solid", false)):
-        return
-    if blocked.get(cell) is String:
-        return
-    blocked.erase(cell)
+    TileRules.unblock_ground(area, cell)
 
 func _pokemon_can_enter(species: String, cell: Vector2i) -> bool:
     if species.to_lower() in [
@@ -4631,10 +4605,7 @@ func _is_tall_grass_cell(cell: Vector2i) -> bool:
     return false
 
 func _is_source_grass_name(asset_name: String) -> bool:
-    var key := asset_name.to_lower().trim_suffix(".png")
-    # Logical grass assets include the biome-specific variants. Do not match
-    # ledge_grass_* because those are structural ledges rather than grass tufts.
-    return key.begins_with("grass") and not key.begins_with("ledge_grass")
+    return TileRules.is_source_grass_name(asset_name)
 
 func _is_cuttable_grass_cell(cell: Vector2i) -> bool:
     if tall_grass.has(cell):
@@ -4647,52 +4618,7 @@ func _is_cuttable_grass_cell(cell: Vector2i) -> bool:
     return _is_source_grass_name(tile.name) or _is_source_grass_name(tile.name_upper)
 
 func _cuttable_grass_replacement(tile: SourceTile, cell: Vector2i) -> Dictionary:
-    var base := tile.name
-    var upper := tile.name_upper
-    var base_key := base.to_lower().trim_suffix(".png")
-    var upper_key := upper.to_lower().trim_suffix(".png")
-    # Grass authored as an upper sprite simply clears to its already-authored
-    # floor, regardless of biome variant.
-    if _is_source_grass_name(upper_key):
-        return {"base":base, "upper":""}
-    # Base-layer encounter grass is visually a tuft over a source-specific
-    # floor. Prefer neighboring authored floor so CUT never paints a foreign
-    # square into the biome.
-    var contextual := _contextual_ground_name(cell, tile.biome)
-    if not contextual.is_empty() and not _is_source_grass_name(contextual):
-        return {"base":contextual, "upper":""}
-    match base_key:
-        "grass1", "grass2", "grass4", "grass_fairy1", "grass_fairy2", "grass_fairy3", "grass_safari", "grass_short2", "grass_short3", "grass_planted":
-            return {"base":"green1", "upper":""}
-        "grass3":
-            return {"base":"snow1", "upper":""}
-        "grass_sand1", "grass_sand2":
-            return {"base":"sand1", "upper":""}
-        "grass_sand3":
-            return {"base":"desert4", "upper":""}
-        "grass_graveyard1":
-            return {"base":"green11", "upper":""}
-        "grass_savanna1", "grass_savanna2":
-            return {"base":"savanna1", "upper":""}
-        "grass_desert1":
-            return {"base":"desert4", "upper":""}
-    # Do not leave an unknown authored grass tile visually unchanged after CUT.
-    # Fall back to the native floor family for its biome rather than inventing
-    # a foreign green square. This covers future/source grass variants while
-    # preserving the explicit mappings above.
-    match _source_biome_for_tile(tile):
-        "SNOW":
-            return {"base":"snow1", "upper":""}
-        "BEACH":
-            return {"base":"sand1", "upper":""}
-        "DESERT":
-            return {"base":"desert4", "upper":""}
-        "SAVANNA":
-            return {"base":"savanna1", "upper":""}
-        "GRAVEYARD":
-            return {"base":"green11", "upper":""}
-        _:
-            return {"base":"green1", "upper":""}
+    return TileRules.cuttable_grass_replacement(area, tile, cell)
 
 func _add_wild_egg(
         species: String, cell: Vector2i, egg_record: Dictionary = {},
@@ -6539,66 +6465,10 @@ func _refresh_exact_tile_streams() -> void:
     if canopy != null: canopy.queue_redraw()
 
 func _recoastify_exact_cells(changed_cells: Array[Vector2i]) -> void:
-    var targets: Dictionary = {}
-    for changed in changed_cells:
-        for y in range(changed.y - 1, changed.y + 2):
-            for x in range(changed.x - 1, changed.x + 2):
-                targets[Vector2i(x, y)] = true
-    # Neighbours are read from the tile store's arrays: a proxy for each of
-    # them cost ~0.5 ms per changed cell (48 ms for a load's tide cleanup).
-    var store: WorldTileStore = exact_world.tiles
-    var flags := store.flags
-    var name_ids := store.name_ids
-    var water6: int = store.string_ids.get("water6", -1)
-    for raw_cell in targets.keys():
-        var cell := raw_cell as Vector2i
-        var tile := exact_world.tile_at(cell)
-        if tile == null:
-            continue
-        tile.shore_ocean = ""
-        tile.shore_tidal = ""
-        if tile.is_water or "ledges" in tile.name_upper or tile.name == "ice2" or \
-                "bridge" in tile.name or "waterfall" in tile.name:
-            continue
-        var names := ["W", "E", "S", "N", "SW", "NE", "SE", "NW"]
-        var offsets := [
-            Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN,
-            Vector2i(-1, -1), Vector2i(1, 1),
-            Vector2i(1, -1), Vector2i(-1, 1)]
-        var ocean := ""
-        var tidal := ""
-        for index in range(offsets.size()):
-            var at := store.index_of((cell + offsets[index]) * TILE)
-            var bits := 0
-            if at >= 0:
-                if name_ids[at] == water6:
-                    continue
-                bits = flags[at]
-            else:
-                var neighbor := exact_world.tile_at(cell + offsets[index])
-                if neighbor == null or neighbor.name == "water6":
-                    continue
-                bits = (WorldTileStore.TIDAL if neighbor.is_tidal else 0) | (WorldTileStore.WATER if neighbor.is_water else 0)
-            var direction := String(names[index])
-            if not tile.is_tidal and bits & WorldTileStore.TIDAL:
-                if not _shore_diagonal_already_present(tidal, direction):
-                    tidal += "[" + direction + "]"
-                continue
-            if not bits & WorldTileStore.WATER or \
-                    _shore_diagonal_already_present(ocean, direction):
-                continue
-            ocean += "[" + direction + "]"
-            tidal += "[" + direction + "]"
-        tile.shore_ocean = ocean
-        tile.shore_tidal = tidal
+    TileRules.recoastify(area, changed_cells)
 
 func _shore_diagonal_already_present(existing: String, direction: String) -> bool:
-    if direction.length() < 2:
-        return false
-    for index in range(direction.length()):
-        if "[" + direction.substr(index, 1) + "]" in existing:
-            return true
-    return false
+    return TileRules.shore_diagonal_present(existing, direction)
 
 func _permitted_ledge_direction(tile: SourceTile) -> Vector2i:
     if tile == null:
@@ -6862,59 +6732,10 @@ func biome_at(cell: Vector2i) -> String:
     return String(biomes[cell.y][cell.x])
 
 func _canonical_source_biome(raw_biome: String) -> String:
-    var key := raw_biome.strip_edges().to_upper().replace("-", "_")
-    if SOURCE_BIOME_ALIASES.has(key):
-        return String(SOURCE_BIOME_ALIASES[key])
-    return key.replace(" ", "_")
+    return TileRules.canonical_biome(raw_biome)
 
 func _source_biome_for_tile(tile: SourceTile) -> String:
-    var raw_biome := _canonical_source_biome(tile.biome)
-    var route_name := ""
-    if tile.route_belongs_to != null:
-        route_name = tile.route_belongs_to.name.to_lower()
-
-    # Rivers reuse wooded_lake_water1 in the Java source. Wooded-lake cells
-    # carry their explicit biome while river cuts keep the biome they crossed,
-    # so this distinction is recoverable without changing generator output.
-    if tile.is_water and route_name == "wooded_lake_water1":
-        if raw_biome == "WOODED_LAKE":
-            return "WOODED_LAKE"
-        return "RIVER"
-
-    if not raw_biome.is_empty():
-        return raw_biome
-
-    # Route fallbacks cover source tiles that intentionally have no biome tag.
-    # Check authored water/sub-biome routes before generic water so beach and
-    # river ambience/ecology do not collapse into OCEAN.
-    if not route_name.is_empty():
-        if route_name == "ocean1" or "ocean" in route_name:
-            return "OCEAN"
-        if "beach" in route_name or "tidal" in route_name:
-            return "BEACH"
-        if "wooded_lake" in route_name:
-            return "WOODED_LAKE"
-        if "graveyard" in route_name:
-            return "GRAVEYARD"
-        if "volcano" in route_name:
-            return "VOLCANO"
-        if "oasis" in route_name:
-            return "OASIS"
-        if "desert" in route_name or "ruins" in route_name or "sand_pit" in route_name:
-            return "DESERT"
-        if "snow" in route_name or "tundra" in route_name:
-            return "SNOW"
-        if "mountain" in route_name or "cave" in route_name:
-            return "MOUNTAIN"
-        if "savanna" in route_name:
-            return "SAVANNA"
-        if "deep" in route_name:
-            return "DEEP_FOREST"
-        if "forest" in route_name:
-            return "FOREST"
-    if tile.is_water:
-        return "OCEAN"
-    return "FOREST"
+    return TileRules.source_biome(tile)
 
 func is_cell_discovered(cell: Vector2i) -> bool:
     if active_area_id != "OVERWORLD" and source_area_rects.has(active_area_id):

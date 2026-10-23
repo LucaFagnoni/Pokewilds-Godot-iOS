@@ -27,6 +27,8 @@ var rest:Node
 var storage:Node
 var beacons:Node
 var building:Node
+## The field commands decided by the rules (coop_rules_runtime.gd).
+var rules:Node
 var state=State.new()
 var store=Store.new()
 var saves=Saves.new()
@@ -298,6 +300,9 @@ func configure(game:Node)->void:
     beacons=preload("res://scripts/coop_beacons.gd").new();add_child(beacons);beacons.configure(self)
     building=preload("res://scripts/coop_build_runtime.gd").new();add_child(building);building.configure(self)
     commands.build_action=building.execute
+    rules=preload("res://scripts/coop_rules_runtime.gd").new();add_child(rules);rules.configure(self)
+    commands.rules_action=rules.execute
+    session.caps=preload("res://scripts/rules/rules.gd").capabilities()
     wild=preload("res://scripts/coop_wild_runtime.gd").new();add_child(wild);wild.configure(self)
     commands.wild_action=wild.execute
     population=preload("res://scripts/coop_population_runtime.gd").new();add_child(population);population.configure(self)
@@ -677,6 +682,7 @@ func _profile_shape_ok(profile:Variant)->bool:
     return profile.get("save") is Dictionary
 
 func _committed(commit:Dictionary)->void:
+    if hosting:rules.committed(commit.get("changes",[]))
     var deltas:Dictionary={}
     # Most commits (Pokemon moving about, builds, drops) read the same for
     # every player who watches the same areas: worked out and encoded once
@@ -688,12 +694,43 @@ func _committed(commit:Dictionary)->void:
         if peer==1:continue
         var actor=String(session.players[peer].actor)
         var areas:Array=_watched(actor)
-        var group:String=(actor if personal else "")+"|"+",".join(areas)
-        if not encoded.has(group):encoded[group]=_visible_bytes(commit,actor,areas,personal,deltas)
-        if not encoded[group].is_empty():session.send_bytes_to(peer,encoded[group])
+        var binary:bool=session.peer_can(peer,"bin:area")
+        var group:String=(actor if personal else "")+"|"+",".join(areas)+("|bin" if binary else "")
+        if not encoded.has(group):encoded[group]=_visible_frames(commit,actor,areas,personal,deltas,binary)
+        for bytes in encoded[group]:session.send_bytes_to(peer,bytes)
     var own:Dictionary=Commands.visible_result(commit,session.actor)
     own["profile_base"]=state.print_of("player/"+session.actor,{})
     _apply_visible(own)
+
+## What `actor` is sent of a commit, frame by frame. A player whose hello said
+## "bin:area" gets the built and dug ground of each area it watches as a
+## binary frame (area_state.gd encode_records: the records' own bytes, no
+## base64 in JSON), ahead of the rest as a shared_commit (none when nothing
+## is left for it).
+const Wire=preload("res://scripts/area_state.gd")
+func _visible_frames(commit:Dictionary,actor:String,areas:Array,personal:bool,deltas:Dictionary,binary:bool)->Array:
+    var frames:Array=[]
+    var rest:=commit
+    if binary:
+        var by_area:Dictionary={}
+        var others:Array=[]
+        for change in commit.get("changes",[]):
+            var key:=String(change.get("key",""))
+            var area:=_key_area(key)
+            if area in areas and building.is_build_key(key) and change.get("after") is String:
+                if not by_area.has(area):by_area[area]=[]
+                by_area[area].append([key.get_slice("/",2),key.get_slice("/",3).uri_decode(),change.after])
+            else:others.append(change)
+        for area in by_area:
+            var started:=Time.get_ticks_usec()
+            frames.append(Wire.encode_records(area,int(commit.get("revision",0)),by_area[area]))
+            Session.Transport.count("enc:world_records",frames.back().size(),started)
+        if not by_area.is_empty():
+            if others.is_empty() and not personal and not commit.get("session") is Dictionary:return frames
+            rest=commit.duplicate();rest["changes"]=others
+    var json:=_visible_bytes(rest,actor,areas,personal,deltas)
+    if not json.is_empty():frames.append(json)
+    return frames
 
 ## The shared_commit `actor` is sent: only the records of the areas they are
 ## in or going to (records of the others are sent when they go there); empty
@@ -733,6 +770,8 @@ func _visible_bytes(commit:Dictionary,actor:String,areas:Array,personal:bool,del
     # Kept by the host to check what comes next (the hashes of the request,
     # each record's fingerprint before); read by no player.
     visible.erase("command_hash");visible.erase("request_hash")
+    # A rule's answer to the player who acted (coop_rules_runtime.gd), not the others' business.
+    visible.erase("events");visible.erase("grant")
     for change in visible.get("changes",[]):change.erase("before")
     # Read only with a change to the player's own record (_apply_visible).
     if personal:visible["profile_base"]=state.print_of("player/"+actor,{})
@@ -1204,6 +1243,7 @@ func publish_current()->bool:
     _publishing=true
     var seed_value=int(main.world.world_seed)
     var size_index=int(main.world.map_size_index)
+    if hosting:wild.fold_motion(_area())
     var registry:Dictionary=state.records if hosting else shared_records
     # The population then comes from the records, not from the world here,
     # which need not pack its own only to have it replaced.
@@ -1257,6 +1297,7 @@ func save_checkpoint(data:Dictionary)->bool:
     while _world_writing:await get_tree().process_frame
     if not active or not hosting:return false
     _world_writing=true
+    wild.fold_motion()
     var job:Dictionary=store.prepare(state,{"world_name":String(data.get("world_name","WORLD")),"owner":session.actor})
     var loose:int=state.loose
     # The crafting state is made afresh for each save (main._capture_game_save);
@@ -1424,6 +1465,9 @@ func _admitted(peer:int,actor:String,profile:Dictionary)->void:
 
 func _message(_peer:int,actor:String,packet:Dictionary)->void:
     if chat.message(_peer,actor,packet):return
+    # Wild Pokemon moving (area_state.gd WIRE_WILD_MOTION): to the host from the
+    # one simulating an area, from the host to those watching it.
+    if packet.get("kind")=="wild_motion_bin":wild.motion_frame(actor,packet);return
     if hosting:
         if packet.get("kind")=="area_flush_result" and packet.get("id") is String and packet.get("ok") is bool:
             _area_flushes[packet.id]=packet.ok;return
@@ -1452,6 +1496,8 @@ func _message(_peer:int,actor:String,packet:Dictionary)->void:
             _travelling.erase(actor)
             if entry.get("ok",false) and not joining:await _send_state(_peer,actor,"",String(going[0]) if going[0]==packet.area and going[1] else "")
             session.send_to(_peer,{"kind":"entered_reply","entry":entry})
+            # The rules run there for them: the area is held from now on.
+            if entry.get("ok",false):rules.load_area(String(packet.area))
             _broadcast_authority()
         return
     if packet.get("kind")=="area_authorities" and packet.get("owners") is Dictionary and packet.get("epochs") is Dictionary:
@@ -1487,6 +1533,12 @@ func _message(_peer:int,actor:String,packet:Dictionary)->void:
         return
     if packet.get("kind")=="shared_commit" and packet.get("result") is Dictionary:
         _apply_visible(packet.result);return
+    # An area's built and dug ground, as binary (_visible_frames): the very
+    # records, taken in as a shared commit of them.
+    if packet.get("kind")=="world_records" and packet.get("area") is String and packet.get("records") is Array:
+        var changes:Array=[]
+        for entry in packet.records:changes.append({"key":"world/%s/%s/%s"%[packet.area,entry[0],String(entry[1]).uri_encode()],"after":entry[2]})
+        _apply_visible({"changes":changes});return
     if packet.get("kind")=="interaction_update" and packet.get("result") is Dictionary:
         interaction_ui.update(packet.result);return
     # The area this player is going to, as it is now (_send_state `going`).
@@ -1545,6 +1597,8 @@ func _sharable_keys()->Array:
 
 func _send_state(peer:int,actor:String,going:String="",kept:String="")->void:
     var deadline=Time.get_ticks_msec()+10000
+    # Where the wild Pokemon are now, not where their records last said.
+    wild.fold_motion()
     while session.players.has(peer) and Time.get_ticks_msec()<deadline:
         # Rebuild after backpressure: no await between capture and enqueue, so later
         # commits always follow this complete snapshot in the ordered connection.
@@ -1565,6 +1619,7 @@ func _send_state(peer:int,actor:String,going:String="",kept:String="")->void:
     if session.players.has(peer):session.transport._drop(peer)
 
 func _area_ready(actor:String,_area_name:String,_metadata:Dictionary,bytes:PackedByteArray)->void:
+    if hosting:wild.fold_motion(_area_name)
     if actor==session.actor and not _travel_target.is_empty() and _area_name==_travel_target:
         var arrived=Snapshot.decode(bytes)
         if arrived.is_empty() or not _install_cache(arrived):_travel_offer={"error":"ONLINE AREA COULD NOT LOAD"};return

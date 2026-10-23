@@ -24,9 +24,13 @@ const INTS := ["terrain_changes", "built_house_paintings", "built_house_origins"
 const STRUCTURE_RUNTIME := ["sprite", "collision", "solid", "bridged_water"]
 ## Kept with undo but never replicated: what the World works out from the rest.
 const LOCAL := ["blocked", "interactables"]
+const TileRules = preload("res://scripts/rules/tile_rules.gd")
 ## Binary frames (coop_transport.gd): this tag, then the message kind.
 const WIRE_TAG := 4
 const WIRE_AREA_CHANGES := 1
+const WIRE_AREA_RECORDS := 2
+const WIRE_WILD_MOTION := 3
+const WildPopulation = preload("res://scripts/wild_population.gd")
 const MAX_WIRE_CHANGES := 8192
 const MAX_KEY_BYTES := 512
 const MAX_VALUE_BYTES := 256 * 1024
@@ -155,6 +159,16 @@ func begin() -> void:
 func recording() -> bool:
     return _recording
 
+## Stops recording for a while (changes from the authority are not the
+## prediction's): returns whether it was, for resume().
+func suspend() -> bool:
+    var was := _recording
+    _recording = false
+    return was
+
+func resume(was: bool) -> void:
+    _recording = was
+
 ## Keeps every write since begin().
 func commit() -> void:
     _recording = false
@@ -196,6 +210,30 @@ func rollback() -> Array:
             cells.append(key / 16)
     _saved_tiles.clear()
     return cells
+
+## While recording: what the authority has said since about these cells and
+## overlay keys stands, so a rollback no longer puts back what they were.
+func forget(name: String, key: Variant, cells: Array = []) -> void:
+    if not _recording: return
+    for index in range(_undo.size() - 1, -1, -1):
+        if _undo[index][0] == name and _undo[index][1] == key: _undo.remove_at(index)
+    if tiles == null or not tiles.tiles is WorldTileStore: return
+    for cell in cells:
+        var index: int = tiles.tiles.index_of(cell * 16)
+        _saved_tiles.erase(index if index >= 0 else cell)
+
+# --- Changes from elsewhere -------------------------------------------------
+
+## An overlay entry from another copy (a record, a change on the wire) taken
+## in: its group set and the tiles changed to match (TileRules.apply_overlay).
+## `key` as the wire has it ("x,y" for a structure). Not marked dirty.
+func apply_change(name: String, key: String, value: Variant) -> void:
+    if not name in GROUPS: return
+    var held: Dictionary = get(name)
+    var at: Variant = TileRules.key_cell(key) if name == "structures" else key
+    if value == null: held.erase(at)
+    else: held[at] = value
+    TileRules.apply_overlay(self, name, key, value)
 
 # --- Records ----------------------------------------------------------------
 
@@ -295,6 +333,92 @@ static func decode_changes(bytes: PackedByteArray) -> Dictionary:
         changes.append([GROUPS[id], key, value])
     if at[0] != bytes.size(): return {}
     return {"kind": "area_changes", "area": area_id, "revision": revision, "changes": changes}
+
+## An area's world records as the co-op host holds them ("world/<area>/<group>/
+## <key>", each an encoded value) for the wire: WIRE_TAG, WIRE_AREA_RECORDS,
+## the area, `revision`, then each its group's id, its key and the record's
+## bytes. A record is the base64 of exactly those bytes, so the receiver
+## rebuilds the very same text (its fingerprint included). `entries`:
+## [[group, key, record text]].
+static func encode_records(area_id: String, revision: int, entries: Array) -> PackedByteArray:
+    var out := PackedByteArray([WIRE_TAG, WIRE_AREA_RECORDS])
+    _text(out, area_id)
+    var head := out.size()
+    out.resize(head + 6)
+    out.encode_u32(head, revision & 0xFFFFFFFF)
+    out.encode_u16(head + 4, mini(entries.size(), MAX_WIRE_CHANGES))
+    for index in mini(entries.size(), MAX_WIRE_CHANGES):
+        var entry: Array = entries[index]
+        out.append(GROUPS.find(String(entry[0])))
+        _text(out, String(entry[1]))
+        var bytes := Marshalls.base64_to_raw(String(entry[2]))
+        var at := out.size()
+        out.resize(at + 4)
+        out.encode_u32(at, bytes.size())
+        out.append_array(bytes)
+    return out
+
+## encode_records' bytes back: {"kind":"world_records", "area", "revision",
+## "records": [[group, key, record text]]}, or {} when they do not read as one.
+static func decode_records(bytes: PackedByteArray) -> Dictionary:
+    if bytes.size() < 2 or bytes[0] != WIRE_TAG or bytes[1] != WIRE_AREA_RECORDS: return {}
+    var at := [2]
+    var area_id = _untext(bytes, at)
+    if area_id == null or at[0] + 6 > bytes.size(): return {}
+    var revision := bytes.decode_u32(at[0])
+    var count := bytes.decode_u16(at[0] + 4)
+    at[0] += 6
+    var records := []
+    for index in count:
+        if at[0] >= bytes.size(): return {}
+        var id: int = bytes[at[0]]
+        at[0] += 1
+        if id >= GROUPS.size(): return {}
+        var key = _untext(bytes, at)
+        if key == null or at[0] + 4 > bytes.size(): return {}
+        var size := bytes.decode_u32(at[0])
+        at[0] += 4
+        if size > MAX_VALUE_BYTES or at[0] + size > bytes.size(): return {}
+        records.append([GROUPS[id], key, Marshalls.raw_to_base64(bytes.slice(at[0], at[0] + size))])
+        at[0] += size
+    if at[0] != bytes.size(): return {}
+    return {"kind": "world_records", "area": area_id, "revision": revision, "records": records}
+
+## The wild Pokemon of an area that moved, as the one simulating it sends them
+## (WildPopulation.encode_motion: 14 bytes each), with the area and the epoch
+## of its authority: WIRE_TAG, WIRE_WILD_MOTION, the area, epoch (u32), motion.
+static func encode_motion(area_id: String, epoch: int, motion: PackedByteArray) -> PackedByteArray:
+    var out := PackedByteArray([WIRE_TAG, WIRE_WILD_MOTION])
+    _text(out, area_id)
+    var at := out.size()
+    out.resize(at + 4)
+    out.encode_u32(at, epoch & 0xFFFFFFFF)
+    out.append_array(motion)
+    return out
+
+## encode_motion's bytes back: {"kind":"wild_motion_bin", "area", "epoch",
+## "motion": WildPopulation.decode_motion's list, "bytes": the motion as sent
+## (passed on as is)}; {} when they do not read as one.
+static func decode_motion(bytes: PackedByteArray) -> Dictionary:
+    if bytes.size() < 2 or bytes[0] != WIRE_TAG or bytes[1] != WIRE_WILD_MOTION: return {}
+    var at := [2]
+    var area_id = _untext(bytes, at)
+    if area_id == null or at[0] + 6 > bytes.size(): return {}
+    var epoch := bytes.decode_u32(at[0])
+    var motion := bytes.slice(at[0] + 4)
+    var count := motion.decode_u16(0)
+    if count > MAX_WIRE_CHANGES or motion.size() != 2 + count * 14: return {}
+    return {"kind": "wild_motion_bin", "area": area_id, "epoch": epoch, "motion": WildPopulation.decode_motion(motion), "bytes": motion}
+
+## A binary frame (WIRE_TAG) read by its kind; null when it is no known one.
+static func decode_wire(bytes: PackedByteArray) -> Variant:
+    if bytes.size() < 2 or bytes[0] != WIRE_TAG: return null
+    var read: Dictionary = {}
+    match int(bytes[1]):
+        WIRE_AREA_CHANGES: read = decode_changes(bytes)
+        WIRE_AREA_RECORDS: read = decode_records(bytes)
+        WIRE_WILD_MOTION: read = decode_motion(bytes)
+    return null if read.is_empty() else read
 
 static func _text(out: PackedByteArray, text: String) -> void:
     var bytes := text.to_utf8_buffer()

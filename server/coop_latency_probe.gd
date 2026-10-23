@@ -226,6 +226,16 @@ func _actions(where: String) -> void:
 			if pile.has("coop_id"): await coop.pickup_item(pile)
 			return not drops.records.get(drops.key(_cell), {}).has("coop_id"))
 
+	# The ground, decided by the host (rules/): a hole dug and grass cut, shown
+	# at once and kept when the host agrees; the reward is the host's own roll,
+	# in the record it sends back.
+	if not coop.rules.host_takes("field_dig"): _skip("dig a hole (host decides the reward)", "the host takes no rule commands")
+	else: await _try("dig a hole (host decides the reward)", _dig)
+	if not coop.rules.host_takes("field_cut"): _skip("cut grass (host decides the reward)", "the host takes no rule commands")
+	elif _grass_near().x == 999999: _skip("cut grass (host decides the reward)", "no grass near")
+	else: await _try("cut grass (host decides the reward)", _cut)
+	if coop.rules.host_takes("field_dig"): await _try("refused dig put back (session goes on)", _refused_dig)
+
 	_box = ""
 	if await _try("build a storage box", _build_box):
 		var box := _box
@@ -312,6 +322,65 @@ func _recruit() -> bool:
 	var before: int = main.caught_pokemon.size()
 	await main._recruit_friendly_wild(wild_id, String(main.world.wild_pokemon[wild_id].get("species", "")))
 	return main.caught_pokemon.size() > before
+
+const TileRules = preload("res://scripts/rules/tile_rules.gd")
+
+## A hole dug beside the player: true once the host kept it and its reward
+## (the ground's material) is in the bag the host sent back.
+func _dig() -> bool:
+	var world: Node = main.world
+	var here: Vector2i = world._player_cell()
+	# Corners first: the cells straight ahead are where later actions put things.
+	for step in [Vector2i(1, 1), Vector2i(-1, 1), Vector2i(1, -1), Vector2i(-1, -1), Vector2i(2, 2), Vector2i(-2, 2)]:
+		var cell: Vector2i = here + step
+		var tile: SourceTile = world.area.tile_at(cell)
+		if tile == null or not TileRules.dig_surface_ok(tile) or TileRules.accepts_soil(world.area, cell) or TileRules.is_mountain(tile): continue
+		if world.built_structures.has(cell) or world.landmarks.has(cell) or TileRules.exact_resource_anchor(world.area, cell).x > -2147483648: continue
+		if not world.dropped_items().can_drop(cell) or not String(tile.has_item).is_empty(): continue
+		var material := TileRules.dig_material_at(world.area, cell)
+		var before := int(main.inventory.get(material, 0))
+		await coop.building.dig(cell)
+		var key := "world/%s/source_interior_mutations/%s" % [coop._area(), ("%d,%d" % [cell.x, cell.y]).uri_encode()]
+		return world.area.tile_at(cell).name_upper.begins_with("hole1") and coop.shared_records.has(key) and int(main.inventory.get(material, 0)) == before + 1
+	return false
+
+## A DIG the host turns away (the cell is too far from the player to reach):
+## shown here at once, then undone exactly, and the game plays on.
+func _refused_dig() -> bool:
+	var world: Node = main.world
+	var here: Vector2i = world._player_cell()
+	var far: Array = []
+	for distance in range(9, 24):
+		for direction in [Vector2i.RIGHT, Vector2i.LEFT, Vector2i.DOWN, Vector2i.UP]: far.append(here + direction * distance)
+	for cell in far:
+		var tile: SourceTile = world.area.tile_at(cell)
+		if tile == null or not TileRules.dig_surface_ok(tile) or TileRules.accepts_soil(world.area, cell) or TileRules.is_mountain(tile): continue
+		if world.built_structures.has(cell) or world.landmarks.has(cell) or TileRules.exact_resource_anchor(world.area, cell).x > -2147483648: continue
+		var upper: String = tile.name_upper
+		var answer: Dictionary = await coop.rules.predict("field_dig", {"action":"dig", "cell":cell})
+		var put_back: bool = not answer.get("ok", true) and answer.get("reason") == "too_far" and world.area.tile_at(cell).name_upper == upper and coop.active
+		if not put_back: print("PROBE note: refused dig at ", cell, " from ", here, ": ", answer.get("ok"), " ", answer.get("reason", ""), " ", world.area.tile_at(cell).name_upper, " / ", upper)
+		return put_back
+	print("PROBE note: no ground far enough to dig from ", here)
+	return false
+
+func _grass_near() -> Vector2i:
+	var world: Node = main.world
+	var here: Vector2i = world._player_cell()
+	for radius in range(1, 4):
+		for dx in range(-radius, radius + 1):
+			for dy in range(-radius, radius + 1):
+				var cell: Vector2i = here + Vector2i(dx, dy)
+				if maxi(absi(dx), absi(dy)) == radius and world._is_cuttable_grass_cell(cell) and not world.built_structures.has(cell): return cell
+	return Vector2i(999999, 999999)
+
+## Grass cut near the player: true once the host kept it and the GRASS is in the bag.
+func _cut() -> bool:
+	var cell := _grass_near()
+	if cell.x == 999999: return false
+	var before := int(main.inventory.get("GRASS", 0))
+	await coop.building.cut(cell)
+	return not main.world._is_cuttable_grass_cell(cell) and int(main.inventory.get("GRASS", 0)) > before
 
 func _build_box() -> bool:
 	_cell = _free_cell(_cell)
