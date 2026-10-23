@@ -27,6 +27,7 @@ const SETUP_SAVE_PATH := "user://m3_setup.cfg"
 const DataPaths = preload("res://scripts/game_data_paths.gd")
 const WorldSaves = preload("res://scripts/world_saves.gd")
 var saves := WorldSaves.new("user://saves")
+var storage := preload("res://scripts/storage_menu.gd").new(self)
 var crafting_menu := preload("res://scripts/crafting_menu.gd").new(self)
 var move_wheel := preload("res://scripts/field_move_wheel.gd").new(self)
 var minimap := preload("res://scripts/minimap.gd").new(self)
@@ -990,25 +991,16 @@ var shared_storage_serial := 0
 var shared_storage_error := OK
 ## Writes the world save in the background (see _write_single_player_save).
 var save_thread: Thread
-var storage_menu: Control
 var storage_rows: Array[Dictionary] = []
-var storage_actions: Panel
 var storage_action_labels: Array[Label] = []
-var storage_footer_arrow: TextureRect
-var storage_choice_panel: Panel
-var storage_choice_arrow: TextureRect
 var storage_choice_label: Label
 var storage_no_label: Label
-var storage_dialog: Panel
-var storage_dialog_text: Label
 var storage_nickname: LineEdit
 var storage_mode := "LIST"
 var storage_action_index := 0
 var storage_yes := true
 var storage_pending := ""
 var storage_switch_from := -1
-var storage_cursor: TextureRect
-var storage_prompt: Label
 const POKEMON_STORAGE_CAPACITY := 0 # 0 retains the source unlimited chest.
 var overflow_recovery_notice := ""
 var storage_pooled := false
@@ -2066,7 +2058,7 @@ func _build_source_ui() -> void:
     _align_menu_tick(load_frame.get_node("Next"), setup_load_name)
     (load_frame.get_node("Previous/PixelTick") as TextureRect).flip_h = true
 
-    _build_storage_menu_ui()
+    storage.build_storage_menu_ui()
 
     # Keep the MessagePanel's existing down arrow; no extra right-side arrow.
     trainer_tip_continue = null
@@ -2185,96 +2177,14 @@ func _build_source_ui() -> void:
     progression_sprite_top.z_index = 2
     _create_progression_menu_frames()
 
-func _build_storage_menu_ui() -> void:
-    # Source-style Pokémon storage screen.  It is deliberately created here
-    # rather than replacing the existing party menu, so opening a chest cannot
-    # perturb unrelated menu geometry.
-    storage_menu = Control.new()
-    storage_menu.name = "PokemonStorageMenu"
-    storage_menu.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    storage_menu.z_index = 345
-    storage_menu.visible = false
-    $UI.add_child(storage_menu)
-    var storage_backdrop = ColorRect.new()
-    storage_backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    storage_backdrop.color = Color.WHITE
-    storage_backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
-    storage_menu.add_child(storage_backdrop)
-    var storage_footer = Panel.new()
-    storage_footer.position = Vector2(0, 144)
-    storage_footer.size = Vector2(320, 36)
-    storage_footer.add_theme_stylebox_override("panel", _classic_dialogue_style())
-    storage_menu.add_child(storage_footer)
-    for index in range(6):
-        var row := _create_party_list_row(storage_menu, index)
-        var skills := _source_ui_label(row.root,"FieldMoves",Vector2(30,19),Vector2(132,9),8)
-        row["field_moves"] = skills
-        row.gender.position.x = 166
-        row.level.position.x = 179
-        row.root.get_node("HPBadge").position.x = 211
-        var track: Control = row.root.get_node("HPTrack")
-        track.position.x = 228
-        track.size.x = 90
-        track.get_node("BottomRule").size.x = 90
-        track.get_node("EndCap").position.x = 85
-        row.hp_capacity = 85.0
-        storage_rows.append(row)
-    storage_prompt = _source_ui_label(storage_menu, "Footer",
-        Vector2(16, 151), Vector2(288, 18), 11)
-    storage_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    storage_actions = Panel.new()
-    storage_actions.position = Vector2(96, 48)
-    storage_actions.size = Vector2(224, 132)
-    storage_actions.add_theme_stylebox_override("panel", _classic_dialogue_style())
-    storage_menu.add_child(storage_actions)
-    for index in range(7):
-        storage_action_labels.append(_source_ui_label(storage_actions, "Action%d" % index,
-            Vector2(24, 9 + index * 20), Vector2(126, 18), 11))
-    storage_footer_arrow = _source_texture_rect(storage_menu, "PageArrow",
-        Vector2(292, 153), Vector2(5, 7), source_command_cursor.texture)
-    storage_cursor = _source_texture_rect(storage_actions, "Cursor",
-        Vector2(10, 9), Vector2(5, 7), source_command_cursor.texture)
-    storage_dialog = Panel.new()
-    storage_dialog.position = Vector2(0, 126)
-    storage_dialog.size = Vector2(320, 54)
-    storage_dialog.add_theme_stylebox_override("panel", _classic_dialogue_style())
-    storage_menu.add_child(storage_dialog)
-    storage_dialog_text = _source_ui_label(storage_dialog, "Text",
-        Vector2(10, 6), Vector2(300, 44), 10)
-    storage_dialog_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    storage_choice_panel = Panel.new()
-    storage_choice_panel.position = Vector2(240, 74)
-    storage_choice_panel.size = Vector2(80, 52)
-    storage_choice_panel.add_theme_stylebox_override("panel", _classic_dialogue_style())
-    storage_menu.add_child(storage_choice_panel)
-    storage_choice_arrow = _source_texture_rect(storage_choice_panel, "ChoiceArrow",
-        Vector2(10, 12), Vector2(5, 7), source_command_cursor.texture)
-    storage_choice_label = _source_ui_label(storage_choice_panel, "Choices",
-        Vector2(24, 8), Vector2(48, 16), 10, "YES")
-    storage_no_label = _source_ui_label(storage_choice_panel, "NoChoice",
-        Vector2(24, 30), Vector2(48, 16), 10, "NO")
-    storage_nickname = LineEdit.new()
-    storage_nickname.position = Vector2(10, 23)
-    storage_nickname.size = Vector2(290, 24)
-    storage_nickname.max_length = 10
-    storage_nickname.add_theme_font_override("font", JOHTO_FONT)
-    storage_nickname.add_theme_font_size_override("font_size", 10)
-    storage_dialog.add_child(storage_nickname)
-    storage_nickname.text_changed.connect(func(value: String):
-        var filtered := ""
-        for character in value:
-            if character in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .?!":
-                filtered += character
-        if filtered != value:
-            var caret := storage_nickname.caret_column
-            storage_nickname.text = filtered
-            storage_nickname.caret_column = mini(caret, filtered.length()))
-    storage_nickname.text_submitted.connect(func(_text: String):
-        storage_nickname.release_focus()
-        storage_mode = "CONFIRM"
-        storage_pending = "NICKNAME"
-        storage_yes = true
-        _refresh_storage_menu())
+## storage_menu.gd under its old names, for the scripts and tests that call them on main.
+func _storage_pool_locations() -> Array: return storage.storage_pool_locations()
+func _storage_deposit_key() -> String: return storage.storage_deposit_key()
+func _storage_entries() -> Array: return storage.storage_entries()
+func _refresh_storage_menu() -> void: storage.refresh_storage_menu()
+func _storage_notice(text: String) -> void: storage.storage_notice(text)
+func _storage_is_active(pokemon: Dictionary) -> bool: return storage.storage_is_active(pokemon)
+func _built_storage_keys() -> Array[String]: return storage.built_storage_keys()
 
 func _build_party_menu_ui() -> void:
     # Use the full viewport for both party selectors.  Keeping controls at
@@ -3631,7 +3541,7 @@ func _unhandled_input(event: InputEvent) -> void:
         _handle_egg_pickup_input(event)
         return
     if storage_menu_open:
-        _handle_storage_menu_input(event)
+        storage.handle_storage_menu_input(event)
         return
     if trainer_tip_open:
         if event.is_action_pressed("confirm") or event.is_action_pressed("start"):
@@ -7764,7 +7674,7 @@ func _activate_game_menu_option() -> void:
     var option = String(GAME_MENU_OPTIONS[game_menu_index])
     match option:
         "STORAGE":
-            _open_pooled_storage_menu()
+            storage.open_pooled_storage_menu()
         "POKEMON":
             _show_pokemon_menu()
         "ITEM":
@@ -8820,7 +8730,7 @@ func _on_structure_removal_requested(cell: Vector2i, move: String) -> void:
         for inside_cell in world.house_interior_cells_behind(cell):
             if String(world.built_structures.get(inside_cell, {}).get("name", "")) == "STORAGE BOX":
                 boxes_going += 1
-        if boxes_going > 0 and _public_box_count() - boxes_going < 1:
+        if boxes_going > 0 and storage.public_box_count() - boxes_going < 1:
             if online and not coop_game.hosting:
                 _show_message("Sorry, a guest cannot cut the last public box in a world.")
                 return
@@ -8839,27 +8749,11 @@ func _on_structure_removal_requested(cell: Vector2i, move: String) -> void:
         var private_keys: Array[String] = []
         for built_cell in world.built_structures:
             if String(world.built_structures[built_cell].get("name", "")) == "PRIVATE CHEST":
-                private_keys.append(_world_storage_key(world._cell_key(built_cell),current_world_grid))
+                private_keys.append(storage.world_storage_key(world._cell_key(built_cell),current_world_grid))
         for key in pokemon_storage.keys():
             if not String(key) in private_keys and String(key) != SHARED_STORAGE_KEY: pokemon_storage.erase(key)
     if world.has_method("remove_structure_with_field_move"):
         world.call("remove_structure_with_field_move", cell, move)
-
-## How many public STORAGE BOXES stand in this world.
-func _public_box_count() -> int:
-    # Counted from the boxes that are actually built. Online the host makes
-    # the same count over the whole world and has the last word.
-    var count := 0
-    for cell in world.built_structures:
-        if String(world.built_structures[cell].get("name", "")) == "STORAGE BOX": count += 1
-    # Neighbouring sections belong to a single-player world. Online the host
-    # counts the whole world itself.
-    if is_instance_valid(coop_game) and coop_game.active: return count
-    for grid_key in adjacent_worlds:
-        if grid_key == _world_grid_key(current_world_grid): continue
-        for piece in adjacent_worlds[grid_key].get("state",{}).get("structures",[]):
-            if piece.get("name","") == "STORAGE BOX": count += 1
-    return count
 
 ## A yes/no question whose cursor starts on NO, so that pressing A through it
 ## answers no.
@@ -8878,36 +8772,6 @@ func _ask_yes_no_starting_on_no(prompt: String) -> bool:
     world.set_gameplay_enabled(not _field_ui_blocks_gameplay(build_menu_open))
     return int(result) == 1
 
-func _world_storage_key(cell_key: String, grid: Vector2i) -> String:
-    var qualified := _world_grid_key(grid) + "|" + cell_key
-    # Preserve legacy boxes and their contents; never discard unqualified saves.
-    if not pokemon_storage.has(qualified) and pokemon_storage.has(cell_key): return cell_key
-    return qualified
-
-func _built_storage_keys() -> Array[String]:
-    var keys: Array[String] = []
-    for cell in world.built_structures:
-        if String(world.built_structures[cell].get("name", "")) == "STORAGE BOX":
-            var key := _world_storage_key(world._cell_key(cell),current_world_grid)
-            if not key in keys: keys.append(key)
-    for grid_key in adjacent_worlds:
-        if grid_key == _world_grid_key(current_world_grid): continue
-        var pieces = String(grid_key).split(",")
-        if pieces.size()!=2: continue
-        var grid := Vector2i(int(pieces[0]),int(pieces[1]))
-        for piece in adjacent_worlds[grid_key].get("state",{}).get("structures",[]):
-            if piece.get("name","")!="STORAGE BOX": continue
-            var key := _world_storage_key(world._cell_key(Vector2i(int(piece.x),int(piece.y))),grid)
-            if not key in keys: keys.append(key)
-    # Previously saved contents stay reachable even if the physical box was cut.
-    for key in pokemon_storage:
-        if String(key) != SHARED_STORAGE_KEY and not String(key) in keys: keys.append(String(key))
-    keys.sort()
-    if preferred_storage_box in keys:
-        keys.erase(preferred_storage_box)
-        keys.push_front(preferred_storage_box)
-    return keys
-
 func _route_received_pokemon(pokemon: Dictionary, allow_party: bool = true) -> String:
     # Every acquisition shares this boundary; the visible party has six slots.
     if allow_party and caught_pokemon.size() < 6:
@@ -8915,7 +8779,7 @@ func _route_received_pokemon(pokemon: Dictionary, allow_party: bool = true) -> S
         pokedex_progress.mark(pokemon, true)
         return "PARTY"
     if is_instance_valid(coop_game) and coop_game.active:return coop_game.storage.route_received(pokemon)
-    for key in _built_storage_keys():
+    for key in storage.built_storage_keys():
         var box: Array = pokemon_storage.get(key, [])
         if POKEMON_STORAGE_CAPACITY > 0 and box.size() >= POKEMON_STORAGE_CAPACITY:
             continue
@@ -8952,7 +8816,7 @@ func _recover_hidden_party_overflow() -> void:
 func _can_receive_overworld_pokemon() -> bool:
     if caught_pokemon.size() < 6:
         return true
-    for key in _built_storage_keys():
+    for key in storage.built_storage_keys():
         if POKEMON_STORAGE_CAPACITY <= 0 or (pokemon_storage.get(key, []) as Array).size() < POKEMON_STORAGE_CAPACITY:
             return true
     return false
@@ -9526,354 +9390,6 @@ func _confirm_sign_text() -> void:
     if world.has_method("set_structure_sign_text"):
         world.call("set_structure_sign_text", sign_edit_cell, sign_edit.text)
 
-func _storage_entry_text(pokemon: Dictionary) -> String:
-    if bool(pokemon.get("is_egg", false)):
-        return "EGG"
-    var display := PokemonState.display_name(pokemon).replace("_", " ").to_upper()
-    return "%s  L%d" % [display, int(pokemon.get("level", 1))]
-
-
-func _open_storage_menu(box_key: String) -> void:
-    if is_instance_valid(coop_game) and coop_game.active:
-        # Preparing has the host pack and save the whole area and send every
-        # shared record back, which took seconds and stalled the host. It is
-        # only needed for a box the shared world does not know yet.
-        if not coop_game.storage.known(_world_storage_key(box_key,current_world_grid)):
-            if not await coop_game.storage.prepare():_show_message("ONLINE STORAGE COULD NOT LOAD.");return
-    var shared_chest: bool = not (is_instance_valid(coop_game) and coop_game.active) and \
-        String(world.built_structures.get(world._cell_from_key(box_key), {}).get("name", "")) == "PRIVATE CHEST"
-    box_key = SHARED_STORAGE_KEY if shared_chest else _world_storage_key(box_key,current_world_grid)
-    storage_pooled = false
-    storage_box_key = box_key
-    if is_instance_valid(coop_game) and coop_game.active:coop_game.storage.refresh()
-    # A Pokemon caught with a full party goes to the last STORAGE BOX used,
-    # never to the SHARED chest.
-    if not shared_chest: preferred_storage_box = box_key
-    if not pokemon_storage.has(storage_box_key):
-        pokemon_storage[storage_box_key] = []
-    storage_column = 0
-    storage_index = 0
-    storage_box_window_start = 0
-    storage_mode = "LIST"
-    storage_switch_from = -1
-    storage_menu_open = true
-    storage_menu.visible = true
-    message_panel.visible = false
-    world.set_gameplay_enabled(false)
-    touch_controls.set_game_active(true)
-    _refresh_storage_menu()
-
-
-func _open_pooled_storage_menu() -> void:
-    # Opening the worldwide view must not change the last physical box used.
-    storage_pooled = true
-    storage_box_key = ""
-    if is_instance_valid(coop_game) and coop_game.active: coop_game.storage.refresh()
-    storage_column = 1
-    storage_index = 0
-    storage_box_window_start = 0
-    storage_mode = "LIST"
-    storage_switch_from = -1
-    storage_menu_open = true
-    game_menu_box.hide()
-    storage_menu.show()
-    message_panel.hide()
-    world.set_gameplay_enabled(false)
-    _refresh_storage_menu()
-
-func _storage_pool_locations() -> Array:
-    var locations: Array = []
-    var keys: Array = pokemon_storage.keys()
-    keys.sort()
-    for key in keys:
-        # The SHARED chest is opened only at a SHARED chest.
-        if String(key) == SHARED_STORAGE_KEY and not (is_instance_valid(coop_game) and coop_game.active): continue
-        for index in range(pokemon_storage[key].size()):
-            locations.append([key, index])
-    if is_instance_valid(coop_game) and coop_game.active and not coop_game.storage.sort_mode.is_empty():
-        locations.sort_custom(func(a,b):return coop_game.storage.sort_less(pokemon_storage[a[0]][a[1]],pokemon_storage[b[0]][b[1]]))
-    return locations
-
-func _storage_deposit_key() -> String:
-    if not storage_pooled:
-        return storage_box_key
-    if not preferred_storage_box.is_empty() and pokemon_storage.has(preferred_storage_box):
-        return preferred_storage_box
-    var keys := _built_storage_keys()
-    if not keys.is_empty():
-        return keys[0]
-    var saved: Array = pokemon_storage.keys()
-    saved.sort()
-    return String(saved[0]) if not saved.is_empty() else ""
-
-func _storage_entries() -> Array:
-    if storage_column == 0:
-        return caught_pokemon
-    if not storage_pooled:
-        return pokemon_storage.get(storage_box_key, [])
-    var entries: Array = []
-    for location in _storage_pool_locations():
-        entries.append(pokemon_storage[location[0]][location[1]])
-    return entries
-
-func _storage_swap(first: int, second: int) -> void:
-    if is_instance_valid(coop_game) and coop_game.active and storage_column==1:
-        await coop_game.storage.swap(second)
-        return
-    if storage_pooled and storage_column == 1:
-        var locations := _storage_pool_locations()
-        var a: Array = locations[first]
-        var b: Array = locations[second]
-        var previous = pokemon_storage[a[0]][a[1]]
-        pokemon_storage[a[0]][a[1]] = pokemon_storage[b[0]][b[1]]
-        pokemon_storage[b[0]][b[1]] = previous
-    else:
-        var entries := _storage_entries()
-        var previous = entries[first]
-        entries[first] = entries[second]
-        entries[second] = previous
-
-func _refresh_storage_menu() -> void:
-    if not storage_menu_open:
-        return
-    var entries := _storage_entries()
-    storage_index = clampi(storage_index, 0, maxi(0, entries.size() - 1))
-    storage_box_window_start = clampi(storage_box_window_start,
-        maxi(0, storage_index - 5), storage_index)
-    _refresh_party_list_rows(storage_rows,
-        entries.slice(storage_box_window_start, storage_box_window_start + 6),
-        storage_index - storage_box_window_start)
-    for row_index in range(storage_rows.size()):
-        var row: Dictionary = storage_rows[row_index]
-        var skill_label: Label = row.field_moves
-        var entry_index := storage_box_window_start + row_index
-        skill_label.text = ""
-        if entry_index == storage_index and entry_index < entries.size() and not entries[entry_index].get("is_egg",false):
-            var pokemon: Dictionary = entries[entry_index]
-            skill_label.text = " / ".join(FieldMoveData.field_moves_for(String(pokemon.species),String(pokemon.get("form",""))))
-            var width := skill_label.get_theme_font("font").get_string_size(skill_label.text,HORIZONTAL_ALIGNMENT_LEFT,-1,8).x
-            skill_label.scale.x = minf(1.0,132.0/maxf(1.0,width))
-        row.status.visible = skill_label.text.is_empty()
-    storage_prompt.text = "Your POKéMON" if storage_column == 0 else "Stored POKéMON"
-    storage_footer_arrow.position.x = 292 if storage_column == 0 else 18
-    storage_footer_arrow.flip_h = storage_column == 1
-    if storage_mode == "SWITCH":
-        storage_prompt.text = "Switch with which POKéMON?"
-    storage_actions.visible = storage_mode == "ACTION"
-    var actions := _storage_actions_list()
-    storage_action_index=clampi(storage_action_index,0,actions.size()-1)
-    for index in range(storage_action_labels.size()):
-        storage_action_labels[index].visible=index<actions.size()
-        if index>=actions.size():continue
-        storage_action_labels[index].position.y=9+index*(17 if actions.size()==7 else 20)
-        storage_action_labels[index].text = actions[index]
-    storage_choice_panel.visible = storage_mode == "CONFIRM"
-    storage_choice_arrow.visible = storage_mode == "CONFIRM"
-    storage_choice_label.visible = storage_mode == "CONFIRM"
-    _align_menu_tick(storage_choice_arrow, storage_choice_label if storage_yes else storage_no_label)
-    _align_menu_tick(storage_cursor, storage_action_labels[storage_action_index])
-    storage_dialog.visible = storage_mode in ["CONFIRM", "NOTICE", "NICKNAME"]
-    storage_nickname.visible = storage_mode == "NICKNAME"
-    if storage_mode == "NICKNAME":
-        storage_dialog_text.text = "Press enter to set"
-    elif storage_mode == "CONFIRM":
-        var question := "Store POKéMON of this type?" if storage_pending=="STORE TYPE" else "Move to storage?" if storage_pending == "STORE" else "Add to your party?"
-        if storage_pending == "RELEASE":
-            question = "Release %s to the wild? This can't be undone!" % (PokemonState.display_name(entries[storage_index]) if storage_index<entries.size() else "this POKéMON")
-        elif storage_pending == "NICKNAME":
-            question = "Keep changes?"
-        storage_dialog_text.text = question
-        storage_choice_label.text = "YES"
-
-func _storage_notice(text: String) -> void:
-    storage_mode = "NOTICE"
-    storage_dialog_text.text = text
-    world.call("play_source_sound", "error1")
-    _refresh_storage_menu()
-
-func _storage_is_active(pokemon: Dictionary) -> bool:
-    var active: Dictionary = world.get("active_field_pokemon")
-    if active.is_empty():
-        return false
-    var identity := String(active.get("party_ecology_id", ""))
-    if not identity.is_empty():
-        return identity == String(pokemon.get("party_ecology_id", ""))
-    if int(active.get("ecology_id", -1)) >= 0:
-        return int(active.ecology_id) == int(pokemon.get("ecology_id", -2))
-    return is_same(active, pokemon)
-
-func _storage_actions_list()->Array:
-    var actions=["STORE" if storage_column==0 else "TAKE","RELEASE","NICKNAME","STATS","SWITCH","CANCEL"]
-    if is_instance_valid(coop_game) and coop_game.active and storage_column==0:actions.insert(1,"STORE TYPE")
-    return actions
-
-func _storage_choose_action() -> void:
-    var entries := _storage_entries()
-    if entries.is_empty():
-        return
-    var pokemon: Dictionary = entries[storage_index]
-    if is_instance_valid(coop_game) and coop_game.active:coop_game.storage.select()
-    storage_pending = _storage_actions_list()[storage_action_index]
-    if storage_pending == "CANCEL":
-        storage_mode = "LIST"
-    elif storage_pending == "STATS":
-        _open_pokemon_stats(pokemon, "STORAGE")
-    elif storage_pending == "SWITCH":
-        storage_switch_from = storage_index
-        storage_mode = "SWITCH"
-    elif storage_pending == "NICKNAME":
-        storage_mode = "NICKNAME"
-        storage_nickname.text = PokemonState.display_name(pokemon)
-        storage_nickname.call_deferred("grab_focus")
-    else:
-        if storage_column == 0 and storage_pending in ["STORE", "RELEASE"] and _storage_is_active(pokemon) and String(world.active_field_move) in ["SURF", "FLY"]:
-            _storage_notice("Stop the field move before moving this POKéMON.")
-            return
-        if storage_pending in ["STORE","STORE TYPE"]:
-            if _storage_deposit_key().is_empty():
-                _storage_notice("Build a STORAGE BOX first.")
-                return
-            var healthy := false
-            for index in range(entries.size()):
-                if index != storage_index and not bool(entries[index].get("is_egg", false)) and int(entries[index].get("hp", 0)) > 0:
-                    healthy = true
-            if not healthy:
-                _storage_notice("You need at least 1 healthy POKéMON in your party.")
-                return
-            if _storage_is_active(pokemon) and String(world.get("active_field_move")) == "SURF":
-                _storage_notice("Can't store a POKéMON that's using SURF.")
-                return
-        elif storage_pending == "TAKE" and caught_pokemon.size() >= 6:
-            _storage_notice("Your party is full!")
-            return
-        elif storage_pending == "RELEASE" and storage_column == 0 and entries.size() <= 1:
-            _storage_notice("You need at least 1 POKéMON in your party.")
-            return
-        storage_yes = storage_pending != "RELEASE"
-        storage_mode = "CONFIRM"
-    _refresh_storage_menu()
-
-func _storage_apply_action() -> void:
-    if is_instance_valid(coop_game) and coop_game.active:
-        await coop_game.storage.apply()
-        return
-    var entries := _storage_entries()
-    if entries.is_empty():
-        return
-    var pokemon: Dictionary = entries[storage_index]
-    if storage_pending == "NICKNAME":
-        pokemon["nickname"] = storage_nickname.text
-        world.call("play_source_sound", "coin1")
-        return
-    if storage_column == 0 and _storage_is_active(pokemon):
-        world.call("clear_active_field_move", true)
-    if storage_pooled and storage_column == 1:
-        var location: Array = _storage_pool_locations()[storage_index]
-        pokemon_storage[location[0]].remove_at(location[1])
-    else:
-        entries.remove_at(storage_index)
-    if storage_pending == "STORE":
-        var destination := _storage_deposit_key()
-        var box: Array = pokemon_storage.get(destination, [])
-        box.append(pokemon)
-        pokemon_storage[destination] = box
-    elif storage_pending == "TAKE":
-        caught_pokemon.append(pokemon)
-    if storage_pending != "RELEASE":
-        world.call("play_source_sound", "ball_switch1")
-    else:
-        _play_pokemon_cry(pokemon)
-
-func _handle_storage_menu_input(event: InputEvent) -> void:
-    if is_instance_valid(coop_game) and coop_game.active and coop_game.storage.handle_key(event):
-        get_viewport().set_input_as_handled();return
-    if is_instance_valid(coop_game) and coop_game.active and coop_game.storage.busy:
-        get_viewport().set_input_as_handled();return
-    if pokemon_stats_open:
-        _handle_pokemon_stats_input(event)
-        return
-    if storage_mode == "NICKNAME":
-        if event.is_action_pressed("cancel") and not (event is InputEventKey and event.unicode > 0):
-            storage_nickname.release_focus()
-            storage_mode = "LIST"
-            _refresh_storage_menu()
-        return
-    if event.is_action_pressed("cancel") or event.is_action_pressed("start"):
-        if storage_mode == "LIST":
-            _close_storage_menu()
-        else:
-            storage_mode = "LIST"
-            storage_switch_from = -1
-            _refresh_storage_menu()
-    elif storage_mode == "NOTICE":
-        if event.is_action_pressed("confirm"):
-            storage_mode = "LIST"
-            _refresh_storage_menu()
-    elif storage_mode == "CONFIRM":
-        if event.is_action_pressed("move_up") or event.is_action_pressed("move_left"):
-            storage_yes = true
-        elif event.is_action_pressed("move_down") or event.is_action_pressed("move_right"):
-            storage_yes = false
-        elif event.is_action_pressed("confirm"):
-            if storage_yes:
-                await _storage_apply_action()
-            if storage_mode!="NOTICE":storage_mode = "LIST"
-        _refresh_storage_menu()
-    elif storage_mode == "ACTION":
-        if event.is_action_pressed("move_up"):
-            storage_action_index = maxi(0, storage_action_index - 1)
-        elif event.is_action_pressed("move_down"):
-            storage_action_index = mini(_storage_actions_list().size()-1, storage_action_index + 1)
-        elif event.is_action_pressed("confirm"):
-            _storage_choose_action()
-        _refresh_storage_menu()
-    else:
-        var entries := _storage_entries()
-        if storage_mode == "LIST" and (event.is_action_pressed("move_left") or event.is_action_pressed("move_right")):
-            storage_column = 0 if event.is_action_pressed("move_left") else 1
-            storage_index = 0
-            storage_box_window_start = 0
-            world.call("play_source_sound", "menu_switch2")
-        elif event.is_action_pressed("move_up"):
-            storage_index = maxi(0, storage_index - 1)
-        elif event.is_action_pressed("move_down"):
-            storage_index = mini(maxi(0, entries.size() - 1), storage_index + 1)
-        elif event.is_action_pressed("confirm") and not entries.is_empty():
-            if storage_mode == "SWITCH":
-                await _storage_swap(storage_switch_from, storage_index)
-                storage_switch_from = -1
-                if storage_mode!="NOTICE":storage_mode = "LIST"
-            else:
-                storage_mode = "ACTION"
-                storage_action_index = 0
-        _refresh_storage_menu()
-    get_viewport().set_input_as_handled()
-
-
-func _close_storage_menu() -> void:
-    if storage_pooled and game_menu_open:
-        game_menu_box.show()
-        _update_game_menu_cursor()
-    var was_pooled := storage_pooled
-    storage_pooled = false
-    storage_menu_open = false
-    storage_menu.visible = false
-    if was_pooled and is_instance_valid(coop_game) and coop_game.active: coop_game.storage.refresh()
-    storage_box_key = ""
-    storage_column = 0
-    storage_index = 0
-    storage_box_window_start = 0
-    if (
-            started
-            and not battle_active
-            and not game_menu_open
-            and not craft_menu_open
-            and not build_menu_open
-            and not trainer_tip_open
-        ):
-        world.set_gameplay_enabled(true)
-
-
 func _on_structure_action(action: String) -> void:
     if action.begins_with("PLANT_HOLE:"):
         _open_planting_bag(Vector2i(int(action.get_slice(":",1)), int(action.get_slice(":",2))))
@@ -9890,7 +9406,7 @@ func _on_structure_action(action: String) -> void:
     elif action.begins_with("BED:"):
         await _prompt_bed_rest(Vector2i(int(action.get_slice(":",1)),int(action.get_slice(":",2))))
     elif action.begins_with("STORAGE:"):
-        _open_storage_menu(action.trim_prefix("STORAGE:"))
+        storage.open_storage_menu(action.trim_prefix("STORAGE:"))
     elif action.begins_with("SIGN_EDIT:"):
         var parts := action.split(":", true, 3)
         if parts.size() >= 4:

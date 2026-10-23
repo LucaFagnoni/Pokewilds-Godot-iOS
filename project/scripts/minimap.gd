@@ -176,7 +176,7 @@ func update_dig_hud_and_minimap(delta: float) -> void:
         return
     var dig_selected := String(main.world.get("active_field_move")) == "DIG"
     var dig_active: bool = main.started and main.world.visible and dig_selected and not _minimap_top_box_visible(true)
-    dig_active = dig_active and not main.storage_menu_open and not main.storage_menu.visible and not main.trainer_tip_open and not main.field_move_wheel_open and not main.sign_dialog.visible
+    dig_active = dig_active and not main.storage_menu_open and not main.storage.storage_menu.visible and not main.trainer_tip_open and not main.field_move_wheel_open and not main.sign_dialog.visible
     if not dig_selected:
         main.dig_reward_seconds = 0.0
     elif dig_active:
