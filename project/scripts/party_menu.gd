@@ -311,19 +311,19 @@ func build_party_menu_ui() -> void:
     _hide_legacy_party_card()
     for row_index in range(6):
         main.pokemon_party_rows.append(create_party_list_row(main.pokemon_menu, row_index))
-    main.pokemon_action_panel = Panel.new()
-    main.pokemon_action_panel.name = "PokemonActionMenu"
-    main.pokemon_action_panel.position = Vector2(166, 40)
-    main.pokemon_action_panel.size = Vector2(150, 138)
-    main.pokemon_action_panel.add_theme_stylebox_override("panel", main._classic_dialogue_style())
-    main.pokemon_menu.add_child(main.pokemon_action_panel)
-    pokemon_action_cursor = main._source_texture_rect(main.pokemon_action_panel, "Cursor",
+    main.start_menu.pokemon_action_panel = Panel.new()
+    main.start_menu.pokemon_action_panel.name = "PokemonActionMenu"
+    main.start_menu.pokemon_action_panel.position = Vector2(166, 40)
+    main.start_menu.pokemon_action_panel.size = Vector2(150, 138)
+    main.start_menu.pokemon_action_panel.add_theme_stylebox_override("panel", main._classic_dialogue_style())
+    main.pokemon_menu.add_child(main.start_menu.pokemon_action_panel)
+    pokemon_action_cursor = main._source_texture_rect(main.start_menu.pokemon_action_panel, "Cursor",
         Vector2(12, 10), Vector2(5, 7), main.source_command_cursor.texture)
     pokemon_action_cursor.stretch_mode = TextureRect.STRETCH_SCALE
-    main.pokemon_action_list = main._source_ui_label(main.pokemon_action_panel, "List",
+    main.pokemon_action_list = main._source_ui_label(main.start_menu.pokemon_action_panel, "List",
         Vector2(28, 10), Vector2(110, 116), 10)
     main.pokemon_action_list.add_theme_constant_override("line_spacing", 6)
-    main.pokemon_action_panel.visible = false
+    main.start_menu.pokemon_action_panel.visible = false
 
 func build_pokemon_stats_ui() -> void:
     # Three exact source stat-page plates with selected-Pokemon data layered
@@ -397,7 +397,7 @@ func show_pokemon_menu() -> void:
     pokemon_move_index = 0
     main.pokemon_action_open = false
     main.pokemon_switch_selecting = false
-    main.pokemon_action_panel.visible = false
+    main.start_menu.pokemon_action_panel.visible = false
     main.game_menu_box.visible = false
     main.game_menu_detail.visible = false
     main.game_menu_map.visible = false
@@ -446,28 +446,28 @@ func open_pokemon_action_menu() -> void:
     if main.caught_pokemon.is_empty():
         return
     var entry := main.caught_pokemon[main.pokemon_menu_index] as Dictionary
-    main.pokemon_action_entries = pokemon_world_actions(
+    main.start_menu.pokemon_action_entries = pokemon_world_actions(
         String(entry.get("species", "")), entry)
     main.pokemon_action_index = 0
     main.pokemon_action_open = true
-    main.pokemon_action_panel.visible = true
+    main.start_menu.pokemon_action_panel.visible = true
     refresh_pokemon_action_menu()
 
 func refresh_pokemon_action_menu() -> void:
-    if main.pokemon_action_entries.is_empty():
-        main.pokemon_action_entries = ["CANCEL"]
-    main.pokemon_action_index = wrapi(main.pokemon_action_index, 0, main.pokemon_action_entries.size())
+    if main.start_menu.pokemon_action_entries.is_empty():
+        main.start_menu.pokemon_action_entries = ["CANCEL"]
+    main.pokemon_action_index = wrapi(main.pokemon_action_index, 0, main.start_menu.pokemon_action_entries.size())
     refresh_source_action_rows(main.pokemon_action_list, pokemon_action_cursor,
-        main.pokemon_action_entries, main.pokemon_action_index)
+        main.start_menu.pokemon_action_entries, main.pokemon_action_index)
 
 func close_pokemon_action_menu() -> void:
     main.pokemon_action_open = false
-    main.pokemon_action_panel.visible = false
+    main.start_menu.pokemon_action_panel.visible = false
 
 func activate_pokemon_action() -> void:
-    if main.pokemon_action_entries.is_empty():
+    if main.start_menu.pokemon_action_entries.is_empty():
         return
-    var action := String(main.pokemon_action_entries[main.pokemon_action_index])
+    var action := String(main.start_menu.pokemon_action_entries[main.pokemon_action_index])
     if action == "CANCEL":
         close_pokemon_action_menu()
         return
@@ -487,7 +487,7 @@ func activate_pokemon_action() -> void:
         close_pokemon_action_menu()
         _deploy_selected_pokemon()
         return
-    pokemon_move_index = main.pokemon_action_entries.find(action)
+    pokemon_move_index = main.start_menu.pokemon_action_entries.find(action)
     close_pokemon_action_menu()
     _activate_selected_field_move()
 
@@ -584,7 +584,7 @@ func _close_pokemon_stats() -> void:
     main.pokemon_stats_overlay.visible = false
     if pokemon_stats_return_context == "OVERWORLD" and main.pokemon_menu_open:
         main.pokemon_action_open = true
-        main.pokemon_action_panel.visible = true
+        main.start_menu.pokemon_action_panel.visible = true
     elif pokemon_stats_return_context == "BATTLE" and main.battle_active and \
             main.battle_submenu_mode == "PARTY":
         main.battle_party_action_open = true

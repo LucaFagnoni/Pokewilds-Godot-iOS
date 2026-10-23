@@ -437,7 +437,7 @@ func handle_storage_menu_input(event: InputEvent) -> void:
 func _close_storage_menu() -> void:
     if main.storage_pooled and main.game_menu_open:
         main.game_menu_box.show()
-        main._update_game_menu_cursor()
+        main.start_menu.update_game_menu_cursor()
     var was_pooled := main.storage_pooled
     main.storage_pooled = false
     main.storage_menu_open = false

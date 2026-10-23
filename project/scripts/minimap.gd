@@ -787,7 +787,7 @@ func open_teleport_map(destinations: Array) -> void:
         return
     main.teleport_map_mode = true
     main.teleport_destinations = destinations.duplicate(true)
-    main.teleport_destination_index = 0
+    main.start_menu.teleport_destination_index = 0
     main.game_menu_open = true
     main.game_menu_detail_open = true
     main.game_menu.visible = true
@@ -805,13 +805,13 @@ func open_teleport_map(destinations: Array) -> void:
 func cycle_teleport_destination(direction: int) -> void:
     if main.teleport_destinations.is_empty():
         return
-    main.teleport_destination_index = wrapi(main.teleport_destination_index + direction, 0, main.teleport_destinations.size())
+    main.start_menu.teleport_destination_index = wrapi(main.start_menu.teleport_destination_index + direction, 0, main.teleport_destinations.size())
     _refresh_teleport_map_selection()
 
 func _refresh_teleport_map_selection() -> void:
     if main.teleport_destinations.is_empty() or main.map_view_node == null:
         return
-    var destination: Dictionary = main.teleport_destinations[main.teleport_destination_index]
+    var destination: Dictionary = main.teleport_destinations[main.start_menu.teleport_destination_index]
     var cell: Vector2i = destination.get("cell", Vector2i.ZERO)
     # The tile streams draw the view there while the map is up, so the jump finds it drawn.
     if main.world.has_method("prepare_view_at"): main.world.call("prepare_view_at", cell)
@@ -834,7 +834,7 @@ func _refresh_teleport_map_selection() -> void:
         main.game_menu_map.add_child(teleport_name_label)
     teleport_name_label.text = "%s   %d/%d" % [
         String(destination.get("name", "BEACON")),
-        main.teleport_destination_index + 1, main.teleport_destinations.size()]
+        main.start_menu.teleport_destination_index + 1, main.teleport_destinations.size()]
 
 func _draw_world_map() -> void:
     clear_map_canvas()

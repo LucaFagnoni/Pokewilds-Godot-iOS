@@ -88,7 +88,7 @@ func show_item_menu() -> void:
     main.battle_item_pocket_open = true
     main.battle_item_pocket_index = ItemData.POCKET_ITEMS
     main.battle_item_menu_index = 0
-    main.item_menu_active = false
+    main.start_menu.item_menu_active = false
     main.game_menu_box.visible = false
     main.game_menu_detail.visible = false
     main.item_pocket_menu.visible = true
@@ -123,7 +123,7 @@ func handle_overworld_item_pocket_input(event: InputEvent) -> void:
 func _close_overworld_item_pocket_menu() -> void:
     if main.planting_bag_target != null:
         main.planting_bag_target = null
-        main._close_game_menu()
+        main.start_menu.close_game_menu()
         return
     main.battle_item_pocket_open = false
     main.item_pocket_context = ""
@@ -150,7 +150,7 @@ func _confirm_overworld_item_pocket() -> void:
             if not main.coop_game.active:consume_inventory_item(selected_item)
             main.planting_bag_target = null
             main.world.planting_item = selected_item if int(main.inventory.get(selected_item,0)) > 0 else ""
-            main._close_game_menu()
+            main.start_menu.close_game_menu()
         else:
             main.game_menu.show()
             main.world.set_gameplay_enabled(false)
@@ -378,7 +378,7 @@ func planting_bag_item_allowed(item: String) -> bool:
 
 func open_planting_bag(cell: Vector2i) -> void:
     if not main.world.is_empty_planting_hole(cell): return
-    main._open_game_menu()
+    main.start_menu.open_game_menu()
     if not main.game_menu_open: return
     main.planting_bag_target = cell
     show_item_menu()

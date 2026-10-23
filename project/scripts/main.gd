@@ -27,6 +27,7 @@ const SETUP_SAVE_PATH := "user://m3_setup.cfg"
 const DataPaths = preload("res://scripts/game_data_paths.gd")
 const WorldSaves = preload("res://scripts/world_saves.gd")
 var saves := WorldSaves.new("user://saves")
+var start_menu := preload("res://scripts/game_menu.gd").new(self)
 var bag_menu := preload("res://scripts/bag_menu.gd").new(self)
 var party_menu := preload("res://scripts/party_menu.gd").new(self)
 var storage := preload("res://scripts/storage_menu.gd").new(self)
@@ -908,11 +909,9 @@ var setup_load_entries: Array[Dictionary] = []
 var setup_load_open := false
 var setup_load_committed := false
 var setup_load_path := ""
-var pokemon_action_panel: Panel
 var pokemon_action_list: Label
 var pokemon_action_open := false
 var pokemon_action_index := 0
-var pokemon_action_entries: Array[String] = []
 var pokemon_switch_selecting := false
 var pokemon_switch_source_index := -1
 var setup_go_cursor: TextureRect
@@ -992,7 +991,6 @@ var trainer_tip_page_index := 0
 var trainer_tip_continue: Label
 var item_menu_names: Array[String] = []
 var item_menu_index := 0
-var item_menu_active := false
 var item_pocket_context := ""
 var bag_action_ui: Control
 var safari_ui: Control
@@ -1023,7 +1021,6 @@ var minimap_root: Control
 var minimap_map: TextureRect
 var teleport_map_mode := false
 var teleport_destinations: Array = []
-var teleport_destination_index := 0
 var ball_mechanics: Node2D
 var field_move_wheel: FieldMoveRadial
 var field_move_wheel_open := false
@@ -1047,7 +1044,6 @@ var next_party_ecology_id := 1
 var save_confirm_open := false
 var save_confirm_index := 0
 var quit_prompt_open := false
-var quit_prompt_stage := 0 # 0 = quit?, 1 = save before quit?
 var quit_prompt_index := 0 # 0 = YES, 1 = NO
 var egg_pickup_open := false
 var egg_pickup_stage := 0 # 0 = discovery text, 1 = YES/NO
@@ -1567,7 +1563,7 @@ func _setup_options() -> void:
     for index in range(GAME_MENU_OPTIONS.size()):
         _source_ui_label(game_menu_box,"Option%d" % index,Vector2(28,11+index*17),Vector2(68,17),11,GAME_MENU_OPTIONS[index])
     _apply_game_options()
-    _update_game_menu_cursor()
+    start_menu.update_game_menu_cursor()
     _route_existing_audio(self)
 
 func _route_existing_audio(node: Node) -> void:
@@ -2906,7 +2902,7 @@ func _notification(what: int) -> void:
     # Android system Back requests quit; controller Select has its own map action.
     if not _is_android_touch_runtime():
         if started and not quit_prompt_open:
-            _open_quit_prompt()
+            start_menu.open_quit_prompt()
         return
     _handle_android_back_request()
 
@@ -2938,7 +2934,7 @@ func _handle_android_back_request() -> void:
     else:
         if is_instance_valid(pokedex_menu) and pokedex_menu.visible:
             pokedex_menu.close()
-        _open_quit_prompt()
+        start_menu.open_quit_prompt()
 
 func _poll_android_back_bridge() -> void:
     if not android_back_bridge_checked:
@@ -2988,7 +2984,7 @@ func _input(event: InputEvent) -> void:
         waypoint_ui.handle_input(event)
         return # Dispatch before focused controls consume controller buttons.
     if game_menu_open and game_menu_detail_open and game_menu_map_screen.visible:
-        _handle_game_menu_input(event)
+        start_menu.handle_game_menu_input(event)
         get_viewport().set_input_as_handled()
         return
     # Depending on the Android device/launcher, the hardware Back control can
@@ -3169,14 +3165,14 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
     if quit_prompt_open:
-        _handle_quit_prompt_input(event)
+        start_menu.handle_quit_prompt_input(event)
         return
 
     if battle_entry_pending:
         return
 
     if event.is_action_pressed("quit_menu"):
-        _open_quit_prompt()
+        start_menu.open_quit_prompt()
         get_viewport().set_input_as_handled()
         return
 
@@ -3253,14 +3249,14 @@ func _unhandled_input(event: InputEvent) -> void:
     if started:
         if event.is_action_pressed("map_open"):
             if game_menu_open and game_menu_detail_open and game_menu_map_screen.visible and not teleport_map_mode:
-                _close_game_menu()
+                start_menu.close_game_menu()
             elif not _field_ui_blocks_gameplay() and not field_move_wheel_open and not bag_menu.sleeping_bag_active():
-                _open_game_menu()
+                start_menu.open_game_menu()
                 minimap.show_map_menu()
             get_viewport().set_input_as_handled()
             return
         if game_menu_open:
-            _handle_game_menu_input(event)
+            start_menu.handle_game_menu_input(event)
             return
 
         if bag_menu.sleeping_bag_active():
@@ -3268,7 +3264,7 @@ func _unhandled_input(event: InputEvent) -> void:
                 bag_menu.end_sleeping_bag_rest()
                 get_viewport().set_input_as_handled()
             elif event.is_action_pressed("start"):
-                _queue_start_menu(event)
+                start_menu.queue_start_menu(event)
                 get_viewport().set_input_as_handled()
             # Confirm and movement do not dismiss the sleeping bag.
             return
@@ -3297,7 +3293,7 @@ func _unhandled_input(event: InputEvent) -> void:
             return
 
         if event.is_action_pressed("start"):
-            _queue_start_menu(event)
+            start_menu.queue_start_menu(event)
             get_viewport().set_input_as_handled()
         return
 
@@ -7018,326 +7014,13 @@ func _close_trainer_tip() -> void:
         ):
         world.set_gameplay_enabled(true)
 
-func _open_game_menu() -> void:
-    if battle_active or generating or not started or \
-            (field_item_busy and not bag_menu.sleeping_bag_active()):
-        return
-    game_menu_open = true
-    game_menu_detail_open = false
-    pokemon_menu_open = false
-    pokemon_action_open = false
-    pokemon_switch_selecting = false
-    pokemon_action_panel.visible = false
-    guide_menu_open = false
-    guide_topic_open = false
-    pokemon_menu_index = 0
-    save_confirm_open = false
-    save_confirm_index = 0
-    save_confirm.visible = false
-    game_menu_index = 0
-    game_menu.visible = true
-    game_menu_box.visible = true
-    game_menu_detail.visible = false
-    game_menu_map_screen.visible = false
-    item_pocket_menu.visible = false
-    item_pocket_context = ""
-    pokemon_menu.visible = false
-    guide_menu.visible = false
-    world.set_gameplay_enabled(false)
-    touch_controls.set_game_active(true)
-    message_panel.visible = false
-    _update_game_menu_cursor()
-
-func _close_game_menu() -> void:
-    planting_bag_target = null
-    bag_notice = ""
-    game_menu_open = false
-    game_menu_detail_open = false
-    pokemon_menu_open = false
-    pokemon_action_open = false
-    pokemon_switch_selecting = false
-    pokemon_switch_source_index = -1
-    pokemon_action_panel.visible = false
-    pokemon_stats_open = false
-    pokemon_stats_overlay.visible = false
-    guide_menu_open = false
-    guide_topic_open = false
-    save_confirm_open = false
-    save_confirm.visible = false
-    game_menu.visible = false
-    game_menu_detail.visible = false
-    item_menu_active = false
-    item_pocket_context = ""
-    battle_item_pocket_open = false
-    item_pocket_menu.visible = false
-    pokemon_menu.visible = false
-    guide_menu.visible = false
-    game_menu_map.visible = false
-    game_menu_map_screen.visible = false
-    minimap.clear_map_canvas()
-    world.set_gameplay_enabled(not bag_menu.sleeping_bag_active())
-    touch_controls.set_game_active(true)
-
-func _handle_game_menu_input(event: InputEvent) -> void:
-    if not overworld_evolution_item.is_empty():
-        bag_menu.handle_evolution_item_input(event)
-        return
-    if item_pocket_context == "OVERWORLD" and battle_item_pocket_open:
-        bag_menu.handle_overworld_item_pocket_input(event)
-        return
-
-    if guide_topic_open:
-        if event.is_action_pressed("confirm") or event.is_action_pressed("cancel") or event.is_action_pressed("start"):
-            guide_topic_open = false
-            game_menu_detail_open = false
-            game_menu_detail.visible = false
-            guide_menu.visible = true
-            get_viewport().set_input_as_handled()
-        return
-
-    if guide_menu_open:
-        if event.is_action_pressed("move_up"):
-            guide_menu_index = wrapi(guide_menu_index - 1, 0, GUIDE_TOPICS.size())
-            _refresh_guide_menu()
-            get_viewport().set_input_as_handled()
-        elif event.is_action_pressed("move_down"):
-            guide_menu_index = wrapi(guide_menu_index + 1, 0, GUIDE_TOPICS.size())
-            _refresh_guide_menu()
-            get_viewport().set_input_as_handled()
-        elif event.is_action_pressed("confirm"):
-            _show_selected_guide_topic()
-            get_viewport().set_input_as_handled()
-        elif event.is_action_pressed("cancel") or event.is_action_pressed("start"):
-            guide_menu_open = false
-            guide_menu.visible = false
-            game_menu_box.visible = true
-            get_viewport().set_input_as_handled()
-        return
-
-    if pokemon_menu_open:
-        if pokemon_action_open:
-            if event.is_action_pressed("move_up"):
-                pokemon_action_index = wrapi(pokemon_action_index - 1, 0,
-                    pokemon_action_entries.size())
-                party_menu.refresh_pokemon_action_menu()
-            elif event.is_action_pressed("move_down"):
-                pokemon_action_index = wrapi(pokemon_action_index + 1, 0,
-                    pokemon_action_entries.size())
-                party_menu.refresh_pokemon_action_menu()
-            elif event.is_action_pressed("confirm"):
-                party_menu.activate_pokemon_action()
-            elif event.is_action_pressed("cancel") or event.is_action_pressed("start"):
-                party_menu.close_pokemon_action_menu()
-            else:
-                return
-            get_viewport().set_input_as_handled()
-            return
-        if event.is_action_pressed("move_up"):
-            if not caught_pokemon.is_empty():
-                pokemon_menu_index = wrapi(pokemon_menu_index - 1, 0,
-                    mini(6, caught_pokemon.size()))
-                party_menu.refresh_pokemon_category_menu()
-            get_viewport().set_input_as_handled()
-        elif event.is_action_pressed("move_down"):
-            if not caught_pokemon.is_empty():
-                pokemon_menu_index = wrapi(pokemon_menu_index + 1, 0,
-                    mini(6, caught_pokemon.size()))
-                party_menu.refresh_pokemon_category_menu()
-            get_viewport().set_input_as_handled()
-        elif pokemon_switch_selecting and event.is_action_pressed("confirm"):
-            party_menu.finish_pokemon_switch()
-            get_viewport().set_input_as_handled()
-        elif event.is_action_pressed("cancel") or event.is_action_pressed("start"):
-            if pokemon_switch_selecting:
-                pokemon_switch_selecting = false
-                pokemon_switch_source_index = -1
-                pokemon_menu_prompt.text = "Choose a POKEMON."
-            else:
-                pokemon_menu_open = false
-                pokemon_menu.visible = false
-                game_menu_box.visible = true
-            get_viewport().set_input_as_handled()
-        elif event.is_action_pressed("confirm"):
-            party_menu.open_pokemon_action_menu()
-            get_viewport().set_input_as_handled()
-        return
-
-    if save_confirm_open:
-        if event.is_action_pressed("move_left") or event.is_action_pressed("move_right"):
-            save_confirm_index = 1 - save_confirm_index
-            _update_save_confirm_cursor()
-            get_viewport().set_input_as_handled()
-        elif event.is_action_pressed("confirm"):
-            if save_confirm_index == 0:
-                _save_current_game()
-            else:
-                _close_save_confirmation()
-            get_viewport().set_input_as_handled()
-        elif event.is_action_pressed("cancel") or event.is_action_pressed("start"):
-            _close_save_confirmation()
-            get_viewport().set_input_as_handled()
-        return
-
-    if event.is_action_pressed("start") or event.is_action_pressed("cancel"):
-        if game_menu_detail_open:
-            item_menu_active = false
-            game_menu_detail_open = false
-            game_menu_detail.visible = false
-            game_menu_box.visible = true
-            game_menu_map.visible = false
-            game_menu_map_screen.visible = false
-            teleport_map_mode = false
-            teleport_destinations.clear()
-            minimap.clear_map_canvas()
-        else:
-            _close_game_menu()
-        get_viewport().set_input_as_handled()
-        return
-
-    if game_menu_detail_open:
-        if game_menu_map_screen.visible:
-            if teleport_map_mode:
-                if event.is_action_pressed("move_left") or event.is_action_pressed("move_up") or event.is_action_pressed("shoulder_left"):
-                    minimap.cycle_teleport_destination(-1)
-                    get_viewport().set_input_as_handled()
-                elif event.is_action_pressed("move_right") or event.is_action_pressed("move_down") or event.is_action_pressed("shoulder_right"):
-                    minimap.cycle_teleport_destination(1)
-                    get_viewport().set_input_as_handled()
-                elif event.is_action_pressed("confirm"):
-                    if world.has_method("teleport_to_destination"):
-                        world.call("teleport_to_destination", teleport_destination_index)
-                    teleport_map_mode = false
-                    _close_game_menu()
-                    get_viewport().set_input_as_handled()
-                return
-            if event.is_action_pressed("confirm") and is_instance_valid(waypoint_ui):
-                waypoint_ui.begin_name()
-                get_viewport().set_input_as_handled()
-                return
-            if GameOptions.enabled("zoom") and (event.is_action_pressed("zoom_in") or event.is_action_pressed("shoulder_right")):
-                minimap.set_map_zoom(map_zoom * 1.25)
-                get_viewport().set_input_as_handled()
-            elif GameOptions.enabled("zoom") and (event.is_action_pressed("zoom_out") or event.is_action_pressed("shoulder_left")):
-                minimap.set_map_zoom(map_zoom / 1.25)
-                get_viewport().set_input_as_handled()
-            return
-        if event.is_action_pressed("confirm"):
-            game_menu_detail_open = false
-            game_menu_detail.visible = false
-            game_menu_box.visible = true
-            game_menu_map.visible = false
-            game_menu_map_screen.visible = false
-            minimap.clear_map_canvas()
-            get_viewport().set_input_as_handled()
-        return
-
-    if event.is_action_pressed("move_up"):
-        game_menu_index = wrapi(game_menu_index - 1, 0, GAME_MENU_OPTIONS.size())
-        _update_game_menu_cursor()
-        get_viewport().set_input_as_handled()
-    elif event.is_action_pressed("move_down"):
-        game_menu_index = wrapi(game_menu_index + 1, 0, GAME_MENU_OPTIONS.size())
-        _update_game_menu_cursor()
-        get_viewport().set_input_as_handled()
-    elif event.is_action_pressed("confirm"):
-        _activate_game_menu_option()
-        get_viewport().set_input_as_handled()
-
-func _update_game_menu_cursor() -> void:
-    var row := game_menu_box.get_node_or_null("Option%d" % game_menu_index) as Label
-    if row != null: _align_menu_tick(game_menu_cursor, row)
-
-func _activate_game_menu_option() -> void:
-    var option = String(GAME_MENU_OPTIONS[game_menu_index])
-    match option:
-        "STORAGE":
-            storage.open_pooled_storage_menu()
-        "POKEMON":
-            party_menu.show_pokemon_menu()
-        "ITEM":
-            bag_menu.show_item_menu()
-        "MAP":
-            minimap.show_map_menu()
-        "POKEDEX":
-            pokedex_menu.open(true)
-        "GUIDE":
-            _show_guide_menu()
-        "OPTIONS":
-            options_menu.open()
-        "SAVE":
-            _open_save_confirmation()
-        "EXIT":
-            _close_game_menu()
-            _open_quit_prompt()
-
-func _open_detail(title: String, body: String) -> void:
-    game_menu_detail_open = true
-    game_menu_box.visible = false
-    game_menu_detail.visible = true
-    game_menu_detail_title.text = title
-    game_menu_detail_body.text = body
-    game_menu_map.visible = false
-    game_menu_map_screen.visible = false
-
-func _show_guide_menu() -> void:
-    guide_menu_open = true
-    guide_topic_open = false
-    guide_menu_index = 0
-    game_menu_box.visible = false
-    game_menu_detail.visible = false
-    guide_menu.visible = true
-    _refresh_guide_menu()
-
-func _refresh_guide_menu() -> void:
-    var window_start := maxi(0, guide_menu_index - 3)
-    window_start = mini(
-        window_start, maxi(0, GUIDE_TOPICS.size() - guide_menu_rows.size())
-    )
-    for row in range(guide_menu_rows.size()):
-        var topic_index := window_start + row
-        guide_menu_rows[row].text = (
-            String((GUIDE_TOPICS[topic_index] as Dictionary).get("name", ""))
-            if topic_index < GUIDE_TOPICS.size()
-            else ""
-        )
-    var visible_row := guide_menu_index - window_start
-    _align_menu_tick(guide_menu_cursor, guide_menu_rows[visible_row])
-    guide_menu_up_arrow.visible = window_start > 0
-    guide_menu_down_arrow.visible = (
-        window_start + guide_menu_rows.size() < GUIDE_TOPICS.size()
-    )
-
-func _show_selected_guide_topic() -> void:
-    var topic: Dictionary = GUIDE_TOPICS[guide_menu_index]
-    guide_menu.visible = false
-    guide_topic_open = true
-    game_menu_detail_open = true
-    game_menu_detail.visible = true
-    game_menu_detail_title.text = String(topic.get("name", "GUIDE"))
-    game_menu_detail_body.text = String(topic.get("body", ""))
-    game_menu_map.visible = false
-    game_menu_map_screen.visible = false
-
-func _open_save_confirmation() -> void:
-    save_confirm_open = true
-    save_confirm_index = 0
-    game_menu_box.visible = false
-    game_menu_detail.visible = false
-    save_confirm.visible = true
-    _update_save_confirm_cursor()
-
-func _close_save_confirmation() -> void:
-    save_confirm_open = false
-    save_confirm.visible = false
-    game_menu_box.visible = true
-
-func _update_save_confirm_cursor() -> void:
-    # Reference layout: YES on the left, NO on the right.
-    if save_confirm_index == 0:
-        save_confirm_cursor.position = Vector2(22.0, 57.0)
-    else:
-        save_confirm_cursor.position = Vector2(134.0, 57.0)
-    _align_menu_tick(save_confirm_cursor, save_confirm.get_node("Yes" if save_confirm_index == 0 else "No"))
+## game_menu.gd under its old names, for the scripts and tests that call them on main.
+func _open_game_menu() -> void: start_menu.open_game_menu()
+func _close_game_menu() -> void: start_menu.close_game_menu()
+func _update_game_menu_cursor() -> void: start_menu.update_game_menu_cursor()
+func _activate_game_menu_option() -> void: start_menu.activate_game_menu_option()
+func _update_save_confirm_cursor() -> void: start_menu.update_save_confirm_cursor()
+func _update_quit_prompt_cursor() -> void: start_menu.update_quit_prompt_cursor()
 
 func _capture_game_save(version: int = 2, personal_only: bool = false) -> Dictionary:
     var player = world.get_node("Player")
@@ -7378,28 +7061,28 @@ func _capture_game_save(version: int = 2, personal_only: bool = false) -> Dictio
 func _save_current_game() -> void:
     _sync_pokedex_owned()
     if not saves.ensure_directory():
-        _close_save_confirmation()
+        start_menu.close_save_confirmation()
         _show_message("SAVE FAILED.")
         return
 
     var data = _capture_game_save()
     if coop_game.active:
         var saved_ok: bool = await coop_game.save_game(data)
-        _close_save_confirmation()
+        start_menu.close_save_confirmation()
         if saved_ok:
-            _close_game_menu();world.call("play_source_sound","save1");_show_message("GAME SAVED.")
+            start_menu.close_game_menu();world.call("play_source_sound","save1");_show_message("GAME SAVED.")
         else: _show_message("SAVE FAILED.")
         return
 
     var error: Error = await _write_single_player_save(data)
     if error != OK:
-        _close_save_confirmation()
+        start_menu.close_save_confirmation()
         _show_message("SAVE FAILED.")
         return
 
     await shared_save_folder.export_files(self)
-    _close_save_confirmation()
-    _close_game_menu()
+    start_menu.close_save_confirmation()
+    start_menu.close_game_menu()
     world.call("play_source_sound", "save1")
     if shared_storage_error == OK:
         _show_message("GAME SAVED.")
@@ -8461,93 +8144,6 @@ func _show_acquired_resource(item_name: String, amount: int) -> void:
     resource_popup_timer = 0.9
 
 
-func _open_quit_prompt() -> void:
-    if generating or field_item_busy:
-        return
-    if field_move_wheel_open:
-        move_wheel.close_field_move_wheel(false)
-    quit_prompt_open = true
-    quit_prompt_stage = 0
-    quit_prompt_index = 0
-    quit_prompt_title.text = "QUIT GAME?" if _app_can_quit() else "EXIT TO TITLE?"
-    quit_prompt.visible = true
-    if started:
-        world.set_gameplay_enabled(false)
-        touch_controls.set_game_active(true)
-    _update_quit_prompt_cursor()
-
-func _close_quit_prompt() -> void:
-    quit_prompt_open = false
-    quit_prompt.visible = false
-    if started:
-        world.set_gameplay_enabled(true)
-        touch_controls.set_game_active(true)
-
-func _update_quit_prompt_cursor() -> void:
-    if quit_prompt_index == 0:
-        quit_prompt_cursor.position = Vector2(32.0, 52.0)
-    else:
-        quit_prompt_cursor.position = Vector2(134.0, 52.0)
-    _align_menu_tick(quit_prompt_cursor, quit_prompt.get_node("Yes" if quit_prompt_index == 0 else "No"))
-
-func _handle_quit_prompt_input(event: InputEvent) -> void:
-    if event.is_action_pressed("move_left") or event.is_action_pressed("move_right"):
-        quit_prompt_index = 1 - quit_prompt_index
-        _update_quit_prompt_cursor()
-        get_viewport().set_input_as_handled()
-        return
-
-    if event.is_action_pressed("cancel"):
-        _close_quit_prompt()
-        get_viewport().set_input_as_handled()
-        return
-
-    if event.is_action_pressed("confirm"):
-        if quit_prompt_stage == 0:
-            if quit_prompt_index == 1:
-                _close_quit_prompt()
-            else:
-                # User confirmed quit. Ask whether to save before leaving.
-                quit_prompt_stage = 1
-                quit_prompt_index = 0
-                quit_prompt_title.text = "SAVE BEFORE QUIT?" if _app_can_quit() else "SAVE BEFORE EXIT?"
-                _update_quit_prompt_cursor()
-        else:
-            if quit_prompt_index == 0:
-                var saved_ok = await _save_current_game_for_quit()
-                if not saved_ok:
-                    quit_prompt_title.text = "SAVE FAILED"
-                    quit_prompt_stage = 0
-                    quit_prompt_index = 1
-                    _update_quit_prompt_cursor()
-                    return
-            if not _app_can_quit():
-                # iOS apps may not close themselves: go back to the title screen.
-                get_tree().reload_current_scene()
-                return
-            set_process_input(false)
-            await shared_save_folder.export_files(self)
-            get_tree().quit()
-        get_viewport().set_input_as_handled()
-
-func _app_can_quit() -> bool:
-    return OS.get_name() != "iOS" and not OS.get_cmdline_user_args().has("--no-app-quit")
-
-func _save_current_game_for_quit() -> bool:
-    _sync_pokedex_owned()
-    if not started:
-        return true
-    if coop_game.active:
-        return await coop_game.save_game(_capture_game_save(3))
-
-    # Same record as the SAVE menu (the old hand-built one dropped egg/friendship
-    # timers and ecology ids).
-    var error: Error = await _write_single_player_save(_capture_game_save())
-    if error != OK:
-        return false
-    world.call("play_source_sound", "save1")
-    return true
-
 func _show_touch_changed(enabled: bool) -> void:
     touch_controls.set_touch_enabled(enabled)
     _refresh_touch_config_labels()
@@ -8774,25 +8370,6 @@ const START_DOUBLE_TAP_SECONDS := 0.28
 var start_menu_ticket := 0
 var start_menu_pending := false
 var start_menu_held := false
-
-func _start_menu_context_available() -> bool:
-    return started and not generating and not battle_active and not battle_entry_pending and not game_menu_open \
-        and not wild_pokemon_prompt_open and not egg_pickup_open and not storage_menu_open \
-        and not trainer_tip_open and not setup_load_open and not pokemon_stats_open \
-        and not touch_config.visible and not touch_controls.edit_mode and not progression_active \
-        and not field_move_wheel_open and not quit_prompt_open and not build_menu_open \
-        and not craft_menu_open and (not field_item_busy or bag_menu.sleeping_bag_active()) \
-        and not (is_instance_valid(game_files_menu) and game_files_menu.visible) \
-        and not (is_instance_valid(mod_menu_panel) and mod_menu_panel.visible)
-
-func _queue_start_menu(event: InputEvent) -> void:
-    # Start opens the ordinary menu immediately on physical and touch controls.
-    if event is InputEventJoypadButton and event.button_index == JOY_BUTTON_START:
-        if start_menu_held:
-            return
-        start_menu_held = true
-    if _start_menu_context_available():
-        _open_game_menu()
 
 func _prompt_shore_surf() -> void:
     var party_index := move_wheel.find_field_move_pokemon_index("SURF")
