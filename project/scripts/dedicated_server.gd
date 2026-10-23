@@ -50,6 +50,10 @@ var open_router_port:=true
 ## A wild battle's win or catch is taken only when the server's replay of it
 ## ends the same way (coop_wild_runtime.gd check_battle).
 var enforce_battles:=true
+## Who runs the wild and habitat Pokemon and eggs of the areas players are in:
+## "server" (this server, every area: coop_population_authority.gd) or
+## "players" (the first player in each area, as when a phone hosts).
+var population_authority:="server"
 var main:Node
 var maker:Node
 var _saving:=false
@@ -88,6 +92,8 @@ func _init()->void:
     autosave_minutes=maxf(1.0,float(config.get_value("server","autosave_minutes",autosave_minutes)))
     open_router_port=bool(config.get_value("server","open_router_port",true)) and not "--no-upnp" in args
     enforce_battles=bool(config.get_value("server","enforce_battles",enforce_battles))
+    population_authority=_arg(args,"--population-authority",String(config.get_value("server","population_authority",population_authority))).strip_edges().to_lower()
+    if not population_authority in ["server","players"]:population_authority="server"
     maker=AreaMaker.new()
     var area_size:=_arg(args,"--area-size","").to_upper()
     if area_size in SIZES:maker.area_size=SIZES.find(area_size)
@@ -132,6 +138,7 @@ func _ready()->void:
     var coop:Node=main.coop_game
     coop.host_port=port;coop.max_players=max_players
     coop.wild.enforce_battles=enforce_battles
+    coop.server_population=population_authority=="server"
     if accounts_mode!="off":
         # Before the world starts: no one may get in without an ID meanwhile.
         coop.session.accounts=Accounts.new()

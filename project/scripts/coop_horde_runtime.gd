@@ -1,6 +1,9 @@
 extends Control
 const Model=preload("res://scripts/coop_hordes.gd")
 const Delta=preload("res://scripts/coop_world_delta.gd")
+const Rules=preload("res://scripts/rules/population_rules.gd")
+## Never in a horde.
+const EXCLUDED:=["mew","mewtwo","articuno","moltres","zapdos","entei","suicune","raikou","celebi","lugia","hooh","ho-oh","arceus","regirock","regice","registeel","regigigas","volcarona","spiritomb","unownking"]
 var game:Node
 var last_night:=-1
 var last_tick:=0
@@ -94,27 +97,15 @@ func spawn_event(current:Dictionary)->void:
         var player:Dictionary=game.wild.players[actor]
         var cell=Vector2i(player.x,player.y)
         if current.players.has(actor) and not safe(cell):targets[actor]=cell
-    var pool:Array=[]
-    var excluded=["mew","mewtwo","articuno","moltres","zapdos","entei","suicune","raikou","celebi","lugia","hooh","ho-oh","arceus","regirock","regice","registeel","regigigas","volcarona","spiritomb","unownking"]
-    for data in world.wild_pokemon.values():
-        var species=String(data.species)
-        if data.get("aggro_player",false) or data.get("is_egg",false) or "mega" in species or species in excluded:continue
-        for target in targets.values():
-            if Vector2i(data.cell).distance_squared_to(target)<625:pool.append(species);break
-    if pool.size()<3:pool.append_array(["rattata","zubat","geodude","pidgey"])
+    var pool:=_pool(world.wild_pokemon.values(),targets.values())
     for actor in targets:
         for _index in range(maxi(0,4-int(current.get("target_counts",{}).get(actor,0)))):
             var species:String=pool[rng.randi_range(0,pool.size()-1)]
             var level=clampi(int(current.players[actor])-3+rng.randi_range(0,4),2,100)
             for _attempt in range(40):
-                var angle=rng.randf()*TAU;var radius=96+rng.randi_range(0,32)
-                var pixel=world._cell_center(targets[actor])+Vector2(cos(angle),sin(angle))*radius
-                var cell=Vector2i(floori(pixel.x/world.TILE),floori(pixel.y/world.TILE))
+                var cell:=_around(targets[actor])
                 if not world._in_bounds(cell) or not world._is_walkable(cell) or world._source_pokemon_in_water(cell) or world._wild_id_at_cell(cell)>=0 or world.deployed_pokemon.has(cell) or world.wild_eggs.has(cell) or safe(cell):continue
-                var close=false
-                for target in targets.values():
-                    if cell.distance_squared_to(target)<25:close=true;break
-                if close:continue
+                if _close(cell,targets.values()):continue
                 var wild_id=game.wild.allocate_id()
                 if wild_id<1:break
                 world._add_wild_pokemon(species,level,cell,world.biome_at(cell),wild_id,{"coop_horde":current.id},{"aggro_player":true,"coop_target":actor})
@@ -126,6 +117,64 @@ func spawn_event(current:Dictionary)->void:
     var result:Dictionary=await game.command("horde_ready",{"area":current.area,"epoch":game.area_epoch,"event":current.id})
     spawning=false
     if result.get("reason")=="save_failed":game.end_session("HORDE EVENT COULD NOT BE SAVED.")
+
+## The species a horde is made of: those of the wild Pokemon near its
+## players (not pursuing, not legendary, not a Mega), at least a few.
+func _pool(wild:Array,targets:Array)->Array:
+    var pool:Array=[]
+    for data in wild:
+        var species=String(data.species)
+        if data.get("aggro_player",false) or data.get("is_egg",false) or "mega" in species or species in EXCLUDED:continue
+        for target in targets:
+            if Vector2i(data.cell).distance_squared_to(target)<625:pool.append(species);break
+    if pool.size()<3:pool.append_array(["rattata","zubat","geodude","pidgey"])
+    return pool
+
+## A cell six to eight tiles from `center`, at random.
+func _around(center:Vector2i)->Vector2i:
+    var angle=rng.randf()*TAU;var radius=96+rng.randi_range(0,32)
+    var pixel=Vector2(center*16)+Vector2(8,8)+Vector2(cos(angle),sin(angle))*radius
+    return Vector2i(floori(pixel.x/16.0),floori(pixel.y/16.0))
+
+static func _close(cell:Vector2i,targets:Array)->bool:
+    for target in targets:
+        if cell.distance_squared_to(target)<25:return true
+    return false
+
+## A server that runs every area's Pokemon (coop_population_authority.gd): the
+## horde of an area it holds without drawing it (`sim`, an AreaSim), placed
+## there as spawn_event places one in a World, each Pokemon saved with the
+## horde as a player's spawn is (coop_wild_population.gd register); then the
+## horde is ready.
+func spawn_in(area:String,sim,current:Dictionary)->void:
+    spawning=true
+    var state=sim.state
+    var targets:Dictionary={}
+    for actor in sim.players.by_actor:
+        var player:Dictionary=sim.players.by_actor[actor]
+        var cell=Vector2i(player.x,player.y)
+        if current.players.has(actor) and not Model.safe_at(state.structures,cell):targets[actor]=cell
+    var pool:=_pool(state.wild.records.values(),targets.values())
+    for actor in targets:
+        for _index in range(maxi(0,4-int(current.get("target_counts",{}).get(actor,0)))):
+            var species:String=pool[rng.randi_range(0,pool.size()-1)]
+            var level=clampi(int(current.players[actor])-3+rng.randi_range(0,4),2,100)
+            for _attempt in range(40):
+                var cell:=_around(targets[actor])
+                if not state.in_bounds(cell) or not Rules.walkable(state,cell) or Rules.in_water(state,cell) or state.wild.id_at(cell)>=0 or state.habitat.records.has(cell) or state.eggs.records.has(cell) or Model.safe_at(state.structures,cell):continue
+                if _close(cell,targets.values()):continue
+                var wild_id=game.wild.allocate_id()
+                if wild_id<1:break
+                if not Rules.add_wild(state,species,level,cell,Rules.biome_at(state,cell),wild_id,{"coop_horde":current.id},{"aggro_player":true,"coop_target":actor}):break
+                var record:Dictionary=Rules.serializable_record(state,state.wild.records[wild_id],cell)
+                record["id"]=wild_id
+                var joined:Array=model().register_changes(area,wild_id,record)
+                if joined.is_empty():state.wild.remove(wild_id);break
+                joined.push_front(game.state.change("world/"+area+"/wild_pokemon/"+str(wild_id),Delta.encode(record)))
+                commit(game.state.transact(game.session.actor,"hordespawn/"+game._id(),joined))
+                break
+    commit(model().ready(game.session.actor,game._id(),area,String(current.id)))
+    spawning=false
 
 func claim_reward(key:String,reward:Dictionary)->void:
     rewarding=true

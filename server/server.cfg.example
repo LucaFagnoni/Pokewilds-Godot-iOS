@@ -25,6 +25,10 @@ open_router_port=true
 ; Take a wild battle's win or catch only when the server's own replay of the
 ; battle ends the same way, with no more experience (true/false).
 enforce_battles=true
+; Who moves the wild and habitat Pokemon and lays the eggs in the areas players
+; are in: "server" (this server, in every area: the players' phones only show
+; them) or "players" (the first player in each area, as when a phone hosts).
+population_authority="server"
 ; New areas: made in the server's own process on a worker thread ("auto": when
 ; the engine has the native world generator; "on": always, the GDScript
 ; generator is slower but still off the server's frame), or by a second copy of
