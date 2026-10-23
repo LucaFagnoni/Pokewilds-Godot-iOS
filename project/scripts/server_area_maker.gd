@@ -78,6 +78,7 @@ func _make_here(main:Node,actor:String,area:String,token:String)->bool:
     if coop.server_population:
         var placing:=Time.get_ticks_msec()
         var packet:Dictionary=coop.visuals.last_packets.get(actor,{})
+        _slice_started=Time.get_ticks_usec()
         shared=await first_population(made.tiles,made.megas,seed_value,int(packet.get("party_level",0)),coop.clock_seconds,_breathe,coop._off_thread)
         print("SERVER placed area ",area,"'s ",shared.wild_pokemon.size()," Pokemon in ",Time.get_ticks_msec()-placing," ms")
     else:metadata["population_pending"]=true

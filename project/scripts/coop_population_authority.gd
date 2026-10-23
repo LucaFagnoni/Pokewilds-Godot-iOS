@@ -7,7 +7,8 @@ extends Node
 ## habitat Pokemon and eggs read from the records (area_sim.gd) and run there by
 ## the code a World runs them with (wild_population.gd, habitat_population.gd,
 ## rules/population_rules.gd), every such area in turn within BUDGET_USEC of a
-## frame. What changes goes out as it does from a player who simulates an
+## frame (a step is not begun when what it took last would overrun it: _fits).
+## What changes goes out as it does from a player who simulates an
 ## area: a wild Pokemon that only moved as binary motion to the area's players
 ## (coop_wild_runtime.gd relay_motion, kept and folded into the records when
 ## they are read whole), any other change as a commit of its records (not
@@ -56,6 +57,8 @@ var _horde_at:Dictionary={}
 ## tried again every frame).
 var _asked:Dictionary={}
 const LOAD_RETRY_MS:=5000
+## An area's step has run this frame: the next one goes only if it fits.
+var _worked:=false
 
 ## An area's sending: what of its Pokemon is to go out, and what went.
 class Beat extends RefCounted:
@@ -86,6 +89,9 @@ class Beat extends RefCounted:
     var scanned:=0
     var found:Array=[]
     var unsigned:Array=[]
+    ## Step ("tick", "wild", "habitats") -> what it took last (us; a longer
+    ## one at once, a shorter one slowly): whether it fits a frame (_fits).
+    var costs:Dictionary={}
 
 func configure(coordinator:Node)->void:
     game=coordinator
@@ -104,6 +110,7 @@ func areas()->Array:
 func _process(delta:float)->void:
     if not enabled or not is_instance_valid(game) or not game.active or not game.hosting or not game.main.started:return
     var started:=Time.get_ticks_usec()
+    _worked=false
     _own_events()
     var occupied:=areas()
     for area in _beats.keys():
@@ -126,26 +133,35 @@ func _process(delta:float)->void:
             if _scan(area,beat,started+BUDGET_USEC):
                 sim.begin_population(beat.found)
                 beat.scan=[];beat.found=[]
+            _worked=true
             continue
         if not sim.populated:
             if sim.load_population(game.state.records,started+BUDGET_USEC,game.wild.moved.get(area,{})):_loaded(sim,beat)
+            _worked=true
             continue
         if not beat.unsigned.is_empty():
             _sign(sim,beat,started+BUDGET_USEC)
+            _worked=true
             continue
+        # Its frame, then what is due to go out, each when it fits.
+        if not _fits(beat,"tick",started):continue
+        var at:=Time.get_ticks_usec()
         sim.state.clock=game.clock_seconds
         sim.tick(beat.delta,sim.players.refresh(game.visuals.last_packets,area))
         beat.delta=0.0
+        _events(area,sim,beat)
+        _horde(area,sim)
+        at=_ran(beat,"tick",at)
         var now:=Time.get_ticks_msec()
-        if now-beat.motion_at>=MOTION_MS:
+        if now-beat.motion_at>=MOTION_MS and _fits(beat,"wild",started):
             beat.motion_at=now
             _publish_wild(area,sim,beat)
-        _events(area,sim,beat)
-        if now-beat.habitat_at>=HABITAT_MS:
+            at=_ran(beat,"wild",at)
+        if now-beat.habitat_at>=HABITAT_MS and _fits(beat,"habitats",started):
             beat.habitat_at=now
             _publish_habitats(area,sim,beat)
             _publish_events(area,sim,beat)
-        _horde(area,sim)
+            _ran(beat,"habitats",at)
     # What the areas took of the frame, for the net profile (coop_net_profile.gd
     # prints t_ and tmax_ metas per phase; a test build's SPIKES name it).
     var spent:=Time.get_ticks_usec()-started
@@ -154,6 +170,20 @@ func _process(delta:float)->void:
     if Engine.has_meta("probe_frame"):
         var sections:Dictionary=Engine.get_meta("probe_frame")
         sections["@areas' Pokemon"]=int(sections.get("@areas' Pokemon",0))+spent
+
+## Whether a step of `beat` (what it took last, beat.costs) still fits in this
+## frame's BUDGET_USEC from `started`. The first step of a frame always goes:
+## one longer than the budget still runs, a frame at a time.
+func _fits(beat:Beat,step:String,started:int)->bool:
+    return not _worked or Time.get_ticks_usec()-started+int(beat.costs.get(step,0))<=BUDGET_USEC
+
+## A step of `beat` begun at `at` is done: what it took is its cost from now
+## on (a shorter one slowly). Returns now, the next step's start.
+func _ran(beat:Beat,step:String,at:int)->int:
+    var now:=Time.get_ticks_usec()
+    beat.costs[step]=maxi(now-at,int(beat.costs.get(step,0))*7/8)
+    _worked=true
+    return now
 
 ## The area's roaming Megas, and Mega Gengar at night, take their steps when
 ## their time comes (as biome_megas.gd update and source_forest_boss.gd
@@ -245,7 +275,11 @@ func _begin(area:String,sim)->Beat:
     beat.sim=sim
     # The items on its ground are read again with its Pokemon (_scan).
     for key in sim.drops.keys():sim.apply_drop(key,null)
-    beat.scan=game.state.records.keys()
+    # Its own records and those of no area (the items dropped, the events'
+    # results), from the host's index of keys by area (coop_state.gd
+    # keys_by_area), not every record of the world.
+    var index:Dictionary=game.state.keys_by_area
+    beat.scan=index.get(area,{}).keys()+index.get("",{}).keys()
     _beats[area]=beat
     return beat
 

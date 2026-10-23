@@ -289,6 +289,15 @@ func _initialize() -> void:
         check(_sim(area).populated, "area %s's Pokemon are in" % area)
         check(_sim(area).state.wild.size() == 12 and _sim(area).state.habitat.size() == 2 and _sim(area).state.eggs.size() == 1,
             "area %s: 12 wild, 2 in the habitat, 1 egg (%d, %d, %d)" % [area, _sim(area).state.wild.size(), _sim(area).state.habitat.size(), _sim(area).state.eggs.size()])
+    # A step that would overrun the frame's budget waits for a later frame
+    # (coop_population_authority.gd _fits): of two areas whose frames each took
+    # twice the budget, one runs in a frame, the other in the next.
+    for beat in authority._beats.values(): beat.costs["tick"] = Authority.BUDGET_USEC * 2
+    authority._process(1.0 / 30.0)
+    check(authority._beats.values().filter(func(beat): return beat.delta == 0.0).size() == 1, "one area's frame in a frame, the other's waits")
+    authority._process(1.0 / 30.0)
+    check(authority._beats.values().filter(func(beat): return beat.delta == 0.0).size() == 1, "then the other's")
+    for beat in authority._beats.values(): beat.costs.clear()
     var start := {}
     var homes := {}
     for area in AREAS:
