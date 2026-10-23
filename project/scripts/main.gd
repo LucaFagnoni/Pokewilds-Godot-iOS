@@ -27,6 +27,7 @@ const SETUP_SAVE_PATH := "user://m3_setup.cfg"
 const DataPaths = preload("res://scripts/game_data_paths.gd")
 const WorldSaves = preload("res://scripts/world_saves.gd")
 var saves := WorldSaves.new("user://saves")
+var move_wheel := preload("res://scripts/field_move_wheel.gd").new(self)
 var minimap := preload("res://scripts/minimap.gd").new(self)
 const CraftingData = preload("res://scripts/crafting_data.gd")
 const ItemData = preload("res://scripts/item_data.gd")
@@ -41,18 +42,6 @@ const FieldMoveRadial = preload("res://scripts/field_move_radial.gd")
 const SOURCE_MALE_SYMBOL = preload("res://assets/source_exact/global/male_symbol1.png")
 const SOURCE_FEMALE_SYMBOL = preload("res://assets/source_exact/global/female_symbol1.png")
 
-const FIELD_MOVE_WHEEL_ORDER := [
-    "BUILD", "CUT", "FLY", "SURF", "DIG",
-    "RIDE", "SMASH", "TELEPORT", "FLASH", "CHARM",
-    "POWER", "REPEL", "ATTACK", "HEADBUTT", "PAINT"
-]
-const FIELD_MOVE_REPRESENTATIVES := {
-    "BUILD":"machop", "CUT":"chikorita", "FLY":"fearow",
-    "SURF":"blastoise", "DIG":"diglett", "RIDE":"tauros",
-    "SMASH":"geodude", "TELEPORT":"abra", "FLASH":"charmander",
-    "CHARM":"clefairy", "POWER":"pikachu", "REPEL":"grimer",
-    "ATTACK":"poochyena", "HEADBUTT":"squirtle", "PAINT":"smeargle"
-}
 
 const PLAYER_TEXTURES := [
     "res://assets/player_green.png",
@@ -1075,8 +1064,6 @@ var field_move_wheel_index := -1
 var build_wheel_mode := false
 var build_wheel_page := 0
 var field_wheel_wait_for_release := false
-var field_quick_tap_at := -1
-var field_quick_tap_move := -1
 const BUILD_WHEEL_PAGE_SIZE := 12
 var last_android_back_msec := -10000
 var game_menu_open := false
@@ -1631,7 +1618,7 @@ func _apply_game_options() -> void:
     input_router.set_button_layout(int(GameOptions.values.button_layout))
     input_router.diagonal_enabled = GameOptions.enabled("diagonal")
     input_router.auto_run_enabled = GameOptions.enabled("auto_run")
-    if not GameOptions.enabled("radial") and field_move_wheel_open: _close_field_move_wheel(false)
+    if not GameOptions.enabled("radial") and field_move_wheel_open: move_wheel.close_field_move_wheel(false)
     if not GameOptions.enabled("zoom"):
         world.camera_zoom_level = 1.0
         world.player.camera.zoom = Vector2.ONE
@@ -2434,7 +2421,7 @@ func _process(delta: float) -> void:
         if edge_sky.visible and not flying_overworld:
             world._configure_camera()
         edge_sky.visible = flying_overworld
-    _update_field_move_wheel_input()
+    move_wheel.update_field_move_wheel_input()
     minimap.update_dig_hud_and_minimap(delta)
     _update_party_sprite_animation(delta)
     _update_battle_sprite_animation(delta)
@@ -2488,48 +2475,11 @@ func _process(delta: float) -> void:
             if battle_status.visible_characters >= battle_text_full.length():
                 _finish_battle_text()
 
-func _update_field_move_wheel_input() -> void:
-    if Input.is_action_pressed("ball_mechanics") or _field_move_wheel_stick().length()>=0.35:
-        field_quick_tap_at=-1
-    if not is_instance_valid(ball_mechanics):
-        ball_mechanics = preload("res://scripts/ball_mechanics.gd").new()
-        ball_mechanics.main = self
-        add_child(ball_mechanics)
-    if ball_mechanics.update_input(): return
-    var trigger_held := Input.is_action_pressed("field_move_wheel")
-    if field_wheel_wait_for_release:
-        if not trigger_held: field_wheel_wait_for_release = false
-        return
-    if not field_move_wheel_open:
-        if trigger_held and _can_open_field_move_wheel():
-            _open_field_move_wheel()
-        return
-    if _field_ui_blocks_gameplay(build_wheel_mode):
-        _close_field_move_wheel(false)
-        return
-    if trigger_held:
-        var stick := _field_move_wheel_stick()
-        if stick.length() >= 0.35:
-            var angle_from_top := fposmod(atan2(stick.y, stick.x) + PI * 0.5, TAU)
-            var count := field_move_wheel.entries.size()
-            if count == 0: return
-            var step := TAU / float(count)
-            field_move_wheel_index = posmod(
-                int(floor((angle_from_top + step * 0.5) / step)),
-                count
-            )
-            field_move_wheel.select(field_move_wheel_index)
-        return
-    _close_field_move_wheel(true)
-
-func _can_open_field_move_wheel() -> bool:
-    return (
-        GameOptions.enabled("radial") and started and not generating and not battle_active and not field_item_busy
-        and not game_menu_open and not craft_menu_open
-        and not quit_prompt_open and not touch_config.visible
-        and not touch_controls.edit_mode
-        and not _field_ui_blocks_gameplay(world.active_field_move == "BUILD") and world.gameplay_enabled
-    )
+## field_move_wheel.gd under its old names, for the scripts and tests that call them on main.
+func _field_move_wheel_stick() -> Vector2: return move_wheel.field_move_wheel_stick()
+func _open_field_move_wheel() -> void: move_wheel.open_field_move_wheel()
+func _close_field_move_wheel(activate_selection: bool) -> void: move_wheel.close_field_move_wheel(activate_selection)
+func _field_move_wheel_icon(species: String, shiny: bool = false, form: String = "") -> Texture2D: return move_wheel.field_move_wheel_icon(species, shiny, form)
 
 func _field_ui_blocks_gameplay(ignore_build_hud: bool = false) -> bool:
     if is_instance_valid(coop_game) and coop_game.active and (coop_game.raids.active or coop_game.events.active or not coop_game.population_battles.claim.is_empty()):return true
@@ -2549,115 +2499,6 @@ func _field_ui_blocks_gameplay(ignore_build_hud: bool = false) -> bool:
         # OPTIONS can be open without the game menu (back from MOVE BUTTONS):
         # the field's ball icons and HUD stay away from it too.
         or (is_instance_valid(options_menu) and options_menu.visible))
-
-func _field_move_wheel_stick() -> Vector2:
-    for device in Input.get_connected_joypads():
-        var stick := Vector2(
-            Input.get_joy_axis(device, JOY_AXIS_LEFT_X),
-            Input.get_joy_axis(device, JOY_AXIS_LEFT_Y)
-        )
-        if stick.length() >= 0.20:
-            return stick
-    return input_router.movement_vector()
-
-func _open_field_move_wheel() -> void:
-    field_quick_tap_at=-1
-    field_quick_tap_move=-1
-    if Input.is_action_pressed("field_move_wheel") and not Input.is_action_pressed("ball_mechanics") and _field_move_wheel_stick().length()<0.35 and world.active_field_move not in ["BUILD","SURF","RIDE","FLY"]:
-        field_quick_tap_at=Time.get_ticks_msec()
-        field_quick_tap_move=_quick_breakable_field_move()
-    field_move_wheel_open = true
-    field_move_wheel_index = -1
-    build_wheel_mode = world.active_field_move == "BUILD"
-    if build_wheel_mode:
-        build_wheel_page = int(world.get_build_selection_index()) / BUILD_WHEEL_PAGE_SIZE
-        _configure_build_wheel()
-        build_panel.visible = false
-    else:
-        field_move_wheel.configure(_field_move_wheel_entries(), -1)
-    field_move_wheel.visible = true
-    message_panel.visible = false
-    world.set_gameplay_enabled(false)
-
-func _close_field_move_wheel(activate_selection: bool) -> void:
-    if not field_move_wheel_open:
-        return
-    var selection := field_move_wheel_index
-    if activate_selection and not build_wheel_mode and selection<0 and field_quick_tap_at>=0:
-        var elapsed=Time.get_ticks_msec()-field_quick_tap_at
-        if elapsed>=0 and elapsed<250 and field_quick_tap_move==_quick_breakable_field_move():
-            selection=field_quick_tap_move
-    field_quick_tap_at=-1
-    field_move_wheel_open = false
-    field_move_wheel.visible = false
-    var can_resume := not _field_ui_blocks_gameplay(build_wheel_mode)
-    if build_wheel_mode and build_menu_open: build_panel.visible = true
-    world.set_gameplay_enabled(can_resume)
-    if can_resume and activate_selection and selection >= 0:
-        if build_wheel_mode:
-            world.set_build_selection_index(build_wheel_page * BUILD_WHEEL_PAGE_SIZE + selection)
-        else:
-            _activate_field_move_wheel_selection(selection)
-
-func _quick_breakable_field_move() -> int:
-    var cell:Vector2i=world._player_cell()+world._facing_cell()
-    if world.built_structures.has(cell):return -1
-    var anchor:Vector2i=world._exact_resource_anchor(cell)
-    var kind:String=world._exact_resource_kind(anchor)
-    if kind.is_empty():
-        anchor=world._resource_object_anchor(cell)
-        kind=String(world.resource_objects.get(anchor,{}).get("type",""))
-    var move_name=""
-    if world._is_cuttable_grass_cell(cell) or kind in ["tree","bush"]:
-        if _find_field_move_pokemon_index("CUT")>=0:move_name="CUT"
-        elif kind=="tree" and _find_field_move_pokemon_index("HEADBUTT")>=0:move_name="HEADBUTT"
-    elif kind=="rock" and _find_field_move_pokemon_index("SMASH")>=0:move_name="SMASH"
-    if move_name.is_empty() or move_name==world.active_field_move:return -1
-    return FIELD_MOVE_WHEEL_ORDER.find(move_name)
-
-func _configure_build_wheel() -> void:
-    var entries: Array[Dictionary] = []
-    var start := build_wheel_page * BUILD_WHEEL_PAGE_SIZE
-    for index in range(start, mini(start + BUILD_WHEEL_PAGE_SIZE, CraftingData.build_recipes().size())):
-        var item := String(CraftingData.build_recipes()[index].name)
-        entries.append({"move":CraftingData.build_display_name(item), "available":true,
-            "texture":world._structure_display_texture(item), "build_item":true,
-            "cost":CraftingData.build_recipes()[index].get("cost", {}).duplicate()})
-    field_move_wheel_index = -1
-    field_move_wheel.configure(entries, -1)
-    field_move_wheel.page_label = "%d / %d  L / R" % [build_wheel_page + 1, ceili(float(CraftingData.build_recipes().size()) / BUILD_WHEEL_PAGE_SIZE)]
-    field_move_wheel.queue_redraw()
-
-func _field_move_wheel_entries() -> Array[Dictionary]:
-    var entries: Array[Dictionary] = []
-    for move_name in FIELD_MOVE_WHEEL_ORDER:
-        var party_index := _find_field_move_pokemon_index(move_name)
-        var species := String(FIELD_MOVE_REPRESENTATIVES[move_name])
-        if party_index >= 0:
-            species = String((caught_pokemon[party_index] as Dictionary).get(
-                "species", species)).to_lower()
-        if move_name == "PAINT":
-            species = "smeargle"
-        entries.append({
-            "move": move_name,
-            "species": species,
-            "available": party_index >= 0,
-            "party_index": party_index,
-            "texture": _field_move_wheel_icon(species, party_index >= 0 and PokemonData.is_shiny(caught_pokemon[party_index]), String(caught_pokemon[party_index].get("form","")) if party_index>=0 else "")
-        })
-    return entries
-
-func _find_field_move_pokemon_index(move_name: String) -> int:
-    for index in range(caught_pokemon.size()):
-        if typeof(caught_pokemon[index]) != TYPE_DICTIONARY:
-            continue
-        var pokemon := caught_pokemon[index] as Dictionary
-        if bool(pokemon.get("is_egg", false)) or int(pokemon.get("hp", 1)) <= 0:
-            continue
-        if FieldMoveData.field_moves_for(String(pokemon.get("species", "")), String(pokemon.get("form", ""))).has(
-                move_name):
-            return index
-    return -1
 
 func _stop_fainted_active_field_move() -> void:
     if not started or battle_active:
@@ -2681,46 +2522,6 @@ func _stop_fainted_active_field_move() -> void:
         if same_pokemon and int(entry.get("hp", 0)) > 0:
             return
     world.call("clear_active_field_move", true)
-
-func _field_move_wheel_icon(species: String, shiny: bool = false, form: String = "") -> Texture2D:
-    var key := "mega_gengar" if species=="gengar" and form=="mega" else species
-    var menu := preload("res://scripts/divinakra_mega_art.gd").texture(key,"menu",shiny)
-    if menu != null: return _source_texture_region(menu,Rect2(64,0,16,16))
-    var texture := PokemonData.record_texture({"species":species,"shiny":shiny,"form":form}, "overworld")
-    if texture == null:
-        texture = PokemonData.texture(species, "front", shiny)
-    if texture == null:
-        return POKEMON_TEXTURES.get(species) as Texture2D
-    if texture.has_meta("mega_gengar_walk"):
-        var mega_frame := texture.get_width() / 6.0
-        return _source_texture_region(texture,Rect2(mega_frame * 4.0,0,mega_frame,texture.get_height()))
-    if texture.get_width() >= 16 and texture.get_height() >= 16:
-        var frame := AtlasTexture.new()
-        frame.atlas = texture
-        frame.region = Rect2(0, 0, 16, 16)
-        return frame
-    return texture
-
-func _activate_field_move_wheel_selection(selection: int) -> void:
-    if selection < 0 or selection >= FIELD_MOVE_WHEEL_ORDER.size():
-        return
-    var move_name := String(FIELD_MOVE_WHEEL_ORDER[clampi(
-        selection, 0, FIELD_MOVE_WHEEL_ORDER.size() - 1)])
-    var party_index := _find_field_move_pokemon_index(move_name)
-    if party_index < 0:
-        if move_name != "CUT":
-            _show_message("A POKEMON is required to use this FIELD MOVE.")
-        return
-    _ensure_party_ecology_id(party_index)
-    var pokemon := caught_pokemon[party_index] as Dictionary
-    if not bool(world.call("set_active_field_move", pokemon, move_name)):
-        return
-    world.call("present_field_move_pokemon")
-    if move_name == "BUILD":
-        _open_build_menu()
-    elif move_name not in ["CUT", "DIG"]:
-        _show_message("%s is using %s." % [
-            PokemonData.battle_display_name(String(pokemon.get("species", "POKEMON"))), move_name])
 
 func _start_battle_text(message: String) -> void:
     battle_text_full = message
@@ -3747,9 +3548,9 @@ func _input(event: InputEvent) -> void:
         if build_wheel_mode and (event.is_action_pressed("shoulder_left") or event.is_action_pressed("shoulder_right")):
             var pages := ceili(float(CraftingData.build_recipes().size()) / BUILD_WHEEL_PAGE_SIZE)
             build_wheel_page = posmod(build_wheel_page + (1 if event.is_action_pressed("shoulder_right") else -1), pages)
-            _configure_build_wheel()
+            move_wheel.configure_build_wheel()
         elif event.is_action_pressed("cancel"):
-            _close_field_move_wheel(false)
+            move_wheel.close_field_move_wheel(false)
             field_wheel_wait_for_release = true
             if build_menu_open:
                 _close_build_menu()
@@ -5038,7 +4839,7 @@ func _start_battle_context(context: Dictionary, source_alert: bool = false) -> v
         raw_party=prepared_context.party
     if build_menu_open:
         _close_build_menu()
-    _close_field_move_wheel(false)
+    move_wheel.close_field_move_wheel(false)
     world.set_gameplay_enabled(false)
     while progression_active or mansion_switch_open:
         await get_tree().process_frame
@@ -10439,7 +10240,7 @@ func _open_quit_prompt() -> void:
     if generating or field_item_busy:
         return
     if field_move_wheel_open:
-        _close_field_move_wheel(false)
+        move_wheel.close_field_move_wheel(false)
     quit_prompt_open = true
     quit_prompt_stage = 0
     quit_prompt_index = 0
@@ -10680,7 +10481,7 @@ func _open_touch_config(from_options: bool = false) -> void:
     if touch_controls.edit_mode:
         touch_controls.end_edit()
     if field_move_wheel_open:
-        _close_field_move_wheel(false)
+        move_wheel.close_field_move_wheel(false)
     touch_config.visible = true
     swipe_stick_held = false
     _position_swipe_cursor.call_deferred()
@@ -10917,7 +10718,7 @@ func _queue_start_menu(event: InputEvent) -> void:
         _open_game_menu()
 
 func _prompt_shore_surf() -> void:
-    var party_index := _find_field_move_pokemon_index("SURF")
+    var party_index := move_wheel.find_field_move_pokemon_index("SURF")
     if party_index < 0 or _field_ui_blocks_gameplay():
         return
     var target: Vector2i = world._player_cell() + world._facing_cell()
