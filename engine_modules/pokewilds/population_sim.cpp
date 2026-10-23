@@ -6,6 +6,8 @@
 #include "core/templates/local_vector.h"
 #include "core/variant/variant_utility.h"
 
+#include <cstring>
+
 // Each function below is the GDScript one of the same name, in its order;
 // the comments name it. Constants come from the scripts (configure); the
 // numbers written in the GDScript's bodies are written here the same.
@@ -948,7 +950,7 @@ struct PokeWildsPopulationSim::Ctx {
 	}
 
 	// WildPopulation._target: the player `p_data` goes for, its co-op target noted.
-	bool target(Dictionary &p_data, const Vector2i &p_old_cell, Dictionary &r_target, Vector2i &r_player_cell, bool &r_local) {
+	bool target_of(Dictionary &p_data, const Vector2i &p_old_cell, Dictionary &r_target, Vector2i &r_player_cell, bool &r_local) {
 		const String before = get_string(p_data, K(coop_target));
 		r_target = players->call(K(target_for), p_data, p_old_cell);
 		if (get_string(p_data, K(coop_target)) != before) {
@@ -1129,7 +1131,7 @@ struct PokeWildsPopulationSim::Ctx {
 				}
 				if (aggro) {
 					has_target = true;
-					if (!target(data, old_cell, target_player, player_cell, local_target)) {
+					if (!target_of(data, old_cell, target_player, player_cell, local_target)) {
 						continue;
 					}
 				}
@@ -1159,7 +1161,7 @@ struct PokeWildsPopulationSim::Ctx {
 				} else if (someone_charms || charm_move) {
 					if (!has_target) {
 						has_target = true;
-						if (!target(data, old_cell, target_player, player_cell, local_target)) {
+						if (!target_of(data, old_cell, target_player, player_cell, local_target)) {
 							continue;
 						}
 					}
@@ -1199,7 +1201,7 @@ struct PokeWildsPopulationSim::Ctx {
 			}
 			if (online && !has_target) {
 				has_target = true;
-				if (!target(data, old_cell, target_player, player_cell, local_target)) {
+				if (!target_of(data, old_cell, target_player, player_cell, local_target)) {
 					continue;
 				}
 			}
