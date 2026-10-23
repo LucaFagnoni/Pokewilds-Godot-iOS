@@ -24,6 +24,10 @@ var motion_dirty:Dictionary={}
 var _whole_motion:=false
 const Server=preload("res://scripts/dedicated_server.gd")
 const Session=preload("res://scripts/coop_session.gd")
+## Host: a wild battle's win or catch is taken only when the host's replay of
+## its log ends the same way, with no more experience (check_battle); off, the
+## replay is only reported. On by default; server.cfg enforce_battles.
+var enforce_battles:=true
 const Wire=preload("res://scripts/area_state.gd")
 const WildPopulation=preload("res://scripts/wild_population.gd")
 
@@ -198,14 +202,50 @@ func relay_motion(actor:String,area:String,motion:PackedByteArray,frame:PackedBy
     if area==game._area() and actor!=game.session.actor:apply_motion(entries.filter(func(entry):return not claimed.has(entry.id)))
     if old_readers:fold_motion(area)
 
+## Host: what is kept of `area`'s motion, to `peer` as one frame (after the
+## records that say where its Pokemon were). A player who cannot read binary
+## motion gets it written into the records instead.
+func send_moved(peer:int,area:String)->void:
+    var kept:Dictionary=moved.get(area,{})
+    if kept.is_empty():return
+    if not game.session.peer_can(peer,"bin:area"):fold_motion(area);return
+    game.session.send_bytes_to(peer,Wire.encode_motion(area,int(game.service.areas.epochs.get(area,0)),encode_entries(kept.values())))
+
+## decode_motion's entries packed again (WildPopulation.encode_motion's form).
+static func encode_entries(entries:Array)->PackedByteArray:
+    var bytes:=PackedByteArray()
+    bytes.resize(2+entries.size()*14)
+    bytes.encode_u16(0,entries.size())
+    var at:=2
+    for entry in entries:
+        var id:int=int(entry.id)
+        bytes.encode_u32(at,id&0xFFFFFFFF);bytes.encode_u32(at+4,(id>>32)&0xFFFFFFFF)
+        bytes.encode_s16(at+8,clampi(int(entry.x),-32768,32767));bytes.encode_s16(at+10,clampi(int(entry.y),-32768,32767))
+        bytes[at+12]=maxi(0,WildPopulation.DIRECTIONS.find(entry.facing))|(int(entry.phase)&1)<<4
+        bytes[at+13]=int(entry.flags)&255
+        at+=14
+    return bytes
+
+## Player: motion that came while the area was still loading, by id; laid on
+## once its Pokemon are there (synchronize).
+var _motion_waiting:Dictionary={}
+var _motion_waiting_area:=""
+
 ## A player: the wild Pokemon of its area where the one simulating it put them.
 func apply_motion(entries:Array)->void:
     var world=game.main.world
-    if not world.generated or game.main.generating or game.main.edge_travel_busy:return
+    if not world.generated or game.main.generating or game.main.edge_travel_busy or sync_pending:
+        if _motion_waiting_area!=game._area():_motion_waiting.clear();_motion_waiting_area=game._area()
+        for entry in entries:_motion_waiting[entry.id]=entry
+        return
     applying=true
     for entry in entries:
         var wild_id:=int(entry.id)
         var data=world.wild_pokemon.get(wild_id)
+        # One still waiting to be added is added where it is now.
+        if data==null and pending_additions.has(wild_id):
+            pending_additions[wild_id]["x"]=int(entry.x);pending_additions[wild_id]["y"]=int(entry.y)
+            continue
         if data==null or data.get("ball_reserved",false):continue
         var before:Vector2i=data.cell
         var target:=Vector2i(int(entry.x),int(entry.y))
@@ -221,13 +261,14 @@ func apply_motion(entries:Array)->void:
     applying=false
 
 ## Host: the motion kept for `area` (every area with "") written into the
-## records, as one commit (not journaled: motion never is) sent to the
-## players like any other. Done when the records are read whole: a world or
-## area save, a player arriving, an authority handing over, a player who
+## records, as commits (not journaled: motion never is) sent to the players
+## like any other, a few milliseconds of it a frame. Done when the records are
+## read whole: a world or area save, the host going to an area, a player who
 ## cannot read binary motion.
 func fold_motion(area:String="")->void:
     if not game.hosting or moved.is_empty():return
     var changes:Array=[]
+    var started:=Time.get_ticks_usec()
     for each in (moved.keys() if area.is_empty() else [area]):
         var kept:Dictionary=moved.get(each,{})
         moved.erase(each)
@@ -242,9 +283,15 @@ func fold_motion(area:String="")->void:
             record["aggro_player"]=int(entry.flags)&4!=0
             var encoded:=Delta.encode(record)
             if encoded!=held:changes.append(game.state.change(key,encoded))
-            if changes.size()>=Delta.MAX_PATCHES:
-                _commit_fold(changes);changes=[]
+            if changes.size()>=64 or Time.get_ticks_usec()-started>=FOLD_SLICE_USEC:
+                if not changes.is_empty():_commit_fold(changes);changes=[]
+                if Time.get_ticks_usec()-started>=FOLD_SLICE_USEC:
+                    await get_tree().process_frame
+                    started=Time.get_ticks_usec()
     if not changes.is_empty():_commit_fold(changes)
+
+## The time a frame gives fold_motion.
+const FOLD_SLICE_USEC:=3000
 
 func _commit_fold(changes:Array)->void:
     var result:Dictionary=game.state.transact(game.session.actor,"fold/"+game._id(),changes,"",false)
@@ -330,7 +377,20 @@ func finish_encounter(outcome:String,aftermath:Dictionary={})->bool:
     var sent_pending:Array=profile.save.get("coop_pending_pokemon",[]).duplicate(true)
     var result:Dictionary=await game.command("wild_finish",{"area":encounter.area,"wild_id":encounter.wild_id,"outcome":outcome,"calm":bool(encounter.field_attack),"profile":profile,"base":game.profile_base,"aftermath":aftermath,"battle":game.main.battle_report()})
     if not result.get("ok",false):
-        finishing=false;game.end_session("ENCOUNTER RESULT COULD NOT BE SAVED.");return false
+        if not game.active:finishing=false;return false
+        # Turned away (a battle the host's replay does not end this way, or a
+        # record that moved on): the party and bag go back to what the host
+        # holds, the Pokemon is let go, and the game goes on.
+        print("ONLINE encounter result not kept: ",result.get("reason","unknown")," ",result.get("check",""))
+        var confirmed=game.shared_records.get("player/"+game.session.actor)
+        if game.hosting:confirmed=game.state.records.get("player/"+game.session.actor)
+        if confirmed is Dictionary:
+            game.main.caught_pokemon.assign(confirmed.get("party",[]).duplicate(true))
+            game.main.inventory=confirmed.get("inventory",{}).duplicate(true)
+        await game.command("wild_release",{"area":encounter.area,"wild_id":encounter.wild_id})
+        game.main._show_message("THE HOST DID NOT ACCEPT THAT RESULT.")
+        encounter.clear();original_profile.clear();finishing=false
+        return true
     game.storage.settle(sent_pending,result.get("pending",[]))
     game.profile_base=String(result.get("base",game.profile_base))
     encounter.clear();original_profile.clear();finishing=false
@@ -345,6 +405,9 @@ func resolve(actor:String,id:String,args:Dictionary)->Dictionary:
         return {"ok":true,"base":game.state.print_of("player/"+actor,{}),"pending":current.get("save",{}).get("coop_pending_pokemon",[])}
     if args.base!=game.state.print_of("player/"+actor,{}):return {"ok":false,"reason":"profile_changed"}
     var battle_check:=check_battle(actor,args)
+    # A win or a catch the host's replay does not confirm is not taken.
+    if enforce_battles and String(args.outcome) in ["captured","defeated"] and not battle_check in ["ok","unreported"]:
+        return {"ok":false,"reason":"battle_rejected","check":battle_check}
     var profile:Dictionary=args.profile.duplicate(true)
     var changes:Array=game.storage.profile_changes(actor,profile)
     var claim:Dictionary=game.state.records.get(Population.claim_key(args.area,int(args.wild_id)),{})
@@ -380,11 +443,13 @@ func resolve(actor:String,id:String,args:Dictionary)->Dictionary:
 
 ## The reported battle played again on the host (battle_session.gd replay())
 ## from the battle's own log, with the party and bag the host holds for the
-## player: "ok", or why it does not end as reported. For now this is only
-## reported (in the reply and the host's log), never refused: the player's
-## party may hold changes the host has not confirmed yet, and the context and
-## the wild Pokemon's record still come from the client. The netcode rewrite
-## takes both from the host's claim and makes this replay the result.
+## player (or those the log began with, when they are the same Pokemon) and the
+## wild Pokemon as the host's claim holds it: "ok", or why it does not end as
+## reported ("wrong_enemy", "inputs_do_not_fit", "replay_<outcome>",
+## "rewards": more experience than the replay gives). With enforce_battles a
+## win or a catch that is not "ok" is refused (resolve); otherwise it is only
+## reported. Battles without a log (a ball thrown in the field, a friendly
+## Pokemon joining) are "unreported".
 func check_battle(actor:String,args:Dictionary)->String:
     var report=args.get("battle")
     if not report is Dictionary or report.is_empty():return "unreported"
@@ -393,15 +458,69 @@ func check_battle(actor:String,args:Dictionary)->String:
     var party=profile.get("party",[])
     var bag=profile.get("inventory",{})
     if not party is Array or not bag is Dictionary:return "no_profile"
+    var context:Dictionary=BattleSession.whole_numbers(report.context)
+    var facts:Dictionary=BattleSession.whole_numbers(report.facts)
+    # The wild Pokemon is the one the host gave this player (the claim), not
+    # one the report describes.
+    var claim:Dictionary=game.state.records.get(Population.claim_key(String(args.get("area","")),int(args.get("wild_id",0))),{})
+    var claimed=Delta.decode(String(claim.get("record",Delta.encode(null))))
+    if claimed is Dictionary:
+        facts["wild_record"]=wild_facts(claimed,bool(args.get("calm",false)))
+        var enemy:Dictionary=(context.get("party",[{}]) as Array)[0] if not context.get("party",[]).is_empty() else {}
+        if String(enemy.get("species","")).to_lower()!=String(claimed.get("species","")).to_lower():return _verdict(actor,args,"wrong_enemy")
+    # The log's own starting party when it is the host's, Pokemon for Pokemon
+    # (walking since the last save changes their steps and HP, not who they are).
+    var started=BattleSession.whole_numbers(report.get("party",party))
+    if started is Array and same_pokemon(started,party):party=started
+    var started_bag=BattleSession.whole_numbers(report.get("bag",bag))
+    if started_bag is Dictionary and started_bag.size()<=1024:bag=started_bag
     var replay=BattleSession.new()
-    var fitted:bool=replay.replay(String(report.rng).to_int(),BattleSession.whole_numbers(report.context),
-        BattleSession.whole_numbers(party),BattleSession.whole_numbers(bag),
-        BattleSession.whole_numbers(report.facts),BattleSession.whole_numbers(report.inputs))
+    var fitted:bool=replay.replay(String(report.rng).to_int(),context,party.duplicate(true),bag.duplicate(true),facts,BattleSession.whole_numbers(report.inputs))
     var verdict:="ok"
     if not fitted:verdict="inputs_do_not_fit"
     elif replay.outcome!=String(args.get("outcome","")):verdict="replay_"+replay.outcome
+    elif args.get("profile") is Dictionary and not rewards_fit(args.profile.get("party",[]),replay.party):verdict="rewards"
+    return _verdict(actor,args,verdict)
+
+func _verdict(actor:String,args:Dictionary,verdict:String)->String:
     if verdict!="ok":print("ONLINE wild battle check: %s reported %s, the replay says %s"%[actor,args.get("outcome",""),verdict])
     return verdict
+
+## The wild Pokemon a battle reads (world.gd _begin_wild_encounter): its saved
+## record with what its source added.
+static func wild_facts(record:Dictionary,calm:bool)->Dictionary:
+    var facts:=record.duplicate(true)
+    if calm:facts["field_attack"]=true
+    var source=record.get("source_record",{})
+    if source is Dictionary:
+        for property in source:
+            if not facts.has(property):facts[property]=source[property]
+    return facts
+
+## True when two parties are the same Pokemon in the same order (species,
+## level, experience, moves).
+static func same_pokemon(first:Array,second:Array)->bool:
+    if first.size()!=second.size():return false
+    for index in first.size():
+        var a=first[index];var b=second[index]
+        if not a is Dictionary or not b is Dictionary:return false
+        for field in ["species","level","exp","moves","is_egg"]:
+            if a.get(field)!=b.get(field):return false
+    return true
+
+## True when no Pokemon of the reported party has more level or experience
+## than the replay gave it (matched by its party id, else its slot).
+static func rewards_fit(reported:Array,replayed:Array)->bool:
+    var by_id:={}
+    for pokemon in replayed:
+        if pokemon is Dictionary and not str(pokemon.get("party_ecology_id","")).is_empty():by_id[str(pokemon.party_ecology_id)]=pokemon
+    for index in reported.size():
+        var mine=reported[index]
+        if not mine is Dictionary:continue
+        var theirs=by_id.get(str(mine.get("party_ecology_id","")),replayed[index] if index<replayed.size() else null)
+        if not theirs is Dictionary or String(theirs.get("species",""))!=String(mine.get("species","")):continue
+        if int(mine.get("level",0))>int(theirs.get("level",0)) or int(mine.get("exp",0))>int(theirs.get("exp",0)):return false
+    return true
 
 func initialize_ids()->bool:
     # Another request may be in flight at this instant (night events, hordes, a
@@ -619,3 +738,6 @@ func synchronize()->void:
     for key in records:
         if shared_key(String(key)):changes.append({"key":key,"after":records[key]})
     committed(changes)
+    # Then where they have moved since their records were written.
+    if _motion_waiting_area==game._area() and not _motion_waiting.is_empty() and not authority():apply_motion(_motion_waiting.values())
+    _motion_waiting.clear()

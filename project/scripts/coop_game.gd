@@ -1243,7 +1243,7 @@ func publish_current()->bool:
     _publishing=true
     var seed_value=int(main.world.world_seed)
     var size_index=int(main.world.map_size_index)
-    if hosting:wild.fold_motion(_area())
+    if hosting:await wild.fold_motion(_area())
     var registry:Dictionary=state.records if hosting else shared_records
     # The population then comes from the records, not from the world here,
     # which need not pack its own only to have it replaced.
@@ -1297,7 +1297,7 @@ func save_checkpoint(data:Dictionary)->bool:
     while _world_writing:await get_tree().process_frame
     if not active or not hosting:return false
     _world_writing=true
-    wild.fold_motion()
+    await wild.fold_motion()
     var job:Dictionary=store.prepare(state,{"world_name":String(data.get("world_name","WORLD")),"owner":session.actor})
     var loose:int=state.loose
     # The crafting state is made afresh for each save (main._capture_game_save);
@@ -1597,8 +1597,6 @@ func _sharable_keys()->Array:
 
 func _send_state(peer:int,actor:String,going:String="",kept:String="")->void:
     var deadline=Time.get_ticks_msec()+10000
-    # Where the wild Pokemon are now, not where their records last said.
-    wild.fold_motion()
     while session.players.has(peer) and Time.get_ticks_msec()<deadline:
         # Rebuild after backpressure: no await between capture and enqueue, so later
         # commits always follow this complete snapshot in the ordered connection.
@@ -1613,13 +1611,16 @@ func _send_state(peer:int,actor:String,going:String="",kept:String="")->void:
         var error:Error=session.send_to(peer,packet)
         if error==OK:
             if not going.is_empty():_travelling[actor]=[going,state.records.has("area/"+going)]
+            # Where the wild Pokemon are now, behind the records that said
+            # where they were (coop_wild_runtime.gd send_moved).
+            for area in areas:wild.send_moved(peer,area)
             return
         if error!=ERR_BUSY:session.transport._drop(peer);return
         await get_tree().process_frame
     if session.players.has(peer):session.transport._drop(peer)
 
 func _area_ready(actor:String,_area_name:String,_metadata:Dictionary,bytes:PackedByteArray)->void:
-    if hosting:wild.fold_motion(_area_name)
+    if hosting:await wild.fold_motion(_area_name)
     if actor==session.actor and not _travel_target.is_empty() and _area_name==_travel_target:
         var arrived=Snapshot.decode(bytes)
         if arrived.is_empty() or not _install_cache(arrived):_travel_offer={"error":"ONLINE AREA COULD NOT LOAD"};return
