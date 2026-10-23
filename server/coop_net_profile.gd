@@ -145,7 +145,8 @@ func _process(_delta: float) -> bool:
 	# coop_net_profile.py --save-phase: the journal folded into a world save at 7 s and 17 s.
 	if phase.ends_with("save") and "--server" in OS.get_cmdline_args() and main != null and _folds < 2 and now - phase_started >= 7000 + 10000 * _folds:
 		_folds += 1
-		main.coop_game._fold_journal(main._capture_game_save())
+		# As the host's own check does it (coop_game.gd _process): its next check folds.
+		main.coop_game._journal_checked = 0; main.coop_game._world_saved_at = -main.coop_game.MOTION_SAVE_MS
 	return false
 
 ## The server's frame by script: each script's nodes stop processing for a
