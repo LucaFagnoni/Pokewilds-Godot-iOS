@@ -191,6 +191,15 @@ func _check_rules(native: Object, state) -> void:
         NativePopulation.enabled = true
         if expected != native.slots_in(state.wild, squares): bad += 1
     _expect(bad == 0, "slots_in: %d of 400 queries differ" % bad)
+    # A record written behind the population's back: the query syncs first.
+    var behind := _cell()
+    state.wild.records[999999] = {"id": 999999, "species": "rattata", "cell": behind}
+    var found: PackedInt32Array = native.slots_in(state.wild, [Vector3i(behind.x, behind.y, 2)])
+    NativePopulation.enabled = false
+    _expect(found == state.wild.slots_in([Vector3i(behind.x, behind.y, 2)]) and state.wild.live == state.wild.records.size(),
+        "slots_in after a record was written behind the population's back")
+    NativePopulation.enabled = true
+    state.wild.remove(999999)
     print("NATIVE POPULATION TEST: rules checked (%d steps, %d windows, %d pairs)" % [30000 + shores.size() * 16, 3000, records.size() * records.size()])
 
 # --- Frames ----------------------------------------------------------------

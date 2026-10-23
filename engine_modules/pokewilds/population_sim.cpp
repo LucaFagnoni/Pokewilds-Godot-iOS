@@ -400,7 +400,10 @@ struct PokeWildsPopulationSim::Ctx {
 	}
 
 	void reacquire() {
-		load_tiles();
+		// A zone query alone (slots_in) has a population and no area.
+		if (state) {
+			load_tiles();
+		}
 		load_wild();
 		load_habitat();
 	}
