@@ -1481,10 +1481,11 @@ func connect_source_dig_holes(changed: Vector2i) -> void:
 func fill_source_dig_holes() -> void:
     if world.exact_world == null or world.active_area_id != "OVERWORLD": return
     var replacements := {}
-    # Inspect only edited cells, never scan the full world each frame. Collect
-    # before applying so a water pulse advances one hole at a time.
-    for cell: Vector2i in world.source_interior_mutations:
-        # Names straight from the tile store: no tile object per edited cell.
+    var lava_cells := 0
+    # Inspect only the holes dug (area.holes), never every edit nor the whole
+    # world. Collect before applying so a water pulse advances one hole at a time.
+    for cell: Vector2i in world.area.holes:
+        # Names straight from the tile store: no tile object per hole.
         var here := world._exact_names_at(cell)
         if here.is_empty() or not here[1].begins_with("hole1"): continue
         var water := false
@@ -1496,7 +1497,11 @@ func fill_source_dig_holes() -> void:
             if "water" in names: water = true
             elif "lava" in names: lava = true
         if water or lava: replacements[cell] = "soot1" if water and lava else "water2" if water else "lava1"
-    for cell in replacements:
+        if lava and not water: lava_cells += 1
+    var cells: Array = replacements.keys()
+    # Lava's variants draw on world.rng cell by cell: in the mutations' order, as always.
+    if lava_cells > 1: cells = world.source_interior_mutations.keys().filter(func(cell): return replacements.has(cell))
+    for cell in cells:
         var tile: SourceTile = world.area.edit(cell)
         tile.set_names(replacements[cell], "")
         if tile.is_lava:

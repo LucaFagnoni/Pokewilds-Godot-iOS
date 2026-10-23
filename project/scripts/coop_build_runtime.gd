@@ -364,6 +364,7 @@ func apply_records(area:String,records:Array,arriving:bool=false)->void:
                 world._set_exact_tile_names(at,String(record.value.base),String(record.value.upper))
             continue
         if group=="source_interior_mutations":
+            world.area.index_hole(at,record.value)
             if record.value is Dictionary:world._apply_source_interior_mutation(at,record.value)
             continue
         # A floor tile added upstairs is laid on its own. Rebuilding the whole

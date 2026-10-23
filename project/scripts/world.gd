@@ -705,6 +705,7 @@ func generate_world(
     interior_interactables.clear()
     source_interior_upper_sprites.clear()
     source_interior_mutations.clear()
+    area.holes.clear()
     source_mine_pokemon.clear()
     built_house_rooms_seen.clear()
     built_house_interior_cells.clear()
@@ -3548,6 +3549,7 @@ func restore_crafting_save_state(state: Dictionary) -> void:
             source_plant_farms.erase(cell)
         if not repaired_roof_cells.is_empty():
             _refresh_exact_streams()
+    area.reindex_holes()
     await _refresh_daily_events(true)
     SourceForestBoss.install(self)
     await preload("res://scripts/biome_megas.gd").prepare_load(self)
