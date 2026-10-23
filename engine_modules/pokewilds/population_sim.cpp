@@ -18,40 +18,43 @@ const Vector2i NO_CELL(INT32_MIN, INT32_MIN);
 const Vector2i DOWN(0, 1);
 const Vector2i UP(0, -1);
 
-#define K(m_name) SNAME(#m_name)
+// A record's field as a Dictionary key, made once (no StringName copied for
+// each lookup); a property or method name.
+#define K(m_name) ([]() -> const Variant & { static const Variant key = StringName(#m_name, true); return key; })()
+#define S(m_name) SNAME(#m_name)
 
-_FORCE_INLINE_ bool get_bool(const Dictionary &p_dict, const StringName &p_key) {
+_FORCE_INLINE_ bool get_bool(const Dictionary &p_dict, const Variant &p_key) {
 	const Variant *value = p_dict.getptr(p_key);
 	return value && value->booleanize();
 }
 
-_FORCE_INLINE_ double get_float(const Dictionary &p_dict, const StringName &p_key, double p_default) {
+_FORCE_INLINE_ double get_float(const Dictionary &p_dict, const Variant &p_key, double p_default) {
 	const Variant *value = p_dict.getptr(p_key);
 	return value ? double(*value) : p_default;
 }
 
-_FORCE_INLINE_ int64_t get_int(const Dictionary &p_dict, const StringName &p_key, int64_t p_default) {
+_FORCE_INLINE_ int64_t get_int(const Dictionary &p_dict, const Variant &p_key, int64_t p_default) {
 	const Variant *value = p_dict.getptr(p_key);
 	return value ? int64_t(*value) : p_default;
 }
 
-_FORCE_INLINE_ String get_string(const Dictionary &p_dict, const StringName &p_key) {
+_FORCE_INLINE_ String get_string(const Dictionary &p_dict, const Variant &p_key) {
 	const Variant *value = p_dict.getptr(p_key);
 	return value ? String(*value) : String();
 }
 
-_FORCE_INLINE_ Dictionary get_dict(const Dictionary &p_dict, const StringName &p_key) {
+_FORCE_INLINE_ Dictionary get_dict(const Dictionary &p_dict, const Variant &p_key) {
 	const Variant *value = p_dict.getptr(p_key);
 	return value ? Dictionary(*value) : Dictionary();
 }
 
-_FORCE_INLINE_ Vector2i get_cell(const Dictionary &p_dict, const StringName &p_key) {
+_FORCE_INLINE_ Vector2i get_cell(const Dictionary &p_dict, const Variant &p_key) {
 	const Variant *value = p_dict.getptr(p_key);
 	return value ? Vector2i(*value) : Vector2i();
 }
 
 // data[key] = value: a new key as a String, as GDScript writes it.
-_FORCE_INLINE_ void put(Dictionary &p_dict, const StringName &p_key, const Variant &p_value) {
+_FORCE_INLINE_ void put(Dictionary &p_dict, const Variant &p_key, const Variant &p_value) {
 	Variant *value = p_dict.getptr(p_key);
 	if (value) {
 		*value = p_value;
@@ -168,6 +171,12 @@ struct Rec {
 	Vector2i cell;
 	Dictionary data;
 	PokeWildsPopulationSim::Species *habitat = nullptr;
+	// Its ecology id, and its mate, friend and former mate as the pass has
+	// written them (only the pass writes them while it runs).
+	String ecology_id;
+	String mate_id;
+	String friend_id;
+	String previous_mate_id;
 	bool facts_known = false;
 	bool is_egg = false;
 	String species;
@@ -175,8 +184,16 @@ struct Rec {
 	String gender;
 };
 
-struct PairInfo {
+// A piece of a cell's names: its bits for the first `known` options.
+struct PieceBits {
 	uint64_t bits = 0;
+	int known = 0;
+};
+
+// A tile's base and upper names: their piece, its bits, and grass1.
+struct PairInfo {
+	String own;
+	PieceBits piece;
 	bool grass = false;
 };
 
@@ -191,6 +208,7 @@ struct CellChunk {
 struct PokeWildsPopulationSim::Species {
 	Dictionary info;
 	Dictionary behavior;
+	String normalized;
 	bool habitat_known = false;
 	Vector<String> group_names;
 	Vector<Vector<String>> group_options;
@@ -205,11 +223,19 @@ struct PokeWildsPopulationSim::Species {
 // so an option is in a cell's names (and in the window's, the names joined
 // by spaces) exactly when it is in one of the space-separated pieces they
 // are made of: each piece's bits are worked out once and or-ed.
-struct PokeWildsPopulationSim::Pass {
+// The habitat options seen so far (only ever added to) and the bits of the
+// pieces of names and of the tiles' name pairs, kept from pass to pass
+// (whether an option is in a string never changes; a string's bits are
+// brought up to the options added since it was last asked).
+struct PokeWildsPopulationSim::Names {
 	Vector<String> options;
 	HashMap<String, int> option_index;
-	HashMap<String, uint64_t> piece_bits;
+	HashMap<String, PieceBits> pieces;
 	HashMap<int64_t, PairInfo> pairs;
+	ObjectID store;
+};
+
+struct PokeWildsPopulationSim::Pass {
 	HashMap<Vector2i, uint32_t> chunk_index;
 	LocalVector<CellChunk> chunks;
 	HashMap<int64_t, String> biomes;
@@ -267,35 +293,39 @@ struct PokeWildsPopulationSim::Ctx {
 	Dictionary house_cells;
 	HashMap<Vector2i, Variant> ice;
 	bool ice_scanned = false;
+	// placed_bits by cell, made once a pass from flowers, structures and
+	// landmarks when they hold few cells (else each cell asks them).
+	HashMap<Vector2i, uint64_t> placed;
+	int placed_state = 0;
 	bool memo_ready = false;
 
 	void load(Object *p_state) {
 		state = p_state;
-		structures = state->get(K(structures));
-		blocked = state->get(K(blocked));
-		flowers = state->get(K(flowers));
-		landmarks = state->get(K(landmarks));
-		terrain_changes = state->get(K(terrain_changes));
-		memo = state->get(K(memo));
-		walkable = state->get(K(walkable));
-		view = object_of(state->get(K(view)));
-		bounds = state->get(K(bounds));
-		rng = state->get(K(rng));
-		wild = object_of(state->get(K(wild)));
-		habitat = object_of(state->get(K(habitat)));
-		eggs = object_of(state->get(K(eggs)));
+		structures = state->get(S(structures));
+		blocked = state->get(S(blocked));
+		flowers = state->get(S(flowers));
+		landmarks = state->get(S(landmarks));
+		terrain_changes = state->get(S(terrain_changes));
+		memo = state->get(S(memo));
+		walkable = state->get(S(walkable));
+		view = object_of(state->get(S(view)));
+		bounds = state->get(S(bounds));
+		rng = state->get(S(rng));
+		wild = object_of(state->get(S(wild)));
+		habitat = object_of(state->get(S(habitat)));
+		eggs = object_of(state->get(S(eggs)));
 		reacquire();
 	}
 
 	void load_tiles() {
-		tiles = object_of(state->get(K(tiles)));
+		tiles = object_of(state->get(S(tiles)));
 		store = nullptr;
 		packed = false;
 		has_dict_store = false;
 		if (!tiles) {
 			return;
 		}
-		Variant raw = tiles->get(K(tiles));
+		Variant raw = tiles->get(S(tiles));
 		if (raw.get_type() == Variant::DICTIONARY) {
 			dict_store = raw;
 			has_dict_store = true;
@@ -307,53 +337,53 @@ struct PokeWildsPopulationSim::Ctx {
 			return;
 		}
 		packed = true;
-		origin = store->get(K(origin));
-		width = store->get(K(width));
-		height = store->get(K(height));
-		s_flags = store->get(K(flags));
-		s_name_ids = store->get(K(name_ids));
-		s_upper_ids = store->get(K(upper_ids));
-		s_biome_ids = store->get(K(biome_ids));
-		s_route_ids = store->get(K(route_ids));
-		s_ledge_dir_ids = store->get(K(ledge_dir_ids));
-		s_strings = store->get(K(strings));
-		s_extra = store->get(K(extra));
-		s_string_ids = store->get(K(string_ids));
+		origin = store->get(S(origin));
+		width = store->get(S(width));
+		height = store->get(S(height));
+		s_flags = store->get(S(flags));
+		s_name_ids = store->get(S(name_ids));
+		s_upper_ids = store->get(S(upper_ids));
+		s_biome_ids = store->get(S(biome_ids));
+		s_route_ids = store->get(S(route_ids));
+		s_ledge_dir_ids = store->get(S(ledge_dir_ids));
+		s_strings = store->get(S(strings));
+		s_extra = store->get(S(extra));
+		s_string_ids = store->get(S(string_ids));
 	}
 
 	void load_wild() {
 		if (!wild) {
 			return;
 		}
-		w_records = wild->get(K(records));
-		w_slot_of = wild->get(K(slot_of));
-		w_at_cell = wild->get(K(at_cell));
-		w_buckets = wild->get(K(buckets));
-		w_ids = wild->get(K(ids));
-		w_cell_x = wild->get(K(cell_x));
-		w_cell_y = wild->get(K(cell_y));
-		w_flags = wild->get(K(flags));
-		w_live = wild->get(K(live));
+		w_records = wild->get(S(records));
+		w_slot_of = wild->get(S(slot_of));
+		w_at_cell = wild->get(S(at_cell));
+		w_buckets = wild->get(S(buckets));
+		w_ids = wild->get(S(ids));
+		w_cell_x = wild->get(S(cell_x));
+		w_cell_y = wild->get(S(cell_y));
+		w_flags = wild->get(S(flags));
+		w_live = wild->get(S(live));
 		if (timers_held) {
-			w_timers = wild->get(K(timers));
-			wild->set(K(timers), PackedFloat64Array());
+			w_timers = wild->get(S(timers));
+			wild->set(S(timers), PackedFloat64Array());
 		}
 	}
 
 	void load_habitat() {
 		if (habitat) {
-			h_records = habitat->get(K(records));
-			h_cover = habitat->get(K(_cover));
-			h_covered = habitat->get(K(_covered));
+			h_records = habitat->get(S(records));
+			h_cover = habitat->get(S(_cover));
+			h_covered = habitat->get(S(_covered));
 		}
-		e_records = eggs ? Dictionary(eggs->get(K(records))) : Dictionary();
+		e_records = eggs ? Dictionary(eggs->get(S(records))) : Dictionary();
 	}
 
 	// Before a GDScript call that may write what is held: it goes back, so
 	// the GDScript writes its own arrays.
 	void release() {
 		if (timers_held && wild) {
-			wild->set(K(timers), w_timers);
+			wild->set(S(timers), w_timers);
 		}
 		w_timers = PackedFloat64Array();
 		w_ids = PackedInt64Array();
@@ -389,7 +419,7 @@ struct PokeWildsPopulationSim::Ctx {
 	// WildPopulation.sync().
 	void wild_sync() {
 		if (wild && w_records.size() != w_live) {
-			sync_call(wild, K(sync));
+			sync_call(wild, S(sync));
 		}
 	}
 
@@ -461,7 +491,7 @@ struct PokeWildsPopulationSim::Ctx {
 	// HabitatPopulation.near(cell).
 	bool habitat_near(const Vector2i &p_cell) {
 		if (h_records.size() != h_covered) {
-			sync_call(habitat, K(sync));
+			sync_call(habitat, S(sync));
 		}
 		return h_cover.has(p_cell);
 	}
@@ -493,7 +523,7 @@ struct PokeWildsPopulationSim::Ctx {
 		} else if (has_dict_store) {
 			tile.object = object_of(dict_store.get(key, Variant()));
 		} else {
-			tile.object = object_of(tiles->call(K(tile_at), p_cell));
+			tile.object = object_of(tiles->call(S(tile_at), p_cell));
 		}
 		return tile;
 	}
@@ -504,9 +534,9 @@ struct PokeWildsPopulationSim::Ctx {
 		}
 		return p_tile.object->get(p_field).booleanize();
 	}
-	bool is_ledge(const TileRef &p_tile) const { return tile_flag(p_tile, sim->store_ledge, K(is_ledge)); }
-	bool is_water(const TileRef &p_tile) const { return tile_flag(p_tile, sim->store_water, K(is_water)); }
-	bool is_solid_flag(const TileRef &p_tile) const { return tile_flag(p_tile, sim->store_solid, K(is_solid)); }
+	bool is_ledge(const TileRef &p_tile) const { return tile_flag(p_tile, sim->store_ledge, S(is_ledge)); }
+	bool is_water(const TileRef &p_tile) const { return tile_flag(p_tile, sim->store_water, S(is_water)); }
+	bool is_solid_flag(const TileRef &p_tile) const { return tile_flag(p_tile, sim->store_solid, S(is_solid)); }
 
 	String tile_text(const TileRef &p_tile, const PackedInt32Array &p_ids, const StringName &p_field) const {
 		if (p_tile.index >= 0) {
@@ -514,10 +544,10 @@ struct PokeWildsPopulationSim::Ctx {
 		}
 		return p_tile.object->get(p_field);
 	}
-	String tile_name(const TileRef &p_tile) const { return tile_text(p_tile, s_name_ids, K(name)); }
-	String tile_upper(const TileRef &p_tile) const { return tile_text(p_tile, s_upper_ids, K(name_upper)); }
-	String tile_biome(const TileRef &p_tile) const { return tile_text(p_tile, s_biome_ids, K(biome)); }
-	String tile_ledge_dir(const TileRef &p_tile) const { return tile_text(p_tile, s_ledge_dir_ids, K(ledge_dir)); }
+	String tile_name(const TileRef &p_tile) const { return tile_text(p_tile, s_name_ids, S(name)); }
+	String tile_upper(const TileRef &p_tile) const { return tile_text(p_tile, s_upper_ids, S(name_upper)); }
+	String tile_biome(const TileRef &p_tile) const { return tile_text(p_tile, s_biome_ids, S(biome)); }
+	String tile_ledge_dir(const TileRef &p_tile) const { return tile_text(p_tile, s_ledge_dir_ids, S(ledge_dir)); }
 
 	// AreaState.in_bounds (state.tiles.contains_cell, or its bounds).
 	bool in_bounds(const Vector2i &p_cell) const {
@@ -531,7 +561,7 @@ struct PokeWildsPopulationSim::Ctx {
 		if (has_dict_store) {
 			return dict_store.has(key);
 		}
-		return tiles->call(K(contains_cell), p_cell).booleanize();
+		return tiles->call(S(contains_cell), p_cell).booleanize();
 	}
 
 	String structure_name(const Vector2i &p_cell) const {
@@ -599,7 +629,7 @@ struct PokeWildsPopulationSim::Ctx {
 	// (its own cell asks the GDScript), then the tile's flag.
 	bool tiles_is_solid(const Vector2i &p_cell) {
 		if (!packed) {
-			return tiles->call(K(is_solid), p_cell).booleanize();
+			return tiles->call(S(is_solid), p_cell).booleanize();
 		}
 		const int own = index_of(p_cell);
 		if (own >= 0 && s_upper_ids[own] != 0 && s_strings[s_upper_ids[own]].to_lower().begins_with("berrytree_")) {
@@ -613,7 +643,7 @@ struct PokeWildsPopulationSim::Ctx {
 				return true;
 			}
 			if (own >= 0 && s_upper_ids[own] == savanna_id) {
-				return tiles->call(K(is_solid), p_cell).booleanize();
+				return tiles->call(S(is_solid), p_cell).booleanize();
 			}
 		}
 		TileRef tile = tile_at(p_cell);
@@ -674,7 +704,7 @@ struct PokeWildsPopulationSim::Ctx {
 	bool can_move_between(const String &p_species, const Vector2i &p_origin, const Vector2i &p_target) {
 		const String lowered = p_species.to_lower();
 		if (lowered == "araichu" || lowered == "raichu_alolan" || lowered == "aexeggutor" || lowered == "exeggutor_alolan") {
-			return sim->rules_script->call(K(can_move_between), state, p_species, p_origin, p_target).booleanize();
+			return sim->rules_script->call(S(can_move_between), state, p_species, p_origin, p_target).booleanize();
 		}
 		if (tiles) {
 			TileRef destination = tile_at(p_target);
@@ -813,14 +843,14 @@ struct PokeWildsPopulationSim::Ctx {
 			return;
 		}
 		release();
-		sim->rules_script->call(K(try_create_parent_egg), state, p_data, p_egg_cell, p_ignored_wild_id);
+		sim->rules_script->call(S(try_create_parent_egg), state, p_data, p_egg_cell, p_ignored_wild_id);
 		reacquire();
 	}
 
 	// PopulationRules._emote.
 	void emote(const Dictionary &p_data, const String &p_emote) {
 		if (view) {
-			view->call(K(_show_ecology_emote), view->call(K(_sprite_of), p_data), p_emote);
+			view->call(S(_show_ecology_emote), view->call(S(_sprite_of), p_data), p_emote);
 		}
 	}
 
@@ -836,7 +866,7 @@ struct PokeWildsPopulationSim::Ctx {
 		if (friend_reunion) {
 			put(p_data, K(friend_seconds), sim->friend_seconds);
 			if (p_world) {
-				p_world->call(K(_show_friend_reunion), p_data, friend_id);
+				p_world->call(S(_show_friend_reunion), p_data, friend_id);
 			}
 		} else if (companion_id.is_empty() || p_rng->randf() < 0.18) {
 			const Variant *mate = p_data.getptr(K(mate_id));
@@ -856,12 +886,12 @@ struct PokeWildsPopulationSim::Ctx {
 
 	// WildPopulation._beside_player.
 	bool beside_player(const Vector2i &p_cell) const {
-		return world && (p_cell == Vector2i(world->get(K(follower_cell))) || p_cell == Vector2i(world->get(K(field_helper_cell))));
+		return world && (p_cell == Vector2i(world->get(S(follower_cell))) || p_cell == Vector2i(world->get(S(field_helper_cell))));
 	}
 
 	// The free_step of WildPopulation._act's flight.
 	bool free_step(const Vector2i &p_step, const Vector2i &p_player_cell, int64_t p_wild_id) {
-		return !(p_step == p_player_cell || beside_player(p_step) || (online && players->call(K(occupied), p_step).booleanize()) || id_at(p_step, p_wild_id) >= 0 ||
+		return !(p_step == p_player_cell || beside_player(p_step) || (online && players->call(S(occupied), p_step).booleanize()) || id_at(p_step, p_wild_id) >= 0 ||
 				e_records.has(p_step) || h_records.has(p_step));
 	}
 
@@ -952,15 +982,15 @@ struct PokeWildsPopulationSim::Ctx {
 	// WildPopulation._target: the player `p_data` goes for, its co-op target noted.
 	bool target_of(Dictionary &p_data, const Vector2i &p_old_cell, Dictionary &r_target, Vector2i &r_player_cell, bool &r_local) {
 		const String before = get_string(p_data, K(coop_target));
-		r_target = players->call(K(target_for), p_data, p_old_cell);
+		r_target = players->call(S(target_for), p_data, p_old_cell);
 		if (get_string(p_data, K(coop_target)) != before) {
-			population->call(K(mark), get_int(p_data, K(id), -1));
+			population->call(S(mark), get_int(p_data, K(id), -1));
 		}
 		if (r_target.is_empty()) {
 			return false;
 		}
-		r_player_cell = Vector2i(int(named(r_target, K(x))), int(named(r_target, K(y))));
-		r_local = equal(named(r_target, K(actor)), players->call(K(local_actor)));
+		r_player_cell = Vector2i(int(named(r_target, S(x))), int(named(r_target, S(y))));
+		r_local = equal(named(r_target, S(actor)), players->call(S(local_actor)));
 		return true;
 	}
 
@@ -976,17 +1006,17 @@ struct PokeWildsPopulationSim::Ctx {
 		const Vector2i player_delta = p_player_cell - p_old_cell;
 		const int64_t distance_squared = player_delta.length_squared();
 		const bool pursuing = get_bool(p_data, K(aggro_player)) && !p_is_charmed;
-		const double now = state->get(K(clock));
+		const double now = state->get(S(clock));
 		if (now < get_float(p_data, K(fed_until), 0.0)) {
 			put(p_data, K(anim_phase), 1 - get_int(p_data, K(anim_phase), 0));
-			population->call(K(pose), p_wild_id, DOWN, get_int(p_data, K(anim_phase), 0));
+			population->call(S(pose), p_wild_id, DOWN, get_int(p_data, K(anim_phase), 0));
 			return true;
 		}
 		if (pursuing && p_local_target && world) {
-			const String field_move = world->get(K(active_field_move));
-			if (field_move != "SURF" && field_move != "FLY" && distance_squared <= 1 && !world->call(K(encounter_grace_active)).booleanize() &&
-					!world->call(K(_repel_blocks), get_int(p_data, K(level), 1)).booleanize()) {
-				sync_call(world, K(_begin_wild_encounter), p_wild_id);
+			const String field_move = world->get(S(active_field_move));
+			if (field_move != "SURF" && field_move != "FLY" && distance_squared <= 1 && !world->call(S(encounter_grace_active)).booleanize() &&
+					!world->call(S(_repel_blocks), get_int(p_data, K(level), 1)).booleanize()) {
+				sync_call(world, S(_begin_wild_encounter), p_wild_id);
 				return false;
 			}
 		}
@@ -1021,15 +1051,15 @@ struct PokeWildsPopulationSim::Ctx {
 		}
 		const Vector2i target = p_old_cell + direction;
 		Dictionary source_record = get_dict(p_data, K(source_record));
-		if (get_bool(source_record, K(rare_forest_mew)) && !sim->mew_script->call(K(deep_forest_at), state, target).booleanize()) {
+		if (get_bool(source_record, K(rare_forest_mew)) && !sim->mew_script->call(S(deep_forest_at), state, target).booleanize()) {
 			return true;
 		}
 		const String rare_species = get_string(source_record, K(rare_legendary));
-		if (!rare_species.is_empty() && !sim->legendaries_script->call(K(habitat_at), state, rare_species, target).booleanize()) {
+		if (!rare_species.is_empty() && !sim->legendaries_script->call(S(habitat_at), state, rare_species, target).booleanize()) {
 			return true;
 		}
 		if (direction == Vector2i() || !can_move_between(get_string(p_data, K(species)), p_old_cell, target) || target == p_player_cell || beside_player(target) ||
-				(online && players->call(K(occupied), target).booleanize()) || id_at(target, p_wild_id) >= 0 || e_records.has(target) || h_records.has(target)) {
+				(online && players->call(S(occupied), target).booleanize()) || id_at(target, p_wild_id) >= 0 || e_records.has(target) || h_records.has(target)) {
 			return true;
 		}
 		const int64_t phase = 1 - get_int(p_data, K(anim_phase), 0);
@@ -1041,23 +1071,23 @@ struct PokeWildsPopulationSim::Ctx {
 		} else if (pursuing) {
 			move_seconds = 16.0 / (1.5 * 60.0);
 		}
-		population->call(K(begin_step), p_wild_id, move_seconds);
-		sync_call(population, K(move), p_wild_id, target);
+		population->call(S(begin_step), p_wild_id, move_seconds);
+		sync_call(population, S(move), p_wild_id, target);
 		if (online) {
-			players->call(K(mark_motion), p_wild_id);
+			players->call(S(mark_motion), p_wild_id);
 		}
 		put(p_data, K(ball_facing), Vector2(direction));
-		population->call(K(pose), p_wild_id, direction, phase);
+		population->call(S(pose), p_wild_id, direction, phase);
 		if (pursuing || fleeing) {
 			w_timers.set(p_slot, move_seconds);
 		}
 		if (timid) {
 			put(p_data, K(flee_steps), get_int(p_data, K(flee_steps), 0) + 1);
-			if (get_int(p_data, K(flee_steps), 0) >= 3 && sim->rules_script->call(K(is_tall_grass_cell), state, target).booleanize()) {
+			if (get_int(p_data, K(flee_steps), 0) >= 3 && sim->rules_script->call(S(is_tall_grass_cell), state, target).booleanize()) {
 				if (world) {
-					sync_call(world, K(_remove_wild_pokemon), p_wild_id);
+					sync_call(world, S(_remove_wild_pokemon), p_wild_id);
 				} else {
-					sync_call(population, K(remove), p_wild_id);
+					sync_call(population, S(remove), p_wild_id);
 				}
 			}
 		}
@@ -1066,26 +1096,26 @@ struct PokeWildsPopulationSim::Ctx {
 
 	PackedInt64Array wild_tick(double p_delta, const Array &p_observers) {
 		wild_sync();
-		population->set(K(_ticking), true);
-		population->set(K(_tick_dirty), PackedInt64Array());
+		population->set(S(_ticking), true);
+		population->set(S(_tick_dirty), PackedInt64Array());
 		timers_held = true;
-		w_timers = population->get(K(timers));
-		population->set(K(timers), PackedFloat64Array());
-		Vector2i player_cell = world ? Vector2i(world->call(K(_player_cell))) : NO_CELL;
+		w_timers = population->get(S(timers));
+		population->set(S(timers), PackedFloat64Array());
+		Vector2i player_cell = world ? Vector2i(world->call(S(_player_cell))) : NO_CELL;
 		// Which Pokemon are inside a zone is worked out twice a second.
 		const int64_t now_msec = OS::get_singleton()->get_ticks_msec();
-		if (now_msec - int64_t(population->get(K(watched_at))) >= 500) {
-			population->set(K(watched_at), now_msec);
+		if (now_msec - int64_t(population->get(S(watched_at))) >= 500) {
+			population->set(S(watched_at), now_msec);
 			LocalVector<Vector3i> zones;
 			for (int index = 0; index < p_observers.size(); index++) {
 				const Variant &observer = p_observers[index];
-				zones.push_back(Vector3i(int(named(observer, K(x))), int(named(observer, K(y))), sim->active_radius + 2));
+				zones.push_back(Vector3i(int(named(observer, S(x))), int(named(observer, S(y))), sim->active_radius + 2));
 			}
 			for (const KeyValue<Variant, Variant> &entry : h_records) {
 				const Vector2i habitat_cell = entry.key;
 				zones.push_back(Vector3i(habitat_cell.x, habitat_cell.y, sim->habitat_radius + 2));
 			}
-			Array watched = population->get(K(watched));
+			Array watched = population->get(S(watched));
 			watched.clear();
 			PackedInt32Array slots = slots_in(zones);
 			for (int index = 0; index < slots.size(); index++) {
@@ -1101,15 +1131,15 @@ struct PokeWildsPopulationSim::Ctx {
 			if (online && get_bool(seen, K(battle))) {
 				continue;
 			}
-			chasers.push_back(Vector2i(int(named(observer, K(x))), int(named(observer, K(y)))));
+			chasers.push_back(Vector2i(int(named(observer, S(x))), int(named(observer, S(y)))));
 			if (online && get_string(seen, K(move)) == "CHARM") {
 				someone_charms = true;
 			}
 		}
-		const double now = state->get(K(clock));
-		const bool charm_move = world && String(world->get(K(active_field_move))) == "CHARM";
+		const double now = state->get(S(clock));
+		const bool charm_move = world && String(world->get(S(active_field_move))) == "CHARM";
 		const bool has_cover = habitat != nullptr;
-		Array watched = Array(population->get(K(watched))).duplicate();
+		Array watched = Array(population->get(S(watched))).duplicate();
 		for (int position = 0; position < watched.size(); position++) {
 			const int64_t wild_id = watched[position];
 			const int slot = slot_of(wild_id);
@@ -1165,27 +1195,27 @@ struct PokeWildsPopulationSim::Ctx {
 							continue;
 						}
 					}
-					is_charmed = local_target ? world->call(K(_charm_suppresses), data).booleanize() : players->call(K(remote_charm), data, target_player).booleanize();
+					is_charmed = local_target ? world->call(S(_charm_suppresses), data).booleanize() : players->call(S(remote_charm), data, target_player).booleanize();
 				}
 			} else if (charm_move || get_float(data, K(ball_charm_until), 0.0) > now) {
-				is_charmed = world ? world->call(K(_charm_suppresses), data).booleanize() : true;
+				is_charmed = world ? world->call(S(_charm_suppresses), data).booleanize() : true;
 			}
 			if (was_charmed.get_type() == Variant::NIL || was_charmed.booleanize() != is_charmed) {
 				put(data, K(charmed), is_charmed);
 			}
 			if (!online && world) {
 				if (aggro || data.has(K(aggro_audio_tick))) {
-					world->call(K(_update_source_aggro_audio), data, old_cell, player_cell, p_delta);
+					world->call(S(_update_source_aggro_audio), data, old_cell, player_cell, p_delta);
 				}
 			}
 			if (is_charmed && !was_charmed.booleanize() && world) {
-				world->call(K(_show_ecology_emote), world->call(K(_sprite_of), data), "heart");
+				world->call(S(_show_ecology_emote), world->call(S(_sprite_of), data), "heart");
 			}
 			if (aggro) {
 				put(data, K(source_aggro_emote_seconds), get_float(data, K(source_aggro_emote_seconds), 0.0) - p_delta);
 				if (get_float(data, K(source_aggro_emote_seconds), 0.0) <= 0.0) {
 					if (world) {
-						world->call(K(_show_ecology_emote), world->call(K(_sprite_of), data), "skull");
+						world->call(S(_show_ecology_emote), world->call(S(_sprite_of), data), "skull");
 					}
 					put(data, K(source_aggro_emote_seconds), 241.0 / 60.0);
 				}
@@ -1211,17 +1241,17 @@ struct PokeWildsPopulationSim::Ctx {
 		}
 		release();
 		timers_held = false;
-		population->set(K(_ticking), false);
-		population->call(K(_maybe_compact));
-		return population->get(K(_tick_dirty));
+		population->set(S(_ticking), false);
+		population->call(S(_maybe_compact));
+		return population->get(S(_tick_dirty));
 	}
 
 	// --- HabitatPopulation.tick --------------------------------------------
 
 	void habitat_tick(Object *p_population, double p_delta, const Ref<RandomNumberGenerator> &p_rng) {
-		Dictionary records = p_population->get(K(records));
-		Object *owner = object_of(p_population->get(K(world)));
-		Variant held = p_population->get(K(players));
+		Dictionary records = p_population->get(S(records));
+		Object *owner = object_of(p_population->get(S(world)));
+		Variant held = p_population->get(S(players));
 		Object *walkers = is_null(held) ? nullptr : object_of(held);
 		Array cells = records.keys();
 		for (int position = 0; position < cells.size(); position++) {
@@ -1236,11 +1266,11 @@ struct PokeWildsPopulationSim::Ctx {
 			}
 			// The Pokemon the player is calling back waits for them.
 			if (owner) {
-				const String recall_hold = owner->get(K(recall_hold));
+				const String recall_hold = owner->get(S(recall_hold));
 				if (!recall_hold.is_empty() && get_string(data, K(ecology_id)) == recall_hold) {
 					continue;
 				}
-				owner->call(K(_update_pokemon_water_visual), data);
+				owner->call(S(_update_pokemon_water_visual), data);
 			}
 			put(data, K(move_timer), get_float(data, K(move_timer), 0.0) - p_delta);
 			if (get_float(data, K(move_timer), 0.0) > 0.0) {
@@ -1255,9 +1285,9 @@ struct PokeWildsPopulationSim::Ctx {
 			if (!get_string(data, K(held_item)).is_empty()) {
 				put(data, K(anim_phase), 1 - get_int(data, K(anim_phase), 0));
 				if (owner) {
-					owner->call(K(_habitat_pose), data, DOWN);
+					owner->call(S(_habitat_pose), data, DOWN);
 				}
-				p_population->call(K(mark), old_cell);
+				p_population->call(S(mark), old_cell);
 				continue;
 			}
 			Vector2i direction = sim->directions[p_rng->randi_range(0, 4)];
@@ -1268,13 +1298,13 @@ struct PokeWildsPopulationSim::Ctx {
 			if (direction == Vector2i() || !can_move_between(get_string(data, K(species)), old_cell, target)) {
 				continue;
 			}
-			if (owner && (target == Vector2i(owner->call(K(_player_cell))) || target == Vector2i(owner->get(K(follower_cell))) || target == Vector2i(owner->get(K(field_helper_cell))))) {
+			if (owner && (target == Vector2i(owner->call(S(_player_cell))) || target == Vector2i(owner->get(S(follower_cell))) || target == Vector2i(owner->get(S(field_helper_cell))))) {
 				continue;
 			}
-			if ((walkers && walkers->call(K(occupied), target).booleanize()) || records.has(target) || id_at(target) >= 0 || e_records.has(target)) {
+			if ((walkers && walkers->call(S(occupied), target).booleanize()) || records.has(target) || id_at(target) >= 0 || e_records.has(target)) {
 				continue;
 			}
-			sync_call(p_population, K(move), old_cell, target);
+			sync_call(p_population, S(move), old_cell, target);
 			put(data, K(cell), target);
 			put(data, K(x), target.x);
 			put(data, K(y), target.y);
@@ -1284,7 +1314,7 @@ struct PokeWildsPopulationSim::Ctx {
 				move_seconds = 16.0 / (2.0 * 60.0);
 			}
 			if (owner) {
-				owner->call(K(_habitat_step_visuals), data, direction, target, move_seconds);
+				owner->call(S(_habitat_step_visuals), data, direction, target, move_seconds);
 			}
 		}
 	}
@@ -1293,7 +1323,7 @@ struct PokeWildsPopulationSim::Ctx {
 
 	// PopulationRules.is_night.
 	bool is_night() const {
-		const double clock = state->get(K(clock));
+		const double clock = state->get(S(clock));
 		return Math::fmod(clock, sim->day_seconds) / sim->day_seconds >= sim->night_start;
 	}
 
@@ -1302,31 +1332,32 @@ struct PokeWildsPopulationSim::Ctx {
 		Species *known = sim->species_of(p_name);
 		if (!known->habitat_known) {
 			known->habitat_known = true;
-			Array groups = sim->ecology_script->call(K(habitat_groups), p_name);
+			Array groups = sim->ecology_script->call(S(habitat_groups), p_name);
 			for (int index = 0; index < groups.size(); index++) {
 				const String raw = groups[index];
 				known->group_names.push_back(raw);
 				known->group_options.push_back(raw.to_lower().split("|"));
 			}
-			known->requires_night = sim->ecology_script->call(K(requires_night), p_name).booleanize();
+			known->requires_night = sim->ecology_script->call(S(requires_night), p_name).booleanize();
 		}
 		return known;
 	}
 
-	// The options of `p_species`' habitat as bits of this pass; false when
-	// they cannot be (an option with a space, too many): the GDScript runs.
+	// The options of `p_species`' habitat among the kept ones; false when
+	// they cannot be (an option with a space, too many).
 	bool add_options(const String &p_species) {
+		Names *kept = sim->names;
 		Species *known = species_habitat(p_species);
 		for (const Vector<String> &options : known->group_options) {
 			for (const String &option : options) {
-				if (pass->option_index.has(option)) {
+				if (kept->option_index.has(option)) {
 					continue;
 				}
-				if (option.contains(" ") || pass->options.size() >= MAX_OPTIONS) {
+				if (option.contains(" ") || kept->options.size() >= MAX_OPTIONS) {
 					return false;
 				}
-				pass->option_index.insert(option, pass->options.size());
-				pass->options.push_back(option);
+				kept->option_index.insert(option, kept->options.size());
+				kept->options.push_back(option);
 			}
 		}
 		return true;
@@ -1335,7 +1366,7 @@ struct PokeWildsPopulationSim::Ctx {
 	uint64_t group_bits(const Vector<String> &p_options) const {
 		uint64_t bits = 0;
 		for (const String &option : p_options) {
-			const int *index = pass->option_index.getptr(option);
+			const int *index = sim->names->option_index.getptr(option);
 			if (index && !option.is_empty()) {
 				bits |= uint64_t(1) << (FIRST_OPTION_BIT + *index);
 			}
@@ -1343,25 +1374,31 @@ struct PokeWildsPopulationSim::Ctx {
 		return bits;
 	}
 
-	uint64_t piece_bits(const String &p_piece) {
-		const uint64_t *known = pass->piece_bits.getptr(p_piece);
-		if (known) {
-			return *known;
-		}
-		uint64_t bits = 0;
-		if (p_piece.contains("fence")) {
-			bits |= FENCE_BIT;
-		}
-		if (p_piece.contains("roof")) {
-			bits |= ROOF_BIT;
-		}
-		for (int index = 0; index < pass->options.size(); index++) {
-			if (p_piece.contains(pass->options[index])) {
-				bits |= uint64_t(1) << (FIRST_OPTION_BIT + index);
+	// `p_piece`'s bits brought up to the options there are.
+	uint64_t piece_of(const String &p_piece, PieceBits &r_bits) const {
+		const Names *kept = sim->names;
+		while (r_bits.known < kept->options.size()) {
+			if (p_piece.contains(kept->options[r_bits.known])) {
+				r_bits.bits |= uint64_t(1) << (FIRST_OPTION_BIT + r_bits.known);
 			}
+			r_bits.known++;
 		}
-		pass->piece_bits.insert(p_piece, bits);
-		return bits;
+		return r_bits.bits;
+	}
+
+	uint64_t piece_bits(const String &p_piece) {
+		PieceBits *known = sim->names->pieces.getptr(p_piece);
+		if (!known) {
+			PieceBits made;
+			if (p_piece.contains("fence")) {
+				made.bits |= FENCE_BIT;
+			}
+			if (p_piece.contains("roof")) {
+				made.bits |= ROOF_BIT;
+			}
+			known = &sim->names->pieces.insert(p_piece, made)->value;
+		}
+		return piece_of(p_piece, *known);
 	}
 
 	// The terrain_changes "ice:x,y" keys, by cell (placed_names' snow).
@@ -1393,8 +1430,53 @@ struct PokeWildsPopulationSim::Ctx {
 		}
 	}
 
+	// The flowers, structures and landmarks of the area as placed_bits by
+	// cell: only cells keyed by a Vector2i are ever found by one.
+	void scan_placed() {
+		placed_state = 2;
+		if (flowers.size() + structures.size() + landmarks.size() > 4096) {
+			placed_state = 1;
+			return;
+		}
+		HashSet<Vector2i> cells;
+		for (const Dictionary &group : { flowers, structures, landmarks }) {
+			for (const KeyValue<Variant, Variant> &entry : group) {
+				if (entry.key.get_type() == Variant::VECTOR2I) {
+					cells.insert(entry.key);
+				}
+			}
+		}
+		for (const Vector2i &cell : cells) {
+			placed.insert(cell, lookup_placed_bits(cell));
+		}
+	}
+
 	// PopulationRules.placed_names, as bits.
 	uint64_t placed_bits(const Vector2i &p_cell) {
+		if (placed_state == 0) {
+			scan_placed();
+		}
+		uint64_t bits = 0;
+		if (placed_state == 2) {
+			const uint64_t *known = placed.getptr(p_cell);
+			if (known) {
+				bits = *known;
+			}
+		} else {
+			bits = lookup_placed_bits(p_cell);
+		}
+		if (!terrain_changes.is_empty()) {
+			scan_ice();
+			const Variant *value = ice.getptr(p_cell);
+			if (value && value->booleanize()) {
+				bits |= piece_bits("snow");
+			}
+		}
+		return bits;
+	}
+
+	// placed_names' flowers, structures and landmarks.
+	uint64_t lookup_placed_bits(const Vector2i &p_cell) {
 		uint64_t bits = 0;
 		if (!flowers.is_empty() && flowers.has(p_cell)) {
 			bits |= piece_bits("flower");
@@ -1419,13 +1501,6 @@ struct PokeWildsPopulationSim::Ctx {
 				bits |= piece_bits(get_string(Dictionary(*landmark), K(type)).to_lower());
 			}
 		}
-		if (!terrain_changes.is_empty()) {
-			scan_ice();
-			const Variant *value = ice.getptr(p_cell);
-			if (value && value->booleanize()) {
-				bits |= piece_bits("snow");
-			}
-		}
 		return bits;
 	}
 
@@ -1436,7 +1511,7 @@ struct PokeWildsPopulationSim::Ctx {
 		if (known) {
 			return *known;
 		}
-		const String biome = sim->rules_script->call(K(_packed_tile_biome), state, store, p_index, p_cell);
+		const String biome = sim->rules_script->call(S(_packed_tile_biome), state, store, p_index, p_cell);
 		pass->biomes.insert(kind, biome);
 		return biome;
 	}
@@ -1459,15 +1534,17 @@ struct PokeWildsPopulationSim::Ctx {
 					}
 				}
 				const int64_t pair = (int64_t(s_name_ids[index]) << 24) | int64_t(s_upper_ids[index]);
-				PairInfo *own = pass->pairs.getptr(pair);
+				PairInfo *own = sim->names->pairs.getptr(pair);
 				if (!own) {
 					const String name = s_strings[s_name_ids[index]];
 					const String upper = s_strings[s_upper_ids[index]];
 					PairInfo made;
-					made.bits = piece_bits(name.to_lower() + " " + upper.to_lower());
+					made.own = name.to_lower() + " " + upper.to_lower();
+					made.piece.bits = (made.own.contains("fence") ? FENCE_BIT : 0) | (made.own.contains("roof") ? ROOF_BIT : 0);
 					made.grass = tile_key(name) == "grass1" || tile_key(upper) == "grass1";
-					own = &pass->pairs.insert(pair, made)->value;
+					own = &sim->names->pairs.insert(pair, made)->value;
 				}
+				const uint64_t own_bits = piece_of(own->own, own->piece);
 				const int flags = s_flags[index];
 				bool grass;
 				if ((flags & sim->store_tidal) != 0 && packed_tile_biome(index, p_cell) != "BEACH") {
@@ -1475,13 +1552,13 @@ struct PokeWildsPopulationSim::Ctx {
 				} else {
 					grass = own->grass || (flags & sim->store_grass) != 0;
 				}
-				return own->bits | (grass ? pass->grass_bits : 0) | placed_bits(p_cell);
+				return own_bits | (grass ? pass->grass_bits : 0) | placed_bits(p_cell);
 			}
 		}
 		if (!in_bounds(p_cell)) {
 			return 0;
 		}
-		return piece_bits(sim->rules_script->call(K(ecology_names_at), state, p_cell, house_cells));
+		return piece_bits(sim->rules_script->call(S(ecology_names_at), state, p_cell, house_cells));
 	}
 
 	// The bits of a window cell, worked out once a pass. `r_key` and
@@ -1551,7 +1628,9 @@ struct PokeWildsPopulationSim::Ctx {
 		}
 		p_rec.facts_known = true;
 		p_rec.is_egg = get_bool(p_rec.data, K(is_egg));
-		p_rec.species = normalize_species(get_string(p_rec.data, K(species)));
+		const String raw_species = get_string(p_rec.data, K(species));
+		Species *known = sim->species_of(raw_species);
+		p_rec.species = known->normalized;
 		// PokemonEcology._record_egg_groups.
 		if (p_rec.data.has(K(egg_groups))) {
 			p_rec.groups = string_array(p_rec.data.get(K(egg_groups), Array()));
@@ -1559,7 +1638,7 @@ struct PokeWildsPopulationSim::Ctx {
 			Array none;
 			none.push_back("EGG_NONE");
 			none.push_back("EGG_NONE");
-			p_rec.groups = string_array(sim->species_of(get_string(p_rec.data, K(species)))->info.get(K(egg_groups), none));
+			p_rec.groups = string_array(known->info.get(K(egg_groups), none));
 		}
 		const Variant *gender = p_rec.data.getptr(K(gender));
 		p_rec.gender = (gender ? String(*gender) : String("unknown")).to_lower();
@@ -1618,6 +1697,43 @@ struct PokeWildsPopulationSim::Ctx {
 		}
 	}
 
+	// The kept tables for this pass: the pairs of this area's store, every
+	// species' options among the options (started again when they are full).
+	bool ready_names(const LocalVector<Rec> &p_records) {
+		Names *kept = sim->names;
+		if (packed && kept->store != store->get_instance_id()) {
+			kept->pairs.clear();
+			kept->store = store->get_instance_id();
+		}
+		LocalVector<String> species_names;
+		HashSet<Species *> seen;
+		for (const Rec &rec : p_records) {
+			const String name = get_string(rec.data, K(species));
+			Species *known = species_habitat(name);
+			if (!seen.has(known)) {
+				seen.insert(known);
+				species_names.push_back(name);
+			}
+		}
+		for (int attempt = 0; attempt < 2; attempt++) {
+			bool fits = true;
+			for (const String &name : species_names) {
+				if (!add_options(name)) {
+					fits = false;
+					break;
+				}
+			}
+			if (fits) {
+				return true;
+			}
+			kept->options.clear();
+			kept->option_index.clear();
+			kept->pieces.clear();
+			kept->pairs.clear();
+		}
+		return false;
+	}
+
 	// The records refresh_relationships covers: the habitat Pokemon
 	// `p_simulated` picks, then the wild ones near a center or a habitat.
 	// False when a habitat cannot be read as bits (the GDScript runs).
@@ -1655,16 +1771,18 @@ struct PokeWildsPopulationSim::Ctx {
 				r_records.push_back(rec);
 			}
 		}
-		HashSet<Species *> added;
-		for (Rec &rec : r_records) {
-			const String name = get_string(rec.data, K(species));
-			rec.habitat = species_habitat(name);
-			if (!added.has(rec.habitat)) {
-				added.insert(rec.habitat);
-				if (!add_options(name)) {
-					return false;
-				}
+		HashSet<const void *> seen;
+		for (const Rec &rec : r_records) {
+			if (seen.has(rec.data.id())) {
+				return false;
 			}
+			seen.insert(rec.data.id());
+		}
+		for (Rec &rec : r_records) {
+			rec.habitat = species_habitat(get_string(rec.data, K(species)));
+		}
+		if (!ready_names(r_records)) {
+			return false;
 		}
 		pass->grass_bits = piece_bits("grass");
 		return true;
@@ -1678,38 +1796,40 @@ struct PokeWildsPopulationSim::Ctx {
 		for (int index = 0; index < count; index++) {
 			Rec &rec = p_records[index];
 			Dictionary &data = rec.data;
-			put(data, K(previous_mate_id), get_string(data, K(mate_id)));
+			rec.previous_mate_id = get_string(data, K(mate_id));
+			put(data, K(previous_mate_id), rec.previous_mate_id);
 			put(data, K(mate_id), String());
 			put(data, K(friend_id), String());
 			put(data, K(can_lay_egg), false);
 			put(data, K(mate_nearby), false);
 			put(data, K(nearby_pokemon), 0);
 			habitat_window(data, rec.habitat, rec.cell, night);
-			const String ecology_id = get_string(data, K(ecology_id));
-			if (!ecology_id.is_empty()) {
-				index_by_id[ecology_id] = index;
+			rec.ecology_id = get_string(data, K(ecology_id));
+			if (!rec.ecology_id.is_empty()) {
+				index_by_id[rec.ecology_id] = index;
 			}
 		}
 		// An established compatible pair stays bonded while it wanders a few tiles apart.
 		for (int index = 0; index < count; index++) {
 			Rec &first = p_records[index];
-			const String former_mate_id = get_string(first.data, K(previous_mate_id));
-			if (former_mate_id.is_empty()) {
+			if (first.previous_mate_id.is_empty()) {
 				continue;
 			}
-			const int *mate_index = index_by_id.getptr(former_mate_id);
+			const int *mate_index = index_by_id.getptr(first.previous_mate_id);
 			if (!mate_index || *mate_index <= index) {
 				continue;
 			}
 			Rec &second = p_records[*mate_index];
-			if (get_string(second.data, K(previous_mate_id)) != get_string(first.data, K(ecology_id))) {
+			if (second.previous_mate_id != first.ecology_id) {
 				continue;
 			}
 			if (chebyshev(first.cell, second.cell) > sim->mate_bond_radius || !can_mate(first, second)) {
 				continue;
 			}
-			put(first.data, K(mate_id), get_string(second.data, K(ecology_id)));
-			put(second.data, K(mate_id), get_string(first.data, K(ecology_id)));
+			first.mate_id = second.ecology_id;
+			put(first.data, K(mate_id), first.mate_id);
+			second.mate_id = first.ecology_id;
+			put(second.data, K(mate_id), second.mate_id);
 		}
 		// Who stands in each one's window (the records on its cells, and the
 		// eggs), from the records and eggs by 8x8 cells.
@@ -1759,7 +1879,7 @@ struct PokeWildsPopulationSim::Ctx {
 		}
 		for (int index = 0; index < count; index++) {
 			Rec &first = p_records[index];
-			if (!get_string(first.data, K(mate_id)).is_empty()) {
+			if (!first.mate_id.is_empty()) {
 				continue;
 			}
 			for (const int candidate : nearby_indices[index]) {
@@ -1767,22 +1887,26 @@ struct PokeWildsPopulationSim::Ctx {
 					continue;
 				}
 				Rec &second = p_records[candidate];
-				if (!get_string(second.data, K(mate_id)).is_empty()) {
+				if (!second.mate_id.is_empty()) {
 					continue;
 				}
 				if (!can_mate(first, second)) {
 					continue;
 				}
-				put(first.data, K(mate_id), get_string(second.data, K(ecology_id)));
-				put(second.data, K(mate_id), get_string(first.data, K(ecology_id)));
+				first.mate_id = second.ecology_id;
+				put(first.data, K(mate_id), first.mate_id);
+				second.mate_id = first.ecology_id;
+				put(second.data, K(mate_id), second.mate_id);
+				first.friend_id = String();
 				put(first.data, K(friend_id), String());
+				second.friend_id = String();
 				put(second.data, K(friend_id), String());
 				break;
 			}
 		}
 		for (int index = 0; index < count; index++) {
 			Rec &first = p_records[index];
-			if (!get_string(first.data, K(mate_id)).is_empty() || !get_string(first.data, K(friend_id)).is_empty()) {
+			if (!first.mate_id.is_empty() || !first.friend_id.is_empty()) {
 				continue;
 			}
 			for (const int candidate : nearby_indices[index]) {
@@ -1790,18 +1914,20 @@ struct PokeWildsPopulationSim::Ctx {
 					continue;
 				}
 				Rec &second = p_records[candidate];
-				if (!get_string(second.data, K(mate_id)).is_empty() || !get_string(second.data, K(friend_id)).is_empty() || !can_be_friends(first, second)) {
+				if (!second.mate_id.is_empty() || !second.friend_id.is_empty() || !can_be_friends(first, second)) {
 					continue;
 				}
-				put(first.data, K(friend_id), get_string(second.data, K(ecology_id)));
-				put(second.data, K(friend_id), get_string(first.data, K(ecology_id)));
+				first.friend_id = second.ecology_id;
+				put(first.data, K(friend_id), first.friend_id);
+				second.friend_id = first.ecology_id;
+				put(second.data, K(friend_id), second.friend_id);
 				break;
 			}
 		}
 		for (int index = 0; index < count; index++) {
 			Rec &rec = p_records[index];
 			Dictionary &data = rec.data;
-			const String mate_id = get_string(data, K(mate_id));
+			const String mate_id = rec.mate_id;
 			if (!mate_id.is_empty()) {
 				const int *mate_index = index_by_id.getptr(mate_id);
 				if (mate_index) {
@@ -1811,7 +1937,7 @@ struct PokeWildsPopulationSim::Ctx {
 					put(data, K(mate_nearby), chebyshev(rec.cell, mate.cell) <= radius);
 				}
 			}
-			if (!mate_id.is_empty() && mate_id != get_string(data, K(previous_mate_id))) {
+			if (!mate_id.is_empty() && mate_id != rec.previous_mate_id) {
 				emote(data, "heart");
 			}
 			data.erase(K(previous_mate_id));
@@ -1822,7 +1948,7 @@ struct PokeWildsPopulationSim::Ctx {
 	LocalVector<Variant> ecology_values(const Dictionary &p_record) const {
 		LocalVector<Variant> values;
 		for (int index = 0; index < sim->ecology_fields.size(); index++) {
-			values.push_back(p_record.get(sim->ecology_fields[index], Variant()));
+			values.push_back(p_record.get(sim->ecology_keys[index], Variant()));
 		}
 		return values;
 	}
@@ -1834,7 +1960,7 @@ struct PokeWildsPopulationSim::Ctx {
 			return true;
 		}
 		for (int index = 0; index < sim->ecology_fields.size(); index++) {
-			if (!(*p_before)[index].hash_compare(p_record.get(sim->ecology_fields[index], Variant()), 1, false)) {
+			if (!(*p_before)[index].hash_compare(p_record.get(sim->ecology_keys[index], Variant()), 1, false)) {
 				return true;
 			}
 		}
@@ -1858,7 +1984,7 @@ struct PokeWildsPopulationSim::Ctx {
 		}
 		refresh_relationships(records);
 		release();
-		sim->rules_script->call(K(release_old_eggs), state, p_may_release);
+		sim->rules_script->call(S(release_old_eggs), state, p_may_release);
 		reacquire();
 		Array cells = deployed.keys();
 		for (int index = 0; index < cells.size(); index++) {
@@ -1876,8 +2002,8 @@ struct PokeWildsPopulationSim::Ctx {
 				Species *known = sim->species_of(get_string(data, K(species)));
 				if (!known->harvest_known) {
 					known->harvest_known = true;
-					known->harvest_seconds = sim->ecology_script->call(K(harvest_seconds), get_string(data, K(species)));
-					known->harvest_items = sim->ecology_script->call(K(harvest_items), get_string(data, K(species)));
+					known->harvest_seconds = sim->ecology_script->call(S(harvest_seconds), get_string(data, K(species)));
+					known->harvest_items = sim->ecology_script->call(S(harvest_items), get_string(data, K(species)));
 				}
 				if (get_float(data, K(harvest_progress), 0.0) >= known->harvest_seconds && !known->harvest_items.is_empty()) {
 					put(data, K(held_item), known->harvest_items[rng->randi_range(0, known->harvest_items.size() - 1)]);
@@ -1885,7 +2011,7 @@ struct PokeWildsPopulationSim::Ctx {
 			}
 			advance_breeding_clock(data, p_ecology_delta, false);
 			if (ecology_changed(before.getptr(cell), data)) {
-				habitat->call(K(mark), cell);
+				habitat->call(S(mark), cell);
 			}
 		}
 		// The wild Pokemon in play are the ones the relationship pass just took.
@@ -1899,6 +2025,7 @@ struct PokeWildsPopulationSim::Ctx {
 // --- PokeWildsPopulationSim -------------------------------------------------
 
 PokeWildsPopulationSim::PokeWildsPopulationSim() {
+	names = memnew(Names);
 	directions[0] = Vector2i(0, 0);
 	directions[1] = Vector2i(-1, 0);
 	directions[2] = Vector2i(1, 0);
@@ -1907,6 +2034,7 @@ PokeWildsPopulationSim::PokeWildsPopulationSim() {
 }
 
 PokeWildsPopulationSim::~PokeWildsPopulationSim() {
+	memdelete(names);
 	for (KeyValue<String, Species *> &entry : species) {
 		memdelete(entry.value);
 	}
@@ -1923,36 +2051,40 @@ void PokeWildsPopulationSim::configure(const Dictionary &p_scripts) {
 	ERR_FAIL_COND_MSG(wild_script.is_null() || rules_script.is_null() || ecology_script.is_null() || data_script.is_null() || mew_script.is_null() ||
 					legendaries_script.is_null() || store_script.is_null(),
 			"PokeWildsPopulationSim.configure: a script is missing.");
-	bucket_shift = wild_script->get(K(BUCKET_SHIFT));
-	burrowed_flag = wild_script->get(K(BURROWED));
-	active_radius = wild_script->get(K(ACTIVE_RADIUS));
-	flee_range_tiles = wild_script->get(K(FLEE_RANGE_TILES));
-	flee_look_ahead = wild_script->get(K(FLEE_LOOK_AHEAD));
-	flee_search_tiles = wild_script->get(K(FLEE_SEARCH_TILES));
-	flee_replan_steps = wild_script->get(K(FLEE_REPLAN_STEPS));
-	Array dirs = wild_script->get(K(DIRECTIONS));
+	bucket_shift = wild_script->get(S(BUCKET_SHIFT));
+	burrowed_flag = wild_script->get(S(BURROWED));
+	active_radius = wild_script->get(S(ACTIVE_RADIUS));
+	flee_range_tiles = wild_script->get(S(FLEE_RANGE_TILES));
+	flee_look_ahead = wild_script->get(S(FLEE_LOOK_AHEAD));
+	flee_search_tiles = wild_script->get(S(FLEE_SEARCH_TILES));
+	flee_replan_steps = wild_script->get(S(FLEE_REPLAN_STEPS));
+	Array dirs = wild_script->get(S(DIRECTIONS));
 	ERR_FAIL_COND_MSG(dirs.size() != 5, "PokeWildsPopulationSim.configure: five DIRECTIONS expected.");
 	for (int index = 0; index < 5; index++) {
 		directions[index] = dirs[index];
 	}
-	habitat_radius = ecology_script->get(K(HABITAT_RADIUS));
-	habitat_check_seconds = ecology_script->get(K(HABITAT_CHECK_SECONDS));
-	lay_egg_seconds = ecology_script->get(K(LAY_EGG_SECONDS));
-	friend_seconds = ecology_script->get(K(FRIEND_SECONDS));
-	ecology_active_radius = rules_script->get(K(ECOLOGY_ACTIVE_RADIUS));
-	mate_bond_radius = rules_script->get(K(MATE_BOND_RADIUS));
-	day_seconds = rules_script->get(K(DAY_SECONDS));
-	night_start = rules_script->get(K(NIGHT_START));
-	wild_move_min = rules_script->get(K(WILD_MOVE_MIN));
-	wild_move_max = rules_script->get(K(WILD_MOVE_MAX));
-	ecology_fields = rules_script->get(K(ECOLOGY_FIELDS));
-	tile_size = store_script->get(K(TILE));
-	store_present = store_script->get(K(PRESENT));
-	store_solid = store_script->get(K(SOLID));
-	store_ledge = store_script->get(K(LEDGE));
-	store_water = store_script->get(K(WATER));
-	store_grass = store_script->get(K(GRASS));
-	store_tidal = store_script->get(K(TIDAL));
+	habitat_radius = ecology_script->get(S(HABITAT_RADIUS));
+	habitat_check_seconds = ecology_script->get(S(HABITAT_CHECK_SECONDS));
+	lay_egg_seconds = ecology_script->get(S(LAY_EGG_SECONDS));
+	friend_seconds = ecology_script->get(S(FRIEND_SECONDS));
+	ecology_active_radius = rules_script->get(S(ECOLOGY_ACTIVE_RADIUS));
+	mate_bond_radius = rules_script->get(S(MATE_BOND_RADIUS));
+	day_seconds = rules_script->get(S(DAY_SECONDS));
+	night_start = rules_script->get(S(NIGHT_START));
+	wild_move_min = rules_script->get(S(WILD_MOVE_MIN));
+	wild_move_max = rules_script->get(S(WILD_MOVE_MAX));
+	ecology_fields = rules_script->get(S(ECOLOGY_FIELDS));
+	ecology_keys.clear();
+	for (int index = 0; index < ecology_fields.size(); index++) {
+		ecology_keys.push_back(StringName(String(ecology_fields[index])));
+	}
+	tile_size = store_script->get(S(TILE));
+	store_present = store_script->get(S(PRESENT));
+	store_solid = store_script->get(S(SOLID));
+	store_ledge = store_script->get(S(LEDGE));
+	store_water = store_script->get(S(WATER));
+	store_grass = store_script->get(S(GRASS));
+	store_tidal = store_script->get(S(TIDAL));
 	configured = tile_size > 0;
 }
 
@@ -1962,8 +2094,9 @@ PokeWildsPopulationSim::Species *PokeWildsPopulationSim::species_of(const String
 		return *known;
 	}
 	Species *made = memnew(Species);
-	made->info = data_script->call(K(info), p_name);
+	made->info = data_script->call(S(info), p_name);
 	made->behavior = get_dict(made->info, K(overworld_behavior));
+	made->normalized = normalize_species(p_name);
 	species.insert(p_name, made);
 	return made;
 }
@@ -1983,7 +2116,7 @@ PackedInt32Array PokeWildsPopulationSim::slots_in(Object *p_population, const Ar
 
 PackedInt64Array PokeWildsPopulationSim::wild_tick(Object *p_population, double p_delta, const Array &p_observers, const Ref<RandomNumberGenerator> &p_rng) {
 	ERR_FAIL_COND_V(!configured || !p_population || p_rng.is_null(), PackedInt64Array());
-	Object *area = object_of(p_population->get(K(area)));
+	Object *area = object_of(p_population->get(S(area)));
 	ERR_FAIL_NULL_V(area, PackedInt64Array());
 	Ctx ctx;
 	ctx.sim = this;
@@ -1995,18 +2128,18 @@ PackedInt64Array PokeWildsPopulationSim::wild_tick(Object *p_population, double 
 	}
 	ctx.population = p_population;
 	ctx.tick_rng = p_rng;
-	Variant players = p_population->get(K(players));
+	Variant players = p_population->get(S(players));
 	ctx.online = !is_null(players);
 	ctx.players = ctx.online ? object_of(players) : nullptr;
-	ctx.world = object_of(p_population->get(K(world)));
-	ctx.flee_routes = p_population->get(K(flee_routes));
-	ctx.flee_started = p_population->get(K(flee_started));
+	ctx.world = object_of(p_population->get(S(world)));
+	ctx.flee_routes = p_population->get(S(flee_routes));
+	ctx.flee_started = p_population->get(S(flee_started));
 	return ctx.wild_tick(p_delta, p_observers);
 }
 
 void PokeWildsPopulationSim::habitat_tick(Object *p_population, double p_delta, const Ref<RandomNumberGenerator> &p_rng) {
 	ERR_FAIL_COND(!configured || !p_population || p_rng.is_null());
-	Object *area = object_of(p_population->get(K(area)));
+	Object *area = object_of(p_population->get(S(area)));
 	ERR_FAIL_NULL(area);
 	Ctx ctx;
 	ctx.sim = this;
@@ -2043,7 +2176,11 @@ Dictionary PokeWildsPopulationSim::refresh_record_habitat(Object *p_state, const
 	ctx.pass = &pass;
 	ctx.house_cells = p_house_cells;
 	Dictionary data = p_data;
-	if (!ctx.add_options(get_string(data, K(species)))) {
+	LocalVector<Rec> records;
+	Rec rec;
+	rec.data = data;
+	records.push_back(rec);
+	if (!ctx.ready_names(records)) {
 		return Dictionary();
 	}
 	pass.grass_bits = ctx.piece_bits("grass");

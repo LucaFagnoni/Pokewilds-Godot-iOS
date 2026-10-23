@@ -4,6 +4,7 @@
 #include "core/object/ref_counted.h"
 #include "core/object/script_language.h"
 #include "core/templates/hash_map.h"
+#include "core/templates/local_vector.h"
 #include "core/variant/typed_array.h"
 
 // Native port of the population's frame: WildPopulation.tick and its zone
@@ -25,6 +26,7 @@ class PokeWildsPopulationSim : public RefCounted {
 
 public:
 	struct Species;
+	struct Names;
 	struct Pass;
 	struct Ctx;
 
@@ -66,10 +68,13 @@ private:
 	int store_tidal = 256;
 	Vector2i directions[5];
 	Array ecology_fields;
+	LocalVector<Variant> ecology_keys;
 
 	// PokemonData.info and what PokemonEcology makes of it, by species name
 	// as asked (the species data is loaded once per run).
 	HashMap<String, Species *> species;
+	// The habitat options and the bits of names' pieces, kept between passes.
+	Names *names = nullptr;
 
 	Species *species_of(const String &p_name);
 
