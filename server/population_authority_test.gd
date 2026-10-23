@@ -356,6 +356,43 @@ func _initialize() -> void:
     check(_sim("0,1").state.eggs.size() == 0, "the egg is gone from the server's area")
     _same("0,1", "after an egg is taken")
 
+    # The roaming Megas, and Mega Gengar at night, step on the server; one in
+    # a battle waits; one caught leaves for good.
+    var megas_key := "world/1,0/event_progress/biome_megas"
+    var gengar_key := "world/1,0/event_progress/mega_gengar_forest"
+    var mega := {"venusaur": {"species": "mega_venusaur", "record": {"species": "mega_venusaur", "level": 70}, "x": 32, "y": 6,
+        "home_x": 32, "home_y": 6, "next_move": 0.0}}
+    var gengar := {"x": 34, "y": 12, "home_x": 34, "home_y": 12, "next_move": 0.0}
+    game._committed(state.transact("server", "events1", [state.change(megas_key, Delta.encode(mega)), state.change(gengar_key, Delta.encode(gengar))]))
+    for key in [megas_key, gengar_key]: sim.apply_record("event_progress", key.get_slice("/", 3), state.records[key])
+    check(sim.state.interactables.get(Vector2i(32, 6)) == "SPECIAL:mega_venusaur" and sim.state.blocked.has(Vector2i(32, 6)), "a Mega keeps its cell on the server")
+    # Night: 4.5/5.75 of the way into a day.
+    game.clock_seconds = ceilf(game.clock_seconds / 383.333) * 383.333 + 320.0
+    var mega_cells := {}
+    var gengar_cells := {}
+    for second in 20:
+        _run(1.0)
+        var seen: Dictionary = Delta.decode(String(state.records[megas_key])).venusaur
+        mega_cells[Vector2i(int(seen.x), int(seen.y))] = true
+        var night_seen: Dictionary = Delta.decode(String(state.records[gengar_key]))
+        gengar_cells[Vector2i(int(night_seen.x), int(night_seen.y))] = true
+    var roamed: Dictionary = Delta.decode(String(state.records[megas_key])).venusaur
+    var mega_cell := Vector2i(int(roamed.x), int(roamed.y))
+    check(mega_cells.size() > 1, "the Mega roams (%s)" % mega_cells.keys())
+    check(mega_cells.keys().all(func(cell): return maxi(absi(cell.x - 32), absi(cell.y - 6)) <= 8), "within eight cells of its home")
+    check(sim.state.interactables.get(mega_cell) == "SPECIAL:mega_venusaur" and (mega_cell == Vector2i(32, 6) or not sim.state.interactables.has(Vector2i(32, 6))), "its cell goes with it")
+    check(gengar_cells.size() > 1, "Mega Gengar roams at night (%s)" % gengar_cells.keys())
+    game._committed(state.transact("alice", "eventclaim1", [state.change("event_claim/1,0/mega_venusaur", {"actor": "alice", "context": {"id": "mega_venusaur"}})]))
+    _run(10.0)
+    roamed = Delta.decode(String(state.records[megas_key])).venusaur
+    check(Vector2i(int(roamed.x), int(roamed.y)) == mega_cell, "a Mega in a battle waits")
+    game._committed(state.transact("alice", "eventend1", [state.change("event_claim/1,0/mega_venusaur", null),
+        state.change("event_result/1,0/mega_venusaur", {"id": "x", "context": {"id": "mega_venusaur"}, "outcome": "captured", "cleared": true})]))
+    _run(2.0)
+    var left_megas = Delta.decode(String(state.records[megas_key]))
+    check(left_megas is Dictionary and not left_megas.has("venusaur"), "a Mega caught leaves for good")
+    check(not sim.state.interactables.has(mega_cell), "and its cell is free")
+
     # The server stays the authority whoever comes and goes.
     state.enroll("carol", {"name": "carol"})
     check(state.enter("carol", "1,0") == "server", "a player arriving: the server's")

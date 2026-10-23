@@ -14,8 +14,13 @@ extends Node
 ## journaled when it is only wandering). What others' commands change (a claim,
 ## a battle's end, a spawn, a Pokemon left in, taken from or harvested in a
 ## habitat, an egg taken) reaches the AreaSim with their commit (committed).
-## Players then neither run nor send any area's Pokemon.
+## Players then neither run nor send any area's Pokemon. Its roaming Megas,
+## and Mega Gengar at night, step there too (biome_megas.gd and
+## source_forest_boss.gd step_at), and a horde called there comes there
+## (coop_horde_runtime.gd spawn_in).
 const Delta=preload("res://scripts/coop_world_delta.gd")
+const Megas=preload("res://scripts/biome_megas.gd")
+const Forest=preload("res://scripts/source_forest_boss.gd")
 const Population=preload("res://scripts/coop_wild_population.gd")
 const Records=preload("res://scripts/coop_population_records.gd")
 const WildRuntime=preload("res://scripts/coop_wild_runtime.gd")
@@ -60,6 +65,12 @@ class Beat extends RefCounted:
     ## Record key -> when its timers last went out; group -> cell -> when looked at.
     var timers_sent:Dictionary={}
     var checked:Dictionary={}
+    ## The Megas or Mega Gengar moved since they last went out; Delta.encode_map's
+    ## memo for the Megas; whether it was night (-1 not yet looked).
+    var events_dirty:=false
+    var events_memo:Dictionary={}
+    ## Mega Gengar caught or beaten here for good.
+    var gengar_done:=false
 
 func configure(coordinator:Node)->void:
     game=coordinator
@@ -103,14 +114,66 @@ func _process(delta:float)->void:
         if now-beat.motion_at>=MOTION_MS:
             beat.motion_at=now
             _publish_wild(area,sim,beat)
+        _events(area,sim,beat)
         if now-beat.habitat_at>=HABITAT_MS:
             beat.habitat_at=now
             _publish_habitats(area,sim,beat)
+            _publish_events(area,sim,beat)
         _horde(area,sim)
     # How long the areas took (the net profile's SPIKES name it).
     if Engine.has_meta("probe_frame"):
         var sections:Dictionary=Engine.get_meta("probe_frame")
         sections["@areas' Pokemon"]=int(sections.get("@areas' Pokemon",0))+Time.get_ticks_usec()-started
+
+## The area's roaming Megas, and Mega Gengar at night, take their steps when
+## their time comes (as biome_megas.gd update and source_forest_boss.gd
+## update_visibility do in a World), unless someone is battling one.
+func _events(area:String,sim,beat:Beat)->void:
+    var state=sim.state
+    var night:=int(PopulationRules.is_night(state))
+    var megas:Dictionary=state.event_progress.get(Megas.SAVE_KEY,{})
+    var gengar:Dictionary=state.event_progress.get(Forest.SAVE_KEY,{})
+    # Out at night only (its record may come at any time).
+    if gengar.has("x"):Forest.mark_at(state,night==1,beat.gengar_done)
+    if megas.is_empty() and (night==0 or gengar.is_empty()):return
+    var taken:Array=[]
+    for player in sim.players.by_actor.values():taken.append(Vector2i(int(player.x),int(player.y)))
+    for group in megas:
+        var saved:Dictionary=megas[group]
+        if not saved.has("x") or state.clock<float(saved.get("next_move",0.0)):continue
+        if game.state.records.has("event_claim/"+area+"/"+String(saved.get("species",""))):continue
+        saved["next_move"]=state.clock+PopulationRules.wild_move_delay(state,group)
+        Megas.step_at(state,group,Megas.DIRECTIONS[state.rng.randi_range(0,3)],taken)
+        beat.events_dirty=true
+    if night==1 and gengar.has("x") and state.clock>=float(gengar.get("next_move",0.0)) and not game.state.records.has("event_claim/"+area+"/mega_gengar"):
+        gengar["next_move"]=state.clock+PopulationRules.wild_move_delay(state,"gengar")
+        Forest.step_at(state,Forest.DIRECTIONS[state.rng.randi_range(0,3)],taken)
+        beat.events_dirty=true
+
+## The Megas' and Mega Gengar's records, when they moved, as one commit.
+func _publish_events(area:String,sim,beat:Beat)->void:
+    if not beat.events_dirty:return
+    beat.events_dirty=false
+    var changes:Array=[]
+    var durable:=false
+    for name:String in [Megas.SAVE_KEY,Forest.SAVE_KEY]:
+        var value=sim.state.event_progress.get(name)
+        if not value is Dictionary:continue
+        var key:="world/"+area+"/event_progress/"+name
+        var encoded:=Delta.encode_map(value,beat.events_memo) if name==Megas.SAVE_KEY else Delta.encode(value)
+        var held:=String(game.state.records.get(key,Delta.encode(null)))
+        if encoded==held:continue
+        durable=durable or not Delta.only_motion(held,encoded)
+        changes.append(game.state.change(key,encoded))
+    _commit(changes,durable)
+
+## The events of `area` cleared for good: event id -> true (event_result records).
+func _completed(area:String)->Dictionary:
+    var done:Dictionary={}
+    for key in game.record_keys("event_result/"+area+"/"):
+        var result=game.state.records.get(key)
+        if result is Dictionary and result.get("cleared",false):done[String(result.get("context",{}).get("id",""))]=true
+    return done
 
 ## A horde called in an area run here comes when it is due: its Pokemon placed
 ## around its players there (coop_horde_runtime.gd spawn_in).
@@ -128,6 +191,7 @@ func _horde(area:String,sim)->void:
 func _begin(area:String,sim)->Beat:
     var beat:=Beat.new()
     beat.sim=sim
+    beat.gengar_done=_completed(area).has("mega_gengar")
     _beats[area]=beat
     var keys:Array=[]
     for group in AreaSim.POPULATION:keys.append_array(game.record_keys("world/"+area+"/"+group+"/"))
@@ -236,6 +300,19 @@ static func _bare(record:Variant)->Variant:
     for field in TIMERS:plain.erase(field)
     return Delta.encode(plain)
 
+## A Mega caught or beaten in an area run here: the other of its group takes
+## its place (biome_megas.gd captured_at), or Mega Gengar is gone for good.
+func _event_result(area:String,result:Variant)->void:
+    var beat:Beat=_beats.get(area)
+    if beat==null or not result is Dictionary or not result.get("cleared",false):return
+    var event_id:=String(result.get("context",{}).get("id",""))
+    if Megas.is_mega(event_id):
+        Megas.captured_at(beat.sim.state,event_id,_completed(area),beat.sim.state.rng)
+        beat.events_dirty=true
+    elif event_id=="mega_gengar":
+        beat.gengar_done=true
+        Forest.mark_at(beat.sim.state,false,true)
+
 func _commit(changes:Array,durable:bool)->void:
     if changes.is_empty():return
     var result:Dictionary=game.state.transact(game.session.actor,OWN+game._id(),changes,"",durable)
@@ -251,6 +328,9 @@ func committed(commit:Dictionary)->void:
     if id.begins_with(OWN) or id.begins_with("fold/"):return
     for change in commit.get("changes",[]):
         var key:=String(change.get("key",""))
+        if key.begins_with("event_result/"):
+            _event_result(key.get_slice("/",1),change.get("after"))
+            continue
         var claim:=key.begins_with("wild_claim/")
         if not claim and not key.begins_with("world/"):continue
         var beat:Beat=_beats.get(key.get_slice("/",1))

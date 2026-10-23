@@ -24,6 +24,7 @@ const PopulationRules = preload("res://scripts/rules/population_rules.gd")
 const Population = preload("res://scripts/coop_wild_population.gd")
 const Hordes = preload("res://scripts/coop_hordes.gd")
 const CraftingData = preload("res://scripts/crafting_data.gd")
+const Megas = preload("res://scripts/biome_megas.gd")
 ## The record groups of an area's Pokemon, in the order a World puts them back.
 const POPULATION := ["deployed_pokemon", "wild_pokemon", "wild_eggs"]
 ## The order the World lays overlays on its tiles when it loads.
@@ -105,7 +106,11 @@ func lay_records(flat: Dictionary, records: Dictionary) -> void:
 func apply_record(group: String, key: String, encoded: Variant) -> void:
     var value = Delta.decode(String(encoded)) if encoded is String else null
     if group in AreaState.SETS and value != null: value = true
+    var before = state.event_progress.get(key) if group == "event_progress" else null
     state.apply_change(group, key, value)
+    # The roaming Megas keep their cells, as a World's install keeps them.
+    if group == "event_progress" and key == Megas.SAVE_KEY:
+        Megas.mark_at(state, before if before is Dictionary else {}, value if value is Dictionary else {})
     if group == "structures":
         var cell := AreaState.key_cell(key)
         if value is Dictionary and structure_blocks(value): state.blocked[cell] = true

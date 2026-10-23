@@ -20,17 +20,60 @@ static func forest_tile(tile: SourceTile) -> bool:
         and tile.route_belongs_to.name.to_lower() in ["forest1", "deep_forest"]
 
 static func walkable(world: Node, cell: Vector2i) -> bool:
+    return walkable_at(world.area, cell)
+
+## walkable over an area's data (area_state.gd), with or without a World.
+static func walkable_at(state, cell: Vector2i) -> bool:
     # The store's flags where it has the cell: a proxy for each cell looked at
     # made the search for a clearing (select_cell), which runs again at every
     # dusk and dawn while none is found, 10-30 ms on a desktop.
-    var store = world.exact_world.tiles
+    var store = state.tiles.tiles
     var index: int = store.index_of(cell * 16) if store is WorldTileStore else -1
     if index >= 0:
         if store.flags[index] & (WorldTileStore.SOLID | WorldTileStore.WATER | WorldTileStore.LAVA | WorldTileStore.TIDAL | WorldTileStore.LEDGE): return false
     else:
-        var tile: SourceTile = world.exact_world.tile_at(cell)
+        var tile: SourceTile = state.tiles.tile_at(cell)
         if tile == null or tile.is_solid or tile.is_water or tile.is_lava or tile.is_tidal or tile.is_ledge: return false
-    return not world.blocked.has(cell) and not world.interior_interactables.has(cell)
+    return not state.blocked.has(cell) and not state.interactables.has(cell)
+
+## Mega Gengar of an area held without a World, out at night (its cell kept
+## as install keeps it: blocked, its action) or gone by day or once `done`
+## (caught or beaten).
+static func mark_at(state, night: bool, done: bool) -> void:
+    var saved: Dictionary = state.event_progress.get(SAVE_KEY, {})
+    if not saved.has("x"): return
+    var cell := Vector2i(int(saved.x), int(saved.y))
+    if night and not done:
+        state.interactables[cell] = ACTION
+        state.blocked[cell] = true
+    elif String(state.interactables.get(cell, "")) == ACTION:
+        state.interactables.erase(cell)
+        state.blocked.erase(cell)
+
+## A night's step of Mega Gengar in an area held without a World, as try_step
+## moves it in a World: within eight cells of its home, onto forest no one
+## (none of `taken`, the players' cells) stands on.
+static func step_at(state, direction: Vector2i, taken: Array = []) -> bool:
+    var saved: Dictionary = state.event_progress.get(SAVE_KEY, {})
+    if not saved.has("x"): return false
+    var cell := Vector2i(int(saved.x), int(saved.y))
+    if String(state.interactables.get(cell, "")) != ACTION: return false
+    var target := cell + direction
+    var home := Vector2i(int(saved.get("home_x", cell.x)), int(saved.get("home_y", cell.y)))
+    if maxi(absi(target.x - home.x), absi(target.y - home.y)) > 8: return false
+    if not walkable_at(state, target) or not forest_tile(state.tile_at(target)) or target in taken: return false
+    if state.wild.id_at(target) >= 0 or state.habitat.records.has(target) or state.eggs.records.has(target) \
+        or state.structures.has(target) or state.landmarks.has(target): return false
+    state.interactables.erase(cell)
+    state.blocked.erase(cell)
+    state.interactables[target] = ACTION
+    state.blocked[target] = true
+    saved["x"] = target.x
+    saved["y"] = target.y
+    saved["home_x"] = home.x
+    saved["home_y"] = home.y
+    saved["facing_row"] = 3 if direction == Vector2i.UP else 1 if direction == Vector2i.LEFT else 2 if direction == Vector2i.RIGHT else 0
+    return true
 
 ## forest_tile with nothing on it (no upper name, no item). The store's
 ## arrays rule out most cells first: a proxy for each cell select_cell looked
