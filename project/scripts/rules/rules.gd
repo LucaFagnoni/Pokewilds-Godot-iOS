@@ -1,5 +1,6 @@
 extends RefCounted
-## The field commands the rules decide, by op: each rule's
+## The field commands the rules decide, by op (DIG, CUT, building, paint and
+## taking built pieces away): each rule's
 ## apply(state, player, cmd, rng) -> {"ok", "reason", "events", "grant",
 ## "consume"} (field_dig.gd has the shape). A game alone calls the rule and
 ## plays its events; online the player predicts with the same call and sends
@@ -9,7 +10,11 @@ extends RefCounted
 const OPS := {
     "field_dig": preload("res://scripts/rules/field_dig.gd"),
     "field_cut": preload("res://scripts/rules/field_cut.gd"),
+    "build": preload("res://scripts/rules/build.gd"),
+    "paint": preload("res://scripts/rules/paint.gd"),
+    "remove_build": preload("res://scripts/rules/remove.gd"),
 }
+const CraftingData = preload("res://scripts/crafting_data.gd")
 const DIG_ACTIONS := ["dig", "fill", "surface", "take", "berry", "plant"]
 const CUT_MOVES := ["CUT", "SMASH", "HEADBUTT"]
 const CUT_TARGETS := ["", "grass", "resource"]
@@ -18,11 +23,16 @@ const CUT_TARGETS := ["", "grass", "resource"]
 ## already played with its prediction.
 const ANSWERED := ["dig_reward", "material", "bundle", "item", "message", "encounter"]
 
-## True when the command pays from the bag (a fill, a planting): the player's
-## bag is then saved just ahead of it (coop_game.gd command), so the authority
-## reads the bag as the player has it. The others only add to it.
-static func pays(op: String, cmd: Variant) -> bool:
-    return op == "field_dig" and cmd is Dictionary and String(cmd.get("action", "")) in ["fill", "plant"]
+## The parts of the player's record (coop_state.gd PARTS) the command reads:
+## the bag for one that pays from it (a fill, a planting, a build, a
+## picture), saved just ahead of it when it changed here (coop_game.gd
+## command), so the authority reads the bag as the player has it. None
+## otherwise: what any command gives or takes is a change the host makes to
+## the bag (grant, consume), never a record saved before it.
+static func reads(op: String, cmd: Variant) -> Array:
+    if not cmd is Dictionary: return []
+    if op in ["build", "paint"] or (op == "field_dig" and String(cmd.get("action", "")) in ["fill", "plant"]): return ["bag"]
+    return []
 
 static func apply(op: String, state, player: Dictionary, cmd: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
     var rule = OPS.get(op)
@@ -49,10 +59,24 @@ static func from_wire(op: String, wire: Variant) -> Variant:
             if wire.has(key):
                 if not wire[key] is String or wire[key].length() > 64: return null
                 cmd[key] = wire[key]
-    else:
+    elif op == "field_cut":
         if not wire.get("move") in CUT_MOVES or not String(wire.get("target", "")) in CUT_TARGETS: return null
         cmd["move"] = String(wire.move)
         cmd["target"] = String(wire.get("target", ""))
+    elif op == "build":
+        var recipe = wire.get("recipe")
+        if not recipe is String or recipe.length() > 64 or CraftingData.build_recipe(recipe).is_empty(): return null
+        cmd["recipe"] = recipe
+    elif op == "paint":
+        if not _whole(wire.get("picture")) or int(wire.picture) < 1 or int(wire.picture) > 20: return null
+        cmd["picture"] = int(wire.picture)
+    else:
+        if not wire.get("move") in ["CUT", "SMASH"]: return null
+        cmd["move"] = String(wire.move)
+        for key in ["decoration", "wipe"]:
+            if wire.has(key):
+                if not wire[key] is bool: return null
+                cmd[key] = wire[key]
     return cmd
 
 ## The events of a result fit for the answer: only ANSWERED, cells as [x, y].
