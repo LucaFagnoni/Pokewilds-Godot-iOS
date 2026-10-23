@@ -111,6 +111,8 @@ func _frame_ended() -> void:
 		max_frame_ms = maxf(max_frame_ms, ms)
 		_frame_ms.append(ms)
 		if ms > 16.0: _spike(ms)
+		# In the save phase, each frame over 8 ms and when: the saves are at 2 s and 12 s, the folds at 7 s and 17 s.
+		if ms > 8.0 and phase.ends_with("save") and "--server" in OS.get_cmdline_args(): print("PROFILE SERVER %s frame over 8 ms at %.2f s: %.1f ms" % [phase, (Time.get_ticks_msec() - phase_started) / 1000.0, ms])
 		var sections: Dictionary = Engine.get_meta("probe_frame", {})
 		for name in sections: _sections[name] = _sections.get(name, 0) + sections[name]
 	# The frame after a report starts late by the report's printing.
