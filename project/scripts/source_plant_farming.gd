@@ -1,6 +1,10 @@
 extends RefCounted
 
 # PlantTree, PlayerStanding, Tile.items and CycleDayNight from 0.8.11.
+# Planting and harvesting are rules (rules/field_dig.gd plant, field_cut.gd
+# harvest_crop): one copy for a game alone and for co-op's authority.
+const FieldDig = preload("res://scripts/rules/field_dig.gd")
+const FieldCut = preload("res://scripts/rules/field_cut.gd")
 var world: Node2D
 var last_checked_day := -1
 var indexed_world_id := 0
@@ -12,7 +16,7 @@ func configure(owner_world: Node2D) -> void:
 
 func day() -> int:
     # Growth happens after dawn's 320-frame fade, not at midnight.
-    return maxi(0, floori((world.world_elapsed_seconds-320.0/60.0)/world.WORLD_DAY_SECONDS))
+    return FieldDig.plant_day(world.world_elapsed_seconds)
 
 static func plantable(item: String) -> bool:
     return item in ["BERRY SEED","MIRACLE SEED","MANURE"] or item.ends_with(" APRICORN")
@@ -27,51 +31,20 @@ static func berry_for_ground(base: String) -> String:
     return "persim"
 
 func valid(tile: SourceTile, item: String) -> bool:
-    if tile == null: return false
-    var base := tile.name
-    var upper := tile.name_upper
-    if not tile.has_item.is_empty(): return false
-    # DIG stores a dry hole in the upper layer; its underlying soil still
-    # determines the crop. Flooded holes have water/lava bases, not dry soil.
-    var dry_hole := upper.begins_with("hole1") and "water" not in base and "lava" not in base
-    if dry_hole:
-        upper = ""
-    if item == "MANURE":
-        return "fertilized" not in upper and ("tree_planted" in upper or "bush2_color" in upper)
-    if item.ends_with(" APRICORN"):
-        return (base=="green1" or "flower" in base or "sand" in base or "snow" in base or "desert" in base) and "tree" not in upper and (not tile.is_solid or dry_hole)
-    if not upper.is_empty(): return false
-    var soil := base=="green1" or base in ["green9","green10","green11","green12"] or "snow" in base or "sand" in base or "desert" in base or "green_savanna" in base or "flower" in base
-    return soil or (item=="BERRY SEED" and ("volcano" in base or "savanna" in base or "graveyard" in base))
+    return FieldDig.plants_valid(tile, item)
 
 func plant(cell: Vector2i, item: String, animate: bool = true) -> bool:
     var coordinator=world.get_parent().get("coop_game")
-    if is_instance_valid(coordinator) and coordinator.active and not coordinator.building.collecting:
+    if is_instance_valid(coordinator) and coordinator.active:
         return await coordinator.building.plant(cell,item,animate)
-    if world.exact_world == null or world.active_area_id!="OVERWORLD": return false
-    var tile: SourceTile=world.exact_world.tile_at(cell)
-    if not valid(tile,item):
-        world.world_message.emit("That plant cannot grow here.")
-        return false
-    var upper := "tree_planted2"
-    if item=="MANURE":
-        upper=tile.name_upper+"_fertilized"
-        tile.set_names("mountain1",upper)
-    else:
-        upper="berry_planted" if item=="BERRY SEED" else "grass_planted" if item=="MIRACLE SEED" else "tree_planted2"
-        tile.set_names(tile.name,upper)
-        # Replace a saved DIG hole too, so it cannot return after harvesting
-        # this crop and reloading. Reconnect remaining neighboring holes.
-        var key: String = world._cell_key(cell)
-        var mutation: Dictionary = world.source_interior_mutations.get(key, {})
-        if String(mutation.get("upper", "")).begins_with("hole1"):
-            world._save_source_dig_tile(cell)
-        world._connect_source_dig_holes(cell)
-    store(cell,tile)
-    world.play_source_sound("seed1")
-    _redraw_around(cell)
-    if animate and item not in ["MANURE","MIRACLE SEED"]:
-        await animate_planted(cell,tile,upper)
+    if world.exact_world == null: return false
+    # The rule (rules/field_dig.gd) plants; its "planted" event is the sprout to show.
+    var result: Dictionary = FieldDig.apply(world.area, world.field_moves.rule_player(cell), {"action":"plant", "cell":cell, "item":item}, world.rng)
+    world.field_moves.play_rule(result)
+    if not result.ok: return false
+    for event in result.events:
+        if event[0] == "planted" and animate:
+            await animate_planted(cell, world.exact_world.tile_at(cell), String(event[2]))
     return true
 
 func animate_planted(cell:Vector2i,tile:SourceTile,upper:String,mutate_tile:bool=true)->void:
@@ -119,8 +92,8 @@ func _redraw_around(cell: Vector2i) -> void:
         for x in range(-1,2): cells.append(cell+Vector2i(x,y))
     world._refresh_exact_pickup_cells(cells)
 
-func store(cell: Vector2i, tile: SourceTile, rewards: Dictionary = {}) -> void:
-    world.source_plant_farms[world._cell_key(cell)]={"base":tile.name,"upper":tile.name_upper,"day":day(),"rewards":rewards.duplicate(true)}
+func store(cell: Vector2i, _tile: SourceTile, rewards: Dictionary = {}) -> void:
+    FieldDig.store_plant(world.area, cell, world.world_elapsed_seconds, rewards)
 
 func update() -> void:
     if not world.generated or world.exact_world==null: return
@@ -151,7 +124,7 @@ func update() -> void:
         var tile: SourceTile=world.exact_world.tile_at(cell)
         if tile==null: continue
         if tile.name_upper != String(record.upper):
-            world.source_plant_farms.erase(key)
+            world.area.drop("source_plant_farms", key)
             continue
         if int(record.day)>=current_day: continue
         var steps:=current_day-int(record.day)
@@ -160,7 +133,7 @@ func update() -> void:
         record.day=current_day
         record.base=tile.name
         record.upper=tile.name_upper
-        world.source_plant_farms[key]=record
+        world.area.put("source_plant_farms", key, record)
         changed=true
         grown.append(cell)
     growing = false
@@ -244,33 +217,12 @@ func snapshot() -> Dictionary:
         var record: Dictionary=world.source_plant_farms[key]
         var tile: SourceTile=world.exact_world.tile_at(world._cell_from_key(key)) if world.exact_world!=null else null
         if tile==null or tile.name!=String(record.base) or tile.name_upper!=String(record.upper):
-            world.source_plant_farms.erase(key)
+            world.area.drop("source_plant_farms", key)
     return world.source_plant_farms.duplicate(true)
 
 func harvest(cell: Vector2i) -> bool:
-    var key: String=world._cell_key(cell)
-    if not world.source_plant_farms.has(key): return false
-    var record: Dictionary=world.source_plant_farms[key]
-    var rewards: Dictionary=record.get("rewards",{})
-    var tile: SourceTile=world.exact_world.tile_at(cell)
-    var is_grass := tile.name.begins_with("grass") or tile.name_upper.begins_with("grass")
-    if is_grass:
-        if tile.name_upper=="grass_planted":
-            rewards={"MIRACLE SEED":1}
-        else:
-            var amount := 4 if tile.name_upper=="grass_savanna1" else 2 if tile.name in ["grass4","grass_sand3","grass_graveyard1"] or tile.name_upper=="grass_savanna2" else 1
-            rewards={"GRASS":amount}
-            if tile.name=="grass2" and world.rng.randi_range(0,255)<64:
-                rewards["MIRACLE SEED"]=1
-    if rewards.is_empty(): return false
-    world.material_bundle_collected.emit(rewards.duplicate(true))
-    if is_grass:
-        var replacement: Dictionary=world._cuttable_grass_replacement(tile,cell)
-        tile.set_names(String(replacement.base),String(replacement.upper))
-    else:
-        tile.set_names(tile.name,"")
-    world.source_interior_mutations[key]={"kind":"TILE_NAMES","base":tile.name,"upper":""}
-    world.source_plant_farms.erase(key)
-    world.play_source_sound("cut1")
-    world._refresh_exact_tile_streams()
-    return true
+    if world.exact_world == null: return false
+    var result := {"events": [], "grant": {}}
+    var harvested := FieldCut.harvest_crop(world.area, cell, result, world.rng)
+    world.field_moves.play_rule(result)
+    return harvested

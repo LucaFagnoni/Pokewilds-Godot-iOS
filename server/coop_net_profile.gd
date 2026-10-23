@@ -5,7 +5,9 @@
 # and the time spent encoding, decoding and applying (coop_transport.gd stats),
 # and ms per frame (the frame's own work, see _frame_ended; the netcode's own share). A player
 # walks in phases named walk*, travels east once in a phase named *split when
-# its --index is odd (in *away whatever it is), and records where it draws each other player, every
+# its --index is odd (in *away whatever it is), in a phase named *four goes
+# west, east or south of where it is unless its --index is a multiple of 4
+# (four areas), and records where it draws each other player, every
 # frame, for the smoothness numbers (largest step, steps over 8 px).
 #   godot --headless --path project -s ../server/coop_net_profile.gd --server ... -- --phase=FILE
 #   godot --headless --path project -s ../server/coop_net_profile.gd --join HOST:PORT --data DIR -- --phase=FILE --index=N
@@ -22,6 +24,7 @@ var max_frame_ms := 0.0
 var main: Node
 var travelled := false
 var _back := false
+var _spread := false
 var _checked := 0
 var _walk_dir := 1
 var _walk_flip := 0
@@ -215,6 +218,15 @@ func _play(now: int) -> void:
 		await main._travel_adjacent_world(Vector2i.LEFT)
 		main.edge_travel_busy = false
 		print("PROFILE %s travelled back to %s" % [_role(), main.coop_game._area()])
+	if walking and "four" in phase and not _spread:
+		_spread = true
+		var direction: Vector2i = [Vector2i.ZERO, Vector2i.LEFT, Vector2i.RIGHT, Vector2i.DOWN][index % 4]
+		if direction != Vector2i.ZERO:
+			_walk(false)
+			main.edge_travel_busy = true
+			await main._travel_adjacent_world(direction)
+			main.edge_travel_busy = false
+			print("PROFILE %s spread to %s" % [_role(), main.coop_game._area()])
 	if main.edge_travel_busy: return
 	if walking:
 		# Back and forth along a row, as a player looking around would.

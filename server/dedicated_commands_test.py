@@ -6,7 +6,7 @@ see the countdown 3, 2, 1, are told why they are dropped, the server ends with
 the launcher's restart code and comes back up listed), `stop 5` + `cancel`, and
 `stop 2`.
 
-    python server/dedicated_commands_test.py GODOT [--clients N]   (default 5)
+    python server/dedicated_commands_test.py GODOT [--clients N] [--port N]   (default 5, 54778)
 
 Run from the repository root with node on the PATH. Exits 0 on success."""
 import json, os, socket, subprocess, sys, tempfile, time, urllib.request
@@ -15,7 +15,7 @@ godot = sys.argv[1]
 clients = int(sys.argv[sys.argv.index("--clients") + 1]) if "--clients" in sys.argv else 5
 command = [godot, "--path", "project"]
 work = tempfile.mkdtemp(prefix="pw-server-commands-")
-port = "54778"
+port = sys.argv[sys.argv.index("--port") + 1] if "--port" in sys.argv else "54778"
 logs, processes = {}, []
 RESTART_EXIT = 75
 

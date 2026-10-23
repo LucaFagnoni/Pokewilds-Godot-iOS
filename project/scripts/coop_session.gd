@@ -8,8 +8,12 @@ signal rejected(reason: String)
 signal connection_lost
 const Transport = preload("res://scripts/coop_transport.gd")
 ## coop-9b: record fingerprints hash encoded text directly (coop_state.gd
-## fingerprint). coop-10 is kept for the end of the netcode rewrite.
-const PROTOCOL := "pokewilds-godot-coop-9b"
+## fingerprint). coop-10: the netcode rewrite. The field moves are commands
+## the host decides (rules/, coop_rules_runtime.gd; no patches or rewards
+## claimed by a player), an area's built and dug ground and the wild Pokemon's
+## motion travel as binary frames (area_state.gd WIRE_TAG), a player record is
+## saved by parts with their revisions (coop_state.gd PARTS).
+const PROTOCOL := "pokewilds-godot-coop-10"
 ## Most players one game can have, a phone host included (a dedicated server's
 ## own player does not count). The host relays every position update to each
 ## other player in the same area, so its upload grows with the square of the
@@ -304,6 +308,13 @@ func _log_in(peer: int, account: String, payload: Dictionary, device_actor: Stri
 func send_host(payload: Dictionary) -> Error:
     if hosting or not trusted:return ERR_UNAVAILABLE
     return _send_reliable(1,payload)
+
+## send_host for a message already encoded (a binary frame), in order with the rest.
+func send_host_bytes(bytes: PackedByteArray) -> Error:
+    if hosting or not trusted:return ERR_UNAVAILABLE
+    var error:Error=messages.send_bytes(1,bytes)
+    if error!=OK:transport._drop(1,"message_send_"+error_string(error))
+    return error
 
 func set_loading(value:bool)->void:
     if loading==value:return

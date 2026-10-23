@@ -3,6 +3,7 @@ extends RefCounted
 signal delivery_failed(peer:int)
 const Blob=preload("res://scripts/coop_blob.gd")
 const Transport=preload("res://scripts/coop_transport.gd")
+const Wire=preload("res://scripts/area_state.gd")
 const MAX_MESSAGE:=8*1024*1024
 const MAX_QUEUED:=16*1024*1024
 const DIRECT_LIMIT:=192*1024
@@ -86,6 +87,10 @@ func receive(peer:int,packet:Dictionary)->Dictionary:
     var result:Dictionary=blobs.receive(peer,part)
     if result.has("error"):return result
     if not result.has("bytes"):return {}
+    # A binary frame (area_state.gd) too large to go whole.
+    if result.bytes.size()>1 and result.bytes[0]==Wire.WIRE_TAG:
+        var read=Wire.decode_wire(result.bytes)
+        return {"packet":read} if read is Dictionary else {"error":"invalid_message"}
     var parser=JSON.new()
     var started:=Time.get_ticks_usec()
     if parser.parse(result.bytes.get_string_from_utf8())!=OK or not parser.data is Dictionary:return {"error":"invalid_message"}

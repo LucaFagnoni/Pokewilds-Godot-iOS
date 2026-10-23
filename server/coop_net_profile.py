@@ -10,6 +10,8 @@ kind by the server and by every player:
   walkNaway  N players walking, all in the area east (the server's own area empty)
   walkNlong  (with --long S) N players walking back in the spawn area for S seconds,
              long enough for autosaves (--autosave MINUTES) and journal folds
+  walkNfour  N players walking in four areas: one in four stays, the others go
+             west, east and south of where they are (two areas the server makes)
 
 The last player joins while the others walk (joinN). The server also prints
 its frame time distribution per phase (FRAMES) and, for frames over 16 ms,
@@ -17,7 +19,7 @@ what took the most (SPIKES: the sections a test build times into Engine meta
 "probe_frame", name -> microseconds this frame, "_top" the outermost summed).
 
     python server/coop_net_profile.py GODOT [--clients N] [--seconds S] [--long S] [--autosave MINUTES] [--breakdown]
-        [--project DIR] [--world-from DIR] [--world NAME] [--port N] [--keep]
+        [--project DIR] [--world-from DIR] [--world NAME] [--port N] [--area-generation auto|on|off] [--keep]
 
 --world-from copies a server data folder (a server_data, or a server folder
 kept with --keep) and --world names the world in it to load.
@@ -83,7 +85,9 @@ try:
     config = os.path.join(work, "server.cfg")
     open(config, "w").write(f"[server]\nmax_players={clients}\nautosave_minutes={autosave}\n")
     server = start("server", ["--server", "--port", str(port), "--world", world, "--size", "S", "--data", os.path.join(work, "server"),
-        "--no-upnp", "--area-size", "S", "--accounts", "off", "--config", config, "--", "--phase=" + phase_file], subprocess.PIPE)
+        "--no-upnp", "--area-size", "S", "--accounts", "off", "--config", config]
+        + (["--area-generation", sys.argv[sys.argv.index("--area-generation") + 1]] if "--area-generation" in sys.argv else [])
+        + ["--", "--phase=" + phase_file], subprocess.PIPE)
     wait_for("server", "listening on TCP port", 900)
 
     def join(i):
@@ -120,6 +124,13 @@ try:
         while sum(text(f"client{i}").count("travelled back") for i in range(clients)) < clients and time.time() < deadline: time.sleep(1)
         time.sleep(3)
         measure(f"walk{clients}long", long_seconds)
+    # Four areas: one player in four stays, the others go west, east and south.
+    movers = [i for i in range(clients) if i % 4 != 0]
+    set_phase(f"walk{clients}four-travel")
+    deadline = time.time() + 900
+    while sum(text(f"client{i}").count("spread to") for i in movers) < len(movers) and time.time() < deadline: time.sleep(1)
+    time.sleep(3)
+    measure(f"walk{clients}four")
     if "--breakdown" in sys.argv:
         set_phase("walk-breakdown")
         wait_for("server", "PROFILE SERVER breakdown", 900)

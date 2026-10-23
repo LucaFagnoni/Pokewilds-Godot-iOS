@@ -18,6 +18,7 @@ TESTS = [
     ("journal_batch_test", []),
     ("save_format_test", ["--touch-ui"]),
     ("coop_ui_test", ["--touch-ui"]),
+    ("host_rules_test", []),
     ("coop_chat_test", ["--touch-ui"]),
     ("autosave_test", ["--touch-ui"]),
     ("coop_menu_flow_test", ["--touch-ui"]),
@@ -37,6 +38,10 @@ TESTS = [
     ("world_save_test", []),
     ("coop_state_index_test", []),
     ("discovered_cells_test", []),
+    ("area_state_test", []),
+    ("rules_test", []),
+    ("battle_check_test", []),
+    ("online_migrate_test", []),
 ]
 TIMEOUT = 420 # the slowest takes ~1 minute on a loaded machine
 

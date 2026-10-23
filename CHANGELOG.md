@@ -16,11 +16,16 @@ the version description in Feather. Write it for players, not developers.
 - **Less battery:** players off screen are no longer drawn.
 - **Cheaper walking:** the game does much less work on every step, especially in tall grass.
 - **Lighter wild Pokémon:** areas full of wild Pokémon, habitats and eggs cost far less: only the Pokémon on screen get a sprite, and finding nearby Pokémon is up to 40 times faster.
+- **Digging and cutting in co-op answer at once:** the hole or the cut grass shows straight away, and the host decides what you find, so everyone sees the same ground and gets fair rewards.
+- **Lighter co-op traffic:** wild Pokémon movement and changes to the ground are sent in a compact form; a server with players standing around sends about a fifth of what it did.
+- **Fewer waits in co-op:** digging, cutting, picking up and storing things no longer save your whole game first.
 
 ### Fixes
 - **Dedicated server freezes:** autosaves, a player joining and a new day no longer freeze the server for half a second or more.
 - **4G disconnects:** a player is only dropped after 30 seconds without signal, not 20.
 - **Battles:** all battle logic now lives in one place, shared by wild, trainer, boss and PvP battles. It behaves exactly as before, checked against 30 recorded battles.
+- **No more "REJOIN THE WORLD":** when the host turns down a dig, a cut or a build, the action is simply undone and you keep playing.
+- **Wild battles in co-op:** when the host does not accept a battle's result, your party and bag go back to how they were and the game goes on instead of ending the session.
 
 ### Downloads
 - **The Android file is now called `Pokewilds-arm64.apk`:** it runs on 64-bit ARM phones, which is nearly every Android phone from the last years.
@@ -28,3 +33,5 @@ the version description in Feather. Write it for players, not developers.
 ### Server and multiplayer
 - **Update the server and the app together:** this version uses a new co-op protocol.
 - **Automatic cleanup:** the server deletes old area files by itself after each save.
+- **The server checks wild battles:** a win or a catch only counts when the server's own replay of the battle ends the same way (`enforce_battles` in server.cfg).
+- **New areas made inside the server:** with the fast world generator the server makes new areas itself instead of starting a second copy of the game (`area_generation` in server.cfg).

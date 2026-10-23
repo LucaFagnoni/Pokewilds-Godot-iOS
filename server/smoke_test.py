@@ -8,6 +8,7 @@
 
     python server/smoke_test.py GODOT            (GODOT = editor binary, runs project/)
     python server/smoke_test.py PokeWilds.console.exe --exe
+    (--port N: the server's port, 54777 by default; another beside other servers)
 
 Run from the repository root. Exits 0 on success."""
 import hashlib, json, os, re, subprocess, sys, tempfile, time
@@ -15,7 +16,7 @@ import hashlib, json, os, re, subprocess, sys, tempfile, time
 godot = sys.argv[1]
 command = [godot] if "--exe" in sys.argv else [godot, "--path", "project"]
 work = tempfile.mkdtemp(prefix="pw-server-smoke-")
-port = "54777"
+port = sys.argv[sys.argv.index("--port") + 1] if "--port" in sys.argv else "54777"
 logs = {}
 
 

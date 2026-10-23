@@ -5,7 +5,12 @@ action from the input to its result on the client. Fails when a common action
 takes longer than its budget (3 round trips + 300 ms unless the action says
 otherwise).
 
-    python server/coop_latency_probe.py GODOT [--profile 4g|bad4g|lan] [--skip-spawn] [--keep]
+    python server/coop_latency_probe.py GODOT [--profile 4g|bad4g|lan] [--skip-spawn] [--keep] [--port N]
+
+--port: the server's port (the proxy takes the next one), 54791 by default;
+another for a probe run beside other servers. --area-generation auto|on|off:
+how the server makes the new area (server_area_maker.gd; "on" makes it in the
+server's process even with the GDScript generator).
 
 The player is a long-played one (explored map, full Pokedex, party and bag, a
 box of 200 Pokemon). --skip-spawn leaves out the actions in the server's own
@@ -20,7 +25,8 @@ from netem_proxy import Proxy, PROFILES
 godot = sys.argv[1]
 profile = sys.argv[sys.argv.index("--profile") + 1] if "--profile" in sys.argv else "4g"
 work = tempfile.mkdtemp(prefix="pw-latency-")
-server_port, proxy_port = 54791, 54792
+server_port = int(sys.argv[sys.argv.index("--port") + 1]) if "--port" in sys.argv else 54791
+proxy_port = server_port + 1
 override = os.path.join("project", "override.cfg")
 made_override = not os.path.exists(override)
 if made_override:
@@ -28,7 +34,8 @@ if made_override:
 env = dict(os.environ, POKEWILDS_BUILD_ID="probe", POKEWILDS_COMPAT_ID="probe")
 server_log = os.path.join(work, "server.log")
 server = subprocess.Popen([godot, "--path", "project", "--headless", "--server", "--port", str(server_port), "--world", "Probe", "--size", "S",
-    "--data", os.path.join(work, "server"), "--no-upnp", "--area-size", "S", "--accounts", "off"],
+    "--data", os.path.join(work, "server"), "--no-upnp", "--area-size", "S", "--accounts", "off"]
+    + (["--area-generation", sys.argv[sys.argv.index("--area-generation") + 1]] if "--area-generation" in sys.argv else []),
     stdin=subprocess.PIPE, stdout=open(server_log, "wb"), stderr=subprocess.STDOUT, env=env)
 
 

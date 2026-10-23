@@ -358,6 +358,7 @@ func _remove_generated_house_stair_pairs() -> void:
         remove_cells.append(cell)
     for cell in remove_cells:
         world.built_structures.erase(cell)
+        world.area.mark("structures", cell)
         world.blocked.erase(cell)
         world.grass_exclusion.erase(cell)
 
@@ -413,6 +414,7 @@ func create_generated_house_stair_pair(primary_cell: Vector2i) -> void:
         "house_local_x":int(data.get("house_local_x", 0)),
         "house_local_y":int(data.get("house_local_y", 0))
     }
+    world.area.mark("structures", upper_cell)
 
 func _normalize_active_house_stairs() -> void:
     # Migrate stairs from earlier port saves by inferring their floor/local cell
@@ -433,6 +435,7 @@ func _normalize_active_house_stairs() -> void:
             for key in metadata:
                 data[key] = metadata[key]
             world.built_structures[cell] = data
+            world.area.mark("structures", cell)
         if stair_belongs_to_active_house(data):
             primaries.append(cell)
     for primary in primaries:
@@ -711,7 +714,7 @@ func apply_paint(picture_index: int, cell: Vector2i) -> bool:
     var key := built_house_paint_key(cell)
     if key.is_empty() or not _set_built_house_paint_sprite(cell, index):
         return false
-    world.built_house_paintings[key] = index
+    world.area.put("built_house_paintings", key, index)
     world.play_source_sound("craft1")
     world.world_message.emit("SMEARGLE painted PICTURE %d." % index)
     return true
@@ -997,12 +1000,12 @@ func _house_origin_for(door: Vector2i) -> Vector2i:
         var next_y := 5
         for existing in world.built_house_origins.values():
             next_y = maxi(next_y, int(existing) + world.map_h + World.BUILT_HOUSE_FLOOR_STRIDE)
-        world.built_house_origins[key] = next_y
+        world.area.put("built_house_origins", key, next_y)
     var origin_y := int(world.built_house_origins[key])
     for raw_cell in world._built_house_state(door).get("cells", []):
         var cell := Vector2i(raw_cell)
         if String(world.built_structures.get(cell, {}).get("name", "")) == "DOOR":
-            world.built_house_origins[world._cell_key(cell)] = origin_y
+            world.area.put("built_house_origins", world._cell_key(cell), origin_y)
     return Vector2i(world.map_w + 9, origin_y)
 
 func house_door_transition(action: String, change_area: Callable) -> void:

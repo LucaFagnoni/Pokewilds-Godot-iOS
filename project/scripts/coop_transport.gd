@@ -7,6 +7,8 @@ signal failed(reason: String)
 const JoinCode = preload("res://scripts/coop_join_code.gd")
 ## Positions travel as bytes, everything else as JSON.
 const Remote = preload("res://scripts/coop_remote_player.gd")
+## World changes travel as binary frames of their own (area_state.gd WIRE_TAG).
+const Wire = preload("res://scripts/area_state.gd")
 const MAX_FRAME := 256 * 1024
 const MAX_QUEUE := 4 * 1024 * 1024
 const FRAME_BUDGET := 64 * 1024
@@ -275,7 +277,7 @@ func _poll()->void:
             if rx.size() - at < length + 4: break
             var started := Time.get_ticks_usec()
             var frame: PackedByteArray = unpack(rx.slice(at + 4, at + length + 4))
-            var decoded = null if frame.is_empty() else Remote.unpack(frame, state.bases) if frame[0] == Remote.WIRE_TAG or frame[0] == Remote.WIRE_DELTA else JSON.parse_string(frame.get_string_from_utf8())
+            var decoded = null if frame.is_empty() else Remote.unpack(frame, state.bases) if frame[0] == Remote.WIRE_TAG or frame[0] == Remote.WIRE_DELTA else Wire.decode_wire(frame) if frame[0] == Wire.WIRE_TAG else JSON.parse_string(frame.get_string_from_utf8())
             at += length + 4
             state.rx_at = at
             read_count += 1

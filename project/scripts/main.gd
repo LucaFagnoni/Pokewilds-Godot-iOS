@@ -2198,9 +2198,6 @@ func _current_battle_terrain() -> String:
     return "GRASSY"
 
 func _on_encounter_requested(species: String, level: int) -> void:
-    if is_instance_valid(coop_game) and coop_game.active and coop_game.building.collecting:
-        coop_game.building.field_encounter={"species":species,"level":level,"record":world.pending_encounter_record.duplicate(true)}
-        return
     _start_battle_context({
         "id": "wild", "kind": "wild", "can_run": true,
         "can_catch": true,

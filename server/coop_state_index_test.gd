@@ -112,5 +112,18 @@ func _init() -> void:
 	mew = mew.duplicate(true); mew.id = mine * 4294967296 + 10
 	check(wild.register("ash", "m2", "5,0", mew).get("reason", "") == "already_present", "a second Mew is refused")
 	same_indexes(empty, "after the rules")
+	# A new area's records are seeded a piece at a time (coop_world_delta.gd
+	# chunks): the pieces flattened are the whole, in the same order.
+	var shared := {"wild_pokemon": [], "terrain_changes": {}, "removed_resources": ["1,1", "2,2", "3,3"], "next_deployed_id": 7}
+	for i in 150: shared.wild_pokemon.append({"id": i + 1, "species": "pidgey", "x": i, "y": 0})
+	for i in 70: shared.terrain_changes["%d,5" % i] = {"base": "green1"}
+	var whole := Delta.flatten(shared)
+	var pieces := {}
+	var small := true
+	for part in Delta.chunks(shared):
+		var flat := Delta.flatten(part)
+		small = small and flat.size() <= Delta.SEED_BATCH
+		pieces.merge(flat)
+	check(small and pieces == whole and pieces.keys() == whole.keys(), "an area seeded in pieces of %d is the whole area (%d of %d entries)" % [Delta.SEED_BATCH, pieces.size(), whole.size()])
 	print("STATE INDEX TEST: %d failed" % failed)
 	quit(1 if failed > 0 else 0)

@@ -153,6 +153,30 @@ const FARM_POKEMON_TEXTURES := {
 
 var rng := RandomNumberGenerator.new()
 
+const AreaState = preload("res://scripts/area_state.gd")
+const TileRules = preload("res://scripts/rules/tile_rules.gd")
+## This area's world as data (area_state.gd). The overlay dictionaries below
+## (terrain_changes, removed_resources, source_interior_mutations, ...) are
+## its own; its tiles, structures, blocked cells and Pokemon are this world's
+## (_bind_area). Write overlays through area.put()/drop(): co-op learns what
+## changed from them.
+var area := AreaState.new()
+
+func _init() -> void:
+    _bind_area()
+
+## Points the area's data at this world's: done again whenever exact_world changes.
+func _bind_area() -> void:
+    area.tiles = exact_world
+    area.bounds = exact_world_bounds
+    area.structures = built_structures
+    area.blocked = blocked
+    area.landmarks = landmarks
+    area.interactables = interior_interactables
+    area.wild = wild_population
+    area.habitat = habitat_population
+    area.eggs = egg_population
+
 var terrain: Array = []
 var biomes: Array = []
 var blocked: Dictionary = {}
@@ -161,8 +185,12 @@ var landmarks: Dictionary = {}
 var resource_objects: Dictionary = {}
 var ground_sprites: Dictionary = {}
 var ground_collisions: Dictionary = {}
-var removed_resources: Dictionary = {}
-var terrain_changes: Dictionary = {}
+var removed_resources: Dictionary:
+    get: return area.removed_resources
+    set(value): area.removed_resources = value
+var terrain_changes: Dictionary:
+    get: return area.terrain_changes
+    set(value): area.terrain_changes = value
 var built_structures: Dictionary = {}
 const HabitatPopulation = preload("res://scripts/habitat_population.gd")
 ## The Pokemon left out in habitats (habitat_population.gd): their frame, and
@@ -174,7 +202,9 @@ var deployed_pokemon: Dictionary = habitat_population.records
 var build_mode_active := false
 var build_selection_index := 0
 var build_preview_sprite: Sprite2D
-var source_plant_farms: Dictionary = {}
+var source_plant_farms: Dictionary:
+    get: return area.source_plant_farms
+    set(value): area.source_plant_farms = value
 var planting_item := ""
 var source_plant_system
 
@@ -221,11 +251,15 @@ var source_layer_area_ids: Dictionary = {}
 var generated_source_interior_plans: Array[Dictionary] = []
 var interior_interactables: Dictionary = {}
 var source_interior_upper_sprites: Dictionary = {}
-var source_interior_mutations: Dictionary = {}
+var source_interior_mutations: Dictionary:
+    get: return area.source_interior_mutations
+    set(value): area.source_interior_mutations = value
 var built_house_interior_cells: Dictionary = {}
 var built_house_paintable_walls: Dictionary = {}
 # Persistent paint records are keyed by exterior door + local interior wall.
-var built_house_paintings: Dictionary = {}
+var built_house_paintings: Dictionary:
+    get: return area.built_house_paintings
+    set(value): area.built_house_paintings = value
 # Sprite instances are runtime-only and rebuilt whenever the house is entered.
 var built_house_paint_sprites: Dictionary = {}
 var active_built_house_door := Vector2i(-2147483648, -2147483648)
@@ -235,7 +269,9 @@ var built_house_interior_origin := Vector2i.ZERO
 # by a staircase and can then be expanded with FLOOR tiles.
 const BUILT_HOUSE_FLOOR_STRIDE := 64
 var built_house_floor_origins: Dictionary = {}
-var built_house_origins: Dictionary = {}
+var built_house_origins: Dictionary:
+    get: return area.built_house_origins
+    set(value): area.built_house_origins = value
 var built_house_exit_doors: Dictionary = {}
 var built_house_room_size := Vector2i.ZERO
 var built_house_footprint: Dictionary = {}
@@ -245,8 +281,12 @@ var built_house_footprint: Dictionary = {}
 ## piece has been cut off from the door, or the house has changed shape.
 var built_house_rooms_seen: Dictionary = {}
 var built_house_floor_capacity := 1
-var built_house_floor_tiles: Dictionary = {}
-var built_house_decorations: Dictionary = {}
+var built_house_floor_tiles: Dictionary:
+    get: return area.built_house_floor_tiles
+    set(value): area.built_house_floor_tiles = value
+var built_house_decorations: Dictionary:
+    get: return area.built_house_decorations
+    set(value): area.built_house_decorations = value
 var built_house_decoration_sprites: Dictionary = {}
 var built_house_void_collisions: Dictionary = {}
 ## The inside of a built house and the generated dungeons are laid out in the
@@ -369,15 +409,9 @@ var burrow_busy := false
 var sand_trap_ids: Dictionary = {}
 var pending_encounter_record: Dictionary = {}
 var pending_battle_context: Dictionary = {}
-var event_progress: Dictionary = {
-    "completed": {},
-    "trainer_defeated": {},
-    "keystone_life_force": {},
-    "regis_caught": [],
-    "mewtwo_defeated_day": -1,
-    "fossil_machine_powered": false,
-    "biome_first_entries": {}
-}
+var event_progress: Dictionary:
+    get: return area.event_progress
+    set(value): area.event_progress = value
 var event_npcs: Dictionary = {}
 var source_event_collisions: Dictionary = {}
 var ghost_step_countdown := -1
@@ -666,6 +700,7 @@ func generate_world(
     active_regi_pedestal_cell = Vector2i(-2147483648, -2147483648)
     exact_world = null
     exact_world_bounds = Rect2i()
+    _bind_area()
     area_return_cells.clear()
     active_area_id = "OVERWORLD"
     water_sprites.clear()
@@ -809,6 +844,7 @@ func _generate_exact_live_world(
             push_warning("Saved-world cache worker unavailable; cache was not written.")
     _repair_orphaned_large_trees()
     exact_world_bounds = exact_world.bounds()
+    _bind_area()
     # Discovery covers every cell _in_bounds accepts: the tile store's rectangle.
     var store_tiles = exact_world.tiles
     discovered_cells.reset(Rect2i(store_tiles.origin, Vector2i(store_tiles.width, store_tiles.height)) if store_tiles is WorldTileStore else exact_world_bounds)
@@ -2683,7 +2719,7 @@ func _harvest_resource(cell: Vector2i, source_move: String = "") -> void:
             material_collected.emit("MIRACLE SEED", 1)
             if _in_bounds(cell):
                 terrain[cell.y][cell.x] = 1
-                terrain_changes[_cell_key(cell)] = 1
+                area.put("terrain_changes", _cell_key(cell), 1)
                 var ground_sprite := ground_sprites.get(cell) as Sprite2D
                 if is_instance_valid(ground_sprite):
                     ground_sprite.texture = SAND
@@ -2751,33 +2787,10 @@ func _remove_resource(cell: Vector2i, remember: bool) -> void:
         tall_grass.erase(cell)
 
     if remember:
-        removed_resources[_cell_key(cell)] = true
+        area.put("removed_resources", _cell_key(cell), true)
 
 func _cut_tall_grass(cell: Vector2i) -> void:
-    if not _is_cuttable_grass_cell(cell):
-        return
-    if plants().harvest(cell):
-        return
-    const GRASS_AMOUNT := 1
-    material_collected.emit("GRASS", GRASS_AMOUNT)
-    play_source_sound("cut1")
-    var tile := exact_world.tile_at(cell)
-    if tile != null:
-        var old_base := tile.name.to_lower().trim_suffix(".png")
-        # Preserve the source grass2 Miracle Seed bonus; the harvested
-        # GRASS material itself is always exactly x1 for every grass tile.
-        if old_base == "grass2" and rng.randi_range(0, 255) < 64:
-            material_collected.emit("MIRACLE SEED", 1)
-        var replacement := _cuttable_grass_replacement(tile, cell)
-        tile.set_names(String(replacement.get("base", tile.name)),
-            String(replacement.get("upper", "")))
-        source_interior_mutations[_cell_key(cell)] = {
-            "kind":"TILE_NAMES", "base":tile.name, "upper":tile.name_upper
-        }
-        _unblock_ground(cell)
-        # CUT changes this tile; update resident neighbors without scanning
-        # collision revisions for the entire world after every grass tuft.
-        _refresh_exact_tile_streams()
+    field_moves.cut_grass(cell)
 
 func _set_exact_tile_names(cell: Vector2i, base_name: String, upper_name: String) -> void:
     if exact_world == null:
@@ -3879,11 +3892,7 @@ func _pokemon_can_move_between(species: String, origin: Vector2i, target: Vector
 ## roof over ground where grass was once cut stopped blocking every time the
 ## world loaded, and Pokemon walked onto the house.
 func _unblock_ground(cell: Vector2i) -> void:
-    if bool(built_structures.get(cell, {}).get("solid", false)):
-        return
-    if blocked.get(cell) is String:
-        return
-    blocked.erase(cell)
+    TileRules.unblock_ground(area, cell)
 
 func _pokemon_can_enter(species: String, cell: Vector2i) -> bool:
     if species.to_lower() in [
@@ -4669,10 +4678,7 @@ func _is_tall_grass_cell(cell: Vector2i) -> bool:
     return false
 
 func _is_source_grass_name(asset_name: String) -> bool:
-    var key := asset_name.to_lower().trim_suffix(".png")
-    # Logical grass assets include the biome-specific variants. Do not match
-    # ledge_grass_* because those are structural ledges rather than grass tufts.
-    return key.begins_with("grass") and not key.begins_with("ledge_grass")
+    return TileRules.is_source_grass_name(asset_name)
 
 func _is_cuttable_grass_cell(cell: Vector2i) -> bool:
     if tall_grass.has(cell):
@@ -4685,52 +4691,7 @@ func _is_cuttable_grass_cell(cell: Vector2i) -> bool:
     return _is_source_grass_name(tile.name) or _is_source_grass_name(tile.name_upper)
 
 func _cuttable_grass_replacement(tile: SourceTile, cell: Vector2i) -> Dictionary:
-    var base := tile.name
-    var upper := tile.name_upper
-    var base_key := base.to_lower().trim_suffix(".png")
-    var upper_key := upper.to_lower().trim_suffix(".png")
-    # Grass authored as an upper sprite simply clears to its already-authored
-    # floor, regardless of biome variant.
-    if _is_source_grass_name(upper_key):
-        return {"base":base, "upper":""}
-    # Base-layer encounter grass is visually a tuft over a source-specific
-    # floor. Prefer neighboring authored floor so CUT never paints a foreign
-    # square into the biome.
-    var contextual := _contextual_ground_name(cell, tile.biome)
-    if not contextual.is_empty() and not _is_source_grass_name(contextual):
-        return {"base":contextual, "upper":""}
-    match base_key:
-        "grass1", "grass2", "grass4", "grass_fairy1", "grass_fairy2", "grass_fairy3", "grass_safari", "grass_short2", "grass_short3", "grass_planted":
-            return {"base":"green1", "upper":""}
-        "grass3":
-            return {"base":"snow1", "upper":""}
-        "grass_sand1", "grass_sand2":
-            return {"base":"sand1", "upper":""}
-        "grass_sand3":
-            return {"base":"desert4", "upper":""}
-        "grass_graveyard1":
-            return {"base":"green11", "upper":""}
-        "grass_savanna1", "grass_savanna2":
-            return {"base":"savanna1", "upper":""}
-        "grass_desert1":
-            return {"base":"desert4", "upper":""}
-    # Do not leave an unknown authored grass tile visually unchanged after CUT.
-    # Fall back to the native floor family for its biome rather than inventing
-    # a foreign green square. This covers future/source grass variants while
-    # preserving the explicit mappings above.
-    match _source_biome_for_tile(tile):
-        "SNOW":
-            return {"base":"snow1", "upper":""}
-        "BEACH":
-            return {"base":"sand1", "upper":""}
-        "DESERT":
-            return {"base":"desert4", "upper":""}
-        "SAVANNA":
-            return {"base":"savanna1", "upper":""}
-        "GRAVEYARD":
-            return {"base":"green11", "upper":""}
-        _:
-            return {"base":"green1", "upper":""}
+    return TileRules.cuttable_grass_replacement(area, tile, cell)
 
 func _add_wild_egg(
         species: String, cell: Vector2i, egg_record: Dictionary = {},
@@ -5346,7 +5307,7 @@ func _leave_source_area() -> void:
 
 func _use_interior_interactable(action: String, action_cell: Vector2i = Vector2i.ZERO) -> void:
     var coordinator=get_parent().get("coop_game")
-    if action.begins_with("ITEM:") and is_instance_valid(coordinator) and coordinator.active and not coordinator.building.collecting:
+    if action.begins_with("ITEM:") and is_instance_valid(coordinator) and coordinator.active:
         coordinator.building.collect_item(action,action_cell)
         return
     if action.begins_with("ITEM:") and _collect_source_dig_item(action_cell): return
@@ -5426,7 +5387,7 @@ func _use_interior_interactable(action: String, action_cell: Vector2i = Vector2i
             if item_name != "POKE BALL":
                 world_message.emit("You found %s x%d!" % [item_name, amount])
             interior_interactables.erase(action_cell)
-            source_interior_mutations[_cell_key(action_cell)] = {"kind": "COLLECTED"}
+            area.put("source_interior_mutations", _cell_key(action_cell), {"kind": "COLLECTED"})
             SourceMansionRuntime.clear_collected_item(self, action_cell)
             SourceMineRuntime.clear_collected_item(self, action_cell)
             var item_sprite := source_interior_upper_sprites.get(action_cell) as Sprite2D
@@ -5652,10 +5613,10 @@ func complete_battle_event(result: Dictionary) -> void:
         return
     if event_id == "mewtwo" and outcome == "defeated":
         event_progress["mewtwo_defeated_day"] = _world_day_index()
-        source_interior_mutations[_cell_key(cell)] = {
+        area.put("source_interior_mutations", _cell_key(cell), {
             "kind": "EVENT_COOLDOWN", "event_id": event_id,
             "day": _world_day_index()
-        }
+        })
         _hide_event_cell(cell)
         world_message.emit("MEWTWO fled. It may return after recovering.")
         return
@@ -5678,13 +5639,13 @@ func _complete_regi_capture(species: String, cell: Vector2i) -> void:
     world_message.emit(String(SourceEventData.REGI_LORE.get(species, "%s was caught." % species)))
     _hide_event_cell(cell)
     if caught.size() < SourceEventData.REGI_SPECIES.size():
-        source_interior_mutations[_cell_key(cell)] = {"kind": "REGI_PEDESTAL"}
+        area.put("source_interior_mutations", _cell_key(cell), {"kind": "REGI_PEDESTAL"})
         _restore_regi_pedestal(cell)
         world_message.emit("A voice whispers: I desire more...")
     else:
-        source_interior_mutations[_cell_key(cell)] = {
+        area.put("source_interior_mutations", _cell_key(cell), {
             "kind": "EVENT_CLEARED", "event_id": "regi_pedestal"
-        }
+        })
         world_message.emit("My work is complete... REGIGIGAS awakened!")
     SourceRegiRuntime.sync(self)
 
@@ -5695,9 +5656,9 @@ func _clear_event_cell(cell: Vector2i, event_id: String) -> void:
     if event_id == "mega_gengar" and event_progress.has(SourceForestBoss.SAVE_KEY):
         _hide_event_cell(cell)
         return
-    source_interior_mutations[_cell_key(cell)] = {
+    area.put("source_interior_mutations", _cell_key(cell), {
         "kind": "EVENT_CLEARED", "event_id": event_id
-    }
+    })
     _hide_event_cell(cell)
     if exact_world != null and exact_world.contains_cell(cell):
         var tile := exact_world.tile_at(cell)
@@ -5743,9 +5704,9 @@ func add_keystone_life_force(cell: Vector2i, available: int) -> int:
     var new_amount := old_amount + used
     amounts[key] = new_amount
     event_progress["keystone_life_force"] = amounts
-    source_interior_mutations[key] = {
+    area.put("source_interior_mutations", key, {
         "kind": "KEYSTONE", "amount": new_amount
-    }
+    })
     if new_amount >= 107:
         interior_interactables[cell] = "SPECIAL:spiritomb"
         var tile := exact_world.tile_at(cell) if exact_world != null else null
@@ -5822,7 +5783,7 @@ func _refresh_biome_dig_sites(spread: bool = false) -> void:
                 String(mutation.get("base", old_tile.name)),
                 String(mutation.get("original_upper", ""))
             )
-        source_interior_mutations.erase(key)
+        area.drop("source_interior_mutations", key)
 
     var candidates: Dictionary = {}
     for crack_name in FieldMoveData.CRACKED_LOOT:
@@ -5887,10 +5848,10 @@ func _refresh_biome_dig_sites(spread: bool = false) -> void:
             var original_base := tile.name
             var crack := FieldMoveData.dig_site_name(tile)
             tile.set_names(original_base, crack)
-            source_interior_mutations[key] = {
+            area.put("source_interior_mutations", key, {
                 "kind":"BIOME_DIG_SITE", "day":day,
                 "base":original_base, "original_upper":original_upper, "crack":crack
-            }
+            })
     # Spread, the layers take the day's cells a few at a time.
     if spread: _queue_exact_refresh()
     else: _refresh_exact_tile_streams()
@@ -5966,7 +5927,7 @@ func _refresh_daily_events(spread: bool = false) -> void:
         if String(mutation.get("kind", "")) != "EVENT_COOLDOWN":
             continue
         var cell := _cell_from_key(String(raw_key))
-        source_interior_mutations.erase(raw_key)
+        area.drop("source_interior_mutations", raw_key)
         interior_interactables[cell] = "SPECIAL:mewtwo"
         blocked[cell] = true
         var area_layer := _source_area_layer_at(cell)
@@ -5996,7 +5957,7 @@ func complete_regi_forge(species_name: String) -> bool:
     var mutation := {
         "kind": "REGI", "species": species
     }
-    source_interior_mutations[_cell_key(cell)] = mutation
+    area.put("source_interior_mutations", _cell_key(cell), mutation)
     _apply_source_interior_mutation(cell, mutation)
     SourceRegiRuntime.sync(self)
     active_regi_pedestal_cell = Vector2i(-2147483648, -2147483648)
@@ -6020,7 +5981,7 @@ func unlock_mansion_door(cell: Vector2i) -> bool:
         return false
     tile.set_names("pkmnmansion_ext_door", "")
     interior_interactables[cell] = "GOTO_AREA:MANSION_0"
-    source_interior_mutations[_cell_key(cell)] = {"kind": "MANSION_DOOR"}
+    area.put("source_interior_mutations", _cell_key(cell), {"kind": "MANSION_DOOR"})
     _refresh_exact_streams()
     return true
 
@@ -6567,66 +6528,10 @@ func _refresh_exact_tile_streams() -> void:
     if canopy != null: canopy.queue_redraw()
 
 func _recoastify_exact_cells(changed_cells: Array[Vector2i]) -> void:
-    var targets: Dictionary = {}
-    for changed in changed_cells:
-        for y in range(changed.y - 1, changed.y + 2):
-            for x in range(changed.x - 1, changed.x + 2):
-                targets[Vector2i(x, y)] = true
-    # Neighbours are read from the tile store's arrays: a proxy for each of
-    # them cost ~0.5 ms per changed cell (48 ms for a load's tide cleanup).
-    var store: WorldTileStore = exact_world.tiles
-    var flags := store.flags
-    var name_ids := store.name_ids
-    var water6: int = store.string_ids.get("water6", -1)
-    for raw_cell in targets.keys():
-        var cell := raw_cell as Vector2i
-        var tile := exact_world.tile_at(cell)
-        if tile == null:
-            continue
-        tile.shore_ocean = ""
-        tile.shore_tidal = ""
-        if tile.is_water or "ledges" in tile.name_upper or tile.name == "ice2" or \
-                "bridge" in tile.name or "waterfall" in tile.name:
-            continue
-        var names := ["W", "E", "S", "N", "SW", "NE", "SE", "NW"]
-        var offsets := [
-            Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN,
-            Vector2i(-1, -1), Vector2i(1, 1),
-            Vector2i(1, -1), Vector2i(-1, 1)]
-        var ocean := ""
-        var tidal := ""
-        for index in range(offsets.size()):
-            var at := store.index_of((cell + offsets[index]) * TILE)
-            var bits := 0
-            if at >= 0:
-                if name_ids[at] == water6:
-                    continue
-                bits = flags[at]
-            else:
-                var neighbor := exact_world.tile_at(cell + offsets[index])
-                if neighbor == null or neighbor.name == "water6":
-                    continue
-                bits = (WorldTileStore.TIDAL if neighbor.is_tidal else 0) | (WorldTileStore.WATER if neighbor.is_water else 0)
-            var direction := String(names[index])
-            if not tile.is_tidal and bits & WorldTileStore.TIDAL:
-                if not _shore_diagonal_already_present(tidal, direction):
-                    tidal += "[" + direction + "]"
-                continue
-            if not bits & WorldTileStore.WATER or \
-                    _shore_diagonal_already_present(ocean, direction):
-                continue
-            ocean += "[" + direction + "]"
-            tidal += "[" + direction + "]"
-        tile.shore_ocean = ocean
-        tile.shore_tidal = tidal
+    TileRules.recoastify(area, changed_cells)
 
 func _shore_diagonal_already_present(existing: String, direction: String) -> bool:
-    if direction.length() < 2:
-        return false
-    for index in range(direction.length()):
-        if "[" + direction.substr(index, 1) + "]" in existing:
-            return true
-    return false
+    return TileRules.shore_diagonal_present(existing, direction)
 
 func _permitted_ledge_direction(tile: SourceTile) -> Vector2i:
     if tile == null:
@@ -6890,59 +6795,10 @@ func biome_at(cell: Vector2i) -> String:
     return String(biomes[cell.y][cell.x])
 
 func _canonical_source_biome(raw_biome: String) -> String:
-    var key := raw_biome.strip_edges().to_upper().replace("-", "_")
-    if SOURCE_BIOME_ALIASES.has(key):
-        return String(SOURCE_BIOME_ALIASES[key])
-    return key.replace(" ", "_")
+    return TileRules.canonical_biome(raw_biome)
 
 func _source_biome_for_tile(tile: SourceTile) -> String:
-    var raw_biome := _canonical_source_biome(tile.biome)
-    var route_name := ""
-    if tile.route_belongs_to != null:
-        route_name = tile.route_belongs_to.name.to_lower()
-
-    # Rivers reuse wooded_lake_water1 in the Java source. Wooded-lake cells
-    # carry their explicit biome while river cuts keep the biome they crossed,
-    # so this distinction is recoverable without changing generator output.
-    if tile.is_water and route_name == "wooded_lake_water1":
-        if raw_biome == "WOODED_LAKE":
-            return "WOODED_LAKE"
-        return "RIVER"
-
-    if not raw_biome.is_empty():
-        return raw_biome
-
-    # Route fallbacks cover source tiles that intentionally have no biome tag.
-    # Check authored water/sub-biome routes before generic water so beach and
-    # river ambience/ecology do not collapse into OCEAN.
-    if not route_name.is_empty():
-        if route_name == "ocean1" or "ocean" in route_name:
-            return "OCEAN"
-        if "beach" in route_name or "tidal" in route_name:
-            return "BEACH"
-        if "wooded_lake" in route_name:
-            return "WOODED_LAKE"
-        if "graveyard" in route_name:
-            return "GRAVEYARD"
-        if "volcano" in route_name:
-            return "VOLCANO"
-        if "oasis" in route_name:
-            return "OASIS"
-        if "desert" in route_name or "ruins" in route_name or "sand_pit" in route_name:
-            return "DESERT"
-        if "snow" in route_name or "tundra" in route_name:
-            return "SNOW"
-        if "mountain" in route_name or "cave" in route_name:
-            return "MOUNTAIN"
-        if "savanna" in route_name:
-            return "SAVANNA"
-        if "deep" in route_name:
-            return "DEEP_FOREST"
-        if "forest" in route_name:
-            return "FOREST"
-    if tile.is_water:
-        return "OCEAN"
-    return "FOREST"
+    return TileRules.source_biome(tile)
 
 func is_cell_discovered(cell: Vector2i) -> bool:
     if active_area_id != "OVERWORLD" and source_area_rects.has(active_area_id):

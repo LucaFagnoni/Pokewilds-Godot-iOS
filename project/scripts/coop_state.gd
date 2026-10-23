@@ -122,7 +122,11 @@ func leave(actor: String) -> void:
 ## - `records` hold their own copy of each value (apply_committed), and
 ##   `outcomes` their own copy of the commit (the receipt); only this script
 ##   changes either. Receipts are handed out as copies.
-func transact(actor: String, id: String, changes: Array, command_hash: String = "", durable: bool = true) -> Dictionary:
+## `typed`: the command this commit carries out, as it came ({"op", "cmd"}:
+## a rules command, coop_rules_runtime.gd), kept with it in the journal and
+## the receipt beside the changes it made. A replay applies the changes; the
+## command says what they were for.
+func transact(actor: String, id: String, changes: Array, command_hash: String = "", durable: bool = true, typed: Dictionary = {}) -> Dictionary:
     if not members.has(actor) or id.is_empty() or id.length() > 80:
         return {"ok":false,"reason":"invalid_request"}
     var request_key := actor + "/" + id
@@ -154,6 +158,7 @@ func transact(actor: String, id: String, changes: Array, command_hash: String = 
                 "current":records.get(key),"revision":revision}
     var result := {"ok":true,"revision":revision+1,"actor":actor,"command_hash":command_hash,
         "id":id,"request_hash":request_hash,"changes":changes.duplicate()}
+    if not typed.is_empty(): result["command"] = typed.duplicate(true)
     # What changed in each player's record, worked out once against the record
     # as it was. The journal keeps this, and the owner is sent it, instead of
     # the whole record, which runs to hundreds of kilobytes and took seconds
@@ -183,6 +188,12 @@ func transact(actor: String, id: String, changes: Array, command_hash: String = 
         if not commit_writer.call(_journal_form(result, player_edits), unwritten): return {"ok":false,"reason":"save_failed"}
         unwritten = 0
     apply_committed(result, staged)
+    for change in changes:
+        var key := String(change.key)
+        if not key.begins_with("player/"): continue
+        if change.has("edits"): _bump_parts(key, change)
+        elif player_edits.has(key): _bump_parts(key, {"edits": player_edits[key]})
+        else: _bump_parts(key, {})
     if not player_edits.is_empty(): result["player_edits"] = player_edits
     if not list_edits.is_empty(): result["list_edits"] = list_edits
     return result
@@ -239,6 +250,37 @@ func apply_committed(commit: Dictionary, staged: Dictionary = {}) -> bool:
     while _old_outcomes.size()>REMEMBERED_RESULTS:
         outcomes.erase(_old_outcomes.pop_front())
     return true
+
+## A player record in parts, each with its own revision ("player/<actor>" ->
+## part -> n), raised by every commit that changes the part. A command reads
+## only the parts it declares (coop_game.gd OP_PARTS), and a save of only those
+## parts is checked against their revisions, not against the whole record.
+const PARTS := {"party": ["party"], "bag": ["inventory"], "pokedex": ["save", "pokedex"], "pokedex_shiny": ["save", "pokedex_shiny"],
+    "discovery": ["save", "crafting_state", "discovered_cells"], "position": ["save", "player_x"], "position_y": ["save", "player_y"],
+    "storage": ["save", "coop_pending_pokemon"]}
+var part_revisions := {}
+
+## The part of a player record a path is in ("save" for the rest of the save).
+static func part_of(path: Array) -> String:
+    if path.is_empty(): return ""
+    for part in PARTS:
+        var at: Array = PARTS[part]
+        if path.size() >= at.size() and path.slice(0, at.size()) == at: return "position" if part == "position_y" else part
+    return "save" if String(path[0]) == "save" else String(path[0])
+
+func revisions_of(actor: String) -> Dictionary:
+    return part_revisions.get("player/" + actor, {})
+
+func _bump_parts(key: String, change: Dictionary) -> void:
+    var held: Dictionary = part_revisions.get_or_add(key, {})
+    if change.has("edits"):
+        var touched := {}
+        for edit in change.edits:
+            if edit is Array and edit.size() > 1 and edit[1] is Array: touched[part_of(edit[1])] = true
+        for part in touched: held[part] = int(held.get(part, 0)) + 1
+    else:
+        for part in ["party", "bag", "pokedex", "pokedex_shiny", "discovery", "position", "storage", "save"]:
+            held[part] = int(held.get(part, 0)) + 1
 
 func change(key: String, value: Variant) -> Dictionary:
     return {"key":key,"before":print_of(key),"after":value}

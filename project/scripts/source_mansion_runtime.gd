@@ -29,7 +29,7 @@ static func press_switch(world, cell: Vector2i) -> int:
             else: continue
             var target := origin + local_cell
             set_gate(world, target, name)
-            world.source_interior_mutations[world._cell_key(target)] = {"kind":"MANSION_GATE", "name":name}
+            world.area.put("source_interior_mutations", world._cell_key(target), {"kind":"MANSION_GATE", "name":name})
             count += 1
     return count
 
