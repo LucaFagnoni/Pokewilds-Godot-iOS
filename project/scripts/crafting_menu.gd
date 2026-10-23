@@ -101,7 +101,7 @@ func handle_build_menu_input(event: InputEvent) -> void:
             var recipe := CraftingData.build_recipes()[main.build_menu_index] as Dictionary
             var build_name := String(recipe.get("name", ""))
             var target: Vector2i = main.world.call("get_build_execution_cell")
-            main._on_build_requested(build_name, target)
+            main.field_actions.on_build_requested(build_name, target)
             _refresh_build_menu()
         main.get_viewport().set_input_as_handled()
     elif event.is_action_pressed("cancel") or event.is_action_pressed("build_menu"):
