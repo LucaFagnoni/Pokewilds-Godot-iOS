@@ -161,17 +161,24 @@ jobs:
       # the GDScript: an area's Pokemon frame by frame, then the World's
       # (population_sim_hash.gd, drawn and as the dedicated server runs it),
       # whose hashes must stay the GDScript's (the tests job).
+      # This stripped release engine writes a few floats' last digit differently
+      # from the official editor the tests job uses, so its population hash is
+      # its own: the native and the GDScript run must give the same one here.
       - name: Native population parity
-        env:
-          POKEWILDS_NATIVE_POPULATION: "1"
         run: |
           engine=godot-src/bin/godot.linuxbsd.template_release.x86_64
-          timeout 1200 "$engine" --headless --path project -s "$PWD/.github/engine/native_population_test.gd" 2>&1 | tee native_population.log
+          POKEWILDS_NATIVE_POPULATION=1 timeout 1200 "$engine" --headless --path project -s "$PWD/.github/engine/native_population_test.gd" 2>&1 | tee native_population.log
           grep -q "NATIVE POPULATION TEST: failed 0" native_population.log
           for mode in "" --no-sprites; do
-            timeout 1800 "$engine" --headless --fixed-fps 60 --path project -s "$PWD/server/population_sim_hash.gd" -- $mode \
-              --expect=d60bd575a137bc966c7eb37c8c5fbd67e7dba8c36692c4e71ab634739865e312 2>&1 | tee "pop$mode.log"
-            grep -q "POPULATION SIM API OK" "pop$mode.log"
+            for native in 1 0; do
+              POKEWILDS_NATIVE_POPULATION=$native timeout 1800 "$engine" --headless --fixed-fps 60 --path project \
+                -s "$PWD/server/population_sim_hash.gd" -- $mode 2>&1 | tee "pop$mode$native.log"
+              grep -q "POPULATION SIM API OK" "pop$mode$native.log"
+            done
+            native=$(grep -E -o "POPULATION SIM seed=12345( no-sprites)? [0-9a-f]{64}" "pop${mode}1.log")
+            script=$(grep -E -o "POPULATION SIM seed=12345( no-sprites)? [0-9a-f]{64}" "pop${mode}0.log")
+            echo "::notice::native: $native / GDScript: $script"
+            [ -n "$native" ] && [ "$native" = "$script" ]
           done
 
   ios:
