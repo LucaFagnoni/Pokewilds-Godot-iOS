@@ -36,8 +36,13 @@ var seed_value := 12345
 
 func _pin_wall_clock() -> void:
     # Frames the world sits out (a load spread over frames by wall time) are
-    # not counted: the count restarts at each reseed.
-    if not world.is_processing(): return
+    # not counted: the count restarts at each reseed. Nor does a zone scan's
+    # wall clock run on through them: how long a load took (a busy machine)
+    # never makes the first frame after it a scan.
+    if not world.is_processing():
+        for name in ["_watched_wild_at", "_near_wild_at"]:
+            if name in world: world.set(name, Time.get_ticks_msec())
+        return
     frame += 1
     # The zone scans run every 500 ms of wall time; with --fixed-fps that is a
     # varying number of frames. Every 30th frame, as world_sim_hash does.

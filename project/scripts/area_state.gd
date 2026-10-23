@@ -65,6 +65,19 @@ var interactables := {}
 var wild = null
 var habitat = null
 var eggs = null
+## What the Pokemon's rules (rules/population_rules.gd) read beside the tiles:
+## the world clock in seconds and the random numbers they draw on (the
+## World's world_elapsed_seconds and rng), the flowers set down, the habitat
+## check's own clock, what the rules keep between calls, whether a Pokemon
+## may stand on a cell's ground (invalid: the rules' own is_walkable), and
+## the World that draws the area (emotes, sprites; null for an AreaSim).
+var clock := 0.0
+var rng := RandomNumberGenerator.new()
+var flowers := {}
+var ecology_accumulator := 0.0
+var memo := {}
+var walkable := Callable()
+var view: Node = null
 
 ## group -> {key: true}: changed since take_dirty(). Collected only while
 ## tracking (co-op), so a game alone never keeps them.

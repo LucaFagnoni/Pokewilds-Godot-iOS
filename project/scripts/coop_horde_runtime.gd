@@ -84,13 +84,7 @@ func host_tick()->void:
             commit(model().finish(game.session.actor,game._id(),current.area,recipients))
 
 func safe(cell:Vector2i)->bool:
-    for offset_y in range(-3,4):
-        for offset_x in range(-3,4):
-            var offset=Vector2i(offset_x,offset_y)
-            if offset.length_squared()>9:continue
-            var structure:Dictionary=game.main.world.built_structures.get(cell+offset,{})
-            if structure.get("name")=="CAMPFIRE" and structure.get("lit",true):return true
-    return false
+    return Model.safe_at(game.main.world.built_structures,cell)
 
 func spawn_event(current:Dictionary)->void:
     spawning=true

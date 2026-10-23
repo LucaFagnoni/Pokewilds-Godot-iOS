@@ -5,13 +5,17 @@ extends RefCounted
 ##
 ## tick() is their frame: each walks about its habitat when its timer runs out,
 ## pairs and lays eggs, drawing on the RNG in the order of the records
-## dictionary, as the world's loop did.
+## dictionary, as the world's loop did. Its rules are its area's
+## (rules/population_rules.gd over `area`), in a World or in an area a server
+## holds without one (area_sim.gd).
 ##
 ## The eggs lying in the world are another (World.egg_population, group
 ## "wild_eggs"): records by cell, the cells changed for co-op, and the save,
 ## without a tick.
 
 const PokemonEcology = preload("res://scripts/pokemon_ecology.gd")
+const PopulationRules = preload("res://scripts/rules/population_rules.gd")
+const PokemonData = preload("res://scripts/pokemon_data.gd")
 const RADIUS := PokemonEcology.HABITAT_RADIUS
 const DIRECTIONS := [Vector2i.ZERO, Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]
 
@@ -29,14 +33,23 @@ var version := 0
 var _cover: Dictionary = {}
 ## How many records _cover was counted for.
 var _covered := 0
+## The World that draws them and plays its own player (sprites, poses, that
+## player's recall); null for an area held without one (area_sim.gd).
 var world: Node
+## The area (AreaState): its ground, its wild Pokemon and the rest, its clock
+## and random numbers, for the rules.
+var area
+## Online without a World: the players, whose cells a habitat Pokemon does
+## not step onto (occupied(cell), as WildPopulation.players).
+var players
 ## Which of the save's lists these records are: "deployed_pokemon" (the
 ## habitat Pokemon) or "wild_eggs".
 var group: String
 
-func _init(owner: Node = null, kind := "deployed_pokemon") -> void:
+func _init(owner: Node = null, kind := "deployed_pokemon", state = null) -> void:
     world = owner
     group = kind
+    area = state
 
 func size() -> int:
     return records.size()
@@ -96,8 +109,8 @@ func record_for_save(cell: Vector2i) -> Dictionary:
     if not records.has(cell):
         return {}
     if group == "wild_eggs":
-        return world._serializable_egg_record(records[cell], cell)
-    return world._serializable_ecology_record(records[cell], cell)
+        return PopulationRules.serializable_egg(records[cell], cell)
+    return PopulationRules.serializable_record(area, records[cell], cell)
 
 ## Every record as a save holds it: an Array of dictionaries, in order.
 func to_save() -> Array:
@@ -114,9 +127,29 @@ func from_save(saved: Array) -> void:
         var entry: Dictionary = raw
         var cell := Vector2i(int(entry.get("x", -1)), int(entry.get("y", -1)))
         if group == "wild_eggs":
-            world._add_wild_egg(String(entry.get("species", "pidgey")), cell, entry)
-        else:
+            PopulationRules.add_egg(area, String(entry.get("species", "pidgey")), cell, entry)
+        elif world != null:
             world._restore_deployed_pokemon(entry, cell)
+        else:
+            restore(entry, cell)
+
+## A habitat Pokemon as a save holds it put back on `cell` without a World
+## (world.gd _restore_deployed_pokemon's rules: one tile per Pokemon, its
+## ecology id kept): false when it cannot stand there.
+func restore(entry: Dictionary, cell: Vector2i) -> bool:
+    if not entry.has("house_door") and not area.in_bounds(cell):
+        return false
+    var identity := String(entry.get("ecology_id", ""))
+    if not identity.is_empty():
+        for other_cell in records:
+            if other_cell != cell and String(records[other_cell].get("ecology_id", "")) == identity:
+                return false
+    take(cell)
+    var species := String(entry.get("species", "")).to_lower()
+    if PokemonData.record_texture(entry, "overworld") == null and not species in PopulationRules.FARM_SPECIES:
+        return false
+    place(cell, PopulationRules.habitat_record(area, entry, cell, identity))
+    return true
 
 ## A record stands within RADIUS (a square) of `cell`.
 func near(cell: Vector2i) -> bool:
@@ -156,20 +189,22 @@ func tick(delta: float, rng: RandomNumberGenerator) -> void:
         if data.has("house_door"):
             continue
         # The Pokemon the player is calling back waits for them.
-        if not world.recall_hold.is_empty() and String(data.get("ecology_id", "")) == world.recall_hold:
-            continue
-        world._update_pokemon_water_visual(data)
+        if world != null:
+            if not world.recall_hold.is_empty() and String(data.get("ecology_id", "")) == world.recall_hold:
+                continue
+            world._update_pokemon_water_visual(data)
         data["move_timer"] = float(data.get("move_timer", 0.0)) - delta
         if float(data["move_timer"]) > 0.0:
             continue
-        data["move_timer"] = world._wild_move_delay(String(data.get("species", "")))
-        world._try_create_parent_egg(data, old_cell)
+        data["move_timer"] = PopulationRules.wild_move_delay(area, String(data.get("species", "")))
+        PopulationRules.try_create_parent_egg(area, data, old_cell)
         var behavior: Dictionary = data.get("behavior", {})
         if bool(behavior.get("stationary", false)):
             continue
         if not String(data.get("held_item", "")).is_empty():
             data["anim_phase"] = 1 - int(data.get("anim_phase", 0))
-            world._habitat_pose(data, Vector2i.DOWN)
+            if world != null:
+                world._habitat_pose(data, Vector2i.DOWN)
             mark(old_cell)
             continue
         var direction: Vector2i = DIRECTIONS[rng.randi_range(0, DIRECTIONS.size() - 1)]
@@ -181,24 +216,24 @@ func tick(delta: float, rng: RandomNumberGenerator) -> void:
         var companion_id := friend_id
         if friend_reunion:
             data["friend_seconds"] = PokemonEcology.FRIEND_SECONDS
-            world._show_friend_reunion(data, friend_id)
+            if world != null:
+                world._show_friend_reunion(data, friend_id)
         elif companion_id.is_empty() or rng.randf() < 0.18:
             companion_id = String(data.get("mate_id", companion_id))
         if not companion_id.is_empty() and (friend_reunion or rng.randf() < 0.20):
-            var companion_cell: Vector2i = world._ecology_cell_by_id(companion_id)
+            var companion_cell: Vector2i = PopulationRules.ecology_cell_by_id(area, companion_id)
             if companion_cell.x > -2147483648:
-                direction = world._cardinal_direction(companion_cell - old_cell, false)
-        direction = world._paired_wander_direction(data, old_cell, direction)
+                direction = PopulationRules.cardinal_direction(companion_cell - old_cell, false)
+        direction = PopulationRules.paired_wander_direction(area, data, old_cell, direction)
         var target := old_cell + direction
         if (
                 direction == Vector2i.ZERO
-                or not world._pokemon_can_move_between(String(data.get("species", "")), old_cell, target)
-                or target == world._player_cell()
-                or target == world.follower_cell
-                or target == world.field_helper_cell
+                or not PopulationRules.can_move_between(area, String(data.get("species", "")), old_cell, target)
+                or (world != null and (target == world._player_cell() or target == world.follower_cell or target == world.field_helper_cell))
+                or (players != null and players.occupied(target))
                 or records.has(target)
-                or world._wild_id_at_cell(target) >= 0
-                or world.wild_eggs.has(target)
+                or area.wild.id_at(target) >= 0
+                or area.eggs.records.has(target)
             ):
             continue
         move(old_cell, target)
@@ -209,4 +244,5 @@ func tick(delta: float, rng: RandomNumberGenerator) -> void:
         var move_seconds := 0.20
         if bool(behavior.get("flee", false)):
             move_seconds = 16.0 / (2.0 * 60.0)
-        world._habitat_step_visuals(data, direction, target, move_seconds)
+        if world != null:
+            world._habitat_step_visuals(data, direction, target, move_seconds)
