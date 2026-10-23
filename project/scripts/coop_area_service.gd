@@ -40,14 +40,19 @@ func upload(area:String,token:String,epoch:int,bytes:PackedByteArray)->Dictionar
     uploads.drop(1)
     return {"ok":false,"reason":"transfer_timeout"}
 
+## The player who may send `area`: its authority, or the one asked to place a
+## new area's Pokemon (spawners) when a server is every area's authority.
+func may_publish(actor:String,area:String,epoch:int)->bool:
+    return areas.can_publish(actor,area,epoch) or (spawners.get(area,"")==actor and areas.occupants.get(actor,"")==area)
+
 ## `decoded` and `saved`: the snapshot already decoded and saved (_receive_upload).
 func publish(actor:String,area:String,epoch:int,bytes:PackedByteArray,decoded:Dictionary={},saved:Dictionary={})->Dictionary:
-    if not areas.can_publish(actor,area,epoch):return {"ok":false,"reason":"not_authority"}
+    if not may_publish(actor,area,epoch):return {"ok":false,"reason":"not_authority"}
     if decoded.is_empty():decoded=await _worker(func():return Snapshot.decode(bytes))
     if decoded.is_empty():return {"ok":false,"reason":"invalid_snapshot"}
     if saved.is_empty():saved=await snapshots.save_bytes(bytes)
     if not saved.get("ok",false):return saved
-    if not areas.can_publish(actor,area,epoch):return {"ok":false,"reason":"stale_authority"}
+    if not may_publish(actor,area,epoch):return {"ok":false,"reason":"stale_authority"}
     var previous:Dictionary=state.records.get("area/"+area,{})
     if previous.get("seed")!=decoded.seed or previous.get("size")!=decoded["size"]:return {"ok":false,"reason":"wrong_area"}
     var metadata={"seed":decoded.seed,"size":decoded["size"],"snapshot":saved.snapshot,"sha256":saved.sha256}
@@ -212,7 +217,7 @@ func _message(peer:int,actor:String,packet:Dictionary)->void:
             var epoch=packet.get("epoch")
             if typeof(epoch) not in [TYPE_INT,TYPE_FLOAT] or not is_finite(float(epoch)) or float(epoch)!=floor(float(epoch)):return
             var reservation:Dictionary=areas.reservations.get(packet.area,{})
-            var allowed=areas.can_publish(actor,packet.area,int(epoch)) if packet.token.is_empty() else reservation.get("actor")==actor and reservation.get("token")==packet.token
+            var allowed=may_publish(actor,packet.area,int(epoch)) if packet.token.is_empty() else reservation.get("actor")==actor and reservation.get("token")==packet.token
             if allowed:_upload_headers[peer]=packet
             else:session.send_to(peer,{"kind":"area_upload_result","id":packet.id,"result":{"ok":false,"reason":"not_authority"}})
         elif kind=="area_upload_blob":_receive_upload(peer,actor,packet)

@@ -54,10 +54,82 @@ static func tile_allows(tile: SourceTile, group: String) -> bool:
 
 ## Nothing of the world's (but its Pokemon) stands on the cell.
 static func cell_free(world: Node, cell: Vector2i) -> bool:
-    if world.blocked.has(cell) or world.interior_interactables.has(cell) or world.built_structures.has(cell) \
-        or world.resource_objects.has(cell) or world.landmarks.has(cell) or world.wild_eggs.has(cell) \
-        or world.deployed_pokemon.has(cell) or world.source_plant_farms.has(world._cell_key(cell)): return false
+    if world.resource_objects.has(cell) or not cell_free_at(world.area, cell): return false
     return cell != world._player_cell() and cell != world.field_helper_cell and cell != world.follower_cell
+
+## cell_free over an area's data (area_state.gd), with or without a World (a
+## World adds its own player, helper and follower).
+static func cell_free_at(state, cell: Vector2i) -> bool:
+    return not (state.blocked.has(cell) or state.interactables.has(cell) or state.structures.has(cell)
+        or state.landmarks.has(cell) or state.eggs.records.has(cell) or state.habitat.records.has(cell)
+        or state.source_plant_farms.has("%d,%d" % [cell.x, cell.y]))
+
+## available over an area's data, without a World: `taken` are the players' cells.
+static func available_at(state, cell: Vector2i, group: String, taken: Array = []) -> bool:
+    if not tile_allows(state.tile_at(cell), group) or not cell_free_at(state, cell) or cell in taken: return false
+    if state.wild.id_at(cell) >= 0: return false
+    # A Pokemon still walking from a cell next to this one is drawn on it.
+    var center := Vector2(cell * 16) + Vector2(8.0, 8.0)
+    for id in state.wild.ids_near(cell, 2):
+        if state.wild.visual_position(id).distance_to(center) < 15.0: return false
+    return true
+
+## A Mega of an area held without a World takes a step as try_step moves one
+## in a World: within eight cells of its home, onto a cell available to it.
+## Its record moves, and the cell it keeps (blocked, its SPECIAL action) with
+## it. False when it may not go there.
+static func step_at(state, group: String, direction: Vector2i, taken: Array = []) -> bool:
+    var saved: Dictionary = state.event_progress.get(SAVE_KEY, {}).get(group, {})
+    if not saved.has("x"): return false
+    var cell := Vector2i(int(saved.x), int(saved.y))
+    var target := cell + direction
+    var home := Vector2i(int(saved.get("home_x", cell.x)), int(saved.get("home_y", cell.y)))
+    if maxi(absi(target.x - home.x), absi(target.y - home.y)) > 8 or not available_at(state, target, group, taken): return false
+    var action := "SPECIAL:" + String(saved.get("species", ""))
+    if String(state.interactables.get(cell, "")) == action:
+        state.interactables.erase(cell)
+        state.blocked.erase(cell)
+    state.interactables[target] = action
+    state.blocked[target] = true
+    saved["x"] = target.x
+    saved["y"] = target.y
+    saved["facing_pair"] = 2 if direction == Vector2i.UP else 4 if direction == Vector2i.DOWN else 0
+    saved["flip_h"] = direction == Vector2i.RIGHT
+    return true
+
+## The cells the Megas of an area held without a World stand on, kept as
+## install keeps them in a World (blocked, their SPECIAL action): those of
+## `before` (their records as they were) let go, those of `states` taken.
+static func mark_at(state, before: Dictionary, states: Dictionary) -> void:
+    for saved in before.values():
+        if saved is Dictionary and saved.has("x"):
+            var cell := Vector2i(int(saved.x), int(saved.y))
+            if String(state.interactables.get(cell, "")) == "SPECIAL:" + String(saved.get("species", "")):
+                state.interactables.erase(cell)
+                state.blocked.erase(cell)
+    for saved in states.values():
+        if saved is Dictionary and saved.has("x"):
+            var cell := Vector2i(int(saved.x), int(saved.y))
+            state.interactables[cell] = "SPECIAL:" + String(saved.get("species", ""))
+            state.blocked[cell] = true
+
+## A Mega caught or beaten in an area held without a World, as captured: the
+## other Mega of its group not yet `completed` (event id -> true) takes its
+## place, or the group is done.
+static func captured_at(state, id: String, completed: Dictionary, rng: RandomNumberGenerator) -> void:
+    var states: Dictionary = state.event_progress.get(SAVE_KEY, {})
+    var before := states.duplicate(true)
+    for group: String in GROUPS:
+        if id not in GROUPS[group]: continue
+        var saved: Dictionary = states.get(group, {})
+        states.erase(group)
+        for other: String in GROUPS[group]:
+            if other == id or bool(completed.get(other, false)): continue
+            saved["species"] = other
+            saved["record"] = BattleEngine.make_pokemon(other, 70, rng)
+            states[group] = saved
+    state.event_progress[SAVE_KEY] = states
+    mark_at(state, before, states)
 
 static func choose_cell(world: Node, group: String) -> Variant:
     var prepared: Dictionary = world.get_meta("mega_load_choices", {})

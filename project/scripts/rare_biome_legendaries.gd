@@ -9,9 +9,13 @@ static func odds(species: String) -> int:
     return 10000 if species == "arceus" else 12500
 
 static func habitat(world: Node, species: String, cell: Vector2i) -> bool:
-    if world.exact_world == null or not world._in_bounds(cell): return false
+    return habitat_at(world.area, species, cell)
+
+## habitat over an area's data (area_state.gd), with or without a World.
+static func habitat_at(state, species: String, cell: Vector2i) -> bool:
+    if state.tiles == null or not state.in_bounds(cell): return false
     if not HABITATS.has(species): return false
-    return HABITATS[species] == "ANYWHERE" or world.biome_at(cell) == HABITATS[species]
+    return HABITATS[species] == "ANYWHERE" or preload("res://scripts/rules/population_rules.gd").biome_at(state, cell) == HABITATS[species]
 
 static func captured(world: Node, species: String) -> void:
     if not HABITATS.has(species): return

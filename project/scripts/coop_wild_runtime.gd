@@ -55,32 +55,20 @@ func refresh_players()->void:
     else:players.erase(game.session.actor)
 
 func target_for(data:Dictionary,cell:Vector2i)->Dictionary:
-    var scope=game._area()+"|OVERWORLD"
-    var eligible=players
-    if not String(data.get("source_record",{}).get("coop_horde","")).is_empty():
-        eligible=players.duplicate()
-        for actor in eligible.keys():
-            if game.hordes.safe(Vector2i(eligible[actor].x,eligible[actor].y)):eligible.erase(actor)
-    var target=""
-    if data.get("aggro_player",false):target=Population.chase_target(String(data.get("coop_target","")),cell,eligible,scope)
-    if String(data.get("coop_target",""))!=target:mark_motion(int(data.id))
-    data["coop_target"]=target
-    if target.is_empty():target=Population.chase_target("",cell,eligible,scope,2147483647)
-    if target.is_empty():return {}
-    players[target]["actor"]=target
-    return players[target]
+    var before=String(data.get("coop_target",""))
+    var target:=Population.target_of(players,game._area()+"|OVERWORLD",data,cell,game.hordes.safe)
+    if String(data.get("coop_target",""))!=before:mark_motion(int(data.id))
+    return target
+
+## This game's own player, for WildPopulation (its `players`).
+func local_actor()->String:
+    return game.session.actor
 
 func occupied(cell:Vector2i)->bool:
-    for player in players.values():
-        if cell==Vector2i(player.x,player.y):return true
-    return false
+    return Population.occupied_by(players,cell)
 
 func remote_charm(data:Dictionary,target:Dictionary)->bool:
-    if float(data.get("ball_charm_until",0.0))>game.main.world.world_elapsed_seconds:return true
-    if target.get("move")!="CHARM":return false
-    var reference=int(target.get("party_level",1))
-    var level=clampi(maxi(1,int(data.get("level",1))),maxi(2,reference-3),mini(100,reference+1))
-    return int(target.get("field_level",1))>=level
+    return Population.charmed_by(data,target,game.main.world.world_elapsed_seconds)
 
 ## The wild Pokemon that changed here, sent to the shared records (wild_motion):
 ## those WildPopulation marked (moved, added, removed, a new target) and those

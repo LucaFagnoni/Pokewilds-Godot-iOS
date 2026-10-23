@@ -4,8 +4,12 @@ extends RefCounted
 const STEP_ODDS := 10000
 
 static func deep_forest(world: Node, cell: Vector2i) -> bool:
-    if world.exact_world == null: return false
-    var tile: SourceTile = world.exact_world.tile_at(cell)
+    return deep_forest_at(world.area, cell)
+
+## deep_forest over an area's data (area_state.gd), with or without a World.
+static func deep_forest_at(state, cell: Vector2i) -> bool:
+    if state.tiles == null: return false
+    var tile: SourceTile = state.tiles.tile_at(cell)
     return tile != null and (tile.biome.to_lower() == "deep_forest" or (
         tile.route_belongs_to != null and tile.route_belongs_to.name.to_lower() == "deep_forest"))
 

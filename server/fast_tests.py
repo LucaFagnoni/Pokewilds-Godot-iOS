@@ -40,6 +40,7 @@ TESTS = [
     ("discovered_cells_test", []),
     ("area_state_test", []),
     ("rules_test", []),
+    ("population_authority_test", []),
     ("battle_check_test", []),
     ("online_migrate_test", []),
 ]

@@ -115,6 +115,42 @@ func _prior(actor:String,id:String,args:Array)->Dictionary:
     if result.is_empty():return {}
     return result.duplicate(true) if result.get("command_hash")==state.fingerprint(args) else {"ok":false,"reason":"reused_request_id"}
 
+## The player a wild Pokemon on `cell` goes for: the one it pursues (its
+## "coop_target", set here; kept while that player stays eligible and near),
+## else the nearest who could; {} if none. `players`: actor -> {"area", "x",
+## "y", "battle", ...} as last seen ("actor" is added to the one returned);
+## `scope`: "<area>|OVERWORLD"; `safe` (a cell -> bool) leaves out the players
+## a horde does not chase (by a lit campfire). For a World's area
+## (coop_wild_runtime.gd) and one a server holds without one (area_sim.gd).
+static func target_of(players:Dictionary,scope:String,data:Dictionary,cell:Vector2i,safe:Callable)->Dictionary:
+    var eligible=players
+    if not String(data.get("source_record",{}).get("coop_horde","")).is_empty():
+        eligible=players.duplicate()
+        for actor in eligible.keys():
+            if safe.call(Vector2i(eligible[actor].x,eligible[actor].y)):eligible.erase(actor)
+    var target=""
+    if data.get("aggro_player",false):target=chase_target(String(data.get("coop_target","")),cell,eligible,scope)
+    data["coop_target"]=target
+    if target.is_empty():target=chase_target("",cell,eligible,scope,2147483647)
+    if target.is_empty():return {}
+    players[target]["actor"]=target
+    return players[target]
+
+static func occupied_by(players:Dictionary,cell:Vector2i)->bool:
+    for player in players.values():
+        if cell==Vector2i(player.x,player.y):return true
+    return false
+
+## Whether `target` (a player as target_of gives one) keeps the Pokemon calm
+## with CHARM (its field Pokemon's level against the Pokemon's), or a ball's
+## charm still holds at `clock`.
+static func charmed_by(data:Dictionary,target:Dictionary,clock:float)->bool:
+    if float(data.get("ball_charm_until",0.0))>clock:return true
+    if target.get("move")!="CHARM":return false
+    var reference=int(target.get("party_level",1))
+    var level=clampi(maxi(1,int(data.get("level",1))),maxi(2,reference-3),mini(100,reference+1))
+    return int(target.get("field_level",1))>=level
+
 static func chase_target(previous:String,origin:Vector2i,players:Dictionary,scope:String,radius_squared:int=64)->String:
     # Retain first sighting until it is no longer eligible; moving closer cannot
     # steal another player's pursuer. Flight affects contact, not target choice.

@@ -4,6 +4,17 @@ const Delta=preload("res://scripts/coop_world_delta.gd")
 var state
 var rng:=RandomNumberGenerator.new()
 
+## A lit campfire within three cells of `cell` among `structures` (cell ->
+## structure record): a horde does not go for a player there.
+static func safe_at(structures:Dictionary,cell:Vector2i)->bool:
+    for offset_y in range(-3,4):
+        for offset_x in range(-3,4):
+            var offset=Vector2i(offset_x,offset_y)
+            if offset.length_squared()>9:continue
+            var structure:Dictionary=structures.get(cell+offset,{})
+            if structure.get("name")=="CAMPFIRE" and structure.get("lit",true):return true
+    return false
+
 func start(actor:String,id:String,area:String,players:Dictionary)->Dictionary:
     var old=state.records.get("horde/"+area,{})
     if not old.is_empty() and old.get("phase") in ["waiting","active"]:return {"ok":false,"reason":"already_active"}

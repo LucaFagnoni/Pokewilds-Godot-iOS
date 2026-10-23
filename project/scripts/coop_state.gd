@@ -5,6 +5,10 @@ var records: Dictionary = {}
 var outcomes: Dictionary = {}
 var members: Dictionary = {}
 var authority: Dictionary = {}
+## The actor who is the authority of every area (a dedicated server that runs
+## all areas' Pokemon, coop_population_authority.gd); "" to give an area to the
+## first player in it and, when they leave, to the next.
+var fixed_authority := ""
 var commit_writer := Callable()
 const Patch = preload("res://scripts/coop_patch.gd")
 const MAX_CHANGES := 4096
@@ -107,14 +111,15 @@ func enter(actor: String, area: String) -> String:
         return authority[area]
     leave(actor)
     members[actor]["area"] = area
-    if not authority.has(area): authority[area] = actor
+    if not fixed_authority.is_empty(): authority[area] = fixed_authority
+    elif not authority.has(area): authority[area] = actor
     return authority[area]
 
 func leave(actor: String) -> void:
     if not members.has(actor): return
     var area := String(members[actor].get("area", ""))
     members[actor].erase("area")
-    if authority.get(area, "") != actor: return
+    if authority.get(area, "") != actor or not fixed_authority.is_empty(): return
     authority.erase(area)
     for other in members:
         if members[other].get("area", "") == area:
