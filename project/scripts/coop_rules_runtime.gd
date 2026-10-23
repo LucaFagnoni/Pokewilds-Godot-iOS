@@ -22,6 +22,8 @@ var game:Node
 ## Host: area -> AreaSim, and the areas being loaded.
 var sims:Dictionary={}
 var _loading:Dictionary={}
+## Workers letting go of AreaSims (_process): task id -> true.
+var _releases:Dictionary={}
 var rng:=RandomNumberGenerator.new()
 
 func configure(coordinator:Node)->void:
@@ -48,7 +50,7 @@ func load_area(area:String)->void:
     if not loaded.get("ok",false):_loading.erase(area);return
     var records:Dictionary={}
     var prefix:="world/"+area+"/"
-    for key in game.state.records:
+    for key in game.state.keys_by_area.get(area,{}):
         if String(key).begins_with(prefix) and String(key).get_slice("/",2) in AreaState.GROUPS:records[key]=game.state.records[key]
     var bytes:PackedByteArray=loaded.bytes
     var sim=await game._off_thread(func():return AreaSim.build(area,bytes,records))
@@ -56,7 +58,7 @@ func load_area(area:String)->void:
     if sim==null:print("ONLINE area ",area," could not be held here for its rules");return
     # Commits made while it loaded are in the records now: lay them again.
     var newer:Dictionary={}
-    for key in game.state.records:
+    for key in game.state.keys_by_area.get(area,{}):
         if String(key).begins_with(prefix) and records.get(key)!=game.state.records[key] and String(key).get_slice("/",2) in AreaState.GROUPS:newer[key]=game.state.records[key]
     sim.lay_records({},newer)
     sim.state.take_dirty()
@@ -76,6 +78,8 @@ func committed(changes:Array)->void:
     for sim in sims.values():sim.state.take_dirty()
 
 func _process(_delta:float)->void:
+    for task in _releases.keys():
+        if WorkerThreadPool.is_task_completed(task):WorkerThreadPool.wait_for_task_completion(task);_releases.erase(task)
     if not game.hosting or sims.is_empty():return
     var now:=Time.get_ticks_msec()
     var occupied:Dictionary={}
@@ -84,7 +88,11 @@ func _process(_delta:float)->void:
         var sim=sims[area]
         if occupied.has(area) and area!=game._area():sim.empty_since=0
         elif sim.empty_since==0:sim.empty_since=now
-        elif now-sim.empty_since>=KEEP_EMPTY_MS or area==game._area():sims.erase(area)
+        elif now-sim.empty_since>=KEEP_EMPTY_MS or area==game._area():
+            sims.erase(area)
+            # Let go of on a worker: freeing an area's tiles here took 8 ms.
+            var held:Array=[sim];sim=null
+            _releases[WorkerThreadPool.add_task(func():held.clear())]=true
 
 ## Host: a field command in the rules' form ({"area", "cmd"}, op one of
 ## Rules.OPS). Runs the rule on the area, commits the changes and the bag.

@@ -58,7 +58,7 @@ func model():
 ## An area's records from its snapshot, a few milliseconds a frame: a whole
 ## new area written in one frame stalled a server for 30 to 55 ms.
 func seed(area:String,shared:Dictionary)->bool:
-    _slice_started=Time.get_ticks_usec()
+    _slice_started=Time.get_ticks_usec();_batch_started=_slice_started
     var delta=model()
     if not game.state.records.get("world_ready/"+area,false):return await delta.seed(game.session.actor,area,shared,_breathe)
     if game.state.records.get("area/"+area,{}).get("population_pending",false) and not await seed_population(area,shared):return false
@@ -66,7 +66,7 @@ func seed(area:String,shared:Dictionary)->bool:
     # still match the sender's baseline; never overwrite a newer accepted build.
     if not shared.get("_coop_build_base") is Dictionary:return true
     var baseline:Dictionary=shared._coop_build_base
-    var current=known(area,game.state.records)
+    var current=known(area,game.state.records,game.state.keys_by_area.get(area,{}))
     var next=Delta.flatten(builds(shared))
     var keys=current.keys()
     for key in next:
@@ -89,11 +89,17 @@ func seed(area:String,shared:Dictionary)->bool:
 
 const SLICE_USEC:=4000
 var _slice_started:=0
-## The frame goes on once this one has had SLICE_USEC of seeding.
+var _batch_started:=0
+## The frame goes on once this one has had SLICE_USEC of seeding, or would
+## have with another batch like the last (a batch past the slice made frames
+## of 12-18 ms).
 func _breathe()->void:
-    if Time.get_ticks_usec()-_slice_started<SLICE_USEC:return
+    var now:=Time.get_ticks_usec()
+    var batch:=now-_batch_started
+    _batch_started=now
+    if now-_slice_started+batch<SLICE_USEC:return
     await get_tree().process_frame
-    _slice_started=Time.get_ticks_usec()
+    _slice_started=Time.get_ticks_usec();_batch_started=_slice_started
 
 ## The Pokemon of an area made without them (server_area_maker.gd), as the
 ## player who placed them sent the area back: written into its records, once,
@@ -117,9 +123,11 @@ func seed_population(area:String,shared:Dictionary)->bool:
     if result.get("ok",false):game._committed(result)
     return bool(result.get("ok",false))
 
-static func known(area:String,records:Dictionary)->Dictionary:
+## `keys`: the area's keys when the records are the host's (coop_state.gd
+## keys_by_area), not every record of the world (10 ms at 60,000).
+static func known(area:String,records:Dictionary,keys:Variant=null)->Dictionary:
     var result:Dictionary={};var prefix="world/"+area+"/"
-    for key in records:
+    for key in (records if keys==null else keys):
         if is_build_key(String(key)) and String(key).begins_with(prefix):result[String(key).trim_prefix(prefix)]=records[key]
     return result
 

@@ -155,14 +155,21 @@ func prepare(state, metadata: Dictionary) -> Dictionary:
     sync()
     _close_journal()
     var journal := home.path_join("journal.jsonl")
+    # Only its length: write() reads it, off the game thread (megabytes: up
+    # to 17 ms here). Lines added meanwhile go after it.
+    var file := FileAccess.open(journal, FileAccess.READ) if FileAccess.file_exists(journal) else null
+    var journal_size := file.get_length() if file != null else 0
+    if file != null: file.close()
     return {"id":world_id,"home":home,
-        "journal":FileAccess.get_file_as_bytes(journal) if FileAccess.file_exists(journal) else PackedByteArray(),
+        "journal_size":journal_size,
         "data":{"mode":"online","format":1,"id":world_id,"metadata":metadata.duplicate(true),"state":state.snapshot()}}
 
 ## world.json as a .pending file, read back and checked, the one it replaces
 ## kept as .bak; then the journal it covers becomes journal.previous.jsonl,
 ## which stays with the .bak for recovery. Touches only these files.
 static func write(job: Dictionary) -> Error:
+    var journal := _read_journal(job)
+    if journal.size() != int(job.get("journal_size", 0)): return ERR_FILE_CORRUPT
     var path := String(job.home).path_join("world.json")
     var text := JSON.stringify(job.data, "", true, true)
     var error := _write_file(path, JSON.stringify({"payload":text,"sha256":text.sha256_text()}).to_utf8_buffer())
@@ -176,11 +183,19 @@ static func write(job: Dictionary) -> Error:
     # Only after the replacement checkpoint is durable and verified. Until
     # rotate() the journal still starts with these commits too: a load skips
     # any it already has (by revision).
-    var journal: PackedByteArray = job.journal
     if journal.is_empty(): return OK
     var previous := String(job.home).path_join("journal.previous.jsonl")
     error = _write_file(previous, journal)
     return error if error != OK else DirAccess.rename_absolute(previous + ".pending", previous)
+
+## The journal as it was at prepare(): its first `journal_size` bytes.
+static func _read_journal(job: Dictionary) -> PackedByteArray:
+    var size := int(job.get("journal_size", 0))
+    var file := FileAccess.open(String(job.home).path_join("journal.jsonl"), FileAccess.READ) if size > 0 else null
+    if file == null: return PackedByteArray()
+    var bytes := file.get_buffer(size)
+    file.close()
+    return bytes
 
 ## `bytes` into PATH.pending, flushed.
 static func _write_file(path: String, bytes: PackedByteArray) -> Error:
@@ -194,7 +209,7 @@ static func _write_file(path: String, bytes: PackedByteArray) -> Error:
 
 ## After write(): the journal keeps only the commits made while it ran.
 func rotate(job: Dictionary) -> Error:
-    var done := PackedByteArray(job.journal).size()
+    var done := int(job.get("journal_size", 0))
     if done == 0: return OK
     _close_journal()
     var path := String(job.home).path_join("journal.jsonl")

@@ -30,6 +30,7 @@ func send(peer:int,payload:Dictionary)->Error:
     if payload.get("kind") in ["player_visual","world_clock"]:
         var error:Error=send_frame.call(peer,payload)
         return OK if error==ERR_BUSY else error
+    if payload.get("kind") in ENCODED_AWAY:return _send_later(peer,payload)
     var started:=Time.get_ticks_usec()
     var bytes=JSON.stringify(payload).to_utf8_buffer()
     Transport.count("enc:"+String(payload.get("kind","")),bytes.size(),started)
@@ -52,6 +53,37 @@ func send_bytes(peer:int,bytes:PackedByteArray,payload:Dictionary={})->Error:
     queued_bytes+=bytes.size()
     return OK
 
+## Messages of many records (a player's state, an area's records: coop_game.gd
+## _send_state), encoded on a worker: hundreds of kilobytes of JSON took the
+## host 5-15 ms of a frame. Queued at once, in order: what is sent after
+## waits behind them. The records are the state's, which replaces them rather
+## than changing them in place.
+const ENCODED_AWAY:=["state_snapshot","area_records"]
+func _send_later(peer:int,payload:Dictionary)->Error:
+    var waiting:int=queues.get(peer,[]).size()
+    if patient.has(peer) and not patient[peer] and waiting<64:patient.erase(peer)
+    if queued_bytes>MAX_QUEUED or waiting>=(PATIENT_QUEUE if patient.has(peer) else 128):return ERR_BUSY
+    var out:Array=[]
+    var task:=WorkerThreadPool.add_task(func():
+        var started:=Time.get_ticks_usec()
+        var bytes:=JSON.stringify(payload).to_utf8_buffer()
+        out.append_array([bytes,Time.get_ticks_usec()-started]))
+    if not queues.has(peer):queues[peer]=[]
+    queues[peer].append({"bytes":PackedByteArray(),"payload":payload,"task":task,"out":out})
+    return OK
+
+## A message encoded on a worker (_send_later) taken over; false when it is too large to send.
+func _encoded(entry:Dictionary)->bool:
+    WorkerThreadPool.wait_for_task_completion(entry.task)
+    entry.erase("task")
+    var bytes:PackedByteArray=entry.out[0]
+    Transport.count("enc:"+String(entry.payload.get("kind","")),bytes.size(),Time.get_ticks_usec()-int(entry.out[1]))
+    entry.erase("out")
+    entry.bytes=bytes
+    queued_bytes+=bytes.size()
+    if bytes.size()>DIRECT_LIMIT or send_encoded.is_valid():entry.payload={}
+    return not bytes.is_empty() and bytes.size()<=MAX_MESSAGE
+
 func pump()->void:
     blobs.expire()
     for peer in queues.keys():
@@ -63,6 +95,10 @@ func pump()->void:
         var queue:Array=queues[peer]
         if queue.is_empty():queues.erase(peer);continue
         var entry:Dictionary=queue[0]
+        if entry.has("task"):
+            if not WorkerThreadPool.is_task_completed(entry.task):continue
+            if not _encoded(entry):
+                drop(peer);delivery_failed.emit(peer);continue
         var error:Error
         if entry.bytes.size()<=DIRECT_LIMIT:error=_send_bytes(peer,entry.bytes,entry.payload)
         else:error=OK if blobs.start_send(peer,preload("res://scripts/coop_random.gd").hex(16),entry.bytes) else ERR_BUSY
@@ -99,7 +135,9 @@ func receive(peer:int,packet:Dictionary)->Dictionary:
     return {"packet":parser.data}
 
 func drop(peer:int)->void:
-    for entry in queues.get(peer,[]):queued_bytes-=entry.bytes.size()
+    for entry in queues.get(peer,[]):
+        if entry.has("task"):WorkerThreadPool.wait_for_task_completion(entry.task)
+        queued_bytes-=entry.bytes.size()
     queues.erase(peer);blobs.drop(peer);patient.erase(peer)
 
 func clear()->void:

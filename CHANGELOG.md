@@ -21,6 +21,7 @@ the version description in Feather. Write it for players, not developers.
 - **Lighter co-op traffic:** wild Pokémon movement and changes to the ground are sent in a compact form; a server with players standing around sends about a fifth of what it did.
 - **Fewer waits in co-op:** digging, cutting, picking up and storing things no longer save your whole game first.
 - **Building in co-op answers at once:** building, painting and cutting down what you built show straight away, you can place several pieces in a row without waiting, and the host checks every piece and pays back what it cost. Signs, beacon names, torches, windows and the PLANT's seed are now the same for every player.
+- **No hitches when players change areas:** a server no longer stutters for everyone while players walk into another area or a new one is made.
 
 ### Fixes
 - **Dedicated server freezes:** autosaves, a player joining and a new day no longer freeze the server for half a second or more.
