@@ -10,6 +10,7 @@ const AreaState = preload("res://scripts/area_state.gd")
 const Snapshot = preload("res://scripts/coop_world_snapshot.gd")
 const Delta = preload("res://scripts/coop_world_delta.gd")
 const Cache = preload("res://scripts/source_world_cache.gd")
+const Build = preload("res://scripts/rules/build.gd")
 ## The order the World lays overlays on its tiles when it loads.
 const LOAD_ORDER := ["terrain_changes", "removed_resources", "structures", "built_house_floor_tiles",
     "built_house_paintings", "built_house_decorations", "built_house_origins", "event_progress",
@@ -68,6 +69,9 @@ func lay_records(flat: Dictionary, records: Dictionary) -> void:
 func apply_record(group: String, key: String, encoded: Variant) -> void:
     var value = Delta.decode(String(encoded)) if encoded is String else null
     if group in AreaState.SETS and value != null: value = true
+    if group == "structures":
+        var cell := AreaState.key_cell(key)
+        Build.lay(state, cell, state.structures.get(cell), value)
     state.apply_change(group, key, value)
 
 ## The record form of a change (take_dirty's [group, key, value]): its key

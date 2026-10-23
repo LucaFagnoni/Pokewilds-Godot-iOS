@@ -1115,6 +1115,7 @@ func rule_player(cell: Vector2i = Vector2i.ZERO) -> Dictionary:
     if world.active_area_id == "HOUSE":
         player["house_key"] = world._built_house_paint_key(cell)
         player["house_floor"] = world._is_built_house_floor_cell(cell)
+    player["house"] = world.buildings.house_context()
     return player
 
 ## A rule's result (rules/) as this world shows it: sounds and words, the
@@ -1135,6 +1136,16 @@ func play_rule(result: Dictionary) -> void:
             "farms": _refresh_dig_farms(event[1])
             "collected": _clear_collected_item(event[1])
             "house_decoration": world._draw_house_decoration(event[1])
+            "structure": world.buildings.draw_structure(event[1])
+            "unbuilt": world.buildings.undraw_structure(event[1], event[2])
+            "restyle":
+                world.buildings.restyle_around(event[1])
+                world.buildings.refresh_shell_attachment(event[1])
+            "house_floor": world.interiors.draw_floor_cell(event[1])
+            "decoration_gone": world.buildings.undraw_decoration(event[1])
+            "painted": world.interiors._set_built_house_paint_sprite(event[1], event[2])
+            "refresh_streams": world._refresh_exact_streams()
+            "refund": world.build_refund_requested.emit((event[1] as Dictionary).duplicate(true))
             "soil":
                 var choice := _dig_action_choice(event[1])
                 world.dig_requested.emit(choice, event[1], String(FieldMoveData.dig_choice_info(choice).get("material", "GRASS")))
