@@ -27,6 +27,7 @@ const SETUP_SAVE_PATH := "user://m3_setup.cfg"
 const DataPaths = preload("res://scripts/game_data_paths.gd")
 const WorldSaves = preload("res://scripts/world_saves.gd")
 var saves := WorldSaves.new("user://saves")
+var saving := preload("res://scripts/game_saving.gd").new(self)
 var dialogs := preload("res://scripts/dialogs.gd").new(self)
 var start_menu := preload("res://scripts/game_menu.gd").new(self)
 var bag_menu := preload("res://scripts/bag_menu.gd").new(self)
@@ -2878,7 +2879,7 @@ func _notification(what: int) -> void:
             touch_controls._release_all()
         return
     if what == NOTIFICATION_APPLICATION_PAUSED:
-        _save_on_pause()
+        saving.save_on_pause()
         return
     if what in [NOTIFICATION_APPLICATION_FOCUS_IN, NOTIFICATION_WM_WINDOW_FOCUS_IN]:
         if is_node_ready() and _is_android_touch_runtime():
@@ -3843,7 +3844,7 @@ func _start_game() -> void:
         load_data = coop_game.pending_game.duplicate(true) if coop_game.active else (
             saves.read(setup_load_path)
             if not setup_load_path.is_empty()
-            else _read_game_save(world_name)
+            else saving.read_game_save(world_name)
         )
         setup_load_path = ""
         if load_data.is_empty():
@@ -3881,7 +3882,7 @@ func _start_game() -> void:
     _apply_world_player_textures()
 
     if selected_mode == "LOAD" and not load_data.is_empty():
-        await _restore_game_save(load_data)
+        await saving.restore_game_save(load_data)
     if not coop_game.active:
         var loading: bool = selected_mode == "LOAD" and not load_data.is_empty()
         var held = pokemon_storage.get(SHARED_STORAGE_KEY, [])
@@ -6832,242 +6833,9 @@ func _activate_game_menu_option() -> void: start_menu.activate_game_menu_option(
 func _update_save_confirm_cursor() -> void: start_menu.update_save_confirm_cursor()
 func _update_quit_prompt_cursor() -> void: start_menu.update_quit_prompt_cursor()
 
-func _capture_game_save(version: int = 2, personal_only: bool = false) -> Dictionary:
-    var player = world.get_node("Player")
-    var world_name = world_edit.text.strip_edges()
-    if world_name.is_empty():
-        world_name = "PokeWilds"
-
-    return {
-        "version": version,
-        "world_seed": int(world.get("world_seed")),
-        "world_size": int(world.get("map_size_index")),
-        "world_name": world_name,
-        "player_name": player_model_name.text,
-        "player_name_custom": not custom_player_name.is_empty(),
-        "player_color": player_color_index,
-        "player_model": player_model_index,
-        "player_x": player.position.x,
-        "player_y": player.position.y,
-        "options": GameOptions.values.duplicate(),
-        "waypoints": map_waypoints.duplicate(true),
-        "pokedex": pokedex_progress.entries.duplicate(),
-        "pokedex_shiny": pokedex_progress.shiny_entries.duplicate(),
-        "caught_pokemon": caught_pokemon,
-        "pokemon_storage": pokemon_storage,
-        "preferred_storage_box": preferred_storage_box,
-        "inventory": inventory,
-        "source_key_items_initialized": true,
-        "egg_step_timer": egg_step_timer,
-        "friendship_step_timer": friendship_step_timer,
-        "next_party_ecology_id": next_party_ecology_id,
-        "adjacent_worlds": adjacent_worlds,
-        "world_grid_x": current_world_grid.x,
-        "world_grid_y": current_world_grid.y,
-        "crafting_state": preload("res://scripts/coop_world_snapshot.gd").capture_personal(world) if personal_only else world.get_crafting_save_state()
-    }
-
-
-func _save_current_game() -> void:
-    _sync_pokedex_owned()
-    if not saves.ensure_directory():
-        start_menu.close_save_confirmation()
-        dialogs.show_message("SAVE FAILED.")
-        return
-
-    var data = _capture_game_save()
-    if coop_game.active:
-        var saved_ok: bool = await coop_game.save_game(data)
-        start_menu.close_save_confirmation()
-        if saved_ok:
-            start_menu.close_game_menu();world.call("play_source_sound","save1");dialogs.show_message("GAME SAVED.")
-        else: dialogs.show_message("SAVE FAILED.")
-        return
-
-    var error: Error = await _write_single_player_save(data)
-    if error != OK:
-        start_menu.close_save_confirmation()
-        dialogs.show_message("SAVE FAILED.")
-        return
-
-    await shared_save_folder.export_files(self)
-    start_menu.close_save_confirmation()
-    start_menu.close_game_menu()
-    world.call("play_source_sound", "save1")
-    if shared_storage_error == OK:
-        dialogs.show_message("GAME SAVED.")
-    else:
-        dialogs.show_message("GAME SAVED, but the STORAGE BOXES could not be saved.")
-
-## The single-player save and what goes with it, for the SAVE menu and the save
-## before quitting. The save grows with play, so it is encoded and written on
-## save_thread from a copy of `data` (_save_snapshot); one save at a time.
-func _write_single_player_save(data: Dictionary) -> Error:
-    while save_thread != null:
-        await get_tree().process_frame
-    var save_path := _prepare_single_player_save(data)
-    if save_path.is_empty():
-        return ERR_CANT_CREATE
-    save_thread = Thread.new()
-    save_thread.start(WorldSaves.write_manual.bind(save_path, _save_snapshot(data)))
-    while save_thread.is_alive():
-        await get_tree().process_frame
-    var error: Error = save_thread.wait_to_finish()
-    save_thread = null
-    return _finish_single_player_save(data, save_path, error)
-
-## `data` (_capture_game_save) as the save thread may read it while the game
-## goes on. Copying all of it held the game ~35 ms on a long-played save, and
-## var_to_bytes was slower still; only what the game keeps changing is copied.
-## crafting_state is made for this save, and a neighbouring world's state is
-## replaced, never changed, when travelling: only the world played now may
-## share records with the game (restore_crafting_save_state keeps them).
-func _save_snapshot(data: Dictionary) -> Dictionary:
-    var snapshot := {}
-    var here := _world_grid_key(current_world_grid)
-    for key in data:
-        var value = data[key]
-        if key == "adjacent_worlds":
-            value = (value as Dictionary).duplicate()
-            if value.has(here): value[here] = value[here].duplicate(true)
-        elif key != "crafting_state" and (value is Dictionary or value is Array):
-            value = value.duplicate(true)
-        snapshot[key] = value
-    return snapshot
-
-## The save's path, once the folder is there and `data` carries the storage serial.
-func _prepare_single_player_save(data: Dictionary) -> String:
-    if not saves.ensure_directory():
-        return ""
-    data["storage_shared"] = true
-    data["storage_serial"] = shared_storage_serial + 1
-    return saves.path_for_world(String(data.world_name))
-
-func _finish_single_player_save(data: Dictionary, save_path: String, error: Error) -> Error:
-    if error != OK:
-        push_error("%s could not be saved (%d)." % [save_path, error])
-        return error
-    _write_shared_storage()
-    saves.write_index(String(data.world_name), save_path)
-    world_edit.text = String(data.world_name)
-    _save_setup()
-    return OK
-
-## iOS may end a suspended app without warning: autosave when it goes to the
-## background, whenever the SAVE menu could be opened, before returning (no
-## thread). Online worlds keep their own journal.
-func _save_on_pause() -> void:
-    if not started or generating or battle_active or edge_travel_busy or coop_game.active or \
-            (field_item_busy and not bag_menu.sleeping_bag_active()):
-        return
-    _wait_for_save_thread()
-    _sync_pokedex_owned()
-    var data := _capture_game_save()
-    # The game's own save: the autosave, never the player's SAVE.
-    var save_path := _prepare_single_player_save(data)
-    if not save_path.is_empty():
-        save_path = WorldSaves.autosave_path(save_path)
-        _finish_single_player_save(data, save_path, WorldSaves.write(save_path, data))
-
-## A save being written lands before another starts or the game goes away.
-## The coroutine that started it still joins the thread.
-func _wait_for_save_thread() -> void:
-    while save_thread != null and save_thread.is_alive():
-        OS.delay_msec(1)
-
-## Writes the SHARED chest's contents after the save that goes with them, so
-## that what is stored always matches a saved party. If this write is lost,
-## that save's own copy is the newer one and is used when it is next loaded.
-func _write_shared_storage() -> void:
-    shared_storage_serial += 1
-    var held = pokemon_storage.get(SHARED_STORAGE_KEY, [])
-    shared_storage_error = preload("res://scripts/shared_storage.gd").write(
-        {SHARED_STORAGE_KEY: held if held is Array else []}, shared_storage_serial)
-    if shared_storage_error != OK:
-        push_error("Shared storage could not be written (%d)." % shared_storage_error)
-
-func _read_game_save(world_name: String):
-    return saves.find(world_name).get("data", {})
-
-func _restore_game_save(data) -> void:
-    GameOptions.restore_game_options(data.get("options", {}),String(data.get("world_name","")))
-    _apply_game_options()
-    map_waypoints = (data.get("waypoints", {}) as Dictionary).duplicate(true)
-    if not is_instance_valid(waypoint_ui):
-        waypoint_ui=preload("res://scripts/map_waypoints.gd").new();add_child(waypoint_ui);waypoint_ui.configure(self)
-    pokedex_progress.restore(data.get("pokedex", {}))
-    pokedex_progress.restore_shiny(data.get("pokedex_shiny", {}))
-    adjacent_worlds = (data.get("adjacent_worlds", {}) as Dictionary).duplicate(true)
-    current_world_grid = Vector2i(int(data.get("world_grid_x", 0)), int(data.get("world_grid_y", 0)))
-    world_edit.text = String(data.get("world_name", world_edit.text))
-    player_color_index = clampi(
-        int(data.get("player_color", player_color_index)),
-        0,
-        PLAYER_TEXTURES.size() - 1
-    )
-    player_model_index = clampi(
-        int(data.get("player_model", player_model_index)),
-        0,
-        _player_model_count() - 1
-    )
-    var saved_player_name := String(data.get("player_name", "")).strip_edges().left(24)
-    var was_custom := bool(data.get("player_name_custom", not saved_player_name.is_empty() and saved_player_name.to_upper() != PLAYER_MODEL_NAMES[player_model_index].to_upper()))
-    custom_player_name = saved_player_name if was_custom else ""
-    _apply_player_appearance()
-    _apply_world_player_textures()
-    egg_step_timer = clampi(
-        int(data.get("egg_step_timer", 0)),
-        0,
-        PokemonEcology.EGG_STEP_INTERVAL - 1
-    )
-    friendship_step_timer = clampi(
-        int(data.get("friendship_step_timer", 0)),
-        0,
-        PokemonEcology.FRIENDSHIP_STEP_INTERVAL - 1
-    )
-    next_party_ecology_id = maxi(
-        1, int(data.get("next_party_ecology_id", 1))
-    )
-
-    caught_pokemon.clear()
-    caught_species.clear()
-    var saved_party = data.get("caught_pokemon", [])
-    if typeof(saved_party) == TYPE_ARRAY:
-        for entry in saved_party:
-            if typeof(entry) == TYPE_DICTIONARY:
-                caught_pokemon.append(entry)
-                var species = String(entry.get("species", ""))
-                if not species.is_empty() and not caught_species.has(species):
-                    caught_species.append(species)
-
-    var saved_inventory = data.get("inventory", {})
-    if typeof(saved_inventory) == TYPE_DICTIONARY:
-        inventory = CraftingData.ensure_inventory(saved_inventory)
-    else:
-        inventory = CraftingData.ensure_inventory(STARTING_INVENTORY)
-    if not bool(data.get("source_key_items_initialized", false)):
-        inventory["SLEEPING BAG"] = maxi(1, int(inventory.get("SLEEPING BAG", 0)))
-        inventory["ESCAPE ROPE"] = maxi(1, int(inventory.get("ESCAPE ROPE", 0)))
-
-    preferred_storage_box = String(data.get("preferred_storage_box", ""))
-    var saved_storage = data.get("pokemon_storage", {})
-    pokemon_storage = saved_storage.duplicate(true) if typeof(saved_storage) == TYPE_DICTIONARY else {}
-
-    var crafting_state = data.get("crafting_state", {})
-    if typeof(crafting_state) == TYPE_DICTIONARY:
-        await world.restore_crafting_save_state(crafting_state)
-
-    var player = world.get_node("Player")
-    player.position = Vector2(
-        float(data.get("player_x", player.position.x)),
-        float(data.get("player_y", player.position.y))
-    )
-    if typeof(crafting_state) == TYPE_DICTIONARY:
-        player.position = world.migrate_source_interior_position(player.position, crafting_state)
-    if world.has_method("reveal_player_area"):
-        world.call("reveal_player_area")
-    _recover_hidden_party_overflow()
-    _sync_pokedex_owned()
+## game_saving.gd under its old names, for the scripts and tests that call them on main.
+func _capture_game_save(version: int = 2, personal_only: bool = false) -> Dictionary: return saving.capture_game_save(version, personal_only)
+func _save_current_game() -> void: await saving.save_current_game()
 
 ## crafting_menu.gd under its old names, for the scripts and tests that call them on main.
 func _open_build_menu() -> void: crafting_menu.open_build_menu()

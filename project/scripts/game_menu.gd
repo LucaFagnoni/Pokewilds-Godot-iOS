@@ -167,7 +167,7 @@ func handle_game_menu_input(event: InputEvent) -> void:
             main.get_viewport().set_input_as_handled()
         elif event.is_action_pressed("confirm"):
             if main.save_confirm_index == 0:
-                main._save_current_game()
+                main.saving.save_current_game()
             else:
                 close_save_confirmation()
             main.get_viewport().set_input_as_handled()
@@ -414,11 +414,11 @@ func _save_current_game_for_quit() -> bool:
     if not main.started:
         return true
     if main.coop_game.active:
-        return await main.coop_game.save_game(main._capture_game_save(3))
+        return await main.coop_game.save_game(main.saving.capture_game_save(3))
 
     # Same record as the SAVE menu (the old hand-built one dropped egg/friendship
     # timers and ecology ids).
-    var error: Error = await main._write_single_player_save(main._capture_game_save())
+    var error: Error = await main.saving.write_single_player_save(main.saving.capture_game_save())
     if error != OK:
         return false
     main.world.call("play_source_sound", "save1")
