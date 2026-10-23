@@ -1,8 +1,9 @@
 # A deterministic run of the overworld: a fixed seed, a fixed frame time and a
 # seeded RNG, then a scripted minute of play (walking, DIG, building, CUT,
 # each field move on and off, a house built, entered, furnished and left, a
-# low tide coming in and going out, a new day). Prints one hash of what the
-# game would save plus the live tile store, and one hash per part, so a
+# cave entered and left with an ESCAPE ROPE, a low tide coming in and going
+# out, a new day). Prints one hash of what the game would save plus the live
+# tile store, and one hash per part, so a
 # refactor of the world can be checked for "no change in behaviour": run it
 # before and after, the hashes must match.
 # Run: godot --headless --fixed-fps 60 --path project -s ../server/world_sim_hash.gd [-- --seed=N --expect=HASH]
@@ -12,8 +13,8 @@
 # the day's dig sites) runs with the world paused and the RNG is reseeded
 # after it, so two runs on any machine give the same hash. Reference hashes
 # (unchanged by the world cleanup from 81ba4bd3 on, which this harness checked):
-#   seed 12345 0ec0de3f09e4df6179223606300321955ec2abb4b58f5d53230636011d6bfcde,
-#   seed 987654321 189a7c570c3973e35fd5078500145ff2cbf88d49697862cccdfc22fc0d45dd50
+#   seed 12345 4e1cc7e47c23a84d7b84c1c02ef5ed64d13658ef1b9dd234d96af55050d08203,
+#   seed 987654321 a3ec4e00cd7cd57970a1a374e617df46dad362fa74ea77bd78378afbfd49f1b5
 extends SceneTree
 
 const Paths = preload("res://scripts/game_data_paths.gd")
@@ -43,19 +44,6 @@ func _pin_wall_clock() -> void:
         if name in world: world.set(name, stamp)
     if trace:
         print("TRACE %d %s %d %.4f %s" % [frame, world.player.position, world.rng.state, world.get("world_elapsed_seconds"), world.get("ecology_accumulator")])
-
-## Pokemon made without the world's RNG (PokemonState._usable_rng) get random
-## IVs, natures...: left out of the hash.
-func _without_rolls(value: Variant) -> Variant:
-    if value is Dictionary:
-        var copy := {}
-        for key in value:
-            if key not in ["ivs", "evs", "personality", "nature", "gender", "shiny"]:
-                copy[key] = _without_rolls(value[key])
-        return copy
-    if value is Array:
-        return value.map(_without_rolls)
-    return value
 
 func _frames(count: int) -> void:
     for i in count: await process_frame
@@ -238,6 +226,29 @@ func _initialize() -> void:
     parts["house"] = _digest([house, visits])
     print("WORLD SIM house at %s: %s" % [house, visits])
     _note("house")
+    # A source interior (the nearest cave or dungeon door), a walk inside,
+    # out with an ESCAPE ROPE.
+    var doors: Array = []
+    var interactables: Dictionary = world.get("interior_interactables")
+    for cell in interactables:
+        if String(interactables[cell]).begins_with("GOTO_SOURCE_LAYER:"): doors.append(cell)
+    var player_at: Vector2i = world.call("_player_cell")
+    doors.sort_custom(func(a, b): return (a - player_at).length_squared() < (b - player_at).length_squared() or \
+        ((a - player_at).length_squared() == (b - player_at).length_squared() and (a.x < b.x or (a.x == b.x and a.y < b.y))))
+    var trip := []
+    if not doors.is_empty():
+        world.call("_use_interior_interactable", String(interactables[doors[0]]), doors[0])
+        await _frames(120)
+        trip.append([doors[0], world.get("active_area_id"), world.call("_player_cell")])
+        for step in [["move_down", 40], ["move_right", 40], ["move_up", 40]]:
+            await _walk(step[0], step[1])
+        trip.append(world.call("_player_cell"))
+        trip.append(world.call("use_escape_rope"))
+        await _frames(180)
+        trip.append([world.get("active_area_id"), world.call("_player_cell")])
+    parts["interior"] = _digest(trip)
+    print("WORLD SIM interior: %s" % [trip])
+    _note("interior")
     if not shots.is_empty():
         var helper: Dictionary = main.caught_pokemon[0] if not main.caught_pokemon.is_empty() else main._make_starter_machop()
         world.call("set_active_field_move", helper, "BUILD")
@@ -284,7 +295,11 @@ func _initialize() -> void:
     if not dump.is_empty():
         FileAccess.open(dump, FileAccess.WRITE).store_string(JSON.stringify(save_data, " ", true))
     var state: Dictionary = save_data.get("crafting_state", {})
-    state["mine_pokemon"] = _without_rolls(state.get("mine_pokemon", {}))
+    # The mines' Pokemon: which cells have one. What each one is gets rolled
+    # (PokemonState._usable_rng) and timed by the mine's own clock: not stable.
+    var mine_cells: Array = (state.get("mine_pokemon", {}) as Dictionary).keys()
+    mine_cells.sort()
+    state["mine_pokemon"] = mine_cells
     # Discovery as the sorted cells, whatever form the save keeps it in.
     var discovered = world.get("discovered_cells")
     var cells: Array = discovered.keys() if discovered is Dictionary else \
