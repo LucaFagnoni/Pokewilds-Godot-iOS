@@ -89,6 +89,12 @@ var view: Node = null
 ## a house's outside takes from inside goes by it (rules/remove.gd).
 var rooms_seen := {}
 
+## Vector2i -> true: the cells whose interior mutation leaves a hole (its
+## upper "hole1..."), all the dig holes' water pulse looks at (world_field_moves.gd
+## fill_source_dig_holes) instead of every mutation. Kept by the writes here;
+## reindex_holes() after source_interior_mutations was written around them.
+var holes := {}
+
 ## group -> {key: true}: changed since take_dirty(). Collected only while
 ## tracking (co-op), so a game alone never keeps them.
 var dirty := {}
@@ -142,6 +148,7 @@ func put(name: String, key: Variant, value: Variant) -> void:
     var held: Dictionary = get(name)
     if recording(): _logs.back()[1].append([name, key, held.has(key), held.get(key)])
     held[key] = value
+    if name == "source_interior_mutations": index_hole(key, value)
     if tracking and not name in LOCAL: _mark(name, key)
 
 func drop(name: String, key: Variant) -> void:
@@ -149,7 +156,17 @@ func drop(name: String, key: Variant) -> void:
     if not held.has(key): return
     if recording(): _logs.back()[1].append([name, key, true, held[key]])
     held.erase(key)
+    if name == "source_interior_mutations": holes.erase(key)
     if tracking and not name in LOCAL: _mark(name, key)
+
+## The holes (`holes`) after `cell`'s interior mutation became `value` (null: gone).
+func index_hole(cell: Variant, value: Variant) -> void:
+    if value is Dictionary and String(value.get("upper", "")).begins_with("hole1"): holes[cell] = true
+    else: holes.erase(cell)
+
+func reindex_holes() -> void:
+    holes.clear()
+    for cell in source_interior_mutations: index_hole(cell, source_interior_mutations[cell])
 
 ## A value changed in place (a nested field): replicated, not undone.
 func mark(name: String, key: Variant) -> void:
@@ -253,6 +270,7 @@ func _undo(writes: Array) -> void:
         var held: Dictionary = get(entry[0])
         if entry[2]: held[entry[1]] = entry[3]
         else: held.erase(entry[1])
+        if entry[0] == "source_interior_mutations": index_hole(entry[1], entry[3] if entry[2] else null)
         if tracking and not entry[0] in LOCAL: _mark(entry[0], entry[1])
 
 func _restore_tiles(saved_tiles: Dictionary) -> Array:
@@ -303,6 +321,7 @@ func apply_change(name: String, key: String, value: Variant) -> void:
     var at: Variant = held_key(name, key)
     if value == null: held.erase(at)
     else: held[at] = value
+    if name == "source_interior_mutations": index_hole(at, value)
     TileRules.apply_overlay(self, name, at, value)
 
 # --- Records ----------------------------------------------------------------

@@ -85,6 +85,9 @@ const WorldEnvironmentSystem = preload(
 const SOURCE_DAY_TICKS := 18000.0
 const SOURCE_NIGHT_TICKS := 5000.0
 const WORLD_DAY_SECONDS := (SOURCE_DAY_TICKS + SOURCE_NIGHT_TICKS) / 60.0
+## event_progress: the day whose dig sites are being placed, while they are
+## (_refresh_biome_dig_sites): a world saved meanwhile places the rest on load.
+const DIG_SITES_PLACING_KEY := "dig_sites_placing_day"
 const NIGHT_START_FRACTION := (
     SOURCE_DAY_TICKS / (SOURCE_DAY_TICKS + SOURCE_NIGHT_TICKS)
 )
@@ -702,6 +705,7 @@ func generate_world(
     interior_interactables.clear()
     source_interior_upper_sprites.clear()
     source_interior_mutations.clear()
+    area.holes.clear()
     source_mine_pokemon.clear()
     built_house_rooms_seen.clear()
     built_house_interior_cells.clear()
@@ -3545,6 +3549,7 @@ func restore_crafting_save_state(state: Dictionary) -> void:
             source_plant_farms.erase(cell)
         if not repaired_roof_cells.is_empty():
             _refresh_exact_streams()
+    area.reindex_holes()
     await _refresh_daily_events(true)
     SourceForestBoss.install(self)
     await preload("res://scripts/biome_megas.gd").prepare_load(self)
@@ -4855,6 +4860,9 @@ func _refresh_biome_dig_sites(spread: bool = false) -> void:
     var day := _world_day_index()
     var identity := exact_world
     var slice_started := Time.get_ticks_usec()
+    var store: WorldTileStore = exact_world.tiles
+    # Store index -> true: the day's sites already placed.
+    var placed := {}
     # Remove only untouched dynamic sites from an older day. A site that was
     # dug already became a normal TILE_NAMES mutation and is never restored.
     for key in source_interior_mutations.keys():
@@ -4866,6 +4874,8 @@ func _refresh_biome_dig_sites(spread: bool = false) -> void:
         if String(mutation.get("kind", "")) != "BIOME_DIG_SITE":
             continue
         if int(mutation.get("day", -1)) == day:
+            var at: Vector2i = key - store.origin
+            placed[at.y * store.width + at.x] = true
             continue
         var old_cell: Vector2i = key
         var old_tile := exact_world.tile_at(old_cell)
@@ -4875,11 +4885,17 @@ func _refresh_biome_dig_sites(spread: bool = false) -> void:
                 String(mutation.get("original_upper", ""))
             )
         area.drop("source_interior_mutations", key)
+    # The day's sites came with the world (a load, a co-op join): placed
+    # again, the cells taken and changed since would draw other cells as
+    # well. Only a placement cut short (saved meanwhile) goes on.
+    # ponytail: a day whose every site was dug gets a fresh set on load.
+    if not placed.is_empty() and int(event_progress.get(DIG_SITES_PLACING_KEY, -1)) != day:
+        return
+    event_progress[DIG_SITES_PLACING_KEY] = day
 
     var candidates: Dictionary = {}
     for crack_name in FieldMoveData.CRACKED_LOOT:
         candidates[crack_name] = []
-    var store: WorldTileStore = exact_world.tiles
     var cell_flags := store.flags
     var cell_uppers := store.upper_ids
     var cell_names := store.name_ids
@@ -4888,6 +4904,9 @@ func _refresh_biome_dig_sites(spread: bool = false) -> void:
     # (a proxy per cell made this scan ~1 s of every load).
     var crack_of := {}
     var ruled_out := WorldTileStore.WATER | WorldTileStore.LAVA | WorldTileStore.SOLID | WorldTileStore.LEDGE | WorldTileStore.GRASS
+    # A placement going on after a load: the day's sites already placed stay
+    # candidates, as they were, so the same draws pick the same cells.
+    var replay := not placed.is_empty()
     for index in cell_flags.size():
         if spread and Time.get_ticks_usec()-slice_started>=_daily_slice_usec():
             await get_tree().process_frame
@@ -4898,7 +4917,8 @@ func _refresh_biome_dig_sites(spread: bool = false) -> void:
             cell_uppers = store.upper_ids
             cell_names = store.name_ids
             cell_biomes = store.biome_ids
-        if not cell_flags[index] & WorldTileStore.PRESENT or cell_flags[index] & ruled_out or cell_uppers[index] != 0:
+        if (not cell_flags[index] & WorldTileStore.PRESENT or cell_flags[index] & ruled_out or cell_uppers[index] != 0) \
+                and not (replay and placed.has(index)):
             continue
         var pair: int = (cell_names[index] << 24) | cell_biomes[index]
         if not crack_of.has(pair): crack_of[pair] = FieldMoveData.dig_site_name(store.cursor(index))
@@ -4906,8 +4926,8 @@ func _refresh_biome_dig_sites(spread: bool = false) -> void:
         if not candidates.has(crack):
             continue
         var cell := Vector2i(index % store.width, index / store.width) + store.origin
-        if built_structures.has(cell) or landmarks.has(cell) or \
-                resource_objects.has(cell) or blocked.has(cell):
+        if (built_structures.has(cell) or landmarks.has(cell) or \
+                resource_objects.has(cell) or blocked.has(cell)) and not placed.has(index):
             continue
         (candidates[crack] as Array).append(cell)
 
@@ -4942,6 +4962,7 @@ func _refresh_biome_dig_sites(spread: bool = false) -> void:
                 "kind":"BIOME_DIG_SITE", "day":day,
                 "base":original_base, "original_upper":original_upper, "crack":crack
             })
+    event_progress.erase(DIG_SITES_PLACING_KEY)
     # Spread, the layers take the day's cells a few at a time.
     if spread: _queue_exact_refresh()
     else: _refresh_exact_tile_streams()
