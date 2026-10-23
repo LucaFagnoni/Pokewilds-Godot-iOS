@@ -916,7 +916,7 @@ static func adapted_species(state, species: String, level: int, cell: Vector2i, 
         source_route_name.is_empty()
         or PokemonData.source_route_species_allowed(evolved_species, source_route_name, source_is_water)
     )
-    if route_allows_evolution and PokemonData.texture(evolved_species, "overworld") != null:
+    if route_allows_evolution and has_art({"species": evolved_species}):
         return evolved_species
     return species
 
@@ -990,10 +990,13 @@ static func place_mates(state, add: Callable, breathe: Callable = Callable()) ->
             for candidate_species in SourceRouteData.allowed_pokemon(route):
                 if not candidates.has(String(candidate_species)): candidates.append(String(candidate_species))
             for candidate_species in candidates:
+                # The first look at a species' art loads it from disk.
+                if breathe.is_valid():
+                    await breathe.call()
                 var info := PokemonData.info(candidate_species)
                 var ratio := String(info.get("gender_ratio", "GENDER_UNKNOWN"))
                 if ratio == "GENDER_UNKNOWN" or (ratio == "GENDER_F0" and partner_gender == "female") or (ratio == "GENDER_F100" and partner_gender == "male"): continue
-                if PokemonData.texture(candidate_species, "overworld") == null: continue
+                if not has_art({"species": candidate_species}): continue
                 var test_partner := PokemonEcology.ensure_record({"species":candidate_species,"gender":partner_gender}, state.rng)
                 if PokemonEcology.can_mate(original, test_partner):
                     partner_species = candidate_species
