@@ -39,7 +39,12 @@ var _busy:=false
 const PLACE_USEC:=8000
 var _slice_started:=0
 func _breathe()->void:
-    if Time.get_ticks_usec()-_slice_started<PLACE_USEC:return
+    var spent:=Time.get_ticks_usec()-_slice_started
+    if spent<PLACE_USEC:return
+    # The net profile's SPIKES name it (coop_net_profile.gd).
+    if Engine.has_meta("probe_frame"):
+        var sections:Dictionary=Engine.get_meta("probe_frame")
+        sections["@new area's Pokemon"]=int(sections.get("@new area's Pokemon",0))+spent
     await get_tree().process_frame
     _slice_started=Time.get_ticks_usec()
 
