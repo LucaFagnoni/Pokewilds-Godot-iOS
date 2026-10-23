@@ -1,26 +1,26 @@
-# Novità di PokeWilds
+# PokeWilds changelog
 
-Il primo blocco qui sotto è la prossima versione: diventa il testo della release
-e la descrizione in Feather. Si scrive per i giocatori, non per gli sviluppatori.
+The first section below is the next version: it becomes the release notes and
+the version description in Feather. Write it for players, not developers.
 
-## Prossima versione
+## Next version
 
-### Novità
-- **Lotte in doppio contro altri giocatori:** chiedendo una sfida a un altro giocatore ora c'è anche DOUBLE BATTLE, accanto a TRADE e BATTLE. Se uno dei due ha meno di due Pokémon in grado di lottare diventa una lotta singola.
+### New
+- **Double battles against other players:** when you challenge another player there is now DOUBLE BATTLE next to TRADE and BATTLE. If either of you has fewer than two Pokémon able to fight, it becomes a single battle.
 
-### Miglioramenti
-- **Mondi nuovi molto più veloci da creare:** la generazione del mondo è circa 15 volte più rapida e usa molta meno memoria.
-- **Salvataggi più leggeri:** i file di salvataggio sono circa 14 volte più piccoli, il gioco si blocca la metà del tempo quando salvi e l'elenco LOAD si apre all'istante. I vecchi salvataggi si aprono come sempre.
-- **Notti senza scatti:** di notte e al cambio del giorno il gioco non perde più frame.
-- **Giocatori più fluidi in co-op:** gli altri giocatori si muovono in modo fluido anche con il 4G che va a scatti, senza teletrasporti.
-- **Meno batteria:** i giocatori fuori dallo schermo non vengono più disegnati.
-- **Camminare costa meno:** il gioco fa molto meno lavoro a ogni passo, soprattutto nell'erba alta.
+### Improvements
+- **New worlds are much faster to create:** world generation is about 15 times faster and uses far less memory.
+- **Lighter saves:** save files are about 14 times smaller, saving pauses the game for half as long, and the LOAD list opens instantly. Old saves still load as before.
+- **Smooth nights:** the game no longer drops frames at night or when a new day starts.
+- **Smoother players in co-op:** other players move smoothly even when 4G stutters, with no teleporting.
+- **Less battery:** players off screen are no longer drawn.
+- **Cheaper walking:** the game does much less work on every step, especially in tall grass.
 
-### Correzioni
-- **Blocchi del server dedicato:** i salvataggi automatici, l'arrivo di un giocatore e il cambio del giorno non bloccano più il server per mezzo secondo o più.
-- **Disconnessioni in 4G:** un giocatore viene scollegato solo dopo 30 secondi senza segnale, non 20.
-- **Lotte:** tutta la logica delle lotte è stata riscritta in un unico punto, uguale per lotte selvatiche, allenatori, boss e PvP. Il comportamento è identico a prima, verificato su 30 lotte registrate.
+### Fixes
+- **Dedicated server freezes:** autosaves, a player joining and a new day no longer freeze the server for half a second or more.
+- **4G disconnects:** a player is only dropped after 30 seconds without signal, not 20.
+- **Battles:** all battle logic now lives in one place, shared by wild, trainer, boss and PvP battles. It behaves exactly as before, checked against 30 recorded battles.
 
-### Server e multiplayer
-- **Aggiorna insieme server e app:** questa versione usa un protocollo co-op nuovo.
-- **Pulizia automatica:** il server cancella da solo i vecchi file delle aree dopo ogni salvataggio.
+### Server and multiplayer
+- **Update the server and the app together:** this version uses a new co-op protocol.
+- **Automatic cleanup:** the server deletes old area files by itself after each save.
