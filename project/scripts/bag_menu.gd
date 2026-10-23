@@ -171,13 +171,13 @@ func use_overworld_item(item: String) -> void:
         refresh_evolution_item_target()
         return
     if (preload("res://scripts/source_plant_farming.gd").plantable(item) or item == "SLEEPING BAG") and main.world.active_field_move == "SURF" and main.world.terrain_kind_at(main.world._player_cell()) == 0:
-        main._show_message("Reach dry land first.")
+        main.dialogs.show_message("Reach dry land first.")
         return
     if preload("res://scripts/source_plant_farming.gd").plantable(item):
         main.world.clear_active_field_move(false)
         main.world.planting_item = item
         _leave_game_menu_for_field_action(true)
-        main._show_message("Face the soil and press A to plant." if item != "MANURE" else "Face a sapling or small tree and press A to fertilize.")
+        main.dialogs.show_message("Face the soil and press A to plant." if item != "MANURE" else "Face a sapling or small tree and press A to fertilize.")
         return
     if item == "SLEEPING BAG":
         if not String(main.world.get("active_field_move")).is_empty():
@@ -213,7 +213,7 @@ func use_overworld_item(item: String) -> void:
         main.caught_pokemon[0] = pokemon
         consume_inventory_item(item)
         main._play_level_up_sound()
-        main._show_message("%s grew to level %d." % [
+        main.dialogs.show_message("%s grew to level %d." % [
             PokemonState.display_name(pokemon), int(pokemon.get("level", 1))])
         main._refresh_battle_item_pocket_menu()
         return
@@ -222,7 +222,7 @@ func use_overworld_item(item: String) -> void:
             240.0 if item == "MAX REPEL" else 120.0)
         consume_inventory_item(item)
         _leave_game_menu_for_field_action(true)
-        main._show_message("Used %s." % item)
+        main.dialogs.show_message("Used %s." % item)
         return
     if item in ["OLD ROD", "GOOD ROD", "SUPER ROD"]:
         _leave_game_menu_for_field_action(true)
@@ -369,7 +369,7 @@ func end_sleeping_bag_rest() -> void:
     main.sleeping_bag_heal_accumulator = 0.0
     main.world.set_gameplay_enabled(true)
     main.touch_controls.set_game_active(true)
-    main._show_message("You got out of bed." if was_bed else "Your POKEMON rested. This is now your return point.")
+    main.dialogs.show_message("You got out of bed." if was_bed else "Your POKEMON rested. This is now your return point.")
 
 func planting_bag_item_allowed(item: String) -> bool:
     if main.planting_bag_target == null or item == "MANURE": return false

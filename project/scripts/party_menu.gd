@@ -613,10 +613,10 @@ func _activate_selected_field_move() -> void:
     if typeof(entry) != TYPE_DICTIONARY:
         return
     if bool((entry as Dictionary).get("is_egg", false)):
-        main._show_message("An EGG has no field move.")
+        main.dialogs.show_message("An EGG has no field move.")
         return
     if int((entry as Dictionary).get("hp", 1)) <= 0:
-        main._show_message("A fainted POKEMON cannot use a FIELD MOVE.")
+        main.dialogs.show_message("A fainted POKEMON cannot use a FIELD MOVE.")
         return
     var species := String(entry.get("species", "")).to_lower()
     var moves := pokemon_world_actions(species, entry)
@@ -638,14 +638,14 @@ func _activate_selected_field_move() -> void:
             main.inventory[held_item] = int(main.inventory.get(held_item, 0)) + 1
             entry["held_item"] = ""
             main.caught_pokemon[main.pokemon_menu_index] = entry
-            main._show_message("Took %s from %s." % [held_item, PokemonData.battle_display_name(species)])
+            main.dialogs.show_message("Took %s from %s." % [held_item, PokemonData.battle_display_name(species)])
             pokemon_move_index = 0
             refresh_pokemon_category_menu()
         return
     if move.begins_with("HOLD:"):
         var item_name := move.trim_prefix("HOLD:")
         if int(main.inventory.get(item_name, 0)) <= 0:
-            main._show_message("There is no %s left." % item_name)
+            main.dialogs.show_message("There is no %s left." % item_name)
             return
         var old_item := String(entry.get("held_item", ""))
         if not old_item.is_empty():
@@ -653,20 +653,20 @@ func _activate_selected_field_move() -> void:
         main.inventory[item_name] = int(main.inventory.get(item_name, 0)) - 1
         entry["held_item"] = item_name
         main.caught_pokemon[main.pokemon_menu_index] = entry
-        main._show_message("%s is now holding %s." % [PokemonData.battle_display_name(species), item_name])
+        main.dialogs.show_message("%s is now holding %s." % [PokemonData.battle_display_name(species), item_name])
         pokemon_move_index = 0
         refresh_pokemon_category_menu()
         return
     if main.bag_menu.sleeping_bag_active():
-        main._show_message("Get up before using a Field Move.")
+        main.dialogs.show_message("Get up before using a Field Move.")
         return
     var activated := bool(main.world.set_active_field_move(entry, move))
     if not activated:
         # Gyarados and other fish follow only while their trainer is in water.
         if move == "FOLLOW" and bool(PokemonData.info(species).get("overworld_behavior", {}).get("swim_only", false)):
-            main._show_message("%s can only follow while swimming." % PokemonData.battle_display_name(species))
+            main.dialogs.show_message("%s can only follow while swimming." % PokemonData.battle_display_name(species))
         else:
-            main._show_message("%s cannot follow here." % PokemonData.battle_display_name(species))
+            main.dialogs.show_message("%s cannot follow here." % PokemonData.battle_display_name(species))
         return
     if move == "FLY":
         main._play_pokemon_cry(entry)
@@ -679,14 +679,14 @@ func _activate_selected_field_move() -> void:
     if move == "BUILD":
         main.crafting_menu.open_build_menu()
     elif move == "FOLLOW":
-        main._show_message("%s is following you." % PokemonData.battle_display_name(species))
+        main.dialogs.show_message("%s is following you." % PokemonData.battle_display_name(species))
     else:
         if move not in ["CUT", "DIG"]:
-            main._show_message("%s is using %s." % [PokemonData.battle_display_name(species), move])
+            main.dialogs.show_message("%s is using %s." % [PokemonData.battle_display_name(species), move])
 
 func _deploy_selected_pokemon() -> void:
     if main.caught_pokemon.is_empty():
-        main._show_message("There is no Pokemon to leave here.")
+        main.dialogs.show_message("There is no Pokemon to leave here.")
         return
     main.pokemon_menu_index = clampi(main.pokemon_menu_index, 0, main.caught_pokemon.size() - 1)
     var entry = main.caught_pokemon[main.pokemon_menu_index]
@@ -694,7 +694,7 @@ func _deploy_selected_pokemon() -> void:
         return
     var keep_surf: bool = main.world.active_field_move == "SURF" and main.world.terrain_kind_at(main.world._player_cell()) == 0
     if keep_surf and main._ensure_party_ecology_id(main.pokemon_menu_index) == String(main.world.active_field_pokemon.get("party_ecology_id","")):
-        main._show_message("Reach dry land before leaving your surfing POKEMON.")
+        main.dialogs.show_message("Reach dry land before leaving your surfing POKEMON.")
         return
     if main.coop_game.active:
         main.coop_game.population.deploy(main.pokemon_menu_index,keep_surf)
@@ -709,7 +709,7 @@ func _deploy_selected_pokemon() -> void:
         main.game_menu.visible = false
         main.world.set_gameplay_enabled(true)
         main.touch_controls.set_game_active(true)
-        main._show_message("The EGG was placed here." if bool(entry.get("is_egg", false)) else "%s was left in the habitat." % species)
+        main.dialogs.show_message("The EGG was placed here." if bool(entry.get("is_egg", false)) else "%s was left in the habitat." % species)
 
 func set_fitting_pokemon_name(label: Label, record: Dictionary, override_text: String = "") -> void:
     if not label.has_meta("original_name_overrun"):

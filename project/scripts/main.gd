@@ -27,6 +27,7 @@ const SETUP_SAVE_PATH := "user://m3_setup.cfg"
 const DataPaths = preload("res://scripts/game_data_paths.gd")
 const WorldSaves = preload("res://scripts/world_saves.gd")
 var saves := WorldSaves.new("user://saves")
+var dialogs := preload("res://scripts/dialogs.gd").new(self)
 var start_menu := preload("res://scripts/game_menu.gd").new(self)
 var bag_menu := preload("res://scripts/bag_menu.gd").new(self)
 var party_menu := preload("res://scripts/party_menu.gd").new(self)
@@ -574,7 +575,6 @@ const PLAYER_MODEL_BATTLE_REPLACE_COLORS := [
     Color8(121,129,42),
     Color8(249,230,130)
 ]
-const GENERATION_TIP_SECONDS := 5.0
 const POKEMON_EGG_TEXTURE := preload("res://assets/pokemon_egg.png")
 const GHOST_BATTLE_SHEET := preload("res://assets/events/ghost_battle_front.png")
 const ITEM_BAG_POCKET_TEXTURE := preload("res://assets/item_bag_pockets.png")
@@ -595,7 +595,6 @@ const SOURCE_ATTACK_MENU_BACKGROUND := preload(
     "res://assets/source_exact/menu/attack_screen1.png")
 const SOURCE_PARTY_BACKGROUND := preload(
     "res://assets/source_exact/menu/gsc/background1.png")
-const UNOWN_FONT := preload("res://assets/source_exact/global/unown_font.fnt")
 const JOHTO_FONT := preload("res://assets/source_text_font.fnt")
 const SYMBOL_FONT := preload("res://assets/fonts.ttf")
 const DIALOGUE_BORDER := preload("res://assets/pokewilds_dialogue_border.png")
@@ -986,8 +985,6 @@ var storage_column := 0
 var storage_index := 0
 var storage_box_window_start := 0
 var trainer_tip_open := false
-var trainer_tip_pages: Array[String] = []
-var trainer_tip_page_index := 0
 var trainer_tip_continue: Label
 var item_menu_names: Array[String] = []
 var item_menu_index := 0
@@ -1076,8 +1073,6 @@ const GAME_MENU_OPTIONS := ["POKEDEX", "POKEMON", "ITEM", "STORAGE", "MAP", "GUI
 const GameOptions = preload("res://scripts/game_options.gd")
 var options_menu: Control
 var game_files_menu: Control
-var message_reveal_elapsed := 0.0
-var message_reveal_text := ""
 const GUIDE_TOPICS := [
     {
         "name": "FIELD MOVES",
@@ -1300,8 +1295,8 @@ func _ready() -> void:
     world.encounter_requested.connect(_on_encounter_requested)
     if world.has_signal("battle_requested"):
         world.connect("battle_requested", Callable(self, "_on_battle_requested"))
-    world.world_message.connect(_show_message)
-    world.unown_message.connect(_show_unown_message)
+    world.world_message.connect(dialogs.show_message)
+    world.unown_message.connect(dialogs.show_unown_message)
     if world.has_signal("trainer_tip_message"):
         world.connect("trainer_tip_message", Callable(self,
             "_show_trainer_tip_message"))
@@ -1330,7 +1325,7 @@ func _ready() -> void:
     world.pokemon_recalled.connect(_on_pokemon_recalled)
     world.deployed_recall_requested.connect(_on_deployed_recall_requested)
     world.structure_action.connect(_on_structure_action)
-    _create_sign_editor()
+    dialogs.create_sign_editor()
     if world.has_signal("egg_collected"):
         world.connect("egg_collected", Callable(self, "_on_egg_collected"))
     if world.has_signal("egg_pickup_prompt_requested"):
@@ -1932,7 +1927,7 @@ func _process(delta: float) -> void:
     if generating:
         generation_tip_timer -= delta
         if generation_tip_timer <= 0.0:
-            _show_generation_tip()
+            dialogs.show_generation_tip()
 
     if resource_popup_timer > 0.0:
         resource_popup_timer -= delta
@@ -1943,15 +1938,7 @@ func _process(delta: float) -> void:
         world.set_gameplay_enabled(false)
         if is_instance_valid(waypoint_ui):waypoint_ui.move_cursor(delta)
 
-    if message_label.text != message_reveal_text:
-        message_label.visible_characters = -1
-    if message_timer > 0.0:
-        if message_label.visible_characters >= 0:
-            message_reveal_elapsed += delta
-            message_label.visible_characters = mini(message_label.text.length(),int(message_reveal_elapsed * GameOptions.text_multiplier() / BATTLE_TEXT_CHAR_DELAY))
-        message_timer -= delta
-        if message_timer <= 0.0:
-            message_panel.visible = false
+    dialogs.update_message_box(delta)
 
     if menu_nav_cooldown > 0.0:
         menu_nav_cooldown = max(0.0, menu_nav_cooldown - delta)
@@ -1965,6 +1952,10 @@ func _process(delta: float) -> void:
                 battle_text_full.length(), battle_status.visible_characters + characters_to_add)
             if battle_status.visible_characters >= battle_text_full.length():
                 _finish_battle_text()
+
+## dialogs.gd under its old names, for the scripts and tests that call them on main.
+func _show_message(message: String) -> void: dialogs.show_message(message)
+func _show_trainer_tip_message(message: String) -> void: dialogs.show_trainer_tip_message(message)
 
 ## field_move_wheel.gd under its old names, for the scripts and tests that call them on main.
 func _field_move_wheel_stick() -> Vector2: return move_wheel.field_move_wheel_stick()
@@ -3118,10 +3109,10 @@ func _unhandled_input(event: InputEvent) -> void:
         return
     if trainer_tip_open:
         if event.is_action_pressed("confirm") or event.is_action_pressed("start"):
-            _advance_trainer_tip()
+            dialogs.advance_trainer_tip()
             get_viewport().set_input_as_handled()
         elif event.is_action_pressed("cancel"):
-            _close_trainer_tip()
+            dialogs.close_trainer_tip()
             get_viewport().set_input_as_handled()
         return
 
@@ -3282,13 +3273,13 @@ func _unhandled_input(event: InputEvent) -> void:
 
         if GameOptions.enabled("zoom") and event.is_action_pressed("zoom_in"):
             var zoom_percent = int(world.call("adjust_camera_zoom", 1))
-            _show_message("ZOOM %d%%" % zoom_percent)
+            dialogs.show_message("ZOOM %d%%" % zoom_percent)
             get_viewport().set_input_as_handled()
             return
 
         if GameOptions.enabled("zoom") and event.is_action_pressed("zoom_out"):
             var zoom_percent = int(world.call("adjust_camera_zoom", -1))
-            _show_message("ZOOM %d%%" % zoom_percent)
+            dialogs.show_message("ZOOM %d%%" % zoom_percent)
             get_viewport().set_input_as_handled()
             return
 
@@ -3815,7 +3806,7 @@ func _start_game() -> void:
     )
     generation_tip_index = -1
     generation_tip_timer = 0.0
-    _show_generation_tip()
+    dialogs.show_generation_tip()
 
     world.visible = true
 
@@ -3884,7 +3875,7 @@ func _start_game() -> void:
         setup_panel.show()
         generating = false
         menu_status.text = "GENERATION FAILED"
-        _show_message(world.generation_error)
+        dialogs.show_message(world.generation_error)
         return
 
     _apply_world_player_textures()
@@ -3920,7 +3911,7 @@ func _start_game() -> void:
     started = true
     generating = false
     touch_controls.set_game_active(true)
-    _show_message("Welcome, %s!" % player_model_name.text.strip_edges() if overflow_recovery_notice.is_empty() else overflow_recovery_notice)
+    dialogs.show_message("Welcome, %s!" % player_model_name.text.strip_edges() if overflow_recovery_notice.is_empty() else overflow_recovery_notice)
     overflow_recovery_notice = ""
 
 func _save_setup() -> void:
@@ -3964,57 +3955,6 @@ func _on_generation_progress(value: float, message: String) -> void:
         if selected_mode == "LOAD"
         else "Generating...\nPlease wait..."
     )
-
-func _show_generation_tip() -> void:
-    if SourceEventData.TRAINER_TIPS.is_empty():
-        return
-    var next_index := battle_rng.randi_range(0, SourceEventData.TRAINER_TIPS.size() - 1)
-    if SourceEventData.TRAINER_TIPS.size() > 1 and next_index == generation_tip_index:
-        next_index = (next_index + 1) % SourceEventData.TRAINER_TIPS.size()
-    generation_tip_index = next_index
-    generation_tip_title.text = "- Trainer Tips -"
-    generation_tip_text.text = _format_generation_tip(
-        String(SourceEventData.TRAINER_TIPS[generation_tip_index])
-    )
-    generation_tip_timer = GENERATION_TIP_SECONDS
-
-func _format_generation_tip(tip: String) -> String:
-    var words := tip.strip_edges().split(" ", false)
-    if words.size() < 2:
-        return tip
-    var line_count := 3 if tip.length() > 64 else 2
-    var lines: Array[String] = []
-    var start := 0
-    for line_index in range(line_count):
-        var words_left := words.size() - start
-        var lines_left := line_count - line_index
-        if lines_left <= 1:
-            var final_line := ""
-            for word_index in range(start, words.size()):
-                final_line += (
-                    " " if not final_line.is_empty() else ""
-                ) + String(words[word_index])
-            lines.append(final_line)
-            break
-        var remaining_length := 0
-        for word_index in range(start, words.size()):
-            remaining_length += String(words[word_index]).length()
-        remaining_length += maxi(0, words_left - 1)
-        var target_length := ceili(float(remaining_length) / float(lines_left))
-        var line := ""
-        while start < words.size() - (lines_left - 1):
-            var word := String(words[start])
-            var candidate := line + (" " if not line.is_empty() else "") + word
-            if not line.is_empty() and candidate.length() > target_length:
-                break
-            line = candidate
-            start += 1
-        lines.append(line)
-    return "\n".join(lines)
-
-func _two_line_generation_tip(tip: String) -> String:
-    # Compatibility helper for older QA entry points.
-    return _format_generation_tip(tip)
 
 func _make_starter_machop() -> Dictionary:
     return BattleEngine.make_pokemon("machop", 5, battle_rng, {
@@ -4308,7 +4248,7 @@ func _start_battle_context(context: Dictionary, source_alert: bool = false) -> v
     battle_session = null
     if caught_pokemon.is_empty():
         if coop_game.active and coop_game.raids.eligible(prepared_context):
-            _show_message("You need a Pokemon to fight in this raid.")
+            dialogs.show_message("You need a Pokemon to fight in this raid.")
             return
         if coop_game.active and coop_game.events.eligible(prepared_context):
             if not await coop_game.events.begin(prepared_context):return
@@ -4391,14 +4331,14 @@ func _start_battle_context(context: Dictionary, source_alert: bool = false) -> v
         var prelude_start := preload("res://scripts/game_clock.gd").ticks_usec()
         while preload("res://scripts/game_clock.gd").ticks_usec()-prelude_start < 333333:
             await get_tree().process_frame
-        _show_message("...")
+        dialogs.show_message("...")
         while preload("res://scripts/game_clock.gd").ticks_usec()-prelude_start < 2000000:
             await get_tree().process_frame
         message_panel.hide()
         message_timer=0.0
     if String(battle_context.get("source_boss", "")) == "regigigas":
         battle_turn_busy=true
-        _show_message("...")
+        dialogs.show_message("...")
         for music_player in world.environment_system.music_players:
             mewtwo_route_volumes.append(music_player.volume_db)
             if music_player.playing:
@@ -6219,7 +6159,7 @@ func _end_battle(outcome: String = "") -> void:
         world.player.velocity=Vector2.ZERO
         world.player.camera.reset_smoothing()
         if coop_game.active:await coop_game.checkpoint_player()
-        _show_message("You are being returned to the last safe place!")
+        dialogs.show_message("You are being returned to the last safe place!")
     world.set_gameplay_enabled(true)
     if ended_wild_battle and world.has_method("begin_encounter_grace"):
         world.call("begin_encounter_grace")
@@ -6884,136 +6824,6 @@ func _update_battle_field_visuals() -> void:
 var bag_notice := ""
 var bag_notice_item := ""
 
-func _show_message(message: String) -> void:
-    if trainer_tip_open:
-        _close_trainer_tip()
-    if game_menu_open and item_pocket_menu.visible and not battle_active:
-        bag_notice = message
-        bag_notice_item = battle_item_menu_names[battle_item_menu_index]             if battle_item_menu_index < battle_item_menu_names.size() else ""
-        item_pocket_description.text = message
-        return
-    # Active field moves must not paint control instructions across the bottom
-    # dialogue area. Keep actual results/errors, but suppress selection/control
-    # hints because the dedicated field/build UI already carries the state.
-    var active_move := String(world.get("active_field_move")).to_upper()
-    if not active_move.is_empty():
-        if message.begins_with("BUILD:") or message.begins_with("DIG:") or \
-                message.begins_with("PAINT:") or "L/R selects" in message or \
-                message.begins_with("FLY is active.") or \
-                message.begins_with("Fly to safe ground") or \
-                message.begins_with("SURF lets you cross water") or \
-                message.begins_with("RIDE increases speed"):
-            return
-    if build_menu_open and message.begins_with("BUILD:"):
-        return
-    message_label.add_theme_font_override("font", JOHTO_FONT)
-    message_label.add_theme_font_size_override("font_size", 10)
-    message_label.clip_text = true
-    message_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    message_label.max_lines_visible = 3
-    message_label.text = message
-    message_label.visible_characters = 0
-    message_reveal_elapsed = 0.0
-    message_reveal_text = message
-    message_panel.visible = true
-    message_timer = MESSAGE_HOLD_SECONDS + message.length() * BATTLE_TEXT_CHAR_DELAY / GameOptions.text_multiplier()
-
-
-func _show_unown_message(message: String) -> void:
-    if trainer_tip_open:
-        _close_trainer_tip()
-    message_label.add_theme_font_override("font", UNOWN_FONT)
-    message_label.add_theme_font_size_override("font_size", 9)
-    message_label.clip_text = true
-    message_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    message_label.max_lines_visible = 3
-    message_label.text = message
-    message_panel.visible = true
-    message_timer = 1.2
-
-func _trainer_tip_wrap_lines(message: String, max_chars: int = 39) -> Array[String]:
-    var result: Array[String] = []
-    for paragraph in message.split("\n"):
-        var current := ""
-        for raw_word in String(paragraph).split(" ", false):
-            var word := String(raw_word)
-            var candidate := word if current.is_empty() else current + " " + word
-            if candidate.length() <= max_chars:
-                current = candidate
-            else:
-                if not current.is_empty():
-                    result.append(current)
-                current = word
-        if not current.is_empty():
-            result.append(current)
-    if result.is_empty():
-        result.append("")
-    return result
-
-
-func _show_trainer_tip_message(message: String) -> void:
-    trainer_tip_pages.clear()
-    var lines := _trainer_tip_wrap_lines(message)
-    var index := 0
-    while index < lines.size():
-        var page_lines: Array[String] = []
-        page_lines.append(lines[index])
-        if index + 1 < lines.size():
-            page_lines.append(lines[index + 1])
-        trainer_tip_pages.append("\n".join(page_lines))
-        index += 2
-    trainer_tip_page_index = 0
-    trainer_tip_open = true
-    world.set_gameplay_enabled(false)
-    _show_trainer_tip_page()
-
-
-func _show_trainer_tip_page() -> void:
-    if trainer_tip_pages.is_empty():
-        _close_trainer_tip()
-        return
-    message_label.add_theme_font_override("font", JOHTO_FONT)
-    message_label.add_theme_font_size_override("font_size", 8)
-    message_label.clip_text = true
-    message_label.autowrap_mode = TextServer.AUTOWRAP_OFF
-    message_label.max_lines_visible = 2
-    message_label.text = trainer_tip_pages[trainer_tip_page_index]
-    message_panel.visible = true
-    message_timer = 0.0
-    if trainer_tip_continue != null:
-        trainer_tip_continue.visible = (
-            trainer_tip_page_index < trainer_tip_pages.size() - 1
-        )
-
-
-func _advance_trainer_tip() -> void:
-    if not trainer_tip_open:
-        return
-    if trainer_tip_page_index < trainer_tip_pages.size() - 1:
-        trainer_tip_page_index += 1
-        _show_trainer_tip_page()
-        return
-    _close_trainer_tip()
-
-
-func _close_trainer_tip() -> void:
-    trainer_tip_open = false
-    trainer_tip_pages.clear()
-    trainer_tip_page_index = 0
-    if trainer_tip_continue != null:
-        trainer_tip_continue.visible = false
-    message_panel.visible = false
-    message_timer = 0.0
-    if (
-            started
-            and not battle_active
-            and not game_menu_open
-            and not craft_menu_open
-            and not build_menu_open
-            and not storage_menu_open
-        ):
-        world.set_gameplay_enabled(true)
-
 ## game_menu.gd under its old names, for the scripts and tests that call them on main.
 func _open_game_menu() -> void: start_menu.open_game_menu()
 func _close_game_menu() -> void: start_menu.close_game_menu()
@@ -7062,7 +6872,7 @@ func _save_current_game() -> void:
     _sync_pokedex_owned()
     if not saves.ensure_directory():
         start_menu.close_save_confirmation()
-        _show_message("SAVE FAILED.")
+        dialogs.show_message("SAVE FAILED.")
         return
 
     var data = _capture_game_save()
@@ -7070,14 +6880,14 @@ func _save_current_game() -> void:
         var saved_ok: bool = await coop_game.save_game(data)
         start_menu.close_save_confirmation()
         if saved_ok:
-            start_menu.close_game_menu();world.call("play_source_sound","save1");_show_message("GAME SAVED.")
-        else: _show_message("SAVE FAILED.")
+            start_menu.close_game_menu();world.call("play_source_sound","save1");dialogs.show_message("GAME SAVED.")
+        else: dialogs.show_message("SAVE FAILED.")
         return
 
     var error: Error = await _write_single_player_save(data)
     if error != OK:
         start_menu.close_save_confirmation()
-        _show_message("SAVE FAILED.")
+        dialogs.show_message("SAVE FAILED.")
         return
 
     await shared_save_folder.export_files(self)
@@ -7085,9 +6895,9 @@ func _save_current_game() -> void:
     start_menu.close_game_menu()
     world.call("play_source_sound", "save1")
     if shared_storage_error == OK:
-        _show_message("GAME SAVED.")
+        dialogs.show_message("GAME SAVED.")
     else:
-        _show_message("GAME SAVED, but the STORAGE BOXES could not be saved.")
+        dialogs.show_message("GAME SAVED, but the STORAGE BOXES could not be saved.")
 
 ## The single-player save and what goes with it, for the SAVE menu and the save
 ## before quitting. The save grows with play, so it is encoded and written on
@@ -7284,7 +7094,7 @@ func _on_material_collected(item_name: String, amount: int) -> void:
     if is_instance_valid(coop_game) and coop_game.active and coop_game.building.collect({ItemData.normalize_name(item_name):amount}):return
     var normalized := ItemData.normalize_name(item_name)
     CraftingData.grant(inventory, normalized, amount)
-    _show_acquired_resource(normalized, amount)
+    dialogs.show_acquired_resource(normalized, amount)
 
 func _on_material_bundle_collected(items: Dictionary, grant_items: bool = true) -> void:
     if is_instance_valid(coop_game) and coop_game.active and coop_game.building.collect(items):return
@@ -7302,7 +7112,7 @@ func _on_material_bundle_collected(items: Dictionary, grant_items: bool = true) 
 
 func _on_paint_requested(picture_index: int, cell: Vector2i) -> void:
     if int(inventory.get("THIN PAPER", 0)) <= 0:
-        _show_message("PAINT needs 1 THIN PAPER.")
+        dialogs.show_message("PAINT needs 1 THIN PAPER.")
         return
     if is_instance_valid(coop_game) and coop_game.active:
         coop_game.building.paint(picture_index,cell)
@@ -7316,7 +7126,7 @@ func _on_build_requested(build_name: String, cell: Vector2i) -> void:
         return
     var cost: Dictionary = recipe.get("cost", {})
     if not CraftingData.can_afford(inventory, cost):
-        _show_message("Not enough materials for %s." % build_name)
+        dialogs.show_message("Not enough materials for %s." % build_name)
         return
     if is_instance_valid(coop_game) and coop_game.active:
         coop_game.building.build(build_name,cell)
@@ -7326,7 +7136,7 @@ func _on_build_requested(build_name: String, cell: Vector2i) -> void:
 
 func _on_dig_requested(choice: String, cell: Vector2i, material: String) -> void:
     if int(inventory.get(material, 0)) <= 0:
-        _show_message("DIG needs %s to place %s." % [material, choice])
+        dialogs.show_message("DIG needs %s to place %s." % [material, choice])
         return
     if is_instance_valid(coop_game) and coop_game.active and not coop_game.building.collecting:
         coop_game.building.dig(cell,choice)
@@ -7344,7 +7154,7 @@ func _on_build_refund_requested(refund: Dictionary, grant_items: bool = true) ->
         var normalized := ItemData.normalize_name(String(raw_name))
         var amount := maxi(1, int(refund[raw_name]))
         if grant_items:CraftingData.grant(inventory, normalized, amount)
-        _show_acquired_resource(normalized, amount)
+        dialogs.show_acquired_resource(normalized, amount)
         return
     var lines: Array[String] = ["GOT"]
     for raw_name in refund.keys():
@@ -7381,11 +7191,11 @@ func _on_structure_removal_requested(cell: Vector2i, move: String) -> void:
                 boxes_going += 1
         if boxes_going > 0 and storage.public_box_count() - boxes_going < 1:
             if online and not coop_game.hosting:
-                _show_message("Sorry, a guest cannot cut the last public box in a world.")
+                dialogs.show_message("Sorry, a guest cannot cut the last public box in a world.")
                 return
-            if not await _ask_yes_no_starting_on_no("Last STORAGE BOX in this world!\nCut it and lose stored POKEMON?"):
+            if not await dialogs.ask_yes_no_starting_on_no("Last STORAGE BOX in this world!\nCut it and lose stored POKEMON?"):
                 return
-            if not await _ask_yes_no_starting_on_no("Are you sure? Stored POKEMON\ncannot be brought back."):
+            if not await dialogs.ask_yes_no_starting_on_no("Are you sure? Stored POKEMON\ncannot be brought back."):
                 return
             if not world.built_structures.has(cell):
                 return
@@ -7403,23 +7213,6 @@ func _on_structure_removal_requested(cell: Vector2i, move: String) -> void:
             if not String(key) in private_keys and String(key) != SHARED_STORAGE_KEY: pokemon_storage.erase(key)
     if world.has_method("remove_structure_with_field_move"):
         world.call("remove_structure_with_field_move", cell, move)
-
-## A yes/no question whose cursor starts on NO, so that pressing A through it
-## answers no.
-func _ask_yes_no_starting_on_no(prompt: String) -> bool:
-    world.set_gameplay_enabled(false)
-    # The question is only sent button presses while this is set; without it
-    # the question appeared and then answered to nothing.
-    var was_active := progression_active
-    progression_active = true
-    _show_progression_yes_no(prompt)
-    progression_choice_index = 1
-    _refresh_progression_yes_no()
-    var result = await progression_choice_made
-    _hide_progression_overlay()
-    progression_active = was_active
-    world.set_gameplay_enabled(not _field_ui_blocks_gameplay(build_menu_open))
-    return int(result) == 1
 
 func _route_received_pokemon(pokemon: Dictionary, allow_party: bool = true) -> String:
     # Every acquisition shares this boundary; the visible party has six slots.
@@ -7488,7 +7281,7 @@ func _on_pokemon_recalled(pokemon_data: Dictionary) -> void:
         caught_species.append(species)
     world.play_source_sound("seed1")
     var notice := _received_pokemon_notice(pokemon_data, destination)
-    if not notice.is_empty(): _show_message(notice)
+    if not notice.is_empty(): dialogs.show_message(notice)
 
 func _on_wild_pokemon_prompt_requested(
         wild_id: int, species: String, kind: String
@@ -7596,7 +7389,7 @@ func _recruit_friendly_wild(wild_id: int, species: String) -> void:
         return
     if not _can_receive_overworld_pokemon():
         _close_wild_pokemon_prompt()
-        _show_message("Your party and storage are full.")
+        dialogs.show_message("Your party and storage are full.")
         return
     # Online the host keeps the record of every wild Pokemon. It is claimed and
     # then reported as taken, exactly as a capture in battle is. Taking it from
@@ -7611,7 +7404,7 @@ func _recruit_friendly_wild(wild_id: int, species: String) -> void:
         if not await coop_game.wild.reserve(wild_id):
             if coop_game.active and not battle_active:
                 world.set_gameplay_enabled(not _field_ui_blocks_gameplay(build_menu_open))
-                _show_message(coop_game.population.refusal(
+                dialogs.show_message(coop_game.population.refusal(
                     coop_game.wild.refused if not coop_game.wild.refused.is_empty() else "too_late", species.to_upper()))
             return
         coop_game.wild.applying = true
@@ -7627,7 +7420,7 @@ func _recruit_friendly_wild(wild_id: int, species: String) -> void:
             if coop_game.active:
                 world.set_gameplay_enabled(not _field_ui_blocks_gameplay(build_menu_open))
         _close_wild_pokemon_prompt()
-        _show_message("Too late! %s is no longer here." % species.to_upper())
+        dialogs.show_message("Too late! %s is no longer here." % species.to_upper())
         return
     var source := (record as Dictionary).duplicate(true)
     var nested_source = source.get("source_record", {})
@@ -7657,7 +7450,7 @@ func _recruit_friendly_wild(wild_id: int, species: String) -> void:
     _close_wild_pokemon_prompt()
     world.play_source_sound("seed1")
     var notice := _received_pokemon_notice(pokemon, destination)
-    if not notice.is_empty(): _show_message(notice)
+    if not notice.is_empty(): dialogs.show_message(notice)
 
 func _handle_wild_pokemon_prompt_input(event: InputEvent) -> void:
     if wild_pokemon_prompt_kind in ["PROVOKE", "PROVOKE_WARNING", "PROVOKED"]:
@@ -7717,7 +7510,7 @@ func _handle_wild_pokemon_prompt_input(event: InputEvent) -> void:
                 if data.has("species") or (is_instance_valid(coop_game) and coop_game.active):
                     world._recall_deployed_pokemon(cell, data)
                 else:
-                    _show_message("It went away.")
+                    dialogs.show_message("It went away.")
             else:
                 _recruit_friendly_wild(chosen_id, chosen_species)
         else:
@@ -7831,7 +7624,7 @@ func _on_egg_collected(species: String) -> void:
         for key in ["dropped_party_egg", "house_door", "house_floor", "x", "y"]: egg_record.erase(key)
         var destination := _route_received_pokemon(egg_record)
         world.play_source_sound("Berry_Get")
-        _show_message("You picked up the EGG." if destination == "PARTY" else "The EGG was sent to storage.")
+        dialogs.show_message("You picked up the EGG." if destination == "PARTY" else "The EGG was sent to storage.")
         return
     if egg_record.is_empty():
         egg_record = {
@@ -7861,7 +7654,7 @@ func _on_egg_collected(species: String) -> void:
     var destination := _route_received_pokemon(egg)
     world.play_source_sound("Berry_Get")
     var notice := _received_pokemon_notice(egg, destination)
-    _show_message("%s received an EGG." % player_model_name.text.strip_edges() if notice.is_empty() else notice)
+    dialogs.show_message("%s received an EGG." % player_model_name.text.strip_edges() if notice.is_empty() else notice)
 
 func _on_player_stepped() -> void:
     egg_step_timer = wrapi(
@@ -8013,32 +7806,6 @@ func _pokemon_from_egg_record(
     pokemon["toxic_counter"] = 0
     return pokemon
 
-func _create_sign_editor() -> void:
-    sign_dialog = ConfirmationDialog.new()
-    var sign_theme := Theme.new()
-    sign_theme.default_font = JOHTO_FONT
-    sign_theme.default_font_size = 10
-    sign_dialog.theme = sign_theme
-    sign_dialog.title = "Write on the sign"
-    sign_dialog.exclusive = true
-    sign_dialog.ok_button_text = "WRITE"
-    sign_edit = LineEdit.new()
-    sign_edit.placeholder_text = "Sign text"
-    sign_edit.max_length = 64
-    sign_edit.position = Vector2(12, 18)
-    sign_edit.size = Vector2(236, 30)
-    sign_dialog.add_child(sign_edit)
-    $UI.add_child(sign_dialog)
-    sign_dialog.confirmed.connect(_confirm_sign_text)
-
-func _confirm_sign_text() -> void:
-    if sign_edit_mode == "BEACON":
-        if world.has_method("set_structure_beacon_label"):
-            world.call("set_structure_beacon_label", sign_edit_cell, sign_edit.text)
-        return
-    if world.has_method("set_structure_sign_text"):
-        world.call("set_structure_sign_text", sign_edit_cell, sign_edit.text)
-
 func _on_structure_action(action: String) -> void:
     if action.begins_with("PLANT_HOLE:"):
         bag_menu.open_planting_bag(Vector2i(int(action.get_slice(":",1)), int(action.get_slice(":",2))))
@@ -8047,11 +7814,11 @@ func _on_structure_action(action: String) -> void:
     elif action == "DRESSER":
         _next_color()
         _apply_world_player_textures()
-        _show_message("Changed outfit color to %s." % PLAYER_COLOR_NAMES[player_color_index])
+        dialogs.show_message("Changed outfit color to %s." % PLAYER_COLOR_NAMES[player_color_index])
     elif action == "VANITY":
         _next_color()
         _apply_world_player_textures()
-        _show_message("The VANITY changed your appearance to %s." % PLAYER_COLOR_NAMES[player_color_index])
+        dialogs.show_message("The VANITY changed your appearance to %s." % PLAYER_COLOR_NAMES[player_color_index])
     elif action.begins_with("BED:"):
         await _prompt_bed_rest(Vector2i(int(action.get_slice(":",1)),int(action.get_slice(":",2))))
     elif action.begins_with("STORAGE:"):
@@ -8100,7 +7867,7 @@ func _on_structure_action(action: String) -> void:
         world.set_gameplay_enabled(not _field_ui_blocks_gameplay())
     elif action.begins_with("MANSION_LOCK:"):
         if int(inventory.get("SECRET KEY", 0)) <= 0:
-            _show_message("It's locked...")
+            dialogs.show_message("It's locked...")
             return
         var parts := action.split(":")
         if parts.size() != 3:
@@ -8108,7 +7875,7 @@ func _on_structure_action(action: String) -> void:
         var cell := Vector2i(int(parts[1]), int(parts[2]))
         if world.unlock_mansion_door(cell):
             inventory["SECRET KEY"] = int(inventory.get("SECRET KEY", 0)) - 1
-            _show_message("The SECRET KEY opened the door!")
+            dialogs.show_message("The SECRET KEY opened the door!")
     elif action.begins_with("ODD_KEYSTONE:"):
         var parts := action.split(":")
         if parts.size() != 4:
@@ -8117,7 +7884,7 @@ func _on_structure_action(action: String) -> void:
         var remaining := maxi(0, int(parts[3]))
         var available := int(inventory.get("LIFE FORCE", 0))
         if available <= 0:
-            _show_message("A voice whispers from within... bring %d..." % remaining)
+            dialogs.show_message("A voice whispers from within... bring %d..." % remaining)
             return
         var used := int(world.call("add_keystone_life_force", cell, mini(available, remaining)))
         inventory["LIFE FORCE"] = maxi(0, available - used)
@@ -8129,20 +7896,7 @@ func _on_item_collected(item_name: String) -> void:
         return
     CraftingData.grant(inventory, ItemData.normalize_name(item_name), 1)
     var normalized := ItemData.normalize_name(item_name)
-    _show_acquired_resource(normalized, 1)
-
-func _show_acquired_resource(item_name: String, amount: int) -> void:
-    if resource_popup.visible and resource_popup_timer > 0.0 and resource_popup_name == item_name:
-        resource_popup_amount += amount
-    else:
-        resource_popup_name = item_name
-        resource_popup_amount = amount
-    resource_popup_text.text = "GOT\nx%d %s" % [
-        resource_popup_amount, resource_popup_name
-    ]
-    resource_popup.visible = true
-    resource_popup_timer = 0.9
-
+    dialogs.show_acquired_resource(normalized, 1)
 
 func _show_touch_changed(enabled: bool) -> void:
     touch_controls.set_touch_enabled(enabled)
@@ -8510,7 +8264,7 @@ func _travel_adjacent_world(direction: Vector2i) -> void:
     var online_destination:Dictionary={}
     if is_instance_valid(coop_game) and coop_game.active:
         online_destination=await coop_game.prepare_travel(current_world_grid+direction)
-        if online_destination.has("error"):_show_message(String(online_destination.error));return
+        if online_destination.has("error"):dialogs.show_message(String(online_destination.error));return
     var bounds: Rect2i = world.get_map_bounds()
     var cell: Vector2i = world._player_cell()
     var fraction := Vector2(cell-bounds.position)/Vector2(bounds.size)
@@ -8537,7 +8291,7 @@ func _travel_adjacent_world(direction: Vector2i) -> void:
         # happening, so it looked as if the game had stopped. It now has the
         # same sky, trainer tips and message as every other loading screen.
         generation_status.text = "GENERATING WORLD...\nPLEASE WAIT..."
-        _show_generation_tip()
+        dialogs.show_generation_tip()
         generation_panel.show()
         await get_tree().process_frame
     else:
@@ -8558,7 +8312,7 @@ func _travel_adjacent_world(direction: Vector2i) -> void:
         if is_instance_valid(travel_view): travel_view.queue_free()
         generation_panel.hide()
         generating = false
-        _show_message(world.generation_error)
+        dialogs.show_message(world.generation_error)
         return
     world.set_gameplay_enabled(false)
     if not destination.is_empty(): await world.restore_crafting_save_state(destination.state)

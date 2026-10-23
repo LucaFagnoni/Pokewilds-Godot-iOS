@@ -783,7 +783,7 @@ func show_map_menu() -> void:
 
 func open_teleport_map(destinations: Array) -> void:
     if destinations.is_empty():
-        main._show_message("There are no BEACONS to TELEPORT to.")
+        main.dialogs.show_message("There are no BEACONS to TELEPORT to.")
         return
     main.teleport_map_mode = true
     main.teleport_destinations = destinations.duplicate(true)

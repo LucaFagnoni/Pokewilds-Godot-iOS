@@ -208,7 +208,7 @@ func _activate_field_move_wheel_selection(selection: int) -> void:
     var party_index := find_field_move_pokemon_index(move_name)
     if party_index < 0:
         if move_name != "CUT":
-            main._show_message("A POKEMON is required to use this FIELD MOVE.")
+            main.dialogs.show_message("A POKEMON is required to use this FIELD MOVE.")
         return
     main._ensure_party_ecology_id(party_index)
     var pokemon := main.caught_pokemon[party_index] as Dictionary
@@ -218,5 +218,5 @@ func _activate_field_move_wheel_selection(selection: int) -> void:
     if move_name == "BUILD":
         main.crafting_menu.open_build_menu()
     elif move_name not in ["CUT", "DIG"]:
-        main._show_message("%s is using %s." % [
+        main.dialogs.show_message("%s is using %s." % [
             PokemonData.battle_display_name(String(pokemon.get("species", "POKEMON"))), move_name])

@@ -125,7 +125,7 @@ func open_storage_menu(box_key: String) -> void:
         # shared record back, which took seconds and stalled the host. It is
         # only needed for a box the shared world does not know yet.
         if not main.coop_game.storage.known(world_storage_key(box_key,main.current_world_grid)):
-            if not await main.coop_game.storage.prepare():main._show_message("ONLINE STORAGE COULD NOT LOAD.");return
+            if not await main.coop_game.storage.prepare():main.dialogs.show_message("ONLINE STORAGE COULD NOT LOAD.");return
     var shared_chest: bool = not (is_instance_valid(main.coop_game) and main.coop_game.active) and \
         String(main.world.built_structures.get(main.world._cell_from_key(box_key), {}).get("name", "")) == "PRIVATE CHEST"
     box_key = main.SHARED_STORAGE_KEY if shared_chest else world_storage_key(box_key,main.current_world_grid)

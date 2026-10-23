@@ -52,7 +52,7 @@ func open_build_menu() -> void:
         return
     var builder_index := _find_party_builder_index()
     if builder_index < 0:
-        main._show_message("A FIGHTING-type Pokemon is needed to BUILD.")
+        main.dialogs.show_message("A FIGHTING-type Pokemon is needed to BUILD.")
         return
 
     main._ensure_party_ecology_id(builder_index)
@@ -62,7 +62,7 @@ func open_build_menu() -> void:
     var helper_missing := (main.world.get("field_helper_pokemon") as Dictionary).is_empty()
     if active_move != "BUILD" or active_builder != String(builder.get("species", "")).to_lower() or helper_missing:
         if not bool(main.world.set_active_field_move(builder, "BUILD")):
-            main._show_message("There is no room for %s to BUILD here." % PokemonData.battle_display_name(String(builder.get("species", "POKEMON"))))
+            main.dialogs.show_message("There is no room for %s to BUILD here." % PokemonData.battle_display_name(String(builder.get("species", "POKEMON"))))
             return
 
     main.build_menu_index = int(main.world.call("get_build_selection_index"))
@@ -221,7 +221,7 @@ func _craft_selected_recipe() -> void:
     var output := String(recipe.get("name", ""))
     if not CraftingData.can_afford(main.inventory, cost):
         main.world.call("play_source_sound", "error1")
-        main._show_message("Not enough materials for %s." % output)
+        main.dialogs.show_message("Not enough materials for %s." % output)
         return
     if (
             bool(recipe.get("event", false))
@@ -229,7 +229,7 @@ func _craft_selected_recipe() -> void:
             and main.world.has_method("can_awaken_regi")
             and not bool(main.world.call("can_awaken_regi", output))
         ):
-        main._show_message("That Regi has already answered the pedestal.")
+        main.dialogs.show_message("That Regi has already answered the pedestal.")
         return
     CraftingData.consume(main.inventory, cost)
     main.world.call("play_source_sound", "click1")
@@ -238,22 +238,22 @@ func _craft_selected_recipe() -> void:
             if main.world.complete_regi_forge(output):
                 _close_crafting_menu()
             else:
-                main._show_message("The pedestal did not respond.")
+                main.dialogs.show_message("The pedestal did not respond.")
         elif craft_station == "FOSSIL REVIVER":
             _close_crafting_menu()
             _revive_fossil(output)
         else:
-            main._show_message("%s awakened!" % output)
+            main.dialogs.show_message("%s awakened!" % output)
     else:
         CraftingData.grant(main.inventory, output, 1)
-        main._show_message("Crafted %s." % output)
+        main.dialogs.show_message("Crafted %s." % output)
     if main.craft_menu_open:
         _refresh_crafting_menu()
 
 func _revive_fossil(fossil_name: String) -> void:
     var species := String(SourceEventData.FOSSIL_SPECIES.get(fossil_name, ""))
     if species.is_empty():
-        main._show_message("The machine could not read that fossil.")
+        main.dialogs.show_message("The machine could not read that fossil.")
         return
     var level_total := 0
     var level_count := 0
@@ -273,9 +273,9 @@ func _revive_fossil(fossil_name: String) -> void:
         if not main.caught_species.has(species):
             main.caught_species.append(species)
         var notice := main._received_pokemon_notice(revived, destination)
-        main._show_message("%s was revived from the %s!" % [PokemonData.battle_display_name(species), fossil_name] if notice.is_empty() else notice)
+        main.dialogs.show_message("%s was revived from the %s!" % [PokemonData.battle_display_name(species), fossil_name] if notice.is_empty() else notice)
         return
-    main._show_message("%s was revived... and attacked!" % PokemonData.battle_display_name(species))
+    main.dialogs.show_message("%s was revived... and attacked!" % PokemonData.battle_display_name(species))
     main._start_battle_context({
         "id": "fossil_%s" % species,
         "kind": "fossil",
