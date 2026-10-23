@@ -61,7 +61,18 @@ func _initialize() -> void:
 	end.process_mode = Node.PROCESS_MODE_ALWAYS
 	end.ended = _frame_ended
 	root.add_child.call_deferred(end)
+	var first := StartOfFrame.new()
+	first.process_priority = -2147483648
+	first.process_mode = Node.PROCESS_MODE_ALWAYS
+	root.add_child.call_deferred(first)
 	change_scene_to_file("res://scenes/main.tscn")
+
+## The first node to process: what ran before it this frame, from the
+## process_frame signal on, is the coroutines resumed by it (a test build's
+## probe names them "(resumed coroutines)").
+class StartOfFrame extends Node:
+	func _process(_delta: float) -> void:
+		Engine.set_meta("probe_nodes_start", Time.get_ticks_usec())
 
 class EndOfFrame extends Node:
 	var ended: Callable
@@ -83,7 +94,8 @@ func _frame_ended() -> void:
 	# A test build's probe: the parts of the frame no script's _process covers.
 	if Engine.has_meta("probe_frame") and _frame_started > 0:
 		var sections: Dictionary = Engine.get_meta("probe_frame")
-		for part in [["(physics, main loop)", _frame_started, _process_started], ["(deferred calls)", int(Engine.get_meta("probe_nodes_end", 0)), Time.get_ticks_usec()]]:
+		for part in [["(physics, main loop)", _frame_started, _process_started], ["(deferred calls)", int(Engine.get_meta("probe_nodes_end", 0)), Time.get_ticks_usec()],
+				["(resumed coroutines)", int(Engine.get_meta("probe_t0", 0)), int(Engine.get_meta("probe_nodes_start", 0))]]:
 			if part[1] > 0 and part[2] >= part[1]:
 				sections[part[0]] = part[2] - part[1]
 				sections["_top"] = sections.get("_top", 0) + part[2] - part[1]

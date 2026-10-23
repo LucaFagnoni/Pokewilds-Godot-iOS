@@ -46,7 +46,7 @@ func load_area(area:String)->void:
     if not loaded.get("ok",false):_loading.erase(area);return
     var records:Dictionary={}
     var prefix:="world/"+area+"/"
-    for key in game.state.records:
+    for key in game.state.keys_by_area.get(area,{}):
         if String(key).begins_with(prefix) and String(key).get_slice("/",2) in AreaState.GROUPS:records[key]=game.state.records[key]
     var bytes:PackedByteArray=loaded.bytes
     var sim=await game._off_thread(func():return AreaSim.build(area,bytes,records))
@@ -54,7 +54,7 @@ func load_area(area:String)->void:
     if sim==null:print("ONLINE area ",area," could not be held here for its rules");return
     # Commits made while it loaded are in the records now: lay them again.
     var newer:Dictionary={}
-    for key in game.state.records:
+    for key in game.state.keys_by_area.get(area,{}):
         if String(key).begins_with(prefix) and records.get(key)!=game.state.records[key] and String(key).get_slice("/",2) in AreaState.GROUPS:newer[key]=game.state.records[key]
     sim.lay_records({},newer)
     sim.state.take_dirty()

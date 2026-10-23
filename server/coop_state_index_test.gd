@@ -1,5 +1,5 @@
 # The record indexes of the co-op state (coop_state.gd claims_by_actor,
-# wild_by_area, namespace_max) match a walk over every record after commits,
+# wild_by_area, namespace_max, keys_by_area in order) match a walk over every record after commits,
 # edits, removals, a restore from a world save and a replay of the journal; and
 # the wild rules that read them (coop_wild_population.gd) still refuse a second
 # claim, hand out fresh namespaces and refuse a second unique Pokemon.
@@ -26,8 +26,12 @@ static func walked(state) -> Array:
 	var claims := {}
 	var wild := {}
 	var top := 0
+	var by_area := {}
 	for key: String in state.records:
 		var value = state.records[key]
+		var owner := key.get_slice("/", 1) if key.begins_with("world/") or key.begins_with("wild_claim/") else ""
+		if not by_area.has(owner): by_area[owner] = {}
+		by_area[owner][key] = true
 		if key.begins_with("wild_claim/"):
 			var actor := String(value.actor)
 			if not claims.has(actor): claims[actor] = {}
@@ -37,12 +41,13 @@ static func walked(state) -> Array:
 			var area := key.get_slice("/", 1)
 			if not wild.has(area): wild[area] = {}
 			wild[area][key] = true
-	return [claims, wild, top]
+	return [claims, wild, top, by_area]
 
 func same_indexes(state, what: String) -> void:
 	var expected := walked(state)
 	check(state.claims_by_actor == expected[0], what + ": claims by actor")
 	check(state.wild_by_area == expected[1], what + ": wild Pokemon by area")
+	check(state.keys_by_area.size() == expected[3].size() and expected[3].keys().all(func(area): return state.keys_by_area.get(area, {}).keys() == expected[3][area].keys()), what + ": keys by area, in order")
 	check(state.namespace_max() == expected[2], what + ": highest namespace %d, not %d" % [state.namespace_max(), expected[2]])
 
 func commit(state, actor: String, changes: Array) -> void:

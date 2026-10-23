@@ -88,14 +88,18 @@ func _make(main:Node,actor:String,area:String,token:String)->bool:
     while OS.is_process_running(pid):
         if Time.get_ticks_msec()-started>TIMEOUT_MS:OS.kill(pid);break
         await get_tree().process_frame
-    var bytes:=FileAccess.get_file_as_bytes(out)
+    # Read and decoded on a worker: the snapshot is megabytes (15 ms here).
+    var made:Array=await main.coop_game._off_thread(func():
+        var read:=FileAccess.get_file_as_bytes(out)
+        return [read,Snapshot.decode(read) if not read.is_empty() else {}])
+    var bytes:PackedByteArray=made[0]
     DirAccess.remove_absolute(out)
     for name in DirAccess.get_files_at(folder.path_join("world_cache")):DirAccess.remove_absolute(folder.path_join("world_cache").path_join(name))
-    var decoded:Dictionary=Snapshot.decode(bytes) if not bytes.is_empty() else {}
+    var decoded:Dictionary=made[1]
     if decoded.is_empty():
         print("SERVER ERROR: area ",area," could not be made here; the player's device will make it")
         return false
-    var result:Dictionary=await main.coop_game.service.generated(actor,area,token,{"seed":decoded.seed,"size":decoded["size"]},bytes)
+    var result:Dictionary=await main.coop_game.service.generated(actor,area,token,{"seed":decoded.seed,"size":decoded["size"]},bytes,decoded)
     print("SERVER made area ",area," in ",(Time.get_ticks_msec()-started)/1000,"s" if result.get("ok",false) else ", but it was no longer wanted (%s)"%result.get("reason",""))
     return true
 

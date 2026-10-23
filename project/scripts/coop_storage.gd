@@ -95,7 +95,7 @@ func register_objects(area:String,shared:Dictionary)->bool:
     if is_instance_valid(game.building):
         var placed:Dictionary={}
         var prefix:="world/"+area+"/structures/"
-        for key in game.state.records:
+        for key in game.state.keys_by_area.get(area,{}):
             if String(key).begins_with(prefix):placed[key]=game.state.records[key]
         shared=game.building.overlay(area,{"structures":shared.get("structures",[])},placed)
     var changes:Array=[]

@@ -371,7 +371,10 @@ func _process(_delta:float)->void:
 func save()->bool:
     if _saving or main==null or not main.coop_game.active:return false
     _saving=true
-    var saved:bool=await main.coop_game.save_game(main._capture_game_save())
+    var captured:Dictionary=main._capture_game_save()
+    # The capture is 10-15 ms; the area's own save that follows is a few more.
+    await get_tree().process_frame
+    var saved:bool=await main.coop_game.save_game(captured)
     _saving=false
     print("SERVER world saved" if saved else "SERVER ERROR: world save failed")
     # Each save of an area is a new 2.4 MB file; those nothing needs any more
