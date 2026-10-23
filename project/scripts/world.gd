@@ -1044,138 +1044,28 @@ func _register_exact_exterior_interactables() -> void:
         exact_world.set_meta("unown_generated_signs", unown_generated_signs)
 
 func _spawn_exact_source_pokemon(records: Array[Dictionary], spread: bool = false) -> void:
-    var spawn_deadline := Time.get_ticks_usec() + 13000
-    for record in records:
-        if spread and Time.get_ticks_usec() >= spawn_deadline:
-            await get_tree().process_frame
-            spawn_deadline = Time.get_ticks_usec() + 13000
-        var species := String(record.get("name", "")).to_lower()
-        var cell: Vector2i = record.get("cell", Vector2i.ZERO)
-        if species.is_empty() or not exact_world.contains_cell(cell):
-            continue
-        var tile := exact_world.tile_at(cell)
-        var home_biome := "OCEAN" if tile == null else _source_biome_for_tile(tile)
-        _add_wild_pokemon(
-            species, int(record.get("level", 2)), cell, home_biome, 0, record
-        )
+    await PopulationRules.place_source(area, records, _place_wild, _spawn_slices() if spread else Callable())
 
 func _spawn_extra_biome_pokemon(_records: Array[Dictionary], spread: bool = false) -> void:
-    var spawn_deadline := Time.get_ticks_usec() + 13000
-    # New-world companions replace the old partial 50% density pass.
-    # Preserve authored encounters and only create valid breeding partners.
-    var occupied: Dictionary = {}
-    for id in wild_pokemon:
-        occupied[wild_pokemon[id].cell] = id
-    var initial_ids := wild_pokemon.keys()
-    var paired: Dictionary = {}
-    var offsets: Array[Vector2i] = []
-    for radius in range(1, MATE_BOND_RADIUS + 1):
-        for y in range(-radius, radius + 1):
-            for x in range(-radius, radius + 1):
-                if maxi(absi(x), absi(y)) == radius:
-                    offsets.append(Vector2i(x, y))
-    for id in initial_ids:
-        if spread and Time.get_ticks_usec() >= spawn_deadline:
-            await get_tree().process_frame
-            spawn_deadline = Time.get_ticks_usec() + 13000
-        if paired.has(id): continue
-        var original: Dictionary = wild_pokemon[id]
-        var species := String(original.species)
-        var groups: Array = original.get("egg_groups", [])
-        var gender := String(original.get("gender", "unknown"))
-        if groups.has("EGG_NONE") or groups.has("EGG_DITTO") or gender == "unknown" or bool(original.get("burrowed", false)) or bool(original.get("behavior", {}).get("stationary", false)):
-            continue
-        var origin: Vector2i = original.cell
-        # Use an existing adjacent compatible animal before adding another.
-        var partner_id := -1
-        for offset in offsets:
-            var nearby_id := int(occupied.get(origin + offset, -1))
-            if nearby_id >= 0 and not paired.has(nearby_id) and PokemonEcology.can_mate(original, wild_pokemon[nearby_id]):
-                partner_id = nearby_id
-                break
-        if partner_id < 0:
-            var origin_tile := exact_world.tile_at(origin)
-            var route := "" if origin_tile == null or origin_tile.route_belongs_to == null else origin_tile.route_belongs_to.name
-            var partner_gender := "male" if gender == "female" else "female"
-            var partner_species := ""
-            var candidates: Array[String] = [species]
-            for candidate_species in SourceRouteData.allowed_pokemon(route):
-                if not candidates.has(String(candidate_species)): candidates.append(String(candidate_species))
-            for candidate_species in candidates:
-                var info := PokemonData.info(candidate_species)
-                var ratio := String(info.get("gender_ratio", "GENDER_UNKNOWN"))
-                if ratio == "GENDER_UNKNOWN" or (ratio == "GENDER_F0" and partner_gender == "female") or (ratio == "GENDER_F100" and partner_gender == "male"): continue
-                if PokemonData.texture(candidate_species, "overworld") == null: continue
-                var test_partner := PokemonEcology.ensure_record({"species":candidate_species,"gender":partner_gender}, rng)
-                if PokemonEcology.can_mate(original, test_partner):
-                    partner_species = candidate_species
-                    break
-            if partner_species.is_empty(): continue
-            for offset in offsets:
-                var candidate := origin + offset
-                if occupied.has(candidate) or wild_eggs.has(candidate) or deployed_pokemon.has(candidate) or not _pokemon_can_move_between(partner_species, origin, candidate): continue
-                var tile := exact_world.tile_at(candidate)
-                if tile == null or tile.route_belongs_to == null or tile.route_belongs_to.name != route: continue
-                var new_id := next_wild_id
-                _add_wild_pokemon(partner_species, int(original.level), candidate, String(original.home_biome), 0, {"gender":partner_gender, "generation":original.get("source_record", {}).get("generation", "")})
-                if not wild_pokemon.has(new_id): continue
-                occupied[candidate] = new_id
-                partner_id = new_id
-                break
-            if partner_id < 0:
-                # An isolated authored cell may have no room for two actors.
-                # Find two adjacent cells in the SAME source route, keeping
-                # both the terrain and the encounter species list intact.
-                for radius in range(1, 17):
-                    if partner_id >= 0: break
-                    # A search that finds nothing took ~220 ms: a ring per slice.
-                    if spread and Time.get_ticks_usec() >= spawn_deadline:
-                        await get_tree().process_frame
-                        spawn_deadline = Time.get_ticks_usec() + 13000
-                    for y in range(-radius, radius + 1):
-                        if partner_id >= 0: break
-                        for x in range(-radius, radius + 1):
-                            if maxi(absi(x), absi(y)) != radius: continue
-                            var first := origin + Vector2i(x, y)
-                            if occupied.has(first) or wild_eggs.has(first) or deployed_pokemon.has(first) or not _pokemon_can_move_between(species, origin, first): continue
-                            var first_tile := exact_world.tile_at(first)
-                            if first_tile == null or first_tile.route_belongs_to == null or first_tile.route_belongs_to.name != route: continue
-                            for direction in [Vector2i.LEFT,Vector2i.RIGHT,Vector2i.UP,Vector2i.DOWN]:
-                                var second: Vector2i = first + direction
-                                if occupied.has(second) or wild_eggs.has(second) or deployed_pokemon.has(second) or not _pokemon_can_move_between(partner_species, origin, second): continue
-                                var second_tile := exact_world.tile_at(second)
-                                if second_tile == null or second_tile.route_belongs_to == null or second_tile.route_belongs_to.name != route: continue
-                                var new_id := next_wild_id
-                                _add_wild_pokemon(partner_species, int(original.level), second, String(original.home_biome), 0, {"gender":partner_gender, "generation":original.get("source_record", {}).get("generation", "")})
-                                if not wild_pokemon.has(new_id): continue
-                                occupied.erase(origin)
-                                occupied[first] = id
-                                occupied[second] = new_id
-                                wild_population.move(id, first)
-                                wild_population.snap(id)
-                                partner_id = new_id
-                                break
-                            if partner_id >= 0: break
-        if partner_id >= 0:
-            var partner: Dictionary = wild_pokemon[partner_id]
-            original["mate_id"] = partner.ecology_id
-            partner["mate_id"] = original.ecology_id
-            wild_pokemon[id] = original
-            wild_pokemon[partner_id] = partner
-            paired[id] = true
-            paired[partner_id] = true
+    await PopulationRules.place_mates(area, _place_wild, _spawn_slices() if spread else Callable())
 
 func _spawn_exact_burrowed_pokemon(records: Array[Dictionary]) -> void:
-    for record in records:
-        var cell: Vector2i = record.get("cell", Vector2i.ZERO)
-        if not exact_world.contains_cell(cell):
-            continue
-        var tile := exact_world.tile_at(cell)
-        var home_biome := "DESERT" if tile == null else _source_biome_for_tile(tile)
-        _add_wild_pokemon(
-            "trapinch", int(record.get("level", 22)), cell,
-            home_biome, 0, record
-        )
+    PopulationRules.place_burrowed(area, records, _place_wild)
+
+## The rules' `add` for a new world's Pokemon (rules/population_rules.gd
+## place_new): the wild id it got, -1 when it was not put in.
+func _place_wild(species: String, level: int, cell: Vector2i, home_biome: String, source_record: Dictionary) -> int:
+    var new_id := next_wild_id
+    _add_wild_pokemon(species, level, cell, home_biome, 0, source_record)
+    return new_id if wild_pokemon.has(new_id) else -1
+
+## What spawning awaits between Pokemon: a frame once 13 ms of one went to it.
+func _spawn_slices() -> Callable:
+    var deadline := [Time.get_ticks_usec() + 13000]
+    return func() -> void:
+        if Time.get_ticks_usec() >= deadline[0]:
+            await get_tree().process_frame
+            deadline[0] = Time.get_ticks_usec() + 13000
 
 func _place_source_landmarks(
         parent: Node2D,
@@ -3786,29 +3676,7 @@ func _ensure_overworld_pokemon_population() -> void:
     # Older saves persisted the roaming population before these source aliases
     # had visible textures. Restore only authored Alolan records absent from
     # that saved population; never invent a spawn or alter another species.
-    var present := {"araichu": false, "aexeggutor": false}
-    for raw_data in wild_pokemon.values():
-        var species := String((raw_data as Dictionary).get("species", "")).to_lower()
-        if species == "raichu_alolan":
-            species = "araichu"
-        elif species == "exeggutor_alolan":
-            species = "aexeggutor"
-        if present.has(species):
-            present[species] = true
-    for record in exact_world.pokemon_cell_records():
-        var species := String(record.get("name", "")).to_lower()
-        if not present.has(species) or bool(present[species]):
-            continue
-        var cell: Vector2i = record.get("cell", Vector2i.ZERO)
-        if _wild_id_at_cell(cell) >= 0:
-            continue
-        var tile: SourceTile = exact_world.tile_at(cell)
-        if tile == null:
-            continue
-        _add_wild_pokemon(
-            species, int(record.get("level", 2)), cell,
-            _source_biome_for_tile(tile), 0, record)
-        present[species] = true
+    PopulationRules.restore_alolan(area, _place_wild)
 
 func _spawn_missing_overworld_population() -> void:
     if not wild_pokemon.is_empty():
@@ -3853,32 +3721,7 @@ func _create_wild_pokemon(
         if adaptive_level > level:
             # Keep adaptive evolution deterministic per world/cell and do not
             # consume World.rng, which other runtime ecology systems share.
-            var evolution_rng := RandomNumberGenerator.new()
-            evolution_rng.seed = (
-                int(world_seed) * 1000003
-                + cell.x * 73856093
-                + cell.y * 19349663
-                + adaptive_level * 83492791
-                + species.hash()
-            )
-            var evolved_species := PokemonData.adaptive_source_evolution(
-                species, adaptive_level, evolution_rng
-            )
-            var source_tile: SourceTile = exact_world.tile_at(cell)
-            var source_route_name := ""
-            var source_is_water := false
-            if source_tile != null:
-                source_is_water = source_tile.is_water
-                if source_tile.route_belongs_to != null:
-                    source_route_name = source_tile.route_belongs_to.name
-            var route_allows_evolution := (
-                source_route_name.is_empty()
-                or PokemonData.source_route_species_allowed(
-                    evolved_species, source_route_name, source_is_water
-                )
-            )
-            if route_allows_evolution and                     PokemonData.texture(evolved_species, "overworld") != null:
-                species = evolved_species
+            species = PopulationRules.adapted_species(area, species, level, cell, adaptive_level, world_seed)
     # The record itself (its shiny roll, ecology, clocks) is the area's rule;
     # its sprite (once it comes into view) is the WildPokemonLayer's
     # (population_view.gd), a hidden sand trap's clock this World's.
