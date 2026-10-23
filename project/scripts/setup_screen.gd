@@ -469,12 +469,12 @@ func prepare_swipe_cursor() -> void:
     swipe_cursor.mouse_filter = Control.MOUSE_FILTER_IGNORE
     swipe_cursor.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
     main.touch_config.add_child(swipe_cursor)
-    main.touch_config_scroll.get_v_scroll_bar().value_changed.connect(func(_value): position_swipe_cursor())
+    main.touch_config_panel.touch_config_scroll.get_v_scroll_bar().value_changed.connect(func(_value): position_swipe_cursor())
     _select_swipe_row(0)
 
 func _select_swipe_row(index: int) -> void:
     swipe_selection = wrapi(index,0,swipe_rows.size())
-    main.touch_config_scroll.ensure_control_visible(swipe_rows[swipe_selection])
+    main.touch_config_panel.touch_config_scroll.ensure_control_visible(swipe_rows[swipe_selection])
     position_swipe_cursor.call_deferred()
 
 func position_swipe_cursor() -> void:
@@ -484,12 +484,12 @@ func position_swipe_cursor() -> void:
     elif row == main.touch_size_slider:row=main.touch_size_label
     swipe_cursor.global_position.x = roundf(row.global_position.x+2)
     main._align_control_tick(swipe_cursor,row)
-    swipe_cursor.visible = main.touch_config_scroll.get_global_rect().encloses(swipe_cursor.get_global_rect())
+    swipe_cursor.visible = main.touch_config_panel.touch_config_scroll.get_global_rect().encloses(swipe_cursor.get_global_rect())
 
 func handle_swipe_menu(event: InputEvent) -> void:
     if event.is_echo(): return
     if event.is_action_pressed("cancel") or event.is_action_pressed("start"):
-        main._close_touch_config();return
+        main.touch_config_panel.close_touch_config();return
     var direction := 0
     var change := 0
     if event.is_action_pressed("move_down"): direction=1

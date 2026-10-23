@@ -26,6 +26,7 @@ signal progression_choice_made(value: int)
 const DataPaths = preload("res://scripts/game_data_paths.gd")
 const WorldSaves = preload("res://scripts/world_saves.gd")
 var saves := WorldSaves.new("user://saves")
+var touch_config_panel := preload("res://scripts/touch_config_panel.gd").new(self)
 var setup_screen := preload("res://scripts/setup_screen.gd").new(self)
 var appearance := preload("res://scripts/player_appearance.gd").new(self)
 ## The screens open over the field (screen_stack.gd); the *_open flags are views of it.
@@ -874,18 +875,18 @@ func _ready() -> void:
     auto_hide.button_pressed = touch_controls.auto_hide_controller
     touch_opacity_slider.value = touch_controls.control_opacity * 100.0
     touch_size_slider.value = touch_controls.control_scale * 100.0
-    show_touch.toggled.connect(_show_touch_changed)
-    auto_hide.toggled.connect(_auto_hide_changed)
-    touch_opacity_slider.value_changed.connect(_touch_opacity_changed)
-    touch_size_slider.value_changed.connect(_touch_size_changed)
-    touch_theme_button.pressed.connect(_cycle_touch_theme)
-    touch_controls.control_theme_changed.connect(_on_touch_theme_changed)
+    show_touch.toggled.connect(touch_config_panel.show_touch_changed)
+    auto_hide.toggled.connect(touch_config_panel.auto_hide_changed)
+    touch_opacity_slider.value_changed.connect(touch_config_panel.touch_opacity_changed)
+    touch_size_slider.value_changed.connect(touch_config_panel.touch_size_changed)
+    touch_theme_button.pressed.connect(touch_config_panel.cycle_touch_theme)
+    touch_controls.control_theme_changed.connect(touch_config_panel.on_touch_theme_changed)
     touch_controls.touch_config_requested.connect(
-        _open_touch_config
+        touch_config_panel.open_touch_config
     )
-    $UI/TouchConfig/VBox/MoveControls.pressed.connect(_move_controls)
-    $UI/TouchConfig/VBox/ResetLayout.pressed.connect(_reset_layout)
-    $UI/TouchConfig/VBox/Close.pressed.connect(_close_touch_config)
+    $UI/TouchConfig/VBox/MoveControls.pressed.connect(touch_config_panel.move_controls)
+    $UI/TouchConfig/VBox/ResetLayout.pressed.connect(touch_config_panel.reset_layout)
+    $UI/TouchConfig/VBox/Close.pressed.connect(touch_config_panel.close_touch_config)
     var files_button := Button.new()
     files_button.name="GameFiles";files_button.text="GAME FILES"
     $UI/TouchConfig/VBox.add_child(files_button)
@@ -898,8 +899,8 @@ func _ready() -> void:
     $UI/TouchConfig/VBox.add_child(mods_button)
     $UI/TouchConfig/VBox.move_child(mods_button,files_button.get_index()+1)
     mods_button.pressed.connect(_open_modding_menu)
-    _refresh_touch_config_labels()
-    _apply_touch_config_theme()
+    touch_config_panel.refresh_touch_config_labels()
+    touch_config_panel.apply_touch_config_theme()
 
     coop_game = preload("res://scripts/coop_game.gd").new()
     add_child(coop_game)
@@ -2402,7 +2403,7 @@ func _notification(what: int) -> void:
         if is_node_ready() and _is_android_touch_runtime():
             touch_controls.refresh_system_theme()
             if touch_config.visible:
-                _apply_touch_config_theme()
+                touch_config_panel.apply_touch_config_theme()
         return
 
     if what != NOTIFICATION_WM_GO_BACK_REQUEST:
@@ -2437,9 +2438,9 @@ func _handle_android_back_request() -> void:
         mod_menu_panel.call("_close")
     elif touch_controls.edit_mode:
         touch_controls.end_edit()
-        _open_touch_config()
+        touch_config_panel.open_touch_config()
     elif touch_config.visible:
-        _close_touch_config()
+        touch_config_panel.close_touch_config()
     else:
         if is_instance_valid(pokedex_menu) and pokedex_menu.visible:
             pokedex_menu.close()
@@ -2463,11 +2464,11 @@ func _handle_android_controls_gesture() -> void:
     if is_instance_valid(pokedex_menu) and pokedex_menu.visible: pokedex_menu.close()
     if touch_controls.edit_mode:
         touch_controls.end_edit()
-        _open_touch_config()
+        touch_config_panel.open_touch_config()
     elif touch_config.visible:
-        _close_touch_config()
+        touch_config_panel.close_touch_config()
     else:
-        _open_touch_config()
+        touch_config_panel.open_touch_config()
 
 func _input(event: InputEvent) -> void:
     last_input_msec = Time.get_ticks_msec()
@@ -2647,24 +2648,24 @@ func _unhandled_input(event: InputEvent) -> void:
             return
         if touch_controls.edit_mode:
             touch_controls.end_edit()
-            _open_touch_config()
+            touch_config_panel.open_touch_config()
         elif touch_config.visible:
-            _close_touch_config()
+            touch_config_panel.close_touch_config()
         else:
-            _open_touch_config()
+            touch_config_panel.open_touch_config()
         get_viewport().set_input_as_handled()
         return
 
     if touch_config.visible:
         if event.is_action_pressed("cancel") or event.is_action_pressed("start"):
-            _close_touch_config()
+            touch_config_panel.close_touch_config()
             get_viewport().set_input_as_handled()
         return
 
     if touch_controls.edit_mode:
         if event.is_action_pressed("quit_menu") or event.is_action_pressed("cancel"):
             touch_controls.end_edit()
-            _open_touch_config()
+            touch_config_panel.open_touch_config()
             get_viewport().set_input_as_handled()
         return
 
@@ -6657,139 +6658,9 @@ func _on_item_collected(item_name: String) -> void:
     var normalized := ItemData.normalize_name(item_name)
     dialogs.show_acquired_resource(normalized, 1)
 
-func _show_touch_changed(enabled: bool) -> void:
-    touch_controls.set_touch_enabled(enabled)
-    _refresh_touch_config_labels()
+## touch_config_panel.gd under its old names, for the scripts and tests that call them on main.
+func _open_touch_config(from_options: bool = false) -> void: touch_config_panel.open_touch_config(from_options)
 
-func _auto_hide_changed(enabled: bool) -> void:
-    touch_controls.set_auto_hide_controller(enabled)
-    _refresh_touch_config_labels()
-
-func _touch_opacity_changed(value: float) -> void:
-    touch_controls.set_control_opacity(value / 100.0)
-    _refresh_touch_config_labels()
-
-func _touch_size_changed(value: float) -> void:
-    touch_controls.set_control_scale(value / 100.0)
-    _refresh_touch_config_labels()
-
-func _cycle_touch_theme() -> void:
-    touch_controls.set_theme_mode((touch_controls.theme_mode + 1) % 3)
-    _refresh_touch_config_labels()
-    _apply_touch_config_theme()
-
-func _on_touch_theme_changed() -> void:
-    if touch_config.visible:
-        _apply_touch_config_theme()
-
-func _refresh_touch_config_labels() -> void:
-    auto_hide.text = "AUTO HIDE: %s" % ("ON" if touch_controls.auto_hide_controller else "OFF")
-    show_touch.text = "TOUCH CONTROLS: %s" % (
-        "ON" if touch_controls.touch_enabled else "OFF"
-    )
-    touch_opacity_label.text = "  OPACITY %d%%" % roundi(
-        touch_controls.control_opacity * 100.0
-    )
-    touch_size_label.text = "  SIZE %d%%" % roundi(
-        touch_controls.control_scale * 100.0
-    )
-    var theme_names := ["SYSTEM", "LIGHT", "DARK"]
-    touch_theme_button.text = "THEME: %s" % theme_names[
-        clampi(touch_controls.theme_mode, 0, theme_names.size() - 1)
-    ]
-
-func _apply_touch_config_theme() -> void:
-    touch_config.add_theme_stylebox_override("panel", GameOptions.style())
-    _set_touch_config_colors(touch_config, Color.BLACK)
-    _style_touch_config_buttons()
-    _style_touch_config_sliders()
-    if touch_config_scroll == null:
-        # Keep every setting reachable on smaller screens and within cutouts.
-        var contents := touch_config.get_node("VBox") as VBoxContainer
-        touch_config_scroll = ScrollContainer.new()
-        touch_config_scroll.name = "TouchSettingsScroll"
-        touch_config_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-        touch_config_scroll.follow_focus = true
-        touch_config.add_child(touch_config_scroll)
-        contents.reparent(touch_config_scroll)
-        contents.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
-        contents.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-        touch_controls.safe_area_changed.connect(_layout_touch_config)
-    var scroll_bar := touch_config_scroll.get_v_scroll_bar()
-    var rail := StyleBoxFlat.new();rail.bg_color=Color(0.9,0.9,0.9);rail.content_margin_left=2;rail.content_margin_right=2
-    var thumb := StyleBoxFlat.new();thumb.bg_color=Color.BLACK;thumb.content_margin_left=2;thumb.content_margin_right=2
-    scroll_bar.add_theme_stylebox_override("scroll",rail)
-    for state in ["grabber","grabber_highlight","grabber_pressed"]:scroll_bar.add_theme_stylebox_override(state,thumb)
-    _layout_touch_config()
-    setup_screen.prepare_swipe_cursor()
-
-var touch_config_scroll: ScrollContainer
-
-func _layout_touch_config(_bounds: Rect2 = Rect2()) -> void:
-    if touch_config_scroll == null: return
-    var bounds := touch_controls.usable_rect
-    var panel_size := Vector2(minf(224.0, bounds.size.x - 8.0), minf(172.0, bounds.size.y - 8.0))
-    touch_config.size = panel_size
-    touch_config.position = (bounds.position + (bounds.size - panel_size) * 0.5).round()
-    touch_config_scroll.position = Vector2(12, 10)
-    touch_config_scroll.size = panel_size - Vector2(24, 20)
-
-func _touch_config_box(color: Color, border: Color, radius: int) -> StyleBoxFlat:
-    var style := StyleBoxFlat.new()
-    style.bg_color = color
-    style.border_color = border
-    style.set_border_width_all(1)
-    style.corner_radius_top_left = radius
-    style.corner_radius_top_right = radius
-    style.corner_radius_bottom_left = radius
-    style.corner_radius_bottom_right = radius
-    return style
-
-func _style_touch_config_buttons() -> void:
-    for node in touch_config.find_children("*", "Button", true, false):
-        var button := node as Button
-        button.text = button.text.to_upper()
-        button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-        button.custom_minimum_size.y = 16
-        button.focus_mode = Control.FOCUS_NONE
-        var plain := StyleBoxEmpty.new()
-        plain.content_margin_left = 12
-        for state in ["normal", "hover", "pressed", "focus", "disabled"]:
-            button.add_theme_stylebox_override(state, plain)
-        if button is CheckButton:
-            var blank := ImageTexture.create_from_image(Image.create(1,1,false,Image.FORMAT_RGBA8))
-            for icon_name in ["checked", "unchecked", "checked_disabled", "unchecked_disabled", "checked_mirrored", "unchecked_mirrored"]:
-                button.add_theme_icon_override(icon_name, blank)
-
-func _style_touch_config_sliders() -> void:
-    var track := _touch_config_box(Color.BLACK,Color.BLACK,0)
-    track.content_margin_top = 1.0
-    track.content_margin_bottom = 1.0
-    var fill := _touch_config_box(Color.BLACK,Color.BLACK,0)
-    var grabber := GradientTexture2D.new()
-    var gradient := Gradient.new()
-    gradient.set_color(0,Color(0.75,0.15,0.15))
-    gradient.set_color(1,Color(0.75,0.15,0.15))
-    grabber.gradient = gradient
-    grabber.width = 6
-    grabber.height = 10
-    for slider in [touch_opacity_slider,touch_size_slider]:
-        slider.add_theme_stylebox_override("slider",track)
-        slider.add_theme_stylebox_override("grabber_area",fill)
-        slider.add_theme_stylebox_override("grabber_area_highlight",fill)
-        for state in ["grabber","grabber_highlight","grabber_disabled"]:
-            slider.add_theme_icon_override(state,grabber)
-
-func _set_touch_config_colors(node: Node, color: Color) -> void:
-    if node is Label or node is Button:
-        var control := node as Control
-        control.add_theme_font_override("font",JOHTO_FONT)
-        control.add_theme_font_size_override("font_size",8)
-        control.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-        for state in ["font_color","font_hover_color","font_pressed_color","font_focus_color","font_hover_pressed_color","font_disabled_color"]:
-            control.add_theme_color_override(state,color)
-    for child in node.get_children():
-        _set_touch_config_colors(child,color)
 
 func _open_modding_menu() -> void:
     touch_config.hide()
@@ -6806,54 +6677,6 @@ func _open_game_files_menu() -> void:
         $UI.add_child(game_files_menu)
         game_files_menu.configure(self)
     game_files_menu.open()
-
-func _open_touch_config(from_options: bool = false) -> void:
-    if not from_options and not _is_android_touch_runtime():
-        touch_config.visible = false
-        touch_controls.set_game_active(false)
-        return
-    if touch_controls.edit_mode:
-        touch_controls.end_edit()
-    if field_move_wheel_open:
-        move_wheel.close_field_move_wheel(false)
-    touch_config.visible = true
-    swipe_stick_held = false
-    setup_screen.position_swipe_cursor.call_deferred()
-    touch_controls.set_game_active(false)
-    show_touch.button_pressed = touch_controls.touch_enabled
-    auto_hide.button_pressed = touch_controls.auto_hide_controller
-    touch_opacity_slider.set_value_no_signal(
-        touch_controls.control_opacity * 100.0
-    )
-    touch_size_slider.set_value_no_signal(
-        touch_controls.control_scale * 100.0
-    )
-    _refresh_touch_config_labels()
-    _apply_touch_config_theme()
-    if started:
-        world.set_gameplay_enabled(false)
-
-func _move_controls() -> void:
-    touch_config.visible = false
-    touch_controls.set_game_active(true)
-    touch_controls.begin_edit()
-
-func _reset_layout() -> void:
-    touch_controls.reset_layout()
-
-func _close_touch_config() -> void:
-    touch_config.visible = false
-    if not started:
-        touch_controls.set_game_active(true)
-        return
-    var gameplay_should_resume := (
-        not battle_active
-        and not game_menu_open
-        and not craft_menu_open
-        and not quit_prompt_open
-    )
-    world.set_gameplay_enabled(gameplay_should_resume)
-    touch_controls.set_game_active(true)
 
 var mod_menu_panel: Control
 
@@ -7164,5 +6987,4 @@ func _warm_world_shaders() -> void:
     RenderingServer.frame_pre_draw.disconnect(on_pre)
     RenderingServer.frame_post_draw.disconnect(on_post)
 
-var swipe_stick_held := false
 
