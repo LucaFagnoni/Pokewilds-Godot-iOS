@@ -153,6 +153,29 @@ const FARM_POKEMON_TEXTURES := {
 
 var rng := RandomNumberGenerator.new()
 
+const AreaState = preload("res://scripts/area_state.gd")
+## This area's world as data (area_state.gd). The overlay dictionaries below
+## (terrain_changes, removed_resources, source_interior_mutations, ...) are
+## its own; its tiles, structures, blocked cells and Pokemon are this world's
+## (_bind_area). Write overlays through area.put()/drop(): co-op learns what
+## changed from them.
+var area := AreaState.new()
+
+func _init() -> void:
+    _bind_area()
+
+## Points the area's data at this world's: done again whenever exact_world changes.
+func _bind_area() -> void:
+    area.tiles = exact_world
+    area.bounds = exact_world_bounds
+    area.structures = built_structures
+    area.blocked = blocked
+    area.landmarks = landmarks
+    area.interactables = interior_interactables
+    area.wild = wild_population
+    area.habitat = habitat_population
+    area.eggs = egg_population
+
 var terrain: Array = []
 var biomes: Array = []
 var blocked: Dictionary = {}
@@ -161,8 +184,12 @@ var landmarks: Dictionary = {}
 var resource_objects: Dictionary = {}
 var ground_sprites: Dictionary = {}
 var ground_collisions: Dictionary = {}
-var removed_resources: Dictionary = {}
-var terrain_changes: Dictionary = {}
+var removed_resources: Dictionary:
+    get: return area.removed_resources
+    set(value): area.removed_resources = value
+var terrain_changes: Dictionary:
+    get: return area.terrain_changes
+    set(value): area.terrain_changes = value
 var built_structures: Dictionary = {}
 const HabitatPopulation = preload("res://scripts/habitat_population.gd")
 ## The Pokemon left out in habitats (habitat_population.gd): their frame, and
@@ -174,7 +201,9 @@ var deployed_pokemon: Dictionary = habitat_population.records
 var build_mode_active := false
 var build_selection_index := 0
 var build_preview_sprite: Sprite2D
-var source_plant_farms: Dictionary = {}
+var source_plant_farms: Dictionary:
+    get: return area.source_plant_farms
+    set(value): area.source_plant_farms = value
 var planting_item := ""
 var source_plant_system
 
@@ -221,11 +250,15 @@ var source_layer_area_ids: Dictionary = {}
 var generated_source_interior_plans: Array[Dictionary] = []
 var interior_interactables: Dictionary = {}
 var source_interior_upper_sprites: Dictionary = {}
-var source_interior_mutations: Dictionary = {}
+var source_interior_mutations: Dictionary:
+    get: return area.source_interior_mutations
+    set(value): area.source_interior_mutations = value
 var built_house_interior_cells: Dictionary = {}
 var built_house_paintable_walls: Dictionary = {}
 # Persistent paint records are keyed by exterior door + local interior wall.
-var built_house_paintings: Dictionary = {}
+var built_house_paintings: Dictionary:
+    get: return area.built_house_paintings
+    set(value): area.built_house_paintings = value
 # Sprite instances are runtime-only and rebuilt whenever the house is entered.
 var built_house_paint_sprites: Dictionary = {}
 var active_built_house_door := Vector2i(-2147483648, -2147483648)
@@ -235,7 +268,9 @@ var built_house_interior_origin := Vector2i.ZERO
 # by a staircase and can then be expanded with FLOOR tiles.
 const BUILT_HOUSE_FLOOR_STRIDE := 64
 var built_house_floor_origins: Dictionary = {}
-var built_house_origins: Dictionary = {}
+var built_house_origins: Dictionary:
+    get: return area.built_house_origins
+    set(value): area.built_house_origins = value
 var built_house_exit_doors: Dictionary = {}
 var built_house_room_size := Vector2i.ZERO
 var built_house_footprint: Dictionary = {}
@@ -245,8 +280,12 @@ var built_house_footprint: Dictionary = {}
 ## piece has been cut off from the door, or the house has changed shape.
 var built_house_rooms_seen: Dictionary = {}
 var built_house_floor_capacity := 1
-var built_house_floor_tiles: Dictionary = {}
-var built_house_decorations: Dictionary = {}
+var built_house_floor_tiles: Dictionary:
+    get: return area.built_house_floor_tiles
+    set(value): area.built_house_floor_tiles = value
+var built_house_decorations: Dictionary:
+    get: return area.built_house_decorations
+    set(value): area.built_house_decorations = value
 var built_house_decoration_sprites: Dictionary = {}
 var built_house_void_collisions: Dictionary = {}
 ## The inside of a built house and the generated dungeons are laid out in the
@@ -352,15 +391,9 @@ var burrow_busy := false
 var sand_trap_ids: Dictionary = {}
 var pending_encounter_record: Dictionary = {}
 var pending_battle_context: Dictionary = {}
-var event_progress: Dictionary = {
-    "completed": {},
-    "trainer_defeated": {},
-    "keystone_life_force": {},
-    "regis_caught": [],
-    "mewtwo_defeated_day": -1,
-    "fossil_machine_powered": false,
-    "biome_first_entries": {}
-}
+var event_progress: Dictionary:
+    get: return area.event_progress
+    set(value): area.event_progress = value
 var event_npcs: Dictionary = {}
 var source_event_collisions: Dictionary = {}
 var ghost_step_countdown := -1
@@ -649,6 +682,7 @@ func generate_world(
     active_regi_pedestal_cell = Vector2i(-2147483648, -2147483648)
     exact_world = null
     exact_world_bounds = Rect2i()
+    _bind_area()
     area_return_cells.clear()
     active_area_id = "OVERWORLD"
     water_sprites.clear()
@@ -786,6 +820,7 @@ func _generate_exact_live_world(
             push_warning("Saved-world cache worker unavailable; cache was not written.")
     _repair_orphaned_large_trees()
     exact_world_bounds = exact_world.bounds()
+    _bind_area()
     # Discovery covers every cell _in_bounds accepts: the tile store's rectangle.
     var store_tiles = exact_world.tiles
     discovered_cells.reset(Rect2i(store_tiles.origin, Vector2i(store_tiles.width, store_tiles.height)) if store_tiles is WorldTileStore else exact_world_bounds)
@@ -2660,7 +2695,7 @@ func _harvest_resource(cell: Vector2i, source_move: String = "") -> void:
             material_collected.emit("MIRACLE SEED", 1)
             if _in_bounds(cell):
                 terrain[cell.y][cell.x] = 1
-                terrain_changes[_cell_key(cell)] = 1
+                area.put("terrain_changes", _cell_key(cell), 1)
                 var ground_sprite := ground_sprites.get(cell) as Sprite2D
                 if is_instance_valid(ground_sprite):
                     ground_sprite.texture = SAND
@@ -2728,7 +2763,7 @@ func _remove_resource(cell: Vector2i, remember: bool) -> void:
         tall_grass.erase(cell)
 
     if remember:
-        removed_resources[_cell_key(cell)] = true
+        area.put("removed_resources", _cell_key(cell), true)
 
 func _cut_tall_grass(cell: Vector2i) -> void:
     if not _is_cuttable_grass_cell(cell):
@@ -2748,9 +2783,9 @@ func _cut_tall_grass(cell: Vector2i) -> void:
         var replacement := _cuttable_grass_replacement(tile, cell)
         tile.set_names(String(replacement.get("base", tile.name)),
             String(replacement.get("upper", "")))
-        source_interior_mutations[_cell_key(cell)] = {
+        area.put("source_interior_mutations", _cell_key(cell), {
             "kind":"TILE_NAMES", "base":tile.name, "upper":tile.name_upper
-        }
+        })
         _unblock_ground(cell)
         # CUT changes this tile; update resident neighbors without scanning
         # collision revisions for the entire world after every grass tuft.
@@ -5359,7 +5394,7 @@ func _use_interior_interactable(action: String, action_cell: Vector2i = Vector2i
             if item_name != "POKE BALL":
                 world_message.emit("You found %s x%d!" % [item_name, amount])
             interior_interactables.erase(action_cell)
-            source_interior_mutations[_cell_key(action_cell)] = {"kind": "COLLECTED"}
+            area.put("source_interior_mutations", _cell_key(action_cell), {"kind": "COLLECTED"})
             SourceMansionRuntime.clear_collected_item(self, action_cell)
             SourceMineRuntime.clear_collected_item(self, action_cell)
             var item_sprite := source_interior_upper_sprites.get(action_cell) as Sprite2D
@@ -5589,10 +5624,10 @@ func complete_battle_event(result: Dictionary) -> void:
         return
     if event_id == "mewtwo" and outcome == "defeated":
         event_progress["mewtwo_defeated_day"] = _world_day_index()
-        source_interior_mutations[_cell_key(cell)] = {
+        area.put("source_interior_mutations", _cell_key(cell), {
             "kind": "EVENT_COOLDOWN", "event_id": event_id,
             "day": _world_day_index()
-        }
+        })
         _hide_event_cell(cell)
         world_message.emit("MEWTWO fled. It may return after recovering.")
         return
@@ -5615,13 +5650,13 @@ func _complete_regi_capture(species: String, cell: Vector2i) -> void:
     world_message.emit(String(SourceEventData.REGI_LORE.get(species, "%s was caught." % species)))
     _hide_event_cell(cell)
     if caught.size() < SourceEventData.REGI_SPECIES.size():
-        source_interior_mutations[_cell_key(cell)] = {"kind": "REGI_PEDESTAL"}
+        area.put("source_interior_mutations", _cell_key(cell), {"kind": "REGI_PEDESTAL"})
         _restore_regi_pedestal(cell)
         world_message.emit("A voice whispers: I desire more...")
     else:
-        source_interior_mutations[_cell_key(cell)] = {
+        area.put("source_interior_mutations", _cell_key(cell), {
             "kind": "EVENT_CLEARED", "event_id": "regi_pedestal"
-        }
+        })
         world_message.emit("My work is complete... REGIGIGAS awakened!")
     SourceRegiRuntime.sync(self)
 
@@ -5632,9 +5667,9 @@ func _clear_event_cell(cell: Vector2i, event_id: String) -> void:
     if event_id == "mega_gengar" and event_progress.has(SourceForestBoss.SAVE_KEY):
         _hide_event_cell(cell)
         return
-    source_interior_mutations[_cell_key(cell)] = {
+    area.put("source_interior_mutations", _cell_key(cell), {
         "kind": "EVENT_CLEARED", "event_id": event_id
-    }
+    })
     _hide_event_cell(cell)
     if exact_world != null and exact_world.contains_cell(cell):
         var tile := exact_world.tile_at(cell)
@@ -5680,9 +5715,9 @@ func add_keystone_life_force(cell: Vector2i, available: int) -> int:
     var new_amount := old_amount + used
     amounts[key] = new_amount
     event_progress["keystone_life_force"] = amounts
-    source_interior_mutations[key] = {
+    area.put("source_interior_mutations", key, {
         "kind": "KEYSTONE", "amount": new_amount
-    }
+    })
     if new_amount >= 107:
         interior_interactables[cell] = "SPECIAL:spiritomb"
         var tile := exact_world.tile_at(cell) if exact_world != null else null
@@ -5759,7 +5794,7 @@ func _refresh_biome_dig_sites(spread: bool = false) -> void:
                 String(mutation.get("base", old_tile.name)),
                 String(mutation.get("original_upper", ""))
             )
-        source_interior_mutations.erase(key)
+        area.drop("source_interior_mutations", key)
 
     var candidates: Dictionary = {}
     for crack_name in FieldMoveData.CRACKED_LOOT:
@@ -5824,10 +5859,10 @@ func _refresh_biome_dig_sites(spread: bool = false) -> void:
             var original_base := tile.name
             var crack := FieldMoveData.dig_site_name(tile)
             tile.set_names(original_base, crack)
-            source_interior_mutations[key] = {
+            area.put("source_interior_mutations", key, {
                 "kind":"BIOME_DIG_SITE", "day":day,
                 "base":original_base, "original_upper":original_upper, "crack":crack
-            }
+            })
     # Spread, the layers take the day's cells a few at a time.
     if spread: _queue_exact_refresh()
     else: _refresh_exact_tile_streams()
@@ -5903,7 +5938,7 @@ func _refresh_daily_events(spread: bool = false) -> void:
         if String(mutation.get("kind", "")) != "EVENT_COOLDOWN":
             continue
         var cell := _cell_from_key(String(raw_key))
-        source_interior_mutations.erase(raw_key)
+        area.drop("source_interior_mutations", raw_key)
         interior_interactables[cell] = "SPECIAL:mewtwo"
         blocked[cell] = true
         var area_layer := _source_area_layer_at(cell)
@@ -5933,7 +5968,7 @@ func complete_regi_forge(species_name: String) -> bool:
     var mutation := {
         "kind": "REGI", "species": species
     }
-    source_interior_mutations[_cell_key(cell)] = mutation
+    area.put("source_interior_mutations", _cell_key(cell), mutation)
     _apply_source_interior_mutation(cell, mutation)
     SourceRegiRuntime.sync(self)
     active_regi_pedestal_cell = Vector2i(-2147483648, -2147483648)
@@ -5957,7 +5992,7 @@ func unlock_mansion_door(cell: Vector2i) -> bool:
         return false
     tile.set_names("pkmnmansion_ext_door", "")
     interior_interactables[cell] = "GOTO_AREA:MANSION_0"
-    source_interior_mutations[_cell_key(cell)] = {"kind": "MANSION_DOOR"}
+    area.put("source_interior_mutations", _cell_key(cell), {"kind": "MANSION_DOOR"})
     _refresh_exact_streams()
     return true
 

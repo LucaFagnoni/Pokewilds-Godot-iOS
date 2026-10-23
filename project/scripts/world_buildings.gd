@@ -120,7 +120,7 @@ func remove_house_wall_decoration(cell: Vector2i, refund: bool) -> bool:
     var hung := house_wall_decoration_at(cell)
     if hung.is_empty():
         return false
-    world.built_house_decorations.erase(world._built_house_paint_key(cell))
+    world.area.drop("built_house_decorations", world._built_house_paint_key(cell))
     var decoration := world.built_house_decoration_sprites.get(cell) as Sprite2D
     if is_instance_valid(decoration):
         decoration.queue_free()
@@ -389,7 +389,7 @@ func place_structure(build_name: String, cell: Vector2i, restoring: bool = false
         if build_name.begins_with("CARPET ") and not world.built_house_interior_cells.has(cell):
             var floor_index := world._built_house_floor_index_for_cell(cell)
             if not world._add_built_house_floor_cell(floor_index, cell - world._built_house_floor_origin(floor_index), true): return false
-        world.built_house_decorations[world._built_house_paint_key(cell)] = {"name":build_name, "variant":0}
+        world.area.put("built_house_decorations", world._built_house_paint_key(cell), {"name":build_name, "variant":0})
         draw_house_decoration(cell)
         if build_name.begins_with("CARPET "):
             for bed_cell in [cell, cell + Vector2i.DOWN]:
@@ -484,6 +484,7 @@ func place_structure(build_name: String, cell: Vector2i, restoring: bool = false
             structure_state[key] = stair_metadata[key]
         structure_state["generated_stair_pair"] = false
     world.built_structures[cell] = structure_state
+    world.area.mark("structures", cell)
     if structure_name == "COUCH":
         var footprint := _couch_footprint(requested_name, cell)
         for occupied in footprint: world.blocked[occupied] = true
@@ -650,6 +651,7 @@ func interact_built_structure(cell: Vector2i) -> void:
     elif build_name == "WINDOW":
         data["variant"] = wrapi(int(data.get("variant", 0)) + 1, 0, 3)
         world.built_structures[cell] = data
+        world.area.mark("structures", cell)
         var window_sprite := data.get("sprite") as Sprite2D
         if is_instance_valid(window_sprite):
             window_sprite.texture = structure_display_texture("WINDOW", int(data["variant"]))
@@ -659,6 +661,7 @@ func interact_built_structure(cell: Vector2i) -> void:
         if int(data.get("last_harvest_day", -1)) < day:
             data["last_harvest_day"] = day
             world.built_structures[cell] = data
+            world.area.mark("structures", cell)
             world.material_collected.emit("MIRACLE SEED", 1)
             world.world_message.emit("The PLANT yielded a MIRACLE SEED.")
         else:
@@ -683,6 +686,7 @@ func interact_built_structure(cell: Vector2i) -> void:
     elif build_name == "TORCH":
         data["lit"] = not bool(data.get("lit", true))
         world.built_structures[cell] = data
+        world.area.mark("structures", cell)
         var torch_sprite := data.get("sprite") as Sprite2D
         if is_instance_valid(torch_sprite):
             torch_sprite.modulate = Color.WHITE if bool(data["lit"]) else Color(0.45, 0.45, 0.45)
@@ -749,6 +753,7 @@ func set_structure_sign_text(cell: Vector2i, value: String) -> void:
         return
     data["text"] = value.strip_edges().left(64)
     world.built_structures[cell] = data
+    world.area.mark("structures", cell)
     world.world_message.emit("The SIGN now reads: %s" % String(data["text"]))
 
 func set_structure_beacon_label(cell: Vector2i, value: String) -> void:
@@ -759,6 +764,7 @@ func set_structure_beacon_label(cell: Vector2i, value: String) -> void:
         return
     data["label"] = value.strip_edges().left(32)
     world.built_structures[cell] = data
+    world.area.mark("structures", cell)
     if String(data["label"]).is_empty():
         world.world_message.emit("The BEACON name was cleared.")
     else:
@@ -781,6 +787,7 @@ func _set_structure_solid(cell: Vector2i, solid: bool) -> void:
     data["collision"] = collision
     data["solid"] = solid
     world.built_structures[cell] = data
+    world.area.mark("structures", cell)
 
 func built_house_state(door_cell: Vector2i) -> Dictionary:
     # Source smart-building follows connected house pieces from the door. It
@@ -836,6 +843,7 @@ func toggle_structure_door(cell: Vector2i) -> void:
     var is_open := not bool(data.get("open", false))
     data["open"] = is_open
     world.built_structures[cell] = data
+    world.area.mark("structures", cell)
     _set_structure_solid(cell, not is_open)
     var sprite := data.get("sprite") as Sprite2D
     if is_instance_valid(sprite):
@@ -995,6 +1003,7 @@ func refresh_connected_structures_around(center: Vector2i) -> void:
                 door_sprite.z_index = world._depth_z(cell) + (0 if data.gate else 1)
                 _set_structure_solid(cell, false if data.gate else not bool(data.get("open", false)))
             world.built_structures[cell] = data
+            world.area.mark("structures", cell)
             var old_rug := door_sprite.get_node_or_null("SideEntrance") if is_instance_valid(door_sprite) else null
             if is_instance_valid(old_rug):
                 door_sprite.remove_child(old_rug)
@@ -1037,6 +1046,7 @@ func refresh_connected_structures_around(center: Vector2i) -> void:
                 wall_sprite.z_index = world._depth_z(cell)
             data["wall_connections"] = wall_suffix
             world.built_structures[cell] = data
+            world.area.mark("structures", cell)
             continue
         if name not in ["FENCE", "WALL", "INTERIOR WALL", "ROOF", "TABLE"]:
             continue
@@ -1061,6 +1071,7 @@ func refresh_connected_structures_around(center: Vector2i) -> void:
         var vertical := north or south
         data["connections"] = (1 if horizontal else 0) | (2 if vertical else 0)
         world.built_structures[cell] = data
+        world.area.mark("structures", cell)
         var sprite := data.get("sprite") as Sprite2D
         if is_instance_valid(sprite):
             var suffix := ("N" if north else "") + ("S" if south else "") + ("E" if east else "") + ("W" if west else "")
@@ -1224,7 +1235,7 @@ func remove_structure(cell: Vector2i, refund: bool) -> void:
         # bare floor left behind is no longer somewhere to hang one.
         var on_floor := world._built_house_floor_index_for_cell(cell) >= 0
         if _is_window_recipe(hung) or (on_floor and hung == "CLOCK"):
-            world.built_house_decorations.erase(key)
+            world.area.drop("built_house_decorations", key)
             var window := world.built_house_decoration_sprites.get(cell) as Sprite2D
             if is_instance_valid(window): window.queue_free()
             world.built_house_decoration_sprites.erase(cell)
@@ -1257,6 +1268,7 @@ func remove_structure(cell: Vector2i, refund: bool) -> void:
             if is_instance_valid(pair_sprite):
                 pair_sprite.queue_free()
             world.built_structures.erase(pair_cell)
+            world.area.mark("structures", pair_cell)
         if cell != primary_cell and world.built_structures.has(primary_cell):
             cell = primary_cell
             data = world.built_structures[cell]
@@ -1278,6 +1290,7 @@ func remove_structure(cell: Vector2i, refund: bool) -> void:
         if stream != null: stream.set_cell_passable(cell, false)
 
     world.built_structures.erase(cell)
+    world.area.mark("structures", cell)
     # A restored shell can cover regenerated grass. Cutting that shell must
     # leave its previously cleared building ground usable for a new doorway.
     if build_name in ["WALL", "ROOF", "DOOR"] and world.active_area_id == "OVERWORLD" and world.exact_world != null:
@@ -1285,9 +1298,9 @@ func remove_structure(cell: Vector2i, refund: bool) -> void:
         if underneath != null and underneath.is_grass:
             var cleared := world._cuttable_grass_replacement(underneath, cell)
             underneath.set_names(String(cleared.base), String(cleared.upper))
-            world.source_interior_mutations[world._cell_key(cell)] = {
+            world.area.put("source_interior_mutations", world._cell_key(cell), {
                 "kind":"TILE_NAMES", "base":underneath.name, "upper":underneath.name_upper
-            }
+            })
             world._refresh_exact_streams()
     world.grass_exclusion.erase(cell)
     world.flower_cells.erase(cell)
@@ -1462,7 +1475,7 @@ func interact_house_window(cell: Vector2i) -> bool:
     if not _is_window_recipe(build_name): return false
     if build_name == "INDOOR WINDOW 1": return true
     data.variant = wrapi(int(data.get("variant",0))+1,0,2 if build_name.ends_with("2") else 3)
-    world.built_house_decorations[key] = data
+    world.area.put("built_house_decorations", key, data)
     draw_house_decoration(cell)
     world.play_source_sound("seed1")
     return true

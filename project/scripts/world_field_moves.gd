@@ -1222,9 +1222,9 @@ func pick_exact_berry_tree(cell: Vector2i) -> void:
     world.play_source_sound("Berry_Get")
     tile.set_names(tile.name, tile.name_upper.replace("_full", "_empty"))
     world.plants().store(cell,tile)
-    world.source_interior_mutations[world._cell_key(cell)] = {
+    world.area.put("source_interior_mutations", world._cell_key(cell), {
         "kind":"BERRY_EMPTY", "upper":tile.name_upper
-    }
+    })
     world._refresh_exact_pickup_cell(cell)
     world.world_message.emit("You picked a %s." % berry_name)
 
@@ -1232,8 +1232,8 @@ func _clear_agitated_berry_tree(cell: Vector2i, tile: SourceTile) -> void:
     await world.get_tree().create_timer(400.0/60.0).timeout
     if world.exact_world == null or world.exact_world.tile_at(cell) != tile: return
     tile.set_names(tile.name, "")
-    world.source_plant_farms.erase(world._cell_key(cell))
-    world.source_interior_mutations[world._cell_key(cell)]={"kind":"TILE_NAMES","base":tile.name,"upper":""}
+    world.area.drop("source_plant_farms", world._cell_key(cell))
+    world.area.put("source_interior_mutations", world._cell_key(cell), {"kind":"TILE_NAMES","base":tile.name,"upper":""})
     world._refresh_exact_streams()
 
 func finish_shared_agitated_tree(cell:Vector2i,mutation:Dictionary)->void:
@@ -1245,7 +1245,7 @@ func finish_shared_agitated_tree(cell:Vector2i,mutation:Dictionary)->void:
     var tile:SourceTile=world.exact_world.tile_at(cell)
     if tile==null:return
     tile.set_names(String(mutation.get("base",tile.name)),"")
-    world.source_plant_farms.erase(world._cell_key(cell))
+    world.area.drop("source_plant_farms", world._cell_key(cell))
     world._refresh_exact_pickup_cell(cell)
 
 func _exact_tile_is_large_tree(cell: Vector2i) -> bool:
@@ -1390,9 +1390,9 @@ func _cut_exact_large_tree1_component(anchor: Vector2i) -> void:
         if replacement.is_empty() or replacement.begins_with("grass"):
             replacement = "green1"
         part.set_names(replacement, "")
-        world.source_interior_mutations[world._cell_key(part_cell)] = {
+        world.area.put("source_interior_mutations", world._cell_key(part_cell), {
             "kind":"TILE_NAMES", "base":replacement, "upper":""
-        }
+        })
         world.blocked.erase(part_cell)
 
 func harvest_exact_resource(cell:Vector2i,move:String)->void:
@@ -1469,9 +1469,9 @@ func harvest_exact_resource(cell:Vector2i,move:String)->void:
         var replacement: Dictionary = _exact_cut_resource_replacement(tile, cell)
         tile.set_names(String(replacement.get("base", tile.name)),
             String(replacement.get("upper", "")))
-        world.source_interior_mutations[world._cell_key(cell)] = {
+        world.area.put("source_interior_mutations", world._cell_key(cell), {
             "kind":"TILE_NAMES", "base":tile.name, "upper":tile.name_upper
-        }
+        })
         world._unblock_ground(cell)
     world._refresh_exact_tile_streams()
     # The source acquisition popup is the receipt for berry/Apricorn CUT loot.
@@ -1595,7 +1595,7 @@ func use_dig(cell: Vector2i) -> void:
             var previous: Dictionary = world.built_house_decorations.get(key, {})
             var old_choice := String(previous.get("dig_choice", "FOREST"))
             var material := String(FieldMoveData.dig_choice_info(old_choice).get("material", "GRASS"))
-            world.built_house_decorations[key] = {"name":"DIG GROUND", "dig_choice":old_choice, "dig_hole":true, "dig_base_name":String(previous.get("name", "FLOOR")) if String(previous.get("name", "")) != "DIG GROUND" else String(previous.get("dig_base_name", "")), "variant":int(previous.get("variant", 0))}
+            world.area.put("built_house_decorations", key, {"name":"DIG GROUND", "dig_choice":old_choice, "dig_hole":true, "dig_base_name":String(previous.get("name", "FLOOR")) if String(previous.get("name", "")) != "DIG GROUND" else String(previous.get("dig_base_name", "")), "variant":int(previous.get("variant", 0))})
             world._draw_house_decoration(cell)
             world.play_source_sound("dig1")
             world.dig_reward_collected.emit({material:1})
@@ -1671,7 +1671,7 @@ func dig_surface(cell: Vector2i) -> void:
             return
         material = "SOFT SAND" if world.terrain_kind_at(cell) == 1 else "GRASS"
         world.terrain[cell.y][cell.x] = 2
-        world.terrain_changes[world._cell_key(cell)] = 2
+        world.area.put("terrain_changes", world._cell_key(cell), 2)
         var sprite: Sprite2D = world.ground_sprites.get(cell) as Sprite2D
         if is_instance_valid(sprite):
             sprite.texture = GRASS
@@ -1688,7 +1688,7 @@ func _apply_dig_choice(cell: Vector2i, choice: String) -> bool:
     if world.active_area_id == "HOUSE":
         if not _house_dig_target_allowed(cell) or not _dig_target_accepts_soil(cell): return false
         if not FieldMoveData.DIG_TERRAIN.has(choice): return false
-        world.built_house_decorations[world._built_house_paint_key(cell)] = {"name":"DIG GROUND", "dig_choice":choice, "dig_hole":false}
+        world.area.put("built_house_decorations", world._built_house_paint_key(cell), {"name":"DIG GROUND", "dig_choice":choice, "dig_hole":false})
         world._draw_house_decoration(cell)
         world.play_source_sound("dig1")
         return true
@@ -1724,7 +1724,7 @@ func _apply_dig_choice(cell: Vector2i, choice: String) -> bool:
     FieldMoveData.apply_dig_terrain(tile, choice)
     if choice == "CLIFF": FieldMoveData.adjust_dig_cliff(tile, world.exact_world.tiles)
     save_source_dig_tile(cell)
-    world.terrain_changes.erase(world._cell_key(cell))
+    world.area.drop("terrain_changes", world._cell_key(cell))
     connect_source_dig_holes(cell)
     world._recoastify_exact_cells([cell])
     world._refresh_exact_tile_streams()
@@ -1855,16 +1855,16 @@ func get_dig_hud_state() -> Dictionary:
 func save_source_dig_tile(cell: Vector2i) -> void:
     var tile: SourceTile = world.exact_world.tile_at(cell)
     if tile == null: return
-    world.source_interior_mutations[world._cell_key(cell)] = {
+    world.area.put("source_interior_mutations", world._cell_key(cell), {
         "kind":"TILE_NAMES", "base":tile.name, "upper":tile.name_upper,
         "dig_item":tile.has_item, "dig_item_amount":tile.has_item_amount,
         "dig_biome":tile.biome,
         "dig_route":tile.route_belongs_to.name if tile.route_belongs_to != null else "",
-        "dig_route_level":tile.route_belongs_to.level if tile.route_belongs_to != null else 0}
+        "dig_route_level":tile.route_belongs_to.level if tile.route_belongs_to != null else 0})
 
 func _leave_source_dig_hole(cell: Vector2i, tile: SourceTile) -> void:
     tile.set_names(tile.name, "hole1")
-    world.terrain_changes.erase(world._cell_key(cell))
+    world.area.drop("terrain_changes", world._cell_key(cell))
     save_source_dig_tile(cell)
     connect_source_dig_holes(cell)
     world._refresh_exact_tile_streams()
@@ -1908,7 +1908,7 @@ func _clear_dug_mountain(cell: Vector2i, tile: SourceTile) -> void:
     tile.shore_ocean = ""
     tile.shore_tidal = ""
     world.blocked.erase(cell)
-    world.terrain_changes.erase(world._cell_key(cell))
+    world.area.drop("terrain_changes", world._cell_key(cell))
     save_source_dig_tile(cell)
     world.source_interior_mutations[world._cell_key(cell)]["dig_mountain_cleared"] = true
     world._recoastify_exact_cells([cell])

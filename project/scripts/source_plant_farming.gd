@@ -120,7 +120,7 @@ func _redraw_around(cell: Vector2i) -> void:
     world._refresh_exact_pickup_cells(cells)
 
 func store(cell: Vector2i, tile: SourceTile, rewards: Dictionary = {}) -> void:
-    world.source_plant_farms[world._cell_key(cell)]={"base":tile.name,"upper":tile.name_upper,"day":day(),"rewards":rewards.duplicate(true)}
+    world.area.put("source_plant_farms", world._cell_key(cell), {"base":tile.name,"upper":tile.name_upper,"day":day(),"rewards":rewards.duplicate(true)})
 
 func update() -> void:
     if not world.generated or world.exact_world==null: return
@@ -151,7 +151,7 @@ func update() -> void:
         var tile: SourceTile=world.exact_world.tile_at(cell)
         if tile==null: continue
         if tile.name_upper != String(record.upper):
-            world.source_plant_farms.erase(key)
+            world.area.drop("source_plant_farms", key)
             continue
         if int(record.day)>=current_day: continue
         var steps:=current_day-int(record.day)
@@ -160,7 +160,7 @@ func update() -> void:
         record.day=current_day
         record.base=tile.name
         record.upper=tile.name_upper
-        world.source_plant_farms[key]=record
+        world.area.put("source_plant_farms", key, record)
         changed=true
         grown.append(cell)
     growing = false
@@ -244,7 +244,7 @@ func snapshot() -> Dictionary:
         var record: Dictionary=world.source_plant_farms[key]
         var tile: SourceTile=world.exact_world.tile_at(world._cell_from_key(key)) if world.exact_world!=null else null
         if tile==null or tile.name!=String(record.base) or tile.name_upper!=String(record.upper):
-            world.source_plant_farms.erase(key)
+            world.area.drop("source_plant_farms", key)
     return world.source_plant_farms.duplicate(true)
 
 func harvest(cell: Vector2i) -> bool:
@@ -269,8 +269,8 @@ func harvest(cell: Vector2i) -> bool:
         tile.set_names(String(replacement.base),String(replacement.upper))
     else:
         tile.set_names(tile.name,"")
-    world.source_interior_mutations[key]={"kind":"TILE_NAMES","base":tile.name,"upper":""}
-    world.source_plant_farms.erase(key)
+    world.area.put("source_interior_mutations", key, {"kind":"TILE_NAMES","base":tile.name,"upper":""})
+    world.area.drop("source_plant_farms", key)
     world.play_source_sound("cut1")
     world._refresh_exact_tile_streams()
     return true

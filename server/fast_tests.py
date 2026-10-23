@@ -37,6 +37,7 @@ TESTS = [
     ("world_save_test", []),
     ("coop_state_index_test", []),
     ("discovered_cells_test", []),
+    ("area_state_test", []),
 ]
 TIMEOUT = 420 # the slowest takes ~1 minute on a loaded machine
 
