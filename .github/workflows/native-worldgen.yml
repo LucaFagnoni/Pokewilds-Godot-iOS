@@ -1,0 +1,79 @@
+name: Native world generator
+
+# The game's engine module (engine_modules/pokewilds) on its own, without the
+# release builds: the stripped Linux engine built with it (the smoke job's
+# build and caches), then the native world generator against the GDScript one
+# step by step (native_worldgen_test.gd) and against the worlds' oracle
+# (worldgen_check.gd), and their times. By hand on any branch, or by a push
+# to the native-worldgen branch.
+on:
+  workflow_dispatch:
+  push:
+    branches: [native-worldgen]
+
+env:
+  GODOT_VERSION: 4.7.2
+  ENGINE_PROFILE: ${{ github.workspace }}/.github/engine/custom.py
+
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: godotengine/godot
+          ref: ${{ env.GODOT_VERSION }}-stable
+          path: godot-src
+
+      - name: Install Godot editor and SCons
+        run: |
+          curl -sSL -o godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip
+          echo "GODOT=$PWD/Godot_v${GODOT_VERSION}-stable_linux.x86_64" >> "$GITHUB_ENV"
+          python3 -m venv "$RUNNER_TEMP/scons" && "$RUNNER_TEMP/scons/bin/pip" -q install scons
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.scons_cache
+          key: scons-linux-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py', 'engine_modules/**') }}
+          restore-keys: scons-linux-${{ env.GODOT_VERSION }}-
+
+      - name: Build stripped engine (Linux, headless only)
+        working-directory: godot-src
+        run: |
+          "$RUNNER_TEMP/scons/bin/scons" platform=linuxbsd target=template_release profile="$ENGINE_PROFILE" \
+            disable_path_overrides=no \
+            x11=no wayland=no alsa=no pulseaudio=no dbus=no speechd=no fontconfig=no udev=no \
+            cache_path="$HOME/.scons_cache" -j"$(nproc)"
+
+      - uses: actions/cache@v4
+        with:
+          path: project/.godot
+          key: godot-import-smoke-${{ env.GODOT_VERSION }}-${{ hashFiles('project/assets/**/*.import') }}
+          restore-keys: godot-import-smoke-${{ env.GODOT_VERSION }}-
+
+      - name: Import the project
+        working-directory: project
+        run: '"$GODOT" --headless --import'
+
+      - name: Native world generator against GDScript
+        env:
+          POKEWILDS_NATIVE_WORLDGEN: "1"
+        run: |
+          engine=godot-src/bin/godot.linuxbsd.template_release.x86_64
+          timeout 1200 "$engine" --headless --path project -s ../.github/engine/native_worldgen_test.gd 2>&1 | tee native.log
+          timeout 1200 "$engine" --headless --path project -s ../.github/engine/worldgen_check.gd 2>&1 | tee -a native.log
+          grep -q "NATIVE TEST: failed 0" native.log
+          grep -q "WORLDGEN: checked [0-9]*, failed 0" native.log
+
+      # Same oracle, the GDScript generator in the same engine: the times compare.
+      - name: The same worlds with the GDScript generator
+        env:
+          POKEWILDS_NATIVE_WORLDGEN: "0"
+        run: |
+          engine=godot-src/bin/godot.linuxbsd.template_release.x86_64
+          timeout 3600 "$engine" --headless --path project -s ../.github/engine/worldgen_check.gd 2>&1 | tee gdscript.log
+          grep -q "WORLDGEN: checked [0-9]*, failed 0" gdscript.log
+          grep -h "WORLDGEN" native.log gdscript.log | sed 's/^/::notice::/'

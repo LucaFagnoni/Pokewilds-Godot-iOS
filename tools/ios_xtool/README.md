@@ -68,8 +68,9 @@ ENGINE=official bash tools/ios_xtool/build_ipa.sh   # Godot's own template libra
 SMOKE=0 bash tools/ios_xtool/build_ipa.sh           # stripped engine, skip the smoke test
 ```
 
-The engines are built once per Godot version and `custom.py` (the cache key is
-its hash), so a change to `custom.py` rebuilds them. No extra Ubuntu packages:
+The engines are built once per Godot version, `custom.py` and the game's engine
+module `engine_modules/pokewilds` (the cache key is their hash), so a change to
+either rebuilds them (SCons' cache keeps that to what changed). No extra Ubuntu packages:
 Godot compiles with the Swift toolchain's clang for both iOS and Linux, and
 Godot's SCons runs in a venv in the work folder.
 

@@ -46,9 +46,10 @@ fi
 
 # The stripped engine, built from source with CI's profile: the iOS library
 # (ios job) and the Linux headless engine for the smoke test (smoke job). Each is
-# built once per Godot version and profile.
+# built once per Godot version, profile and the game's engine module (the
+# profile adds engine_modules/pokewilds).
 profile=$repo/.github/engine/custom.py
-key=$GODOT_VERSION-$(sha256sum "$profile" | cut -c1-12)
+key=$GODOT_VERSION-$(cat "$profile" "$repo"/engine_modules/pokewilds/* | sha256sum | cut -c1-12)
 ios_lib=$cache/engine/libgodot.ios.$key.a
 linux_engine=$cache/engine/godot.linuxbsd.$key
 src=$cache/godot-src

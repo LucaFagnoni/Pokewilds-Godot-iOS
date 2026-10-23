@@ -34,3 +34,10 @@ module_zip_enabled = "yes"               # ZIPReader for .pwmod packs
 module_regex_enabled = "yes"
 module_noise_enabled = "yes"             # FastNoiseLite world generation
 module_mbedtls_enabled = "yes"           # HTTPS lobby list, Crypto
+
+# The game's own module, engine_modules/pokewilds (native world generation),
+# found from this file's path (SCons runs a profile with __name__ set to it),
+# so every engine built with this profile has it.
+import os
+custom_modules = os.path.join(os.path.dirname(os.path.abspath(__name__)), "..", "..", "engine_modules")
+module_pokewilds_enabled = "yes"

@@ -98,8 +98,11 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.scons_cache
-          # The engine source is a fixed tag: one cache per build profile is enough.
-          key: scons-linux-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py') }}
+          # The engine source is a fixed tag: one cache per build profile and
+          # game module (engine_modules); an older one is a start, only what
+          # changed is built again.
+          key: scons-linux-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py', 'engine_modules/**') }}
+          restore-keys: scons-linux-${{ env.GODOT_VERSION }}-
 
       - name: Build stripped engine (Linux, headless only)
         working-directory: godot-src
@@ -133,6 +136,18 @@ jobs:
           grep -E "ERROR|SMOKE" smoke.log | sort | uniq -c | sed 's/^/::notice::/'
           grep -q "SMOKE: checked [0-9]*, failed 0" smoke.log
           ! grep -E "SMOKE FAIL|SCRIPT ERROR|Parse Error|Cannot get class|Failed to load|not declared in the current scope" smoke.log
+
+      # The engine's own world generator (engine_modules/pokewilds) makes the
+      # GDScript generator's worlds: step by step, then the oracle's worlds.
+      - name: Native world generator parity
+        env:
+          POKEWILDS_NATIVE_WORLDGEN: "1"
+        run: |
+          engine=godot-src/bin/godot.linuxbsd.template_release.x86_64
+          timeout 1200 "$engine" --headless --main-pack "$RUNNER_TEMP/game.pck" -s "$PWD/.github/engine/native_worldgen_test.gd" 2>&1 | tee native.log
+          timeout 1200 "$engine" --headless --main-pack "$RUNNER_TEMP/game.pck" -s "$PWD/.github/engine/worldgen_check.gd" 2>&1 | tee -a native.log
+          grep -q "NATIVE TEST: failed 0" native.log
+          grep -q "WORLDGEN: checked [0-9]*, failed 0" native.log
 
   ios:
     # Runs alongside the smoke test; publish needs the smoke test too, so only
@@ -184,8 +199,9 @@ jobs:
         if: env.SKIP != 'true'
         with:
           path: ~/.scons_cache
-          # The engine source is a fixed tag: one cache per build profile is enough.
-          key: scons-ios-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py') }}
+          # One cache per build profile and game module (see the smoke job).
+          key: scons-ios-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py', 'engine_modules/**') }}
+          restore-keys: scons-ios-${{ env.GODOT_VERSION }}-
 
       - name: Build stripped engine (iOS arm64)
         if: env.SKIP != 'true'
@@ -292,7 +308,8 @@ jobs:
         if: env.SKIP != 'true'
         with:
           path: ~/lto-cache
-          key: ios-lto-${{ steps.xcode.outputs.version }}-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py') }}
+          key: ios-lto-${{ steps.xcode.outputs.version }}-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py', 'engine_modules/**') }}
+          restore-keys: ios-lto-${{ steps.xcode.outputs.version }}-${{ env.GODOT_VERSION }}-
 
       - name: Build unsigned .app and pack IPA
         if: env.SKIP != 'true'
@@ -391,8 +408,17 @@ jobs:
         if: steps.mac.outputs.fallback == 'true'
         with:
           path: ~/pokewilds-ios/cache/engine
-          # The stripped iOS engine, rebuilt only when the profile changes.
-          key: xtool-engine-4.7.2-${{ hashFiles('.github/engine/custom.py') }}
+          # The stripped iOS engine, rebuilt only when the profile or the
+          # game's engine module changes.
+          key: xtool-engine-4.7.2-${{ hashFiles('.github/engine/custom.py', 'engine_modules/**') }}
+
+      # That engine's SCons cache: a module change rebuilds only the module.
+      - uses: actions/cache@v4
+        if: steps.mac.outputs.fallback == 'true'
+        with:
+          path: ~/pokewilds-ios/cache/scons-ios
+          key: xtool-scons-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py', 'engine_modules/**', 'tools/ios_xtool/setup.sh') }}
+          restore-keys: xtool-scons-${{ env.GODOT_VERSION }}-
 
       # lld's LTO codegen of that engine (see Package.swift): the link takes
       # seconds instead of ~8 minutes. setup.sh pins xtool, which brings lld.
@@ -400,7 +426,8 @@ jobs:
         if: steps.mac.outputs.fallback == 'true'
         with:
           path: ~/pokewilds-ios/cache/lto
-          key: xtool-lto-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py', 'tools/ios_xtool/setup.sh') }}
+          key: xtool-lto-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py', 'engine_modules/**', 'tools/ios_xtool/setup.sh') }}
+          restore-keys: xtool-lto-${{ env.GODOT_VERSION }}-
 
       # Godot's import cache (.godot): only assets that changed since are imported again.
       - uses: actions/cache@v4
@@ -472,6 +499,37 @@ jobs:
           unzip -q -j templates.tpz 'templates/windows_release_x86_64*' 'templates/version.txt' -d "$tpl"
           ls -la "$tpl"
           echo "GODOT=$PWD/Godot_v${GODOT_VERSION}-stable_linux.x86_64" >> "$GITHUB_ENV"
+
+      # The server's engine: the phones' stripped profile with the game's own
+      # module (native world generation), cross-compiled for Windows with
+      # MinGW, in place of the official template that the export copies.
+      - uses: actions/checkout@v4
+        with:
+          repository: godotengine/godot
+          ref: ${{ env.GODOT_VERSION }}-stable
+          path: godot-src
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.scons_cache
+          # One cache per build profile and game module (see the smoke job).
+          key: scons-windows-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py', 'engine_modules/**') }}
+          restore-keys: scons-windows-${{ env.GODOT_VERSION }}-
+
+      - name: Build stripped engine (Windows x86_64, MinGW) into the template
+        working-directory: godot-src
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq mingw-w64 > /dev/null
+          # Godot needs MinGW's posix thread model.
+          sudo update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix
+          sudo update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
+          python3 -m venv "$RUNNER_TEMP/scons" && "$RUNNER_TEMP/scons/bin/pip" -q install scons
+          "$RUNNER_TEMP/scons/bin/scons" platform=windows use_mingw=yes arch=x86_64 target=template_release profile="$ENGINE_PROFILE" \
+            d3d12=no cache_path="$HOME/.scons_cache" -j"$(nproc)"
+          tpl="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          cp bin/godot.windows.template_release.x86_64.exe "$tpl/windows_release_x86_64.exe"
+          cp bin/godot.windows.template_release.x86_64.console.exe "$tpl/windows_release_x86_64_console.exe"
+          echo "::notice::server engine $(du -h "$tpl/windows_release_x86_64.exe" | cut -f1)"
 
       # The compat id's client-only list (tools/client_only_paths.txt) still
       # matches the project, and the id ignores only what it lists.
@@ -630,8 +688,9 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.scons_cache
-          # The engine source is a fixed tag: one cache per build profile is enough.
-          key: scons-android-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py') }}
+          # One cache per build profile and game module (see the smoke job).
+          key: scons-android-${{ env.GODOT_VERSION }}-${{ hashFiles('.github/engine/custom.py', 'engine_modules/**') }}
+          restore-keys: scons-android-${{ env.GODOT_VERSION }}-
 
       - name: Build stripped engine (Android arm64)
         working-directory: godot-src
