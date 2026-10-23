@@ -802,30 +802,30 @@ func _ready() -> void:
     world.world_message.connect(dialogs.show_message)
     world.unown_message.connect(dialogs.show_unown_message)
     if world.has_signal("trainer_tip_message"):
-        world.connect("trainer_tip_message", Callable(self,
-            "_show_trainer_tip_message"))
+        world.connect("trainer_tip_message", Callable(dialogs,
+            "show_trainer_tip_message"))
     if world.has_signal("item_collected"):
-        world.connect("item_collected", Callable(self, "_on_item_collected"))
+        world.connect("item_collected", Callable(field_actions, "on_item_collected"))
     world.crafting_station_requested.connect(crafting_menu.open_crafting_menu)
     world.material_collected.connect(field_actions.on_material_collected)
-    world.connect("dig_reward_collected", Callable(self, "_on_dig_reward_collected"))
+    world.connect("dig_reward_collected", Callable(field_actions, "on_dig_reward_collected"))
     if world.has_signal("material_bundle_collected"):
-        world.connect("material_bundle_collected", Callable(self, "_on_material_bundle_collected"))
+        world.connect("material_bundle_collected", Callable(field_actions, "on_material_bundle_collected"))
     if world.has_signal("paint_requested"):
-        world.connect("paint_requested", Callable(self, "_on_paint_requested"))
+        world.connect("paint_requested", Callable(field_actions, "on_paint_requested"))
     if world.has_signal("teleport_map_requested"):
-        world.connect("teleport_map_requested", Callable(self, "_open_teleport_map"))
+        world.connect("teleport_map_requested", Callable(minimap, "open_teleport_map"))
     world.build_requested.connect(field_actions.on_build_requested)
     if world.has_signal("build_selection_changed"):
         world.connect(
             "build_selection_changed",
-            Callable(self, "_on_world_build_selection_changed")
+            Callable(crafting_menu, "on_world_build_selection_changed")
         )
     if world.has_signal("dig_requested"):
-        world.connect("dig_requested", Callable(self, "_on_dig_requested"))
+        world.connect("dig_requested", Callable(field_actions, "on_dig_requested"))
     world.build_refund_requested.connect(field_actions.on_build_refund_requested)
     if world.has_signal("structure_removal_requested"):
-        world.connect("structure_removal_requested", Callable(self, "_on_structure_removal_requested"))
+        world.connect("structure_removal_requested", Callable(field_actions, "on_structure_removal_requested"))
     world.pokemon_recalled.connect(_on_pokemon_recalled)
     world.deployed_recall_requested.connect(_on_deployed_recall_requested)
     world.structure_action.connect(field_actions.on_structure_action)
@@ -1039,7 +1039,6 @@ func _create_wild_pokemon_prompt_ui() -> void:
 func _minimap_paint(changed: Rect2i, bounds: Rect2i, exact_world) -> void: minimap.minimap_paint(changed, bounds, exact_world)
 func _minimap_render(region: Rect2i, bounds: Rect2i, exact_world) -> Image: return minimap.minimap_render(region, bounds, exact_world)
 func _show_map_menu() -> void: minimap.show_map_menu()
-func _open_teleport_map(destinations: Array) -> void: minimap.open_teleport_map(destinations)
 func _update_map_transform() -> void: minimap.update_map_transform()
 func _set_map_zoom(value: float) -> void: minimap.set_map_zoom(value)
 
@@ -5074,16 +5073,11 @@ func _save_current_game() -> void: await saving.save_current_game()
 ## crafting_menu.gd under its old names, for the scripts and tests that call them on main.
 func _open_build_menu() -> void: crafting_menu.open_build_menu()
 func _close_build_menu(stop_building: bool = true) -> void: crafting_menu.close_build_menu(stop_building)
-func _on_world_build_selection_changed(index: int) -> void: crafting_menu.on_world_build_selection_changed(index)
 
 ## field_actions.gd under its old names, for the scripts and tests that call them on main.
 func _on_dig_reward_collected(items: Dictionary, grant_items: bool = true) -> void: field_actions.on_dig_reward_collected(items, grant_items)
-func _on_material_bundle_collected(items: Dictionary, grant_items: bool = true) -> void: field_actions.on_material_bundle_collected(items, grant_items)
-func _on_paint_requested(picture_index: int, cell: Vector2i) -> void: field_actions.on_paint_requested(picture_index, cell)
 func _on_dig_requested(choice: String, cell: Vector2i, material: String) -> void: field_actions.on_dig_requested(choice, cell, material)
 func _on_build_refund_requested(refund: Dictionary, grant_items: bool = true) -> void: field_actions.on_build_refund_requested(refund, grant_items)
-func _on_structure_removal_requested(cell: Vector2i, move: String) -> void: await field_actions.on_structure_removal_requested(cell, move)
-func _on_item_collected(item_name: String) -> void: field_actions.on_item_collected(item_name)
 
 func _route_received_pokemon(pokemon: Dictionary, allow_party: bool = true) -> String:
     # Every acquisition shares this boundary; the visible party has six slots.
