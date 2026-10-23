@@ -39,6 +39,8 @@ TESTS = [
     ("discovered_cells_test", []),
     ("area_state_test", []),
     ("rules_test", []),
+    ("battle_check_test", []),
+    ("online_migrate_test", []),
 ]
 TIMEOUT = 420 # the slowest takes ~1 minute on a loaded machine
 

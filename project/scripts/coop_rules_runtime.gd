@@ -123,7 +123,7 @@ func execute(actor:String,id:String,op:String,args:Dictionary)->Dictionary:
         Crafting.consume(updated.inventory,result.consume)
         for item in result.grant:Crafting.grant(updated.inventory,String(item),int(result.grant[item]))
         records.append(state.change("player/"+actor,updated))
-    var committed:Dictionary=state.transact(actor,op+"/"+id,records,hash_value)
+    var committed:Dictionary=state.transact(actor,op+"/"+id,records,hash_value,true,{"op":op,"cmd":args.get("cmd")})
     if not committed.get("ok",false):
         _redraw(area_state,area_state.rollback());area_state.take_dirty()
         return committed

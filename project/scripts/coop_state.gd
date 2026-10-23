@@ -122,7 +122,11 @@ func leave(actor: String) -> void:
 ## - `records` hold their own copy of each value (apply_committed), and
 ##   `outcomes` their own copy of the commit (the receipt); only this script
 ##   changes either. Receipts are handed out as copies.
-func transact(actor: String, id: String, changes: Array, command_hash: String = "", durable: bool = true) -> Dictionary:
+## `typed`: the command this commit carries out, as it came ({"op", "cmd"}:
+## a rules command, coop_rules_runtime.gd), kept with it in the journal and
+## the receipt beside the changes it made. A replay applies the changes; the
+## command says what they were for.
+func transact(actor: String, id: String, changes: Array, command_hash: String = "", durable: bool = true, typed: Dictionary = {}) -> Dictionary:
     if not members.has(actor) or id.is_empty() or id.length() > 80:
         return {"ok":false,"reason":"invalid_request"}
     var request_key := actor + "/" + id
@@ -154,6 +158,7 @@ func transact(actor: String, id: String, changes: Array, command_hash: String = 
                 "current":records.get(key),"revision":revision}
     var result := {"ok":true,"revision":revision+1,"actor":actor,"command_hash":command_hash,
         "id":id,"request_hash":request_hash,"changes":changes.duplicate()}
+    if not typed.is_empty(): result["command"] = typed.duplicate(true)
     # What changed in each player's record, worked out once against the record
     # as it was. The journal keeps this, and the owner is sent it, instead of
     # the whole record, which runs to hundreds of kilobytes and took seconds
