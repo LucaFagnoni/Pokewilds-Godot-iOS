@@ -33,10 +33,10 @@ var area_size:=-1
 ## server.cfg area_generation, --area-generation.
 var in_process:="auto"
 var _busy:=false
-## What placing a new area's first Pokemon gets of a frame (us): twice the
-## areas' Pokemon's (coop_population_authority.gd BUDGET_USEC), as the
-## player who arrives waits on it, still well under a 16 ms frame.
-const PLACE_USEC:=8000
+## What placing a new area's first Pokemon gets of a frame (us): as much as
+## the areas' Pokemon (coop_population_authority.gd BUDGET_USEC). With 8 ms
+## the 8-player net profile had frames of 17-30 ms while an area was placed.
+const PLACE_USEC:=4000
 var _slice_started:=0
 func _breathe()->void:
     var spent:=Time.get_ticks_usec()-_slice_started
@@ -134,18 +134,22 @@ static func first_population(tiles,megas:Dictionary,seed_value:int,party_level:i
         next[0]=wild_id+1
         return wild_id
     await PopulationRules.place_new(state,add,breathe)
-    var gengar=SourceForestBoss.select_cell_at(state,tiles.spawn_cell)
-    var reserved:={}
-    if gengar is Vector2i:
-        state.event_progress[SourceForestBoss.SAVE_KEY]={"x":gengar.x,"y":gengar.y,"home_x":gengar.x,"home_y":gengar.y}
-        # Its cell kept from the Megas.
-        reserved[gengar]=true
-    var choices:Dictionary=await off_thread.call(func()->Dictionary:return Megas.choose_at(state,megas,reserved))
-    Megas.install_at(state,choices)
+    # Mega Gengar's clearing, the Megas' cells and the Pokemon's records as
+    # saved read only this area's data: on the worker.
+    var search:=func()->Array:
+        var gengar=SourceForestBoss.select_cell_at(state,tiles.spawn_cell)
+        var reserved:={}
+        if gengar is Vector2i:
+            state.event_progress[SourceForestBoss.SAVE_KEY]={"x":gengar.x,"y":gengar.y,"home_x":gengar.x,"home_y":gengar.y}
+            # Its cell kept from the Megas.
+            reserved[gengar]=true
+        return [Megas.choose_at(state,megas,reserved),state.wild.to_save()]
+    var found:Array=await off_thread.call(search)
+    Megas.install_at(state,found[0])
     var events:={}
     for key in [Megas.SAVE_KEY,SourceForestBoss.SAVE_KEY]:
         if state.event_progress.has(key):events[key]=state.event_progress[key]
-    return {"wild_pokemon":state.wild.to_save(),"event_progress":events}
+    return {"wild_pokemon":found[1],"event_progress":events}
 
 func _make(main:Node,actor:String,area:String,token:String)->bool:
     var folder:=Paths.path("area_maker")
