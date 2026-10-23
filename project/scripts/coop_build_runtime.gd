@@ -94,13 +94,13 @@ func _breathe()->void:
 func seed_population(area:String,shared:Dictionary)->bool:
     var picked:Dictionary={}
     for group in ["wild_pokemon","deployed_pokemon","wild_eggs"]:picked[group]=shared.get(group,[])
-    var flat:Dictionary=Delta.flatten(picked)
     var batch:Array=[]
-    for key in flat:
-        var full:String="world/"+area+"/"+key
-        if game.state.records.has(full):continue
-        batch.append(game.state.change(full,flat[key]))
-        if batch.size()>=Delta.MAX_PATCHES:
+    for part in Delta.chunks(picked):
+        var flat:Dictionary=Delta.flatten(part)
+        for key in flat:
+            var full:String="world/"+area+"/"+key
+            if not game.state.records.has(full):batch.append(game.state.change(full,flat[key]))
+        if batch.size()>=Delta.SEED_BATCH:
             var made=game.state.transact(game.session.actor,"population/"+game._id(),batch)
             if not made.get("ok",false):return false
             game._committed(made);batch=[]

@@ -268,24 +268,41 @@ func records(area:String)->Dictionary:
         if String(key).begins_with(prefix):result[String(key).trim_prefix(prefix)]=state.records[key]
     return result
 
-## A new area's records, written in batches; `breathe` (awaited after each
-## batch and group) lets the host's frame go on between them.
+## A new area's records, encoded and written SEED_BATCH at a time; `breathe`
+## (awaited after each batch) lets the host's frame go on between them.
 func seed(actor:String,area:String,shared:Dictionary,breathe:Callable=Callable())->bool:
     if not preload("res://scripts/coop_areas.gd").valid_area(area):return false
     if state.records.get("world_ready/"+area,false):return true
     var batch:Array=[]
-    for group in CELLS+["wild_pokemon"]+SETS+MAPS+SCALARS:
-        if not shared.has(group):continue
-        var flat=flatten({group:shared[group]})
-        for key in flat:
-            batch.append(state.change("world/"+area+"/"+key,flat[key]))
-            if batch.size()==MAX_PATCHES:
-                if not state.transact(actor,"worldseed/"+preload("res://scripts/coop_random.gd").hex(16),batch).get("ok",false):return false
-                batch=[]
-                if breathe.is_valid():await breathe.call()
-        if breathe.is_valid():await breathe.call()
+    for part in chunks(shared):
+        var flat=flatten(part)
+        for key in flat:batch.append(state.change("world/"+area+"/"+key,flat[key]))
+        if batch.size()>=SEED_BATCH:
+            if not state.transact(actor,"worldseed/"+preload("res://scripts/coop_random.gd").hex(16),batch).get("ok",false):return false
+            batch=[]
+            if breathe.is_valid():await breathe.call()
     batch.append(state.change("world_ready/"+area,true))
     return bool(state.transact(actor,"worldseed/"+preload("res://scripts/coop_random.gd").hex(16),batch).get("ok",false))
+
+const SEED_BATCH:=64
+## `shared` (a snapshot's shared part) as pieces of SEED_BATCH entries, each
+## a shared part of its own, in flatten's order: a long-played area's Pokemon
+## encoded all at once took a whole frame.
+static func chunks(shared:Dictionary)->Array:
+    var parts:Array=[]
+    for group in CELLS+["wild_pokemon"]+SETS+MAPS+SCALARS:
+        if not shared.has(group):continue
+        var value=shared[group]
+        if value is Array:
+            for at in range(0,value.size(),SEED_BATCH):parts.append({group:value.slice(at,at+SEED_BATCH)})
+        elif value is Dictionary and group in MAPS:
+            var part:Dictionary={}
+            for key in value:
+                part[key]=value[key]
+                if part.size()>=SEED_BATCH:parts.append({group:part});part={}
+            if not part.is_empty():parts.append({group:part})
+        else:parts.append({group:value})
+    return parts
 
 func commit(actor:String,id:String,area:String,epoch:int,patches:Array,motion:bool=false)->Dictionary:
     var hash_value=State.fingerprint([area,epoch,patches])

@@ -152,7 +152,8 @@ func _free_cell(skip: Vector2i = Vector2i(999999, 999999)) -> Vector2i:
 	var here: Vector2i = main.world._player_cell()
 	for step in [Vector2i.RIGHT, Vector2i.LEFT, Vector2i.DOWN, Vector2i.UP]:
 		var cell: Vector2i = here + step
-		if cell != skip and main.world.dropped_items().can_drop(cell) and not main.world.built_structures.has(cell): return cell
+		# Not where an egg or a habitat Pokemon lies: the host turns a build there away until it goes.
+		if cell != skip and main.world.dropped_items().can_drop(cell) and not main.world.built_structures.has(cell) 				and not main.world.wild_eggs.has(cell) and not main.world.deployed_pokemon.has(cell): return cell
 	return Vector2i(999999, 999999)
 
 ## Does `attempt` (a coroutine that returns true once it worked) as a player
