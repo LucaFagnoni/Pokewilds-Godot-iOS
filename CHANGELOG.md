@@ -5,6 +5,8 @@ the version description in Feather. Write it for players, not developers.
 
 ## Next version
 
+## 0.10.419
+
 ### New
 - **Double battles against other players:** when you challenge another player there is now DOUBLE BATTLE next to TRADE and BATTLE. If either of you has fewer than two Pokémon able to fight, it becomes a single battle.
 
