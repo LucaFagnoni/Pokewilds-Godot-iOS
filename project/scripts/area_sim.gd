@@ -137,6 +137,13 @@ static func structure_blocks(record: Dictionary) -> bool:
 ## Starts reading the area's Pokemon from the records: `keys` are theirs
 ## ("world/<area>/<group>/<key>"), in any order.
 func begin_population(keys: Array) -> void:
+    # The records are what its Pokemon are: any read in before go.
+    state.wild.clear()
+    state.habitat.clear()
+    state.eggs.clear()
+    habitat_ids.clear()
+    habitat_waiting.clear()
+    waiting.clear()
     _to_load.clear()
     for group: String in POPULATION:
         var prefix := "world/" + state.area + "/" + group + "/"

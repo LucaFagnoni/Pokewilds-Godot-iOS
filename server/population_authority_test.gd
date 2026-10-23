@@ -260,6 +260,14 @@ func _initialize() -> void:
     sim.begin_population(game.record_keys("world/1,0/"))
     check(not sim.load_population(state.records, Time.get_ticks_usec()), "with no time left, nothing is read")
     sim.begin_population([])
+    # The records are looked through a slice at a time as well.
+    var trial := Authority.Beat.new()
+    trial.scan = state.records.keys()
+    check(not authority._scan("1,0", trial, Time.get_ticks_usec()) and trial.scanned == 0, "with no time left, no record is looked at")
+    var theirs := 0
+    for group in AreaSim.POPULATION: theirs += game.record_keys("world/1,0/%s/" % group).size()
+    check(authority._scan("1,0", trial, Time.get_ticks_usec() + 1000000) and trial.found.size() == theirs and theirs > 0,
+        "then all are, the area's Pokemon found (%d of %d)" % [trial.found.size(), theirs])
     _run(1.0)
     for area in AREAS:
         check(_sim(area).populated, "area %s's Pokemon are in" % area)

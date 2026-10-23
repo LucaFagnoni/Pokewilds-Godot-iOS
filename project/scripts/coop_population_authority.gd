@@ -76,6 +76,14 @@ class Beat extends RefCounted:
     var events_memo:Dictionary={}
     ## Mega Gengar caught or beaten here for good.
     var gengar_done:=false
+    ## Read in a slice a frame (a large world's records take many ms to look
+    ## through): the records' keys as they were when the area began, how many
+    ## are looked at, the ones of its Pokemon found; then the wild ids whose
+    ## signatures are still to take.
+    var scan:Array=[]
+    var scanned:=0
+    var found:Array=[]
+    var unsigned:Array=[]
 
 func configure(coordinator:Node)->void:
     game=coordinator
@@ -112,8 +120,16 @@ func _process(delta:float)->void:
         if beat==null:beat=_begin(area,sim)
         beat.delta=minf(beat.delta+delta,MAX_TICK)
         if Time.get_ticks_usec()-started>=BUDGET_USEC:continue
+        if beat.scanned<beat.scan.size():
+            if _scan(area,beat,started+BUDGET_USEC):
+                sim.begin_population(beat.found)
+                beat.scan=[];beat.found=[]
+            continue
         if not sim.populated:
             if sim.load_population(game.state.records,started+BUDGET_USEC,game.wild.moved.get(area,{})):_loaded(sim,beat)
+            continue
+        if not beat.unsigned.is_empty():
+            _sign(sim,beat,started+BUDGET_USEC)
             continue
         sim.state.clock=game.clock_seconds
         sim.tick(beat.delta,sim.players.refresh(game.visuals.last_packets,area))
@@ -225,18 +241,31 @@ func _horde(area:String,sim)->void:
 func _begin(area:String,sim)->Beat:
     var beat:=Beat.new()
     beat.sim=sim
-    beat.gengar_done=_completed(area).has("mega_gengar")
+    beat.scan=game.state.records.keys()
     _beats[area]=beat
-    var keys:Array=[]
-    for group in AreaSim.POPULATION:keys.append_array(game.record_keys("world/"+area+"/"+group+"/"))
-    sim.begin_population(keys)
     return beat
 
+## A slice of the records looked through, until `deadline`, for the area's
+## Pokemon and whether its Mega Gengar is gone for good: true once all are.
+func _scan(area:String,beat:Beat,deadline:int)->bool:
+    var own:="world/"+area+"/"
+    var results:="event_result/"+area+"/"
+    var records:Dictionary=game.state.records
+    while beat.scanned<beat.scan.size():
+        if beat.scanned&255==0 and Time.get_ticks_usec()>=deadline:return false
+        var key:=String(beat.scan[beat.scanned])
+        beat.scanned+=1
+        if key.begins_with(own):
+            if key.get_slice("/",2) in AreaSim.POPULATION:beat.found.append(key)
+        elif key.begins_with(results):
+            var result=records.get(key)
+            if result is Dictionary and result.get("cleared",false) and String(result.get("context",{}).get("id",""))=="mega_gengar":beat.gengar_done=true
+    return true
+
 ## The area's Pokemon are in: the host's records are what they are, so only
-## what changes from now on goes out.
+## what changes from now on goes out (once their signatures are taken: _sign).
 func _loaded(sim,beat:Beat)->void:
-    for wild_id in sim.state.wild.records:
-        beat.signatures[wild_id]=WildRuntime.record_signature(sim.state.wild.records[wild_id])
+    beat.unsigned=sim.state.wild.records.keys()
     sim.state.wild.take_dirty()
     sim.players.marked.clear()
     var now:=Time.get_ticks_msec()
@@ -247,6 +276,15 @@ func _loaded(sim,beat:Beat)->void:
         for cell in population.records:
             looked[cell]=now
             beat.timers_sent[Records.key(sim.state.area,group,cell)]=now
+
+## A slice of the loaded wild Pokemon's signatures, until `deadline`: the
+## records' own (one changed since by a commit has its newer one already).
+func _sign(sim,beat:Beat,deadline:int)->void:
+    while not beat.unsigned.is_empty():
+        if Time.get_ticks_usec()>=deadline:return
+        var wild_id=beat.unsigned.pop_back()
+        var data=sim.state.wild.records.get(wild_id)
+        if data is Dictionary and not beat.signatures.has(wild_id):beat.signatures[wild_id]=WildRuntime.record_signature(data)
 
 ## Wild Pokemon that only moved go out as one binary frame; one whose record
 ## changed otherwise (or went) as a commit of it.
