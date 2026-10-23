@@ -62,6 +62,9 @@ func _init() -> void:
 	var base := OS.get_temp_dir().path_join("state_index_test_%d" % Time.get_ticks_usec())
 	var store := Store.new(base)
 	store.open(ID)
+	# An empty world save first: the journal below then holds every commit made
+	# after it (a save folds the journal it finds into the world it writes).
+	check(Store.write(store.prepare(State.new(), {"world_name": "T"})) == OK, "an empty world save")
 	var state := State.new()
 	state.commit_writer = store.append
 	for actor in ACTORS:
@@ -106,8 +109,6 @@ func _init() -> void:
 	var empty := State.new()
 	var journal := Store.new(base)
 	journal.open(ID)
-	var job := journal.prepare(State.new(), {"world_name": "T"})
-	check(Store.write(job) == OK, "an empty world save")
 	check(not journal.load_state(empty).is_empty(), "the journal replays")
 	check(empty.revision == state.revision, "every commit replayed (%d of %d)" % [empty.revision, state.revision])
 	same_indexes(empty, "after a journal replay")
