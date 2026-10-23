@@ -246,7 +246,34 @@ func _walk(on: bool) -> void:
 	Input.action_release("move_left"); Input.action_release("move_right")
 	if on: Input.action_press("move_right" if _walk_dir > 0 else "move_left")
 
+## Where every wild Pokemon of the areas this process knows stands, for the
+## phase just ended (wild_<role>_<phase>.json beside the phase file): the
+## server's own area (its World) and those it runs without drawing them
+## (coop_population_authority.gd), a player's own area. coop_net_profile.py
+## compares each player's with the server's.
+func _dump_wild() -> void:
+	if main == null or not is_instance_valid(main) or not main.started or not phase.begins_with("walk"): return
+	var areas := {}
+	var coop: Node = main.coop_game
+	if "--server" in OS.get_cmdline_args():
+		for area in coop.rules.sims:
+			var sim = coop.rules.sims[area]
+			if sim.populated: areas[area] = _cells(sim.state.wild)
+		areas[coop._area()] = _cells(main.world.wild_population)
+	elif not main.edge_travel_busy:
+		areas[coop._area()] = _cells(main.world.wild_population)
+	var file := FileAccess.open(phase_file.get_base_dir().path_join("wild_%s_%s.json" % [_role(), phase]), FileAccess.WRITE)
+	if file != null: file.store_string(JSON.stringify(areas))
+
+static func _cells(wild) -> Dictionary:
+	var cells := {}
+	for wild_id in wild.records:
+		var cell: Vector2i = wild.records[wild_id].cell
+		cells[str(wild_id)] = [cell.x, cell.y]
+	return cells
+
 func _report() -> void:
+	_dump_wild()
 	var seconds := maxf(0.001, (Time.get_ticks_msec() - phase_started) / 1000.0)
 	var stats: Dictionary = Transport.stats
 	var lines: Array = []

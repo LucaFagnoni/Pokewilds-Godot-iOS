@@ -16,9 +16,14 @@ extends RefCounted
 ## tick() is a frame of the wild Pokemon near the players and the habitats: a
 ## timer counted down in a packed array for most of them, the whole wandering,
 ## pursuing, fleeing and egg-laying step for the one whose timer runs out. Its
-## ground, actors and rules are the world's (`world`).
+## ground, other actors, clock and random numbers are its area's (`area`, an
+## AreaState) and its rules rules/population_rules.gd: the same frame runs in
+## a World and in an area a server holds without one (area_sim.gd).
 
 const PokemonEcology = preload("res://scripts/pokemon_ecology.gd")
+const PopulationRules = preload("res://scripts/rules/population_rules.gd")
+const RareForestMew = preload("res://scripts/rare_forest_mew.gd")
+const RareLegendaries = preload("res://scripts/rare_biome_legendaries.gd")
 const BUCKET_SHIFT := 4
 const BUCKET := 1 << BUCKET_SHIFT
 ## flags: hidden in the sand (a trap).
@@ -64,8 +69,18 @@ var tracking := false
 var _tick_dirty := PackedInt64Array()
 var _ticking := false
 
-## The world: its ground, its other actors, its rules and its co-op game.
+## The area (AreaState): its ground, its habitat Pokemon and eggs, its clock
+## and random numbers, for the rules.
+var area
+## The World that draws the area and plays its own player (emotes and sounds,
+## that player's encounters, follower and helper, its saves); null for an area
+## held without one (area_sim.gd).
 var world: Node
+## Online, who keeps the Pokemon going and whom they chase:
+## target_for(record, cell), occupied(cell), remote_charm(record, player),
+## mark_motion(id) and local_actor() (coop_wild_runtime.gd for the World's
+## area, an AreaSim's own for another). null alone.
+var players
 ## The ids tick() looks at: those in a zone (near a player or a habitat),
 ## worked out every 500 ms of wall time.
 var watched: Array = []
@@ -94,8 +109,9 @@ var trap_offsets := {}
 ## its sprite shows.
 var poses := {}
 
-func _init(owner: Node = null) -> void:
+func _init(owner: Node = null, state = null) -> void:
     world = owner
+    area = state
 
 func size() -> int:
     return records.size()
@@ -370,7 +386,7 @@ func record_for_save(id: int) -> Dictionary:
     var record: Dictionary = records.get(id, {})
     if record.is_empty():
         return {}
-    var saved: Dictionary = world._serializable_ecology_record(record, record.get("cell", Vector2i.ZERO))
+    var saved: Dictionary = PopulationRules.serializable_record(area, record, record.get("cell", Vector2i.ZERO))
     saved["id"] = id
     return saved
 
@@ -388,6 +404,12 @@ func from_save(saved: Array) -> void:
             continue
         var entry: Dictionary = raw
         var cell := Vector2i(int(entry.get("x", -1)), int(entry.get("y", -1)))
+        if world == null:
+            if int(entry.get("id", 0)) > 0:
+                PopulationRules.add_wild(area, String(entry.get("species", "pidgey")), int(entry.get("level", 2)), cell,
+                    String(entry.get("home_biome", PopulationRules.biome_at(area, cell))), int(entry.id),
+                    entry.get("source_record", {}) as Dictionary, entry)
+            continue
         world._add_wild_pokemon(String(entry.get("species", "pidgey")), int(entry.get("level", 2)), cell,
             String(entry.get("home_biome", world.biome_at(cell))), int(entry.get("id", 0)),
             entry.get("source_record", {}) as Dictionary, entry)
@@ -449,10 +471,10 @@ func tick(delta: float, observers: Array, rng: RandomNumberGenerator) -> PackedI
     sync()
     _ticking = true
     _tick_dirty = PackedInt64Array()
-    var coordinator = world.get_parent().get("coop_game")
-    var online: bool = is_instance_valid(coordinator) and coordinator.active
-    var player_cell: Vector2i = world._player_cell()
-    var habitats: Dictionary = world.deployed_pokemon
+    var coordinator = players
+    var online: bool = coordinator != null
+    var player_cell: Vector2i = world._player_cell() if world != null else PopulationRules.NO_CELL
+    var habitats: Dictionary = area.habitat.records
     # Which Pokemon are inside a zone is worked out twice a second, not every
     # frame. One that wanders in or spawns is picked up within half a second.
     var now_msec := Time.get_ticks_msec()
@@ -477,9 +499,9 @@ func tick(delta: float, observers: Array, rng: RandomNumberGenerator) -> PackedI
         chasers.append(Vector2i(int(observer.x), int(observer.y)))
         if online and String(observer.get("move", "")) == "CHARM":
             someone_charms = true
-    var now: float = world.world_elapsed_seconds
-    var charm_move: bool = world.active_field_move == "CHARM"
-    var cover = world.get("habitat_population")
+    var now: float = area.clock
+    var charm_move: bool = world != null and world.active_field_move == "CHARM"
+    var cover = area.habitat
     for raw_id in watched.duplicate():
         var wild_id := int(raw_id)
         var slot: int = slot_of.get(wild_id, -1)
@@ -500,7 +522,7 @@ func tick(delta: float, observers: Array, rng: RandomNumberGenerator) -> PackedI
                 if target_player.is_empty():
                     continue
                 player_cell = Vector2i(target_player.x, target_player.y)
-                local_target = target_player.actor == coordinator.session.actor
+                local_target = target_player.actor == coordinator.local_actor()
         # Near a player (online: one who could chase it) or a habitat.
         var active: bool = cover != null and cover.near(old_cell)
         if not active:
@@ -524,21 +546,22 @@ func tick(delta: float, observers: Array, rng: RandomNumberGenerator) -> PackedI
                     if target_player.is_empty():
                         continue
                     player_cell = Vector2i(target_player.x, target_player.y)
-                    local_target = target_player.actor == coordinator.session.actor
-                is_charmed = world._charm_suppresses(data) if local_target else coordinator.wild.remote_charm(data, target_player)
+                    local_target = target_player.actor == coordinator.local_actor()
+                is_charmed = world._charm_suppresses(data) if local_target else coordinator.remote_charm(data, target_player)
         elif charm_move or float(data.get("ball_charm_until", 0.0)) > now:
-            is_charmed = world._charm_suppresses(data)
+            is_charmed = world._charm_suppresses(data) if world != null else true
         if was_charmed == null or bool(was_charmed) != is_charmed:
             data["charmed"] = is_charmed
-        if not online:
+        if not online and world != null:
             if aggro or data.has("aggro_audio_tick"):
                 world._update_source_aggro_audio(data, old_cell, player_cell, delta)
-        if is_charmed and not bool(was_charmed):
+        if is_charmed and not bool(was_charmed) and world != null:
             world._show_ecology_emote(world._sprite_of(data), "heart")
         if aggro:
             data["source_aggro_emote_seconds"] = float(data.get("source_aggro_emote_seconds", 0.0)) - delta
             if float(data["source_aggro_emote_seconds"]) <= 0.0:
-                world._show_ecology_emote(world._sprite_of(data), "skull")
+                if world != null:
+                    world._show_ecology_emote(world._sprite_of(data), "skull")
                 data["source_aggro_emote_seconds"] = 241.0 / 60.0
         var move_timer := timers[slot] - delta
         timers[slot] = move_timer
@@ -554,7 +577,7 @@ func tick(delta: float, observers: Array, rng: RandomNumberGenerator) -> PackedI
             if target_player.is_empty():
                 continue
             player_cell = Vector2i(target_player.x, target_player.y)
-            local_target = target_player.actor == coordinator.session.actor
+            local_target = target_player.actor == coordinator.local_actor()
         if not _act(wild_id, slot, data, old_cell, player_cell, local_target, is_charmed, online, coordinator, rng):
             break
     _ticking = false
@@ -565,7 +588,7 @@ func tick(delta: float, observers: Array, rng: RandomNumberGenerator) -> PackedI
 ## co-op target noted (World coop_wild_runtime.target_for); {} if none.
 func _target(coordinator, data: Dictionary, old_cell: Vector2i) -> Dictionary:
     var before := String(data.get("coop_target", ""))
-    var target: Dictionary = coordinator.wild.target_for(data, old_cell)
+    var target: Dictionary = coordinator.target_for(data, old_cell)
     if String(data.get("coop_target", "")) != before:
         mark(int(data.get("id", -1)))
     return target
@@ -574,14 +597,14 @@ func _target(coordinator, data: Dictionary, old_cell: Vector2i) -> Dictionary:
 ## wild updates stop there, as they always have).
 func _act(wild_id: int, slot: int, data: Dictionary, old_cell: Vector2i, player_cell: Vector2i,
         local_target: bool, is_charmed: bool, online: bool, coordinator, rng: RandomNumberGenerator) -> bool:
-    timers[slot] = world._wild_move_delay(String(data.get("species", "")), data)
-    world._try_create_parent_egg(data, old_cell, wild_id)
+    timers[slot] = PopulationRules.wild_move_delay(area, String(data.get("species", "")), data)
+    PopulationRules.try_create_parent_egg(area, data, old_cell, wild_id)
     var behavior: Dictionary = data.get("behavior", {})
     if bool(behavior.get("stationary", false)):
         return true
     var player_delta := player_cell - old_cell
     var pursuing := bool(data.get("aggro_player", false)) and not is_charmed
-    var now: float = world.world_elapsed_seconds
+    var now: float = area.clock
     if now < float(data.get("fed_until", 0.0)):
         data["anim_phase"] = 1 - int(data.get("anim_phase", 0))
         pose(wild_id, Vector2i.DOWN, int(data["anim_phase"]))
@@ -589,6 +612,7 @@ func _act(wild_id: int, slot: int, data: Dictionary, old_cell: Vector2i, player_
     if (
             pursuing
             and local_target
+            and world != null
             and world.active_field_move not in ["SURF", "FLY"]
             and player_delta.length_squared() <= 1
             and not world.encounter_grace_active()
@@ -615,11 +639,12 @@ func _act(wild_id: int, slot: int, data: Dictionary, old_cell: Vector2i, player_
         var companion_id := friend_id
         if friend_reunion:
             data["friend_seconds"] = PokemonEcology.FRIEND_SECONDS
-            world._show_friend_reunion(data, friend_id)
+            if world != null:
+                world._show_friend_reunion(data, friend_id)
         elif companion_id.is_empty() or rng.randf() < 0.18:
             companion_id = String(data.get("mate_id", companion_id))
         if not companion_id.is_empty() and (friend_reunion or rng.randf() < 0.20):
-            var companion_cell: Vector2i = world._ecology_cell_by_id(companion_id)
+            var companion_cell: Vector2i = PopulationRules.ecology_cell_by_id(area, companion_id)
             if companion_cell.x > -2147483648:
                 direction = cardinal_direction(companion_cell - old_cell, false)
         elif rng.randf() < 0.12:
@@ -627,7 +652,7 @@ func _act(wild_id: int, slot: int, data: Dictionary, old_cell: Vector2i, player_
             if same_species_cell.x > -2147483648:
                 direction = cardinal_direction(same_species_cell - old_cell, false)
     if not pursuing and not fleeing:
-        direction = world._paired_wander_direction(data, old_cell, direction)
+        direction = PopulationRules.paired_wander_direction(area, data, old_cell, direction)
     if not scared:
         flee_routes.erase(wild_id)
         flee_started.erase(wild_id)
@@ -637,29 +662,28 @@ func _act(wild_id: int, slot: int, data: Dictionary, old_cell: Vector2i, player_
         # around rather than paced in front of.
         var free_step := func(step: Vector2i) -> bool:
             return not (
-                step == player_cell or step == world.follower_cell or step == world.field_helper_cell
-                or (online and coordinator.wild.occupied(step))
+                step == player_cell or _beside_player(step)
+                or (online and coordinator.occupied(step))
                 or id_at(step, wild_id) >= 0
-                or world.wild_eggs.has(step) or world.deployed_pokemon.has(step)
+                or area.eggs.records.has(step) or area.habitat.records.has(step)
             )
         direction = flee_direction(wild_id, String(data.get("species", "")), old_cell, player_cell, free_step)
     var target := old_cell + direction
     var source_record: Dictionary = data.get("source_record", {})
-    if bool(source_record.get("rare_forest_mew", false)) and not preload("res://scripts/rare_forest_mew.gd").deep_forest(world, target):
+    if bool(source_record.get("rare_forest_mew", false)) and not RareForestMew.deep_forest_at(area, target):
         return true
     var rare_species := String(source_record.get("rare_legendary", ""))
-    if not rare_species.is_empty() and not preload("res://scripts/rare_biome_legendaries.gd").habitat(world, rare_species, target):
+    if not rare_species.is_empty() and not RareLegendaries.habitat_at(area, rare_species, target):
         return true
     if (
             direction == Vector2i.ZERO
-            or not world._pokemon_can_move_between(String(data.get("species", "")), old_cell, target)
+            or not PopulationRules.can_move_between(area, String(data.get("species", "")), old_cell, target)
             or target == player_cell
-            or target == world.follower_cell
-            or target == world.field_helper_cell
-            or (online and coordinator.wild.occupied(target))
+            or _beside_player(target)
+            or (online and coordinator.occupied(target))
             or id_at(target, wild_id) >= 0
-            or world.wild_eggs.has(target)
-            or world.deployed_pokemon.has(target)
+            or area.eggs.records.has(target)
+            or area.habitat.records.has(target)
         ):
         return true
     var phase := 1 - int(data.get("anim_phase", 0))
@@ -674,24 +698,26 @@ func _act(wild_id: int, slot: int, data: Dictionary, old_cell: Vector2i, player_
     begin_step(wild_id, move_seconds)
     move(wild_id, target)
     if online:
-        coordinator.wild.mark_motion(wild_id)
+        coordinator.mark_motion(wild_id)
     data["ball_facing"] = Vector2(direction)
     pose(wild_id, direction, phase)
     if pursuing or fleeing:
         timers[slot] = move_seconds
     if bool(behavior.get("flee", false)):
         data["flee_steps"] = int(data.get("flee_steps", 0)) + 1
-        if int(data["flee_steps"]) >= 3 and world._is_tall_grass_cell(target):
-            world._remove_wild_pokemon(wild_id)
+        if int(data["flee_steps"]) >= 3 and PopulationRules.is_tall_grass_cell(area, target):
+            if world != null:
+                world._remove_wild_pokemon(wild_id)
+            else:
+                remove(wild_id)
     return true
 
+## The World's own player's follower and field helper stand on `cell`.
+func _beside_player(cell: Vector2i) -> bool:
+    return world != null and (cell == world.follower_cell or cell == world.field_helper_cell)
+
 static func cardinal_direction(delta: Vector2i, away: bool) -> Vector2i:
-    var direction := Vector2i.ZERO
-    if absi(delta.x) >= absi(delta.y):
-        direction = Vector2i(signi(delta.x), 0)
-    else:
-        direction = Vector2i(0, signi(delta.y))
-    return -direction if away else direction
+    return PopulationRules.cardinal_direction(delta, away)
 
 ## The cell of the first other Pokemon in order with the same base species
 ## within the habitat radius of `center`.
@@ -718,7 +744,7 @@ func flee_direction(wild_id: int, species: String, origin: Vector2i, threat: Vec
         if (
                 (planned - origin).length_squared() == 1
                 and (threat - planned).length_squared() > 2
-                and world._pokemon_can_move_between(species, origin, planned)
+                and PopulationRules.can_move_between(area, species, origin, planned)
                 and free_step.call(planned)
             ):
             route.pop_front()
@@ -740,7 +766,7 @@ func flee_direction(wild_id: int, species: String, origin: Vector2i, threat: Vec
             # Never plan a way that brushes past the player.
             if came.has(step) or (threat - step).length_squared() <= 2:
                 continue
-            if not world._pokemon_can_move_between(species, cell, step):
+            if not PopulationRules.can_move_between(area, species, cell, step):
                 continue
             if cell == origin and not free_step.call(step):
                 continue

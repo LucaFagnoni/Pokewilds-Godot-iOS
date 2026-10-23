@@ -63,8 +63,11 @@ func leave(actor:String)->void:
     for area in reservations.keys():
         if reservations[area].actor==actor:reservations.erase(area)
 
+## The area's authority, in the area, at this epoch. A server that is every
+## area's authority (coop_state.gd fixed_authority) holds those it is not in too.
 func can_publish(actor:String,area:String,epoch:int)->bool:
-    return occupants.get(actor,"")==area and state.authority.get(area,"")==actor and int(epochs.get(area,0))==epoch
+    var present:bool=occupants.get(actor,"")==area or (not state.fixed_authority.is_empty() and actor==state.fixed_authority)
+    return present and state.authority.get(area,"")==actor and int(epochs.get(area,0))==epoch
 
 func snapshot(area:String)->Dictionary:
     var record:Dictionary=state.records.get("area/"+area,{})

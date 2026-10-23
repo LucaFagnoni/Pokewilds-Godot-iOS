@@ -108,7 +108,12 @@ const MAP_SIZE_PRESETS := [
 var map_w: int = 64
 var map_h: int = 48
 var map_size_index: int = 1
-var exact_world: SourceExactWorldAdapter
+## The exact world's tiles; its area's (area.tiles) from the moment it is set,
+## so the rules that read the area see the same tiles as the World.
+var exact_world: SourceExactWorldAdapter:
+    set(value):
+        exact_world = value
+        area.tiles = value
 var exact_world_bounds := Rect2i()
 
 const GRASS := preload("res://assets/grass_runtime.png")
@@ -155,6 +160,9 @@ var rng := RandomNumberGenerator.new()
 
 const AreaState = preload("res://scripts/area_state.gd")
 const TileRules = preload("res://scripts/rules/tile_rules.gd")
+## The rules of the area's Pokemon (where they may step, eggs, habitats): the
+## World's own functions of those names call these on its AreaState.
+const PopulationRules = preload("res://scripts/rules/population_rules.gd")
 ## This area's world as data (area_state.gd). The overlay dictionaries below
 ## (terrain_changes, removed_resources, source_interior_mutations, ...) are
 ## its own; its tiles, structures, blocked cells and Pokemon are this world's
@@ -177,6 +185,13 @@ func _bind_area() -> void:
     area.habitat = habitat_population
     area.eggs = egg_population
     area.rooms_seen = built_house_rooms_seen
+    area.rng = rng
+    area.flowers = flower_cells
+    area.walkable = _is_walkable
+    area.view = self
+    wild_population.area = area
+    habitat_population.area = area
+    egg_population.area = area
 
 var terrain: Array = []
 var biomes: Array = []
@@ -219,7 +234,10 @@ var active_field_move := ""
 var active_field_species := ""
 var active_field_pokemon: Dictionary = {}
 var dig_selection_index := 0
-var world_elapsed_seconds := 0.0
+## The world clock: its area's (area_state.gd clock), which the Pokemon's rules read.
+var world_elapsed_seconds: float:
+    get: return area.clock
+    set(value): area.clock = value
 var repel_until_elapsed := 0.0
 const DIG_CHOICES := FieldMoveData.DIG_CHOICES
 const PAINT_CHOICES := [
@@ -380,7 +398,10 @@ func _drop_record_sprite(data: Dictionary) -> void:
         sprite.queue_free()
 var next_wild_id := 1
 var next_deployed_id := 1
-var ecology_accumulator := 0.0
+## Seconds of the habitat check not yet run (the area's, rules/population_rules.gd).
+var ecology_accumulator: float:
+    get: return area.ecology_accumulator
+    set(value): area.ecology_accumulator = value
 var follower_pokemon: Dictionary = {}
 var follower_sprite: Sprite2D
 var follower_move_tween: Tween
@@ -1361,18 +1382,7 @@ func _setup_normal_grass_front_overlay() -> void:
 ## overlays and wild Pokemon ask for many. Empty when there is no tile.
 ## per-frame
 func _exact_names_at(cell: Vector2i) -> PackedStringArray:
-    var store = exact_world.tiles
-    var key := cell * TILE
-    var tile: SourceTile = null
-    if store is WorldTileStore:
-        var index: int = store.index_of(key)
-        if index >= 0:
-            return PackedStringArray([store.name_at(index), store.upper_at(index)])
-        # Off the packed cells: a plain tile object, as tile_at gives.
-        tile = store.extra.get(key) as SourceTile
-    else:
-        tile = store.get(key) as SourceTile
-    return PackedStringArray() if tile == null else PackedStringArray([tile.name, tile.name_upper])
+    return PopulationRules.names_at(area, cell)
 
 ## The world's own cursors for _frame_tile, one per slot.
 var _frame_cursors: Array = [null, null]
@@ -1401,21 +1411,10 @@ func _frame_tile(cell: Vector2i, slot: int = 0) -> SourceTile:
     return cursor
 
 func _source_tile_key(value: String) -> String:
-    var key := value.to_lower().strip_edges()
-    if key.ends_with(".png"):
-        key = key.trim_suffix(".png")
-    return key
+    return PopulationRules.tile_key(value)
 
 func _is_normal_encounter_grass(cell: Vector2i) -> bool:
-    if exact_world == null:
-        return false
-    var tile: SourceTile = exact_world.tile_at(cell)
-    if tile == null:
-        return false
-    return (
-        _source_tile_key(tile.name) == "grass1"
-        or _source_tile_key(tile.name_upper) == "grass1"
-    )
+    return exact_world != null and PopulationRules.normal_encounter_grass(area, cell)
 
 ## per-frame
 func _update_normal_grass_front_overlay(_cell: Vector2i) -> void:
@@ -3091,55 +3090,16 @@ func _interact_deployed_pokemon(cell:Vector2i)->void:
 func _refresh_record_habitat(
         data: Dictionary, cell: Vector2i, ecology_name_cache: Dictionary = {}
     ) -> Dictionary:
-    var species := String(data.get("species", ""))
-    # Build the seven-by-seven habitat window once. The old implementation
-    # rebuilt the same strings once per required type and then again for
-    # shelter, multiplying work across hundreds of exact-world Pokemon.
-    var nearby_names := PackedStringArray()
-    var fence_count := 0
-    var roof_count := 0
-    for y in range(cell.y - PokemonEcology.HABITAT_RADIUS, cell.y + PokemonEcology.HABITAT_RADIUS + 1):
-        for x in range(cell.x - PokemonEcology.HABITAT_RADIUS, cell.x + PokemonEcology.HABITAT_RADIUS + 1):
-            var habitat_cell := Vector2i(x, y)
-            var names = ecology_name_cache.get(habitat_cell)
-            if names == null:
-                names = _ecology_names_at(habitat_cell)
-                ecology_name_cache[habitat_cell] = names
-            nearby_names.append(names)
-            if "fence" in names:
-                fence_count += 1
-            elif "roof" in names:
-                roof_count += 1
-    # No habitat option holds a space, so one is in the joined window exactly
-    # when it is in one of the cells' names. The species' groups (decoded
-    # from the packed species data) are kept in the same cache by name.
-    var window := " ".join(nearby_names)
-    var habitat = ecology_name_cache.get(species)
-    if habitat == null:
-        var groups := []
-        for raw_group in PokemonEcology.habitat_groups(species):
-            groups.append([String(raw_group), String(raw_group).to_lower().split("|")])
-        habitat = [groups, PokemonEcology.requires_night(species)]
-        ecology_name_cache[species] = habitat
-    var missing: Array[String] = []
-    for group in habitat[0]:
-        var satisfied := false
-        for option in group[1]:
-            if option in window:
-                satisfied = true
-                break
-        if not satisfied:
-            missing.append(group[0])
-    if habitat[1] and not _is_night_time():
-        missing.append("night")
-    data["missing_habitats"] = missing
-    data["in_habitat"] = missing.is_empty()
-    data["in_shelter"] = roof_count >= 3 and fence_count >= 2
-    return data
+    return PopulationRules.refresh_record_habitat(area, data, cell, ecology_name_cache, _house_cells())
+
+## The floor of the house the player is in ({} outdoors): the habitat names
+## of its cells are what is built on them (PopulationRules.ecology_names_at).
+func _house_cells() -> Dictionary:
+    return built_house_interior_cells if active_area_id == "HOUSE" else NO_CELLS
+const NO_CELLS := {}
 
 func _is_night_time() -> bool:
-    var day_fraction := fmod(world_elapsed_seconds, WORLD_DAY_SECONDS) / WORLD_DAY_SECONDS
-    return day_fraction >= NIGHT_START_FRACTION
+    return PopulationRules.is_night(area)
 
 func source_time_of_day() -> String:
     return "night" if _is_night_time() else "day"
@@ -3175,95 +3135,8 @@ func respawn_after_whiteout() -> void:
     _configure_camera()
     _refresh_exact_tile_streams()
 
-## A packed tile's ecology names (its two names lowered, and whether one of
-## them is grass1), by its names' ids, and a packed tile's biome
-## (_source_biome_for_tile), by its biome, route and water: the same for every
-## cell with that tile. For _tile_names_store's tiles.
-var _tile_names := {}
-var _tile_biomes := {}
-var _tile_names_store: Object
-
 func _ecology_names_at(cell: Vector2i) -> String:
-    if active_area_id == "HOUSE" and built_house_interior_cells.has(cell):
-        return "house_floor " + String((built_structures.get(cell, {}) as Dictionary).get("name", "")).to_lower()
-    # A packed tile: the same names as below from the tile's, without the
-    # lookups, the lowering and the biome (a tile object each) for every cell.
-    var tiles = exact_world.tiles if exact_world != null else null
-    if tiles is WorldTileStore:
-        var store: WorldTileStore = tiles
-        var index: int = store.index_of(cell * TILE)
-        if index >= 0:
-            if not is_same(store, _tile_names_store):
-                _tile_names_store = store
-                _tile_names.clear()
-                _tile_biomes.clear()
-            var pair: int = store.name_ids[index] << 24 | store.upper_ids[index]
-            var own = _tile_names.get(pair)
-            if own == null:
-                var name: String = store.name_at(index)
-                var upper: String = store.upper_at(index)
-                own = [name.to_lower() + " " + upper.to_lower(), _source_tile_key(name) == "grass1" or _source_tile_key(upper) == "grass1"]
-                _tile_names[pair] = own
-            # _is_tall_grass_cell, from the same fields.
-            var flags: int = store.flags[index]
-            var grass: bool
-            if tall_grass.has(cell):
-                grass = _packed_tile_biome(store, index, cell) != "SNOW"
-            elif flags & WorldTileStore.TIDAL != 0 and _packed_tile_biome(store, index, cell) != "BEACH":
-                grass = false
-            else:
-                grass = own[1] or flags & WorldTileStore.GRASS != 0
-            return own[0] + (" grass" if grass else "") + _placed_ecology_names(cell)
-    if not _in_bounds(cell):
-        return ""
-    var names: Array[String] = []
-    if exact_world != null:
-        var tile_names := _exact_names_at(cell)
-        if not tile_names.is_empty():
-            names.append(tile_names[0].to_lower())
-            names.append(tile_names[1].to_lower())
-    elif source_tiles.has(cell):
-        var source_data: Dictionary = source_tiles.get(cell, {})
-        names.append(String(source_data.get("base", source_data.get("name", ""))).to_lower())
-        names.append(String(source_data.get("upper", source_data.get("name_upper", ""))).to_lower())
-        names.append(String(source_data.get("biome", "")).to_lower())
-    if _is_tall_grass_cell(cell):
-        names.append("grass")
-    var own := " ".join(names)
-    var placed := _placed_ecology_names(cell)
-    return placed.substr(1) if own.is_empty() else own + placed
-
-## biome_at(cell) for packed tile `index` of `store` (cached in _tile_biomes).
-func _packed_tile_biome(store: WorldTileStore, index: int, cell: Vector2i) -> String:
-    var kind: int = (store.biome_ids[index] << 32) | (store.route_ids[index] << 1) | int(store.flags[index] & WorldTileStore.WATER != 0)
-    var biome = _tile_biomes.get(kind)
-    if biome == null:
-        biome = _source_biome_for_tile(exact_world.tile_at(cell))
-        _tile_biomes[kind] = biome
-    return biome
-
-## The ecology names of what lies on `cell` (flowers, resources, buildings,
-## landmarks, ice), each after a space.
-func _placed_ecology_names(cell: Vector2i) -> String:
-    var names := ""
-    if flower_cells.has(cell):
-        names += " flower"
-    if resource_objects.has(cell):
-        names += " " + String((resource_objects[cell] as Dictionary).get("type", "")).to_lower()
-    if built_structures.has(cell):
-        var built_name := String((built_structures[cell] as Dictionary).get("name", "")).to_lower()
-        names += " " + built_name
-        if built_name == "flowers":
-            names += " flower"
-        elif built_name == "plant":
-            names += " potted"
-        elif built_name == "grave":
-            names += " gravestone"
-    if landmarks.has(cell):
-        names += " " + String((landmarks[cell] as Dictionary).get("type", "")).to_lower()
-    if not terrain_changes.is_empty() and bool(terrain_changes.get("ice:%d,%d" % [cell.x, cell.y], false)):
-        names += " snow"
-    return names
+    return PopulationRules.ecology_names_at(area, cell, _house_cells())
 
 ## per-frame
 func _update_ecology(delta:float)->void:
@@ -3287,295 +3160,11 @@ func _update_ecology(delta:float)->void:
         return
     _run_ecology_step(delta)
 
-## The fields of a habitat Pokemon the ecology pass sets, other than its clocks.
-const ECOLOGY_FIELDS: Array[String] = ["mate_id", "friend_id", "can_lay_egg", "mate_nearby", "nearby_pokemon",
-    "in_habitat", "in_shelter", "missing_habitats", "held_item"]
-
 ## The ecology pass every HABITAT_CHECK_SECONDS. `simulated` (a record ->
 ## bool) picks the habitat Pokemon this peer moves on (all when invalid);
 ## with_wild false leaves the wild ones to the area's authority.
 func _run_ecology_step(delta: float, simulated: Callable = Callable(), with_wild: bool = true) -> void:
-    ecology_accumulator += delta
-    if ecology_accumulator < PokemonEcology.HABITAT_CHECK_SECONDS:
-        return
-    var ecology_delta := ecology_accumulator
-    ecology_accumulator = fmod(
-        ecology_accumulator, PokemonEcology.HABITAT_CHECK_SECONDS
-    )
-    # What the pass sets of each habitat Pokemon besides its clocks, as it was:
-    # one whose changes is marked for co-op (habitat_population.dirty).
-    var before := {}
-    for raw_cell in deployed_pokemon:
-        var record: Dictionary = deployed_pokemon[raw_cell]
-        before[raw_cell] = ECOLOGY_FIELDS.map(func(field: String) -> Variant: return record.get(field))
-    var active_wild := _refresh_ecology_relationships(simulated, with_wild)
-    _release_old_eggs()
-
-    for raw_cell in deployed_pokemon.keys():
-        var cell: Vector2i = raw_cell
-        if not deployed_pokemon.has(cell):
-            continue
-        var data: Dictionary = deployed_pokemon[cell]
-        if simulated.is_valid() and not simulated.call(data):
-            continue
-        if (
-                bool(data.get("in_habitat", false))
-                and String(data.get("held_item", "")).is_empty()
-            ):
-            var shelter_multiplier := 2.0 if bool(data.get("in_shelter", false)) else 1.0
-            data["harvest_progress"] = float(data.get("harvest_progress", 0.0)) + ecology_delta * shelter_multiplier
-            var harvest_max := PokemonEcology.harvest_seconds(String(data.get("species", "")))
-            if float(data["harvest_progress"]) >= harvest_max:
-                var choices := PokemonEcology.harvest_items(String(data.get("species", "")))
-                if not choices.is_empty():
-                    data["held_item"] = choices[rng.randi_range(0, choices.size() - 1)]
-        data = _advance_breeding_clock(data, ecology_delta)
-        deployed_pokemon[cell] = data
-        if before.get(cell) != ECOLOGY_FIELDS.map(func(field: String) -> Variant: return data.get(field)):
-            habitat_population.mark(cell)
-
-    # The wild Pokemon in play are the ones the relationship pass just took
-    # (not burrowed, near the player or a habitat); nothing since has moved
-    # one, and each clock is its own record's. Scanning every wild Pokemon in
-    # the world again for them was a fifth of this pass.
-    for data in active_wild:
-        _advance_breeding_clock(data, ecology_delta, true)
-
-func _advance_breeding_clock(
-        data: Dictionary, delta: float, allow_wild_crowding: bool = false
-    ) -> Dictionary:
-    var population_ok := allow_wild_crowding or int(data.get("nearby_pokemon", 0)) < 3
-    if (
-            bool(data.get("can_lay_egg", false))
-            and bool(data.get("in_habitat", false))
-            and bool(data.get("mate_nearby", false))
-            and population_ok
-            and float(data.get("lay_egg_seconds", PokemonEcology.LAY_EGG_SECONDS)) > 0.0
-        ):
-        data["lay_egg_seconds"] = maxf(
-            0.0,
-            float(data.get("lay_egg_seconds", PokemonEcology.LAY_EGG_SECONDS)) - delta
-        )
-    if (
-            not String(data.get("friend_id", "")).is_empty()
-            and float(data.get("friend_seconds", PokemonEcology.FRIEND_SECONDS)) > 0.0
-        ):
-        data["friend_seconds"] = maxf(
-            0.0,
-            float(data.get("friend_seconds", PokemonEcology.FRIEND_SECONDS)) - delta
-        )
-    return data
-
-## Returns the wild records it covered, in wild_pokemon order. `simulated`
-## and with_wild: as _run_ecology_step.
-func _refresh_ecology_relationships(simulated: Callable = Callable(), with_wild: bool = true) -> Array[Dictionary]:
-    var records: Array[Dictionary] = []
-    var active_wild: Array[Dictionary] = []
-    # Habitat windows heavily overlap. Cache each cell's ecology string for this
-    # refresh so the 1.6-second relationship pass does not repeatedly resolve
-    # the same tile/biome dozens of times and hitch while the player is running.
-    var ecology_name_cache: Dictionary = {}
-    var active_center := _player_cell()
-    # The wild Pokemon near the player or a habitat (as WildPopulation.tick
-    # keeps going), from the buckets of wild_population's grid those squares
-    # touch.
-    var squares: Array = [Vector3i(active_center.x, active_center.y, ECOLOGY_ACTIVE_RADIUS)]
-    for raw_cell in deployed_pokemon.keys():
-        var cell: Vector2i = raw_cell
-        if simulated.is_valid() and not simulated.call(deployed_pokemon[cell]):
-            continue
-        records.append({
-            "kind": "deployed", "key": cell, "cell": cell,
-            "data": deployed_pokemon[cell]
-        })
-        squares.append(Vector3i(cell.x, cell.y, PokemonEcology.HABITAT_RADIUS))
-    for slot in (wild_population.slots_in(squares) if with_wild else PackedInt32Array()):
-        var raw_id := wild_population.ids[slot]
-        var wild_data: Dictionary = wild_pokemon[raw_id]
-        if bool(wild_data.get("burrowed", false)):
-            continue
-        var wild_cell: Vector2i = wild_data.get("cell", Vector2i.ZERO)
-        active_wild.append(wild_data)
-        records.append({
-            "kind": "wild", "key": raw_id,
-            "cell": wild_cell,
-            "data": wild_data
-        })
-
-    var index_by_id: Dictionary = {}
-    var cell_indices: Dictionary = {}
-    for index in range(records.size()):
-        var descriptor: Dictionary = records[index]
-        var data: Dictionary = descriptor["data"]
-        data["previous_mate_id"] = String(data.get("mate_id", ""))
-        data["mate_id"] = ""
-        data["friend_id"] = ""
-        data["can_lay_egg"] = false
-        data["mate_nearby"] = false
-        data["nearby_pokemon"] = 0
-        data = _refresh_record_habitat(
-            data, descriptor["cell"], ecology_name_cache)
-        descriptor["data"] = data
-        records[index] = descriptor
-        var ecology_id := String(data.get("ecology_id", ""))
-        if not ecology_id.is_empty():
-            index_by_id[ecology_id] = index
-        var record_cell: Vector2i = descriptor["cell"]
-        if not cell_indices.has(record_cell):
-            cell_indices[record_cell] = []
-        (cell_indices[record_cell] as Array).append(index)
-
-    # Keep an established compatible pair bonded while it wanders a few tiles
-    # apart. The old pass erased both IDs every refresh, so natural-looking
-    # separation accidentally dissolved the pair before it could return.
-    for index in range(records.size()):
-        var first_descriptor: Dictionary = records[index]
-        var first: Dictionary = first_descriptor["data"]
-        var former_mate_id := String(first.get("previous_mate_id", ""))
-        if former_mate_id.is_empty() or not index_by_id.has(former_mate_id):
-            continue
-        var mate_index := int(index_by_id[former_mate_id])
-        if mate_index <= index:
-            continue
-        var second_descriptor: Dictionary = records[mate_index]
-        var second: Dictionary = second_descriptor["data"]
-        if String(second.get("previous_mate_id", "")) != \
-                String(first.get("ecology_id", "")):
-            continue
-        var first_cell: Vector2i = first_descriptor["cell"]
-        var second_cell: Vector2i = second_descriptor["cell"]
-        var separation := maxi(
-            absi(first_cell.x - second_cell.x),
-            absi(first_cell.y - second_cell.y))
-        if separation > MATE_BOND_RADIUS or not PokemonEcology.can_mate(first, second):
-            continue
-        first["mate_id"] = String(second.get("ecology_id", ""))
-        second["mate_id"] = String(first.get("ecology_id", ""))
-        first_descriptor["data"] = first
-        second_descriptor["data"] = second
-        records[index] = first_descriptor
-        records[mate_index] = second_descriptor
-    var nearby_indices: Array = []
-    for index in range(records.size()):
-        var descriptor: Dictionary = records[index]
-        var center: Vector2i = descriptor["cell"]
-        var nearby := 0
-        var candidates: Array[int] = []
-        for y in range(center.y - PokemonEcology.HABITAT_RADIUS, center.y + PokemonEcology.HABITAT_RADIUS + 1):
-            for x in range(center.x - PokemonEcology.HABITAT_RADIUS, center.x + PokemonEcology.HABITAT_RADIUS + 1):
-                var test := Vector2i(x, y)
-                if cell_indices.has(test):
-                    for raw_candidate_index in cell_indices[test]:
-                        var candidate_index := int(raw_candidate_index)
-                        if candidate_index != index:
-                            nearby += 1
-                            candidates.append(candidate_index)
-                if wild_eggs.has(test):
-                    nearby += 1
-        # Preserve the former record-order choice when more than one mate or
-        # friend is nearby while avoiding a scan of the whole world.
-        candidates.sort()
-        nearby_indices.append(candidates)
-        var data: Dictionary = descriptor["data"]
-        data["nearby_pokemon"] = nearby
-        descriptor["data"] = data
-        records[index] = descriptor
-
-    for index in range(records.size()):
-        var first_descriptor: Dictionary = records[index]
-        var first: Dictionary = first_descriptor["data"]
-        if not String(first.get("mate_id", "")).is_empty():
-            continue
-        for raw_candidate_index in nearby_indices[index]:
-            var candidate_index := int(raw_candidate_index)
-            if candidate_index <= index:
-                continue
-            var second_descriptor: Dictionary = records[candidate_index]
-            var second: Dictionary = second_descriptor["data"]
-            if not String(second.get("mate_id", "")).is_empty():
-                continue
-            if not PokemonEcology.can_mate(first, second):
-                continue
-            first["mate_id"] = String(second.get("ecology_id", ""))
-            second["mate_id"] = String(first.get("ecology_id", ""))
-            first["friend_id"] = ""
-            second["friend_id"] = ""
-            first_descriptor["data"] = first
-            second_descriptor["data"] = second
-            records[index] = first_descriptor
-            records[candidate_index] = second_descriptor
-            break
-
-    for index in range(records.size()):
-        var first_descriptor: Dictionary = records[index]
-        var first: Dictionary = first_descriptor["data"]
-        if (
-                not String(first.get("mate_id", "")).is_empty()
-                or not String(first.get("friend_id", "")).is_empty()
-            ):
-            continue
-        for raw_candidate_index in nearby_indices[index]:
-            var candidate_index := int(raw_candidate_index)
-            if candidate_index <= index:
-                continue
-            var second_descriptor: Dictionary = records[candidate_index]
-            var second: Dictionary = second_descriptor["data"]
-            if (
-                    not String(second.get("mate_id", "")).is_empty()
-                    or not String(second.get("friend_id", "")).is_empty()
-                    or not PokemonEcology.can_be_friends(first, second)
-                ):
-                continue
-            first["friend_id"] = String(second.get("ecology_id", ""))
-            second["friend_id"] = String(first.get("ecology_id", ""))
-            first_descriptor["data"] = first
-            second_descriptor["data"] = second
-            records[index] = first_descriptor
-            records[candidate_index] = second_descriptor
-            break
-
-    for index in range(records.size()):
-        var descriptor: Dictionary = records[index]
-        var data: Dictionary = descriptor["data"]
-        var mate_id := String(data.get("mate_id", ""))
-        if not mate_id.is_empty() and index_by_id.has(mate_id):
-            var mate_descriptor: Dictionary = records[int(index_by_id[mate_id])]
-            var mate: Dictionary = mate_descriptor["data"]
-            var groups: Array = data.get("egg_groups", [])
-            data["can_lay_egg"] = (
-                String(data.get("gender", "")) == "female"
-                or (
-                    groups.has("EGG_DITTO")
-                    and String(mate.get("gender", "")) == "male"
-                )
-            )
-            var own_cell: Vector2i = descriptor["cell"]
-            var mate_cell: Vector2i = mate_descriptor["cell"]
-            data["mate_nearby"] = maxi(
-                absi(own_cell.x - mate_cell.x),
-                absi(own_cell.y - mate_cell.y)
-            ) <= PokemonEcology.HABITAT_RADIUS
-        if (
-                not mate_id.is_empty()
-                and mate_id != String(data.get("previous_mate_id", ""))
-            ):
-            _show_ecology_emote(_sprite_of(data), "heart")
-        data.erase("previous_mate_id")
-        descriptor["data"] = data
-        records[index] = descriptor
-        _store_ecology_descriptor(descriptor)
-    return active_wild
-
-func _store_ecology_descriptor(descriptor: Dictionary) -> void:
-    var data: Dictionary = descriptor["data"]
-    if String(descriptor.get("kind", "")) == "deployed":
-        var cell: Vector2i = descriptor["key"]
-        if deployed_pokemon.has(cell):
-            deployed_pokemon[cell] = data
-    else:
-        var wild_id = descriptor["key"]
-        if wild_pokemon.has(wild_id):
-            wild_pokemon[wild_id] = data
+    PopulationRules.run_ecology_step(area, delta, [_player_cell()], simulated, with_wild, _house_cells(), _may_release_egg)
 
 ## per-frame
 func _update_deployed_pokemon(delta: float) -> void:
@@ -3604,97 +3193,15 @@ func _habitat_step_visuals(data: Dictionary, direction: Vector2i, target: Vector
             habitat_view.steps[sprite] = tween
 
 func _egg_ground_cell_is_valid(cell: Vector2i, ignored_wild_id: int = -1) -> bool:
-    if not _in_bounds(cell):
-        return false
-    if (
-            wild_eggs.has(cell) or deployed_pokemon.has(cell)
-            or _wild_id_at_cell(cell, ignored_wild_id) >= 0
-            or built_structures.has(cell) or landmarks.has(cell)
-            or resource_objects.has(cell) or blocked.has(cell)
-        ):
-        return false
-    # Reject the full visible footprint of exact resources, especially the
-    # 48x48 Savanna tree whose authored anchor is only one tile.
-    if _exact_resource_anchor(cell).x > -2147483648:
-        return false
-    if exact_world != null:
-        var tile: SourceTile = exact_world.tile_at(cell)
-        if tile == null or tile.is_water or tile.is_solid or tile.is_ledge:
-            return false
-    elif terrain_kind_at(cell) == 0:
-        return false
-    return true
+    return PopulationRules.egg_ground_ok(area, cell, ignored_wild_id)
 
 func _resolve_egg_ground_cell(preferred: Vector2i, ignored_wild_id: int = -1) -> Vector2i:
-    # Search the complete source habitat radius, nearest ring first, while
-    # consuming no RNG. The old short 13-cell list could fail in a healthy
-    # wandering colony even when plenty of valid habitat ground was nearby.
-    # Full deterministic rings keep both parents alive and moving and make the
-    # authored breeding clock reliably produce a visible egg when room exists.
-    if _egg_ground_cell_is_valid(preferred, ignored_wild_id):
-        return preferred
-    var preferred_offsets: Array[Vector2i] = [
-        Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP
-    ]
-    for offset in preferred_offsets:
-        var nearby := preferred + offset
-        if _egg_ground_cell_is_valid(nearby, ignored_wild_id):
-            return nearby
-    for radius in range(1, PokemonEcology.HABITAT_RADIUS + 1):
-        for y_offset in range(-radius, radius + 1):
-            for x_offset in range(-radius, radius + 1):
-                if maxi(absi(x_offset), absi(y_offset)) != radius:
-                    continue
-                var offset := Vector2i(x_offset, y_offset)
-                if preferred_offsets.has(offset):
-                    continue
-                var candidate := preferred + offset
-                if _egg_ground_cell_is_valid(candidate, ignored_wild_id):
-                    return candidate
-    return Vector2i(-2147483648, -2147483648)
+    return PopulationRules.resolve_egg_cell(area, preferred, ignored_wild_id)
 
 func _try_create_parent_egg(
         data: Dictionary, egg_cell: Vector2i, ignored_wild_id: int = -1
     ) -> Dictionary:
-    if (
-            float(data.get("lay_egg_seconds", PokemonEcology.LAY_EGG_SECONDS)) > 0.0
-            or not bool(data.get("can_lay_egg", false))
-        ):
-        return data
-    var partner := _ecology_record_by_id(String(data.get("mate_id", "")))
-    if partner.is_empty():
-        return data
-    var partner_cell := _ecology_cell_by_id(String(data.get("mate_id", "")))
-    if (
-            partner_cell.x <= -2147483648
-            or maxi(absi(partner_cell.x - egg_cell.x), absi(partner_cell.y - egg_cell.y)) > \
-                PokemonEcology.HABITAT_RADIUS
-            or not bool(data.get("in_habitat", false))
-            or not bool(partner.get("in_habitat", false))
-            or not PokemonEcology.can_mate(data, partner)
-        ):
-        return data
-    # Nothing hatches or removes a habitat egg for days (see _release_old_eggs),
-    # so an undisturbed couple would otherwise bury its habitat in eggs. Wait a
-    # full cycle before checking again rather than holding the pair together.
-    if _couple_egg_count(
-            String(data.get("ecology_id", "")), String(partner.get("ecology_id", ""))
-        ) >= PokemonEcology.MAX_EGGS_PER_COUPLE:
-        data["lay_egg_seconds"] = PokemonEcology.LAY_EGG_SECONDS
-        return data
-    # The parent occupies egg_cell by definition. Do not reject its own tile;
-    # resolve the egg onto the nearest free authored ground cell instead. This
-    # fixes the deployed-parent path that could never lay and keeps both parents
-    # alive/free to continue their normal paired wandering.
-    var resolved_cell := _resolve_egg_ground_cell(egg_cell, ignored_wild_id)
-    if resolved_cell.x <= -2147483648:
-        return data
-    var egg := PokemonEcology.egg_record(data, partner, rng)
-    _add_wild_egg_record(egg, resolved_cell, ignored_wild_id)
-    data["lay_egg_seconds"] = PokemonEcology.LAY_EGG_SECONDS
-    _show_ecology_emote(_sprite_of(data), "heart")
-    _show_ecology_emote(_sprite_of(partner), "heart")
-    return data
+    return PopulationRules.try_create_parent_egg(area, data, egg_cell, ignored_wild_id)
 
 func _may_release_egg(egg:Dictionary)->bool:
     var coordinator=get_parent().get("coop_game")
@@ -3703,94 +3210,18 @@ func _may_release_egg(egg:Dictionary)->bool:
     return true
 
 func _release_old_eggs() -> void:
-    # A habitat egg left alone is released into the wild: it simply leaves the
-    # overworld. Eggs a player set down are theirs and stay. An egg from before
-    # this rule starts its count when it is first seen.
-    var lifetime := PokemonEcology.EGG_RELEASE_DAYS * WORLD_DAY_SECONDS
-    for raw_cell in wild_eggs.keys():
-        var egg: Dictionary = wild_eggs[raw_cell]
-        if bool(egg.get("dropped_party_egg", false)) or not _may_release_egg(egg):
-            continue
-        if not egg.has("laid_at") or float(egg["laid_at"]) > world_elapsed_seconds:
-            egg["laid_at"] = world_elapsed_seconds
-            egg_population.mark(raw_cell)
-            continue
-        if world_elapsed_seconds - float(egg["laid_at"]) < lifetime:
-            continue
-        _drop_record_sprite(egg)
-        egg_population.take(raw_cell)
-
-func _couple_egg_count(first_id: String, second_id: String) -> int:
-    if first_id.is_empty() or second_id.is_empty():
-        return 0
-    var count := 0
-    for egg in wild_eggs.values():
-        if bool((egg as Dictionary).get("dropped_party_egg", false)):
-            continue
-        var parents = (egg as Dictionary).get("parent_ids", [])
-        if parents is Array and parents.has(first_id) and parents.has(second_id):
-            count += 1
-    return count
+    PopulationRules.release_old_eggs(area, _may_release_egg)
 
 func _ecology_record_by_id(ecology_id: String) -> Dictionary:
-    if ecology_id.is_empty():
-        return {}
-    for data in deployed_pokemon.values():
-        if String((data as Dictionary).get("ecology_id", "")) == ecology_id:
-            return data as Dictionary
-    return _wild_ecology_record(ecology_id)
+    return PopulationRules.ecology_record_by_id(area, ecology_id)
 
 func _ecology_cell_by_id(ecology_id: String) -> Vector2i:
-    for raw_cell in deployed_pokemon.keys():
-        var data: Dictionary = deployed_pokemon[raw_cell]
-        if String(data.get("ecology_id", "")) == ecology_id:
-            return Vector2i(raw_cell)
-    var record := _wild_ecology_record(ecology_id)
-    if not record.is_empty():
-        return Vector2i(record.get("cell", Vector2i.ZERO))
-    return Vector2i(-2147483648, -2147483648)
-
-## The wild record with this ecology id, {} if none. _add_wild_pokemon names
-## each one "wild:<its key>" (one per key), so that key is looked at first:
-## scanning every wild Pokemon in the world for a mate was most of the time a
-## wandering step took.
-func _wild_ecology_record(ecology_id: String) -> Dictionary:
-    if ecology_id.begins_with("wild:"):
-        var record = wild_pokemon.get(int(ecology_id.substr(5)))
-        if record != null and String(record.get("ecology_id", "")) == ecology_id:
-            return record
-    for data in wild_pokemon.values():
-        if String((data as Dictionary).get("ecology_id", "")) == ecology_id:
-            return data as Dictionary
-    return {}
+    return PopulationRules.ecology_cell_by_id(area, ecology_id)
 
 func _paired_wander_direction(
         data: Dictionary, origin: Vector2i, fallback: Vector2i
     ) -> Vector2i:
-    var mate_id := String(data.get("mate_id", ""))
-    if mate_id.is_empty():
-        return fallback
-    var mate_cell := _ecology_cell_by_id(mate_id)
-    if mate_cell.x <= -2147483648:
-        return fallback
-    var delta := mate_cell - origin
-    var distance := maxi(absi(delta.x), absi(delta.y))
-    var egg_ready := bool(data.get("can_lay_egg", false)) and \
-        float(data.get("lay_egg_seconds", PokemonEcology.LAY_EGG_SECONDS)) <= 0.0
-
-    # Do not glue paired parents together. They are free to wander throughout
-    # the source 7x7 habitat square; only pull them back at its edge. When an
-    # egg is actually ready, converge the pair so the existing egg rule still
-    # succeeds without changing fertility, timers, inheritance, or egg odds.
-    if egg_ready and distance > 1:
-        return _cardinal_direction(delta, false)
-    if distance > PokemonEcology.HABITAT_RADIUS:
-        return _cardinal_direction(delta, false)
-    if distance == PokemonEcology.HABITAT_RADIUS and rng.randf() < 0.25:
-        return _cardinal_direction(delta, false)
-    if distance <= 1 and rng.randf() < 0.22:
-        return _cardinal_direction(delta, true)
-    return fallback
+    return PopulationRules.paired_wander_direction(area, data, origin, fallback)
 
 const WATER_FLOAT_OFFSETS := {"lapras": 5.0, "anorith": 2.0, "araichu": 7.0, "raichu_alolan": 7.0, "mantine": 4.0, "sharpedo": 2.0}
 var water_pokemon_materials: Dictionary = {}
@@ -3818,8 +3249,7 @@ void fragment() {
 
 func _source_pokemon_in_water(cell: Vector2i) -> bool:
     if exact_world != null:
-        var names := _exact_names_at(cell)
-        return not names.is_empty() and "water" in names[0] and not "_tidal" in names[0]
+        return PopulationRules.in_water(area, cell)
     return terrain_kind_at(cell) == 0
 
 func _update_pokemon_water_visual(data: Dictionary) -> void:
@@ -3851,39 +3281,7 @@ func _update_pokemon_water_visual(data: Dictionary) -> void:
     sprite.set_meta("water_visual", true)
 
 func _pokemon_can_move_between(species: String, origin: Vector2i, target: Vector2i) -> bool:
-    if exact_world != null:
-        var destination := exact_world.tile_at(target)
-        var current := exact_world.tile_at(origin)
-        # Pokemon.java Move/Wander reject ledges even when player-passable.
-        if destination == null or destination.is_ledge:
-            return false
-        if current != null and current.is_ledge and _permitted_ledge_direction(current) == Vector2i.UP and target.y < origin.y:
-            return false
-    if not _source_pokemon_in_water(origin):
-        return _pokemon_can_enter(species, target)
-    if not _in_bounds(target) or blocked.has(target):
-        return false
-    var structure: Dictionary = built_structures.get(target, {})
-    if String(structure.get("name", "")) == "FENCE" or bool(structure.get("gate", false)):
-        return false
-    if exact_world != null:
-        var tile := exact_world.tile_at(target)
-        if tile == null or "fence" in tile.name_upper or "fence" in tile.name:
-            return false
-        var near_shore := false
-        var target_near_shore := false
-        for y in range(-1, 2):
-            for x in range(-1, 2):
-                var direction := Vector2i(x, y)
-                var shore := exact_world.tile_at(origin + direction)
-                var target_shore := exact_world.tile_at(target + direction)
-                near_shore = near_shore or (shore != null and not "water" in shore.name)
-                target_near_shore = target_near_shore or (target_shore != null and not "water" in target_shore.name)
-        if near_shore and (not target_near_shore or not "water" in tile.name):
-            return false
-        var only_swim := bool(PokemonData.info(species).get("overworld_behavior", {}).get("swim_only", false))
-        return tile.is_water if only_swim else (tile.is_water or not tile.is_solid)
-    return _pokemon_can_enter(species, target)
+    return PopulationRules.can_move_between(area, species, origin, target)
 
 ## Clearing what grew on a tile unblocks the ground, but not a wall or roof
 ## that has since been built there, nor an item lying on it. Without this, a
@@ -3893,32 +3291,7 @@ func _unblock_ground(cell: Vector2i) -> void:
     TileRules.unblock_ground(area, cell)
 
 func _pokemon_can_enter(species: String, cell: Vector2i) -> bool:
-    if species.to_lower() in [
-            "araichu", "raichu_alolan", "aexeggutor", "exeggutor_alolan"] and \
-            exact_world != null and not blocked.has(cell):
-        var tile: SourceTile = exact_world.tile_at(cell)
-        if tile != null and tile.is_water and not tile.is_solid:
-            var route_name := "" if tile.route_belongs_to == null else \
-                tile.route_belongs_to.name.to_lower()
-            if (species.to_lower() in ["araichu", "raichu_alolan"] and \
-                    route_name == "beach2_water") or \
-                    (route_name == "beach2" and _is_beach_tidal_tile(tile)):
-                return true
-    if not _in_bounds(cell) or blocked.has(cell):
-        return false
-    var structure: Dictionary = built_structures.get(cell, {})
-    if String(structure.get("name", "")) == "FENCE" or \
-            bool(structure.get("gate", false)):
-        return false
-    if exact_world != null:
-        var tile: SourceTile = exact_world.tile_at(cell)
-        if tile != null and (tile.is_ledge or "fence" in tile.name.to_lower() or \
-                "fence" in tile.name_upper.to_lower()):
-            return false
-    var behavior: Dictionary = PokemonData.info(species).get("overworld_behavior", {})
-    if bool(behavior.get("swim_only", false)):
-        return terrain_kind_at(cell) == 0
-    return _is_walkable(cell) and terrain_kind_at(cell) != 0
+    return PopulationRules.can_enter(area, species, cell)
 
 ## include_population false leaves the habitat and wild Pokemon and the eggs
 ## out (empty): an online area save takes them from the shared records.
@@ -3996,36 +3369,10 @@ func get_crafting_save_state(include_population: bool = true) -> Dictionary:
 
 ## What is saved of an egg lying on `cell`.
 func _serializable_egg_record(data: Dictionary, cell: Vector2i) -> Dictionary:
-    var saved_egg := data.duplicate(true)
-    saved_egg.erase("sprite")
-    saved_egg.erase("cell")
-    saved_egg["x"] = cell.x
-    saved_egg["y"] = cell.y
-    return saved_egg
+    return PopulationRules.serializable_egg(data, cell)
 
 func _serializable_ecology_record(data: Dictionary, cell: Vector2i) -> Dictionary:
-    var saved := data.duplicate(true)
-    var wild_id := int(data.get("id", -1))
-    if is_same(wild_pokemon.get(wild_id), data):
-        # A wild Pokemon's move timer lives in wild_population's slot.
-        saved["move_timer"] = wild_population.timer_of(wild_id)
-        # A hidden sand trap's clock values live on its shared clock.
-        if sand_trap_clock_of.has(wild_id):
-            _sand_trap_write(sand_trap_clock_of[wild_id], saved)
-    for runtime_key in [
-            "sprite", "burrow_whirl_sprite", "burrow_sand_sprite",
-            "behavior", "cell",
-            "previous_mate_id", "ball_move_tween", "ball_reserved", "ball_facing"
-        ]:
-        saved.erase(runtime_key)
-    var source_record = saved.get("source_record", {})
-    if typeof(source_record) == TYPE_DICTIONARY:
-        var serializable_source := (source_record as Dictionary).duplicate(true)
-        serializable_source.erase("position")
-        saved["source_record"] = serializable_source
-    saved["x"] = cell.x
-    saved["y"] = cell.y
-    return saved
+    return PopulationRules.serializable_record(area, data, cell)
 
 func restore_crafting_save_state(state: Dictionary) -> void:
     if state.is_empty():
@@ -4370,13 +3717,7 @@ func _restore_deployed_pokemon(entry: Dictionary, cell: Vector2i) -> void:
         next_deployed_id += 1
     elif ecology_id.begins_with("owned:"):
         next_deployed_id = maxi(next_deployed_id, int(ecology_id.trim_prefix("owned:")) + 1)
-    var stored := PokemonEcology.ensure_record(entry, rng, ecology_id)
-    stored["cell"] = cell
-    stored["x"] = cell.x
-    stored["y"] = cell.y
-    stored["behavior"] = PokemonData.info(species).get("overworld_behavior", {})
-    stored["move_timer"] = float(stored.get("move_timer", _wild_move_delay(species)))
-    stored.erase("sprite")
+    var stored := PopulationRules.habitat_record(area, entry, cell, ecology_id)
     if sprite != null:
         stored["sprite"] = sprite
         sprite.visible = _house_pokemon_visible(stored)
@@ -4536,71 +3877,23 @@ func _create_wild_pokemon(
                     evolved_species, source_route_name, source_is_water
                 )
             )
-            if route_allows_evolution and \
-                    PokemonData.texture(evolved_species, "overworld") != null:
+            if route_allows_evolution and                     PokemonData.texture(evolved_species, "overworld") != null:
                 species = evolved_species
-    var ecology_source := (
-        saved_state.duplicate(true)
-        if not saved_state.is_empty()
-        else source_record.duplicate(true)
-    )
-    ecology_source["species"] = species.to_lower()
-    ecology_source["level"] = level
-    PokemonState.ensure_shiny(ecology_source, rng)
-    var is_burrowed := bool(source_record.get("is_trapping", false))
-    var texture: Texture2D = TRAPINCH_BURROW if is_burrowed else PokemonData.record_texture(ecology_source, "overworld")
-    if texture == null:
-        return
-    # No world drawn yet, no wild Pokemon. Its sprite (if it comes into view)
-    # is the WildPokemonLayer's (population_view.gd).
-    if get_node_or_null("WildPokemonLayer") == null:
-        return
-
+    # The record itself (its shiny roll, ecology, clocks) is the area's rule;
+    # its sprite (once it comes into view) is the WildPokemonLayer's
+    # (population_view.gd), a hidden sand trap's clock this World's.
     var wild_id := requested_id if requested_id > 0 else next_wild_id
+    if not PopulationRules.add_wild(area, species, level, cell, home_biome, wild_id, source_record, saved_state):
+        return
     next_wild_id = maxi(next_wild_id, wild_id + 1)
-    var stored := PokemonEcology.ensure_record(
-        ecology_source, rng, "wild:%d" % wild_id
-    )
-    if saved_state.is_empty():
-        # Keep the original two-minute repeat cycle, but stagger a new world's
-        # first eligible egg so players can actually encounter wild eggs.
-        stored["lay_egg_seconds"] = rng.randf_range(
-            0.0, WILD_INITIAL_EGG_SECONDS
-        )
-    stored["id"] = wild_id
-    stored["cell"] = cell
-    stored["home_biome"] = home_biome
-    if is_burrowed:
+    var stored: Dictionary = wild_pokemon[wild_id]
+    if bool(stored.get("burrowed", false)):
         sand_trap_ids[wild_id] = true
-    stored["burrowed"] = is_burrowed
-    stored["burrow_active"] = false
-    stored["burrow_tick"] = 0
-    stored["burrow_time"] = 0.0
-    stored["burrow_whirl_tick"] = 0
-    stored["move_timer"] = float(stored.get(
-        "move_timer", _wild_move_delay(species, stored)
-    ))
-    stored["anim_phase"] = 0
-    stored["behavior"] = PokemonData.info(species).get("overworld_behavior", {})
-    stored["source_record"] = source_record.duplicate(true)
-    # Source aggression affects how quickly a Pokemon becomes provoked; it is
-    # not permission to force a battle on the first click or spawn frame.
-    stored["aggro_player"] = bool(stored.get("aggro_player", source_record.get("aggressive", false)))
-    stored["fed_until"] = float(stored.get("fed_until", 0.0))
-    stored["flee_steps"] = int(stored.get("flee_steps", 0))
-    wild_population.add(wild_id, stored)
     _sand_trap_leave(wild_id, stored, false)
-    if is_burrowed: _sand_trap_join(wild_id, stored)
+    if bool(stored.get("burrowed", false)): _sand_trap_join(wild_id, stored)
 
 func _wild_move_delay(species: String, data: Dictionary = {}) -> float:
-    if bool(data.get("burrowed", false)):
-        return 999999.0
-    var normalized := species.to_lower()
-    if normalized in ["diglett", "dugtrio", "sharpedo"]:
-        return rng.randf_range(0.35, 0.8)
-    if bool(PokemonData.info(normalized).get("overworld_behavior", {}).get("lunge", false)):
-        return rng.randf_range(0.35, 0.8)
-    return rng.randf_range(WILD_MOVE_MIN, WILD_MOVE_MAX)
+    return PopulationRules.wild_move_delay(area, species, data)
 
 func _random_land_species_for_biome(biome: String) -> String:
     var species := "pidgey"
@@ -4648,32 +3941,8 @@ func _day_night_eligible_pokemon(source: Array) -> Array:
     return result
 
 func _is_tall_grass_cell(cell: Vector2i) -> bool:
-    # Encounter grass and CUT-harvest grass are separate roles. Compatibility
-    # snow/tundra grass is the harvestable GRASS source; other tall grass is
-    # encounter habitat and must never disappear to CUT.
-    if tall_grass.has(cell):
-        return biome_at(cell) != "SNOW"
-    if exact_world != null:
-        # Same tests as below from the store's names and flags, without
-        # building a tile object (only a tidal tile needs its biome).
-        var store = exact_world.tiles
-        var index: int = store.index_of(cell * TILE) if store is WorldTileStore else -1
-        if index >= 0 and store.flags[index] & WorldTileStore.TIDAL == 0:
-            if _source_tile_key(store.name_at(index)) == "grass1" or _source_tile_key(store.upper_at(index)) == "grass1":
-                return true
-            return store.flags[index] & WorldTileStore.GRASS != 0
-        var tile := exact_world.tile_at(cell)
-        if tile != null and tile.is_tidal and _source_biome_for_tile(tile) != "BEACH":
-            return false
-        # grass1 is the source's normal encounter grass. Check its authored
-        # identity directly as well as the cached flag so a stale/rewritten
-        # SourceTile flag can never make a visibly normal grass field inert.
-        if _is_normal_encounter_grass(cell):
-            return true
-        # Grass remains encounter habitat until CUT actually replaces the tile.
-        # Being harvestable must not silently disable its encounter role.
-        return tile != null and tile.is_grass
-    return false
+    # Encounter grass and CUT-harvest grass are separate roles.
+    return PopulationRules.is_tall_grass_cell(area, cell)
 
 func _is_source_grass_name(asset_name: String) -> bool:
     return TileRules.is_source_grass_name(asset_name)
@@ -4695,39 +3964,15 @@ func _add_wild_egg(
         species: String, cell: Vector2i, egg_record: Dictionary = {},
         ignored_wild_id: int = -1
     ) -> void:
-    if not bool(egg_record.get("dropped_party_egg", false)):
-        cell = _resolve_egg_ground_cell(cell, ignored_wild_id)
-    if cell.x <= -2147483648:
-        return
-    var indoors := egg_record.has("house_door")
+    PopulationRules.add_egg(area, species, cell, egg_record, ignored_wild_id)
+
+## PopulationRules.add_egg's sprite for an egg on `cell`: one of its own in a
+## house, none outdoors (egg_view draws it there); false while no world is
+## drawn to take it.
+func _egg_sprite(cell: Vector2i, indoors: bool) -> Variant:
     if not indoors and get_node_or_null("WildEggLayer") == null:
-        return
-    # Outdoors egg_view draws it while it is in view.
-    var sprite := _house_record_sprite(POKEMON_EGG, cell) if indoors else null
-    var stored := egg_record.duplicate(true)
-    stored["species"] = species.to_lower()
-    stored["egg_species"] = String(stored.get("egg_species", species)).to_lower()
-    stored["base_species"] = String(stored.get(
-        "base_species", PokemonEcology.base_species_for(species)
-    ))
-    stored["egg_groups"] = stored.get(
-        "egg_groups", PokemonData.info(species).get("egg_groups", ["EGG_NONE", "EGG_NONE"])
-    )
-    stored["is_egg"] = true
-    stored["hatch_cycles"] = maxi(1, int(stored.get(
-        "hatch_cycles", PokemonData.info(species).get("egg_cycles", 20)
-    )))
-    stored["hatch_steps"] = int(stored.get(
-        "hatch_steps", int(stored["hatch_cycles"]) * PokemonEcology.EGG_STEP_INTERVAL
-    ))
-    stored["cell"] = cell
-    stored.erase("sprite")
-    if sprite != null:
-        stored["sprite"] = sprite
-        sprite.visible = _house_pokemon_visible(stored)
-    if bool(stored.get("dropped_party_egg", false)) and egg_record.has("hatch_cycles"):
-        stored["hatch_cycles"] = int(egg_record["hatch_cycles"])
-    egg_population.place(cell, stored)
+        return false
+    return _house_record_sprite(POKEMON_EGG, cell) if indoors else null
 
 func _add_wild_egg_record(
         egg_record: Dictionary, cell: Vector2i, ignored_wild_id: int = -1
@@ -4849,6 +4094,7 @@ func _update_wild_pokemon(delta: float) -> void:
     else:
         var cell := _player_cell()
         observers = [{"x": cell.x, "y": cell.y}]
+    wild_population.players = coordinator.wild if online else null
     wild_population.tick(delta, observers, rng)
 
 func _show_friend_reunion(data: Dictionary, friend_id: String) -> void:
@@ -6459,22 +5705,7 @@ func environment_structure_texture(
     return atlas
 
 func _is_beach_tidal_tile(tile: SourceTile) -> bool:
-    if tile == null:
-        return false
-    var route_name := "" if tile.route_belongs_to == null else \
-        tile.route_belongs_to.name.to_lower()
-    var biome := _source_biome_for_tile(tile)
-    var beach_identity := biome in ["BEACH", "BEACH_BLACKSAND"] or \
-        route_name.begins_with("beach")
-    var tile_name := tile.name.to_lower()
-    var authored_tide := "_tidalwater" in tile_name or "_tidaloff" in tile_name
-    if not authored_tide:
-        return false
-    # The original generator also uses *_tidalwater for non-ocean systems
-    # (mountain-bottom water and wooded-lake shores).  Ocean tide must therefore
-    # remain tied to an authored beach biome/route; accepting an untagged suffix
-    # caused the inland pale squares and tide fingers seen in the screenshots.
-    return beach_identity
+    return PopulationRules.is_beach_tidal_tile(tile)
 
 func _handle_biome_entry(cell: Vector2i) -> void:
     if active_area_id != "OVERWORLD":
@@ -6532,22 +5763,7 @@ func _shore_diagonal_already_present(existing: String, direction: String) -> boo
     return TileRules.shore_diagonal_present(existing, direction)
 
 func _permitted_ledge_direction(tile: SourceTile) -> Vector2i:
-    if tile == null:
-        return Vector2i.ZERO
-    # The brown horizontal grass ledge is a one-way drop: screen-down is legal
-    # and screen-up is blocked.  Keep this explicit instead of mirroring its
-    # `_down` source suffix back upward.
-    var ledge_key: String = (tile.name + " " + tile.name_upper).to_lower()
-    if "ledge_grass_down" in ledge_key:
-        return Vector2i.DOWN
-    # The exact world deliberately preserves Java's Y-up cell coordinates on
-    # Godot's Y-down canvas. Mirror only vertical movement directions here so
-    # an authored downhill "up" edge is crossed toward screen-down, and vice
-    # versa. Horizontal directions require no conversion.
-    return {
-        "up":Vector2i.DOWN, "down":Vector2i.UP,
-        "left":Vector2i.LEFT, "right":Vector2i.RIGHT
-    }.get(tile.ledge_dir, Vector2i.ZERO) as Vector2i
+    return PopulationRules.permitted_ledge_direction(tile)
 
 func _ledge_jump_landing_is_clear(cell:Vector2i)->bool:
     if not _ledge_landing_terrain_clear(cell):return false
@@ -6907,20 +6123,15 @@ func _is_walkable(cell: Vector2i) -> bool:
         var online_wild=is_instance_valid(coordinator) and coordinator.active and coordinator.wild.simulating
         if not online_wild:return built_house_interior_cells.has(cell) and not blocked.has(cell) and String(built_structures.get(cell + Vector2i.DOWN, {}).get("name", "")) != "BED"
     if exact_world != null:
-        return exact_world.contains_cell(cell) and not exact_world.is_solid(cell) and not blocked.has(cell)
+        return PopulationRules.is_walkable(area, cell)
     if cell.x < 0 or cell.y < 0 or cell.x >= map_w or cell.y >= map_h:
         return false
     return terrain[cell.y][cell.x] != 0 and not blocked.has(cell)
 
 func terrain_kind_at(cell: Vector2i) -> int:
-    if String(built_structures.get(cell, {}).get("name", "")) == "BRIDGE":
-        return 2
     if exact_world != null:
-        var tile := exact_world.tile_at(cell)
-        if tile == null or tile.is_water or SourceWorldData.is_water(tile.name):
-            return 0
-        if "sand" in tile.name or "desert" in tile.name or "beach" in tile.biome:
-            return 1
+        return PopulationRules.terrain_kind_at(area, cell)
+    if String(built_structures.get(cell, {}).get("name", "")) == "BRIDGE":
         return 2
     if not _in_bounds(cell) or terrain.is_empty():
         return 0

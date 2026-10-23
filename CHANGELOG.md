@@ -37,3 +37,4 @@ the version description in Feather. Write it for players, not developers.
 - **Automatic cleanup:** the server deletes old area files by itself after each save.
 - **The server checks wild battles:** a win or a catch only counts when the server's own replay of the battle ends the same way (`enforce_battles` in server.cfg).
 - **New areas made inside the server:** with the fast world generator the server makes new areas itself instead of starting a second copy of the game (`area_generation` in server.cfg).
+- **The server moves every area's Pokémon:** on a dedicated server the wild and habitat Pokémon, their eggs, hordes and the roaming Megas are run by the server in every area, not by the first player's phone. Phones only show them: less battery and almost no upload, and a slow connection no longer freezes the Pokémon for everyone else (`population_authority` in server.cfg).

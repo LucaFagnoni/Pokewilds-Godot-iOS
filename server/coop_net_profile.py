@@ -13,7 +13,10 @@ kind by the server and by every player:
   walkNfour  N players walking in four areas: one in four stays, the others go
              west, east and south of where they are (two areas the server makes)
 
-The last player joins while the others walk (joinN). The server also prints
+After each walking phase every player's wild Pokemon are compared with the
+server's, in the player's area (CONSISTENCY: how many stand where the server
+has them; a few may be a step apart, moving as the two looked). The last
+player joins while the others walk (joinN). The server also prints
 its frame time distribution per phase (FRAMES) and, for frames over 16 ms,
 what took the most (SPIKES: the sections a test build times into Engine meta
 "probe_frame", name -> microseconds this frame, "_top" the outermost summed).
@@ -27,7 +30,7 @@ kept with --keep) and --world names the world in it to load.
 --breakdown then prints the server's frame cost by script (each script's nodes
 stopped for a moment while the players keep walking).
 Run from the repository root. Prints the PROFILE lines and a summary table."""
-import os, re, shutil, subprocess, sys, tempfile, time
+import json, os, re, shutil, subprocess, sys, tempfile, time
 
 godot = sys.argv[1]
 clients = int(sys.argv[sys.argv.index("--clients") + 1]) if "--clients" in sys.argv else 8
@@ -140,6 +143,20 @@ try:
     for name in logs:
         for line in text(name).splitlines():
             if line.startswith("PROFILE") and " rest " not in line and " setup " not in line and ("-travel " not in line or " FRAMES " in line or " SPIKES " in line): rows.append(line)
+    # Each player's wild Pokemon against the server's, phase by phase.
+    for dump in sorted(f for f in os.listdir(work) if f.startswith("wild_SERVER_")):
+        phase = dump[len("wild_SERVER_"):-len(".json")]
+        server_areas = json.load(open(os.path.join(work, dump)))
+        for i in range(clients):
+            path = os.path.join(work, f"wild_CLIENT{i}_{phase}.json")
+            if not os.path.exists(path): continue
+            for area, cells in json.load(open(path)).items():
+                truth = server_areas.get(area)
+                if truth is None: rows.append(f"PROFILE CONSISTENCY {phase} client{i} area {area}: not run by the server"); continue
+                shared = [k for k in cells if k in truth]
+                same = sum(1 for k in shared if cells[k] == truth[k])
+                rows.append(f"PROFILE CONSISTENCY {phase} client{i} area {area}: {same}/{len(shared)} where the server has them, "
+                    f"{len(cells) - len(shared)} only on the player, {len(truth) - len(shared)} only on the server")
     print("\n".join(rows))
 finally:
     try: server.stdin.write(b"stop\n"); server.stdin.close(); server.wait(60)

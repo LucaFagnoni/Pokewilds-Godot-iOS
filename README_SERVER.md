@@ -170,11 +170,13 @@ Si possono dare a `start_server.bat` (per esempio
 | `--no-upnp` | non aprire la porta sul router da solo | (la apre) |
 | `--data CARTELLA` | dove tenere i mondi | `server_data` accanto all'exe |
 | `--config FILE` | file di impostazioni | `server.cfg` accanto all'exe |
+| `--population-authority M` | chi muove i Pokémon selvatici e degli habitat e depone le uova nelle aree dove ci sono giocatori: `server` (il server, in ogni area; i telefoni li mostrano soltanto) o `players` (il primo giocatore di ogni area, come quando ospita un telefono) | `server` |
 
 Per usare il file copia `server.cfg.example` in `server.cfg` e modificalo
 (porta, mondo, taglia, ID dei giocatori, password, giocatori massimi da 1 a
 8, presenza nella lista JOIN GAME, minuti tra un salvataggio automatico e
-l'altro, apertura automatica della porta). Le opzioni da riga di comando
+l'altro, apertura automatica della porta, chi muove i Pokémon delle aree con
+`population_authority`). Le opzioni da riga di comando
 vincono sul file. `maxplayers` e `list` riscrivono la loro riga nel file
 lasciando com'erano i commenti.
 

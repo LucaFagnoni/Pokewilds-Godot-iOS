@@ -45,7 +45,8 @@ func _initialize() -> void:
 	await _veteran()
 	await _idle(3.0)
 	if not "--skip-spawn" in OS.get_cmdline_user_args(): await _actions("spawn area, host simulates")
-	# A new area: the server makes it, and this player alone simulates it.
+	# A new area: the server makes it, and runs its Pokemon there without
+	# drawing it (coop_population_authority.gd); this player alone is in it.
 	started = _begin()
 	main.edge_travel_busy = true
 	await main._travel_adjacent_world(Vector2i.RIGHT)
@@ -53,7 +54,7 @@ func _initialize() -> void:
 	_end("travel to a new area (server makes it)", started, 60000)
 	await _idle(5.0)
 	_background("background while alone in an area (5 s)")
-	await _actions("own area, this player simulates")
+	await _actions("own area, the server runs its Pokemon")
 	started = _begin()
 	main.edge_travel_busy = true
 	await main._travel_adjacent_world(Vector2i.LEFT)

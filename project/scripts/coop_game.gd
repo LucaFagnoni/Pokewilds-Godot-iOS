@@ -96,6 +96,11 @@ var _checkpoint_running:=false
 var pvp:Node
 var wild:Node
 var population:Node
+## A dedicated server's authority over every area's Pokemon (coop_population_authority.gd).
+var population_authority:Node
+## Set by a dedicated server before it starts its world: it runs the Pokemon
+## of every area (server.cfg population_authority=server), not the first player in each.
+var server_population:=false
 var hordes:Control
 var raids:Node
 var population_battles:Node
@@ -113,6 +118,8 @@ func _flush_area(area:String)->bool:
     var owner=String(state.authority.get(area,""))
     if owner.is_empty():return true
     if owner==session.actor:
+        # An area a server runs without drawing it is all in the records.
+        if area!=_area():return true
         while _publishing:await get_tree().process_frame
         return await publish_current()
     var target=-1
@@ -306,6 +313,7 @@ func configure(game:Node)->void:
     commands.wild_action=wild.execute
     population=preload("res://scripts/coop_population_runtime.gd").new();add_child(population);population.configure(self)
     commands.population_action=population.execute
+    population_authority=preload("res://scripts/coop_population_authority.gd").new();add_child(population_authority);population_authority.configure(self)
     hordes=preload("res://scripts/coop_horde_runtime.gd").new()
     main.get_node("UI").add_child(hordes);hordes.configure(self)
     commands.horde_action=hordes.execute
@@ -707,7 +715,9 @@ func _profile_shape_ok(profile:Variant)->bool:
     return profile.get("save") is Dictionary
 
 func _committed(commit:Dictionary)->void:
-    if hosting:rules.committed(commit.get("changes",[]))
+    if hosting:
+        rules.committed(commit.get("changes",[]))
+        population_authority.committed(commit)
     var deltas:Dictionary={}
     # Most commits (Pokemon moving about, builds, drops) read the same for
     # every player who watches the same areas: worked out and encoded once
@@ -1202,6 +1212,8 @@ func _choose(action:String,value:String)->void:
     if store.open(world_id)!=OK:_failure("ONLINE SAVE COULD NOT OPEN");return
     if action=="LOAD":store.backup()
     state=State.new();commands.state=state;commands.items.state=state;commands.interactions.state=state;visuals.state=state
+    if server_population:state.fixed_authority=session.actor
+    population_authority.enabled=server_population
     if action=="LOAD" and store.load_state(state).is_empty():_failure("ONLINE WORLD STATE COULD NOT LOAD");return
     if action=="LOAD":_clean_up_area_files()
     if action=="LOAD":
@@ -1298,7 +1310,9 @@ func _area()->String:
     return "%d,%d"%[main.current_world_grid.x,main.current_world_grid.y]
 
 func publish_current(own_population:bool=false)->bool:
-    if not area_authority.is_empty() and area_authority!=session.actor:return true
+    # The one who places a new area's Pokemon sends them, authority or not
+    # (a server may be every area's: the host checks it is that one).
+    if not own_population and not area_authority.is_empty() and area_authority!=session.actor:return true
     # Do not put an optimistic, not-yet-paid placement into an area snapshot.
     # This waits only for this player's action, never for other players to stop.
     while building.busy or population.busy:
@@ -1724,12 +1738,12 @@ func _placing_population(area:String,crafting:Dictionary)->Dictionary:
     _placing=area
     return crafting
 
-## Once in that area and simulating it: the area sent back with the Pokemon
-## this game placed (the host writes them into its records).
+## Once in that area: the area sent back with the Pokemon this game placed
+## (the host writes them into its records; it takes them only from the player
+## it asked, coop_area_service.gd spawners, whoever runs the area's Pokemon).
 func publish_population()->void:
     if _placing.is_empty() or _placing!=_area():return
     _placing=""
-    if not area_authority.is_empty() and area_authority!=session.actor:return
     if not await publish_current(true):print("ONLINE the new area's Pokemon could not be sent")
 
 func _failure(reason:String)->void:
