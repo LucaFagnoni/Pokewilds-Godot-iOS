@@ -30,6 +30,7 @@ the version description in Feather. Write it for players, not developers.
 - **Battles:** all battle logic now lives in one place, shared by wild, trainer, boss and PvP battles. It behaves exactly as before, checked against 30 recorded battles.
 - **No more "REJOIN THE WORLD":** when the host turns down a dig, a cut or a build, the action is simply undone and you keep playing.
 - **Wild battles in co-op:** when the host does not accept a battle's result, your party and bag go back to how they were and the game goes on instead of ending the session.
+- **Server backups:** if a server's world file gets damaged, the server's backup copy is no longer overwritten by the damaged one at the next save.
 
 ### Downloads
 - **The Android file is now called `Pokewilds-arm64.apk`:** it runs on 64-bit ARM phones, which is nearly every Android phone from the last years.
