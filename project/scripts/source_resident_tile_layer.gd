@@ -163,11 +163,28 @@ var shore_keys := {}
 ## Some shoreline ran out of ids and is on the TileMapLayers.
 var shore_fallback := false
 
+## (name, biome, route) ids -> _is_beach_high_tide, for tide_kinds_store.
+var tide_kinds := {}
+var tide_kinds_store: WorldTileStore
+
 func queue_tide_refresh(cells: Array):
     var center = Vector2i(tracked_player.global_position/float(tile_size))
+    var store: WorldTileStore = source_tiles if source_tiles is WorldTileStore else null
+    if store != tide_kinds_store:
+        tide_kinds_store = store
+        tide_kinds.clear()
     for cell in cells:
         var key = cell*tile_size if source_keys_are_pixels else cell
-        if source_tiles.has(key):
+        # From the store's arrays: a tile proxy per cell (~15 us) was half the
+        # cost of a tide turn's frames. Beach tide reads name, biome and route.
+        var index := -1 if store == null else store.index_of(key)
+        if index >= 0:
+            resident_fingerprints.fp_put(key, store.revision_at(index) + 1)
+            var kind := Vector3i(store.name_ids[index], store.biome_ids[index], store.route_ids[index])
+            if not tide_kinds.has(kind): tide_kinds[kind] = _is_beach_high_tide(store.cursor(index))
+            if tide_kinds[kind]: frame_tidal_cells[cell] = true
+            else: frame_tidal_cells.erase(cell)
+        elif source_tiles.has(key):
             var tile = source_tiles.tile(key)
             resident_fingerprints.fp_put(key, _fingerprint(key))
             if _is_beach_high_tide(tile): frame_tidal_cells[cell] = true
