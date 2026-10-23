@@ -72,7 +72,7 @@ func _check_world(source: String, after_bad_save: bool) -> void:
     var home := homes.path_join(id)
     _remove(home)
     DirAccess.make_dir_recursive_absolute(home)
-    for name in ["world.json", "world.json.bak", "journal.jsonl", "journal.previous.jsonl"]:
+    for name in ["world.json", "world.json.bak", "journal.previous.jsonl", "journal.folding.jsonl", "journal.jsonl"]:
         if FileAccess.file_exists(source.path_join(name)) and not (after_bad_save and name == "world.json"):
             DirAccess.copy_absolute(source.path_join(name), home.path_join(name))
     var store := Store.new(homes)

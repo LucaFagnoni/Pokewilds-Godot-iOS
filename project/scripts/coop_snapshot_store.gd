@@ -105,11 +105,11 @@ static func clean_up(snapshot_directory:String,world_home:String,in_use:Array)->
     var keep:={}
     for hash_value in in_use:keep[String(hash_value).to_lower()]=true
     var sources:Array=[]
-    for file_name in ["world.json","world.json.bak","journal.jsonl","journal.previous.jsonl"]:sources.append(world_home.path_join(file_name))
+    for file_name in ["world.json","world.json.bak","journal.jsonl","journal.folding.jsonl","journal.previous.jsonl"]:sources.append(world_home.path_join(file_name))
     var backups:=DirAccess.open(world_home.path_join("backups"))
     if backups!=null:
         for folder in backups.get_directories():
-            for file_name in ["world.json","journal.jsonl"]:sources.append(world_home.path_join("backups").path_join(folder).path_join(file_name))
+            for file_name in ["world.json","journal.folding.jsonl","journal.jsonl"]:sources.append(world_home.path_join("backups").path_join(folder).path_join(file_name))
     var pattern:=RegEx.new()
     if pattern.compile("sha256\\\\?\"\\s*:\\s*\\\\?\"([0-9a-fA-F]{64})")!=OK:return 0
     for source in sources:

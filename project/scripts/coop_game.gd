@@ -1024,7 +1024,8 @@ var _area_cleanup:Thread
 func _clean_up_area_files()->void:
     if _area_cleanup!=null:return
     var in_use:Array=[]
-    for key in state.records:
+    # Not every record of the world: "area/" keys belong to no area (coop_state.gd keys_by_area).
+    for key in state.keys_by_area.get("",{}):
         if not String(key).begins_with("area/"):continue
         var metadata=state.records[key]
         if metadata is Dictionary and metadata.get("sha256") is String:in_use.append(metadata.sha256)
@@ -1052,7 +1053,8 @@ func _process(delta:float)->void:
         _journal_checked=now
         if _world_saved_at==0:_world_saved_at=now
         var fold:bool=State.journal_enabled and (store.journal_size()>JOURNAL_COMPACT_BYTES or (state.loose>0 and now-_world_saved_at>=MOTION_SAVE_MS))
-        if fold:_fold_journal(main._capture_game_save())
+        # Only the host's own part: a load takes its area from the area's save.
+        if fold:_fold_journal(main._capture_game_save(2,true))
     if now-_last_checkpoint>=750 and not _checkpoint_running and not _request_busy and not interaction_ui.visible and not main.generating and not main.edge_travel_busy:
         _last_checkpoint=now
         # The full record is large, and position updates share its connection.
@@ -1333,7 +1335,7 @@ func publish_current(own_population:bool=false)->bool:
     # which need not pack its own only to have it replaced.
     var committed:bool=not own_population and (not area_authority.is_empty() or (hosting and state.records.has("area/"+_area())))
     var parts=Snapshot.split(main.world.get_crafting_save_state(not committed),false)
-    var picked:Array=Snapshot.population_records(_area(),registry) if committed else []
+    var picked:Array=Snapshot.population_records(_area(),registry,state.keys_by_area.get(_area(),{}) if hosting else null) if committed else []
     parts.shared["_coop_build_base"]=building.known(_area(),registry,state.keys_by_area.get(_area(),{}) if hosting else null).duplicate(true)
     # Unpacked and packed on a worker: a long-played area and its terrain
     # cache are megabytes. A guest leaves out the terrain cache: the host has
@@ -1382,8 +1384,12 @@ func save_checkpoint(data:Dictionary)->bool:
     if not active or not hosting:return false
     _world_writing=true
     await wild.fold_motion()
-    # The copy of the state below is 10-18 ms: not after other work in the same frame.
+    # Not after other work in the same frame, nor on a journal flush:
+    # prepare() ends the journal's segment after the batch on its way to disk.
     await get_tree().process_frame
+    for i in 30:
+        if store.idle():break
+        await get_tree().process_frame
     if not active or not hosting:_world_writing=false;return false
     var job:Dictionary=store.prepare(state,{"world_name":String(data.get("world_name","WORLD")),"owner":session.actor})
     var loose:int=state.loose
@@ -1396,7 +1402,7 @@ func save_checkpoint(data:Dictionary)->bool:
     var written:Array=await _off_thread(func():
         var world:Error=Store.write(job) if not job.is_empty() else ERR_INVALID_PARAMETER
         return [world,Saves.write(path,id,actor,host) if world==OK else ERR_SKIP])
-    var saved:bool=written[0]==OK and store.rotate(job)==OK
+    var saved:bool=written[0]==OK
     if saved:state.loose=maxi(0,state.loose-loose);_world_saved_at=Time.get_ticks_msec()
     _world_writing=false
     return saved and written[1]==OK
