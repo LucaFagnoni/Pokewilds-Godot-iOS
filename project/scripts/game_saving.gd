@@ -191,13 +191,13 @@ func restore_game_save(data) -> void:
     main.player_model_index = clampi(
         int(data.get("player_model", main.player_model_index)),
         0,
-        main._player_model_count() - 1
+        main.appearance.player_model_count() - 1
     )
     var saved_player_name := String(data.get("player_name", "")).strip_edges().left(24)
     var was_custom := bool(data.get("player_name_custom", not saved_player_name.is_empty() and saved_player_name.to_upper() != main.PLAYER_MODEL_NAMES[main.player_model_index].to_upper()))
     main.custom_player_name = saved_player_name if was_custom else ""
-    main._apply_player_appearance()
-    main._apply_world_player_textures()
+    main.appearance.apply_player_appearance()
+    main.appearance.apply_world_player_textures()
     main.egg_step_timer = clampi(
         int(data.get("egg_step_timer", 0)),
         0,

@@ -182,7 +182,7 @@ func use_overworld_item(item: String) -> void:
     if item == "SLEEPING BAG":
         if not String(main.world.get("active_field_move")).is_empty():
             main.world.call("clear_active_field_move", false)
-        if not bool(main.world.call("begin_sleeping_bag", main._player_sleeping_texture())):
+        if not bool(main.world.call("begin_sleeping_bag", main.appearance.player_sleeping_texture())):
             return
         for party_index in range(main.caught_pokemon.size()):
             if typeof(main.caught_pokemon[party_index]) != TYPE_DICTIONARY or bool(

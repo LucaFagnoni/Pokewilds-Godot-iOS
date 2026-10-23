@@ -133,7 +133,7 @@ func build_dig_minimap_ui() -> void:
     main.minimap_root.add_child(main.minimap_north)
     minimap_player = main._source_texture_rect(
         main.minimap_root, "Player", Vector2.ZERO, Vector2(7.0, 5.0), null)
-    var appearance_texture: Texture2D = main._player_appearance_texture(false)
+    var appearance_texture: Texture2D = main.appearance.player_appearance_texture(false)
     if appearance_texture != null and (not minimap_player.texture is AtlasTexture or (minimap_player.texture as AtlasTexture).atlas != appearance_texture):
         var marker_frame: AtlasTexture = AtlasTexture.new()
         marker_frame.atlas = appearance_texture
@@ -245,7 +245,7 @@ func _apply_minimap_rotation(delta: float = 1.0) -> void:
 func _refresh_minimap(bounds: Rect2i, player_position: Vector2) -> void:
     if bounds.size.x <= 0 or bounds.size.y <= 0:
         return
-    var appearance_texture: Texture2D = main._player_appearance_texture(false)
+    var appearance_texture: Texture2D = main.appearance.player_appearance_texture(false)
     var current_marker := minimap_player.texture as AtlasTexture
     if appearance_texture != null and (current_marker == null or current_marker.atlas != appearance_texture):
         var marker_frame: AtlasTexture = AtlasTexture.new()
@@ -697,7 +697,7 @@ func _coop_marker_texture(visual: Dictionary) -> AtlasTexture:
     var model := clampi(int(visual.get("model", 0)), 0, main.PLAYER_MODEL_WALK_TEXTURES.size() - 1)
     var color := clampi(int(visual.get("color", 0)), 0, main.PLAYER_COLOR_VALUES.size() - 1)
     var marker_frame := AtlasTexture.new()
-    marker_frame.atlas = main._recolor_texture(main.lazy_texture(main.PLAYER_MODEL_WALK_TEXTURES[model]),
+    marker_frame.atlas = main.appearance.recolor_texture(main.lazy_texture(main.PLAYER_MODEL_WALK_TEXTURES[model]),
         main.PLAYER_MODEL_REPLACE_COLORS[model], main.PLAYER_COLOR_VALUES[color],
         "coop:%d:%d:%s:%s" % [model, color, false, "walk"])
     marker_frame.region = Rect2(0.0, 0.0, 16.0, 11.0)
@@ -858,7 +858,7 @@ func _draw_world_map() -> void:
     var marker := TextureRect.new()
     marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
     var player = main.world.get_node("Player")
-    var appearance_texture := main._player_appearance_texture(false)
+    var appearance_texture := main.appearance.player_appearance_texture(false)
     if appearance_texture != null:
         var marker_frame := AtlasTexture.new()
         marker_frame.atlas = appearance_texture

@@ -27,6 +27,7 @@ const SETUP_SAVE_PATH := "user://m3_setup.cfg"
 const DataPaths = preload("res://scripts/game_data_paths.gd")
 const WorldSaves = preload("res://scripts/world_saves.gd")
 var saves := WorldSaves.new("user://saves")
+var appearance := preload("res://scripts/player_appearance.gd").new(self)
 ## The screens open over the field (screen_stack.gd); the *_open flags are views of it.
 var screens := preload("res://scripts/screen_stack.gd").new()
 var saving := preload("res://scripts/game_saving.gd").new(self)
@@ -51,533 +52,19 @@ const FieldMoveRadial = preload("res://scripts/field_move_radial.gd")
 const SOURCE_MALE_SYMBOL = preload("res://assets/source_exact/global/male_symbol1.png")
 const SOURCE_FEMALE_SYMBOL = preload("res://assets/source_exact/global/female_symbol1.png")
 
-
-const PLAYER_TEXTURES := [
-    "res://assets/player_green.png",
-    "res://assets/player_blue.png",
-    "res://assets/player_red.png",
-    "res://assets/player_gold.png",
-    "res://assets/player_orange.png",
-    "res://assets/player_indigo.png",
-    "res://assets/player_cyan.png",
-    "res://assets/player_lime.png",
-    "res://assets/player_magenta.png",
-    "res://assets/player_wine.png",
-    "res://assets/player_yellow.png",
-    "res://assets/player_brown.png",
-    "res://assets/player_olive.png",
-    "res://assets/player_teal.png",
-    "res://assets/player_bright_red.png",
-    "res://assets/player_purple.png",
-    "res://assets/player_pink.png"
-]
-const PLAYER_RUN_TEXTURES := [
-    "res://assets/player_run_green.png",
-    "res://assets/player_run_blue.png",
-    "res://assets/player_run_red.png",
-    "res://assets/player_run_gold.png",
-    "res://assets/player_run_orange.png",
-    "res://assets/player_run_indigo.png",
-    "res://assets/player_run_cyan.png",
-    "res://assets/player_run_lime.png",
-    "res://assets/player_run_magenta.png",
-    "res://assets/player_run_wine.png",
-    "res://assets/player_run_yellow.png",
-    "res://assets/player_run_brown.png",
-    "res://assets/player_run_olive.png",
-    "res://assets/player_run_teal.png",
-    "res://assets/player_run_bright_red.png",
-    "res://assets/player_run_purple.png",
-    "res://assets/player_run_pink.png"
-]
-const PLAYER_COLOR_NAMES := [
-    "GREEN", "BLUE", "RED", "GOLD", "ORANGE", "INDIGO", "CYAN",
-    "LIME", "MAGENTA", "WINE", "YELLOW", "BROWN", "OLIVE", "TEAL",
-    "BRIGHT RED", "PURPLE", "PINK"
-]
-const PLAYER_COLOR_VALUES := [
-    Color(0.184314, 0.356863, 0.258824, 1.0),
-    Color(0.188235, 0.309804, 0.545098, 1.0),
-    Color(0.517647, 0.215686, 0.215686, 1.0),
-    Color(0.501961, 0.360784, 0.133333, 1.0),
-    Color(0.941176, 0.313725, 0.188235, 1.0),
-    Color(0.313725, 0.282353, 0.972549, 1.0),
-    Color(0.0, 1.0, 1.0, 1.0),
-    Color(0.219608, 0.721569, 0.094118, 1.0),
-    Color(1.0, 0.0, 1.0, 1.0),
-    Color(0.690196, 0.188235, 0.376471, 1.0),
-    Color(1.0, 1.0, 0.0, 1.0),
-    Color(0.470588, 0.313725, 0.094118, 1.0),
-    Color(0.419608, 0.556863, 0.137255, 1.0),
-    Color(0.0, 0.498039, 0.498039, 1.0),
-    Color(1.0, 0.0, 0.0, 1.0),
-    Color(0.627451, 0.125490, 0.941176, 1.0),
-    Color(1.0, 0.450980, 0.784314, 1.0)
-]
-const PLAYER_MODEL_NAMES := [
-    "red", "leaf", "gold", "kris", "brendan", "may", "hilbert",
-    "hilda", "rosa", "calem", "serena", "chase", "elaine",
-    "gloria", "mark", "mint", "lunick", "summer", "kellyn",
-    "agatha",
-    "blaine1",
-    "blaine2",
-    "blue",
-    "brock",
-    "bruno",
-    "bugsy",
-    "chuck",
-    "clair",
-    "erika",
-    "falkner",
-    "giovanni1",
-    "giovanni2",
-    "janine",
-    "jasmine",
-    "karen1",
-    "karen2",
-    "koga",
-    "lance",
-    "lorelei",
-    "lt. surge",
-    "misty1",
-    "misty2",
-    "morty",
-    "pryce1",
-    "pryce2",
-    "sabrina1",
-    "sabrina2",
-    "whitney",
-    "will1",
-    "will2",
-    "ash",
-    "wes",
-    "rocket_M",
-    "rocket_F",
-    "gardenia",
-    "plushbanshee",
-    "sapphire",
-    "starbutterfarts"
-]
-const PLAYER_MODEL_WALK_TEXTURES := [
-    "res://assets/source_exact/player/red/walking.png",
-    "res://assets/source_exact/player/leaf-walking.png",
-    "res://assets/source_exact/player/gold-walking.png",
-    "res://assets/source_exact/player/kris-walking.png",
-    "res://assets/source_exact/player/brendan-walking.png",
-    "res://assets/source_exact/player/may-walking.png",
-    "res://assets/source_exact/player/hilbert-walking.png",
-    "res://assets/source_exact/player/hilda-walking.png",
-    "res://assets/source_exact/player/rosa-walking.png",
-    "res://assets/source_exact/player/calem-walking.png",
-    "res://assets/source_exact/player/serena-walking.png",
-    "res://assets/source_exact/player/chase-walking.png",
-    "res://assets/source_exact/player/elaine-walking.png",
-    "res://assets/source_exact/player/gloria-walking.png",
-    "res://assets/source_exact/player/mark-walking.png",
-    "res://assets/source_exact/player/mint-walking.png",
-    "res://assets/source_exact/player/lunick-walking.png",
-    "res://assets/source_exact/player/summer-walking.png",
-    "res://assets/source_exact/player/kellyn-walking.png",
-    "res://assets/source_exact/player/agatha-walking.png",
-    "res://assets/source_exact/player/blaine1-walking.png",
-    "res://assets/source_exact/player/blaine2-walking.png",
-    "res://assets/source_exact/player/blue-walking.png",
-    "res://assets/source_exact/player/brock-walking.png",
-    "res://assets/source_exact/player/bruno-walking.png",
-    "res://assets/source_exact/player/bugsy-walking.png",
-    "res://assets/source_exact/player/chuck-walking.png",
-    "res://assets/source_exact/player/clair-walking.png",
-    "res://assets/source_exact/player/erika-walking.png",
-    "res://assets/source_exact/player/falkner-walking.png",
-    "res://assets/source_exact/player/giovanni1-walking.png",
-    "res://assets/source_exact/player/giovanni2-walking.png",
-    "res://assets/source_exact/player/janine-walking.png",
-    "res://assets/source_exact/player/jasmine-walking.png",
-    "res://assets/source_exact/player/karen1-walking.png",
-    "res://assets/source_exact/player/karen2-walking.png",
-    "res://assets/source_exact/player/koga-walking.png",
-    "res://assets/source_exact/player/lance-walking.png",
-    "res://assets/source_exact/player/lorelei-walking.png",
-    "res://assets/source_exact/player/lt. surge-walking.png",
-    "res://assets/source_exact/player/misty1-walking.png",
-    "res://assets/source_exact/player/misty2-walking.png",
-    "res://assets/source_exact/player/morty-walking.png",
-    "res://assets/source_exact/player/pryce1-walking.png",
-    "res://assets/source_exact/player/pryce2-walking.png",
-    "res://assets/source_exact/player/sabrina1-walking.png",
-    "res://assets/source_exact/player/sabrina2-walking.png",
-    "res://assets/source_exact/player/whitney-walking.png",
-    "res://assets/source_exact/player/will1-walking.png",
-    "res://assets/source_exact/player/will2-walking.png",
-    "res://assets/source_exact/player/ash-walking.png",
-    "res://assets/source_exact/player/wes-walking.png",
-    "res://assets/source_exact/player/rocket_M-walking.png",
-    "res://assets/source_exact/player/rocket_F-walking.png",
-    "res://assets/source_exact/player/gardenia-walking.png",
-    "res://assets/source_exact/player/plushbanshee-walking.png",
-    "res://assets/source_exact/player/sapphire-walking.png",
-    "res://assets/source_exact/player/starbutterfarts-walking.png"
-]
-const PLAYER_MODEL_RUN_TEXTURES := [
-    "res://assets/source_exact/player/red/running.png",
-    "res://assets/source_exact/player/leaf-running.png",
-    "res://assets/source_exact/player/gold-running.png",
-    "res://assets/source_exact/player/kris-running.png",
-    "res://assets/source_exact/player/brendan-running.png",
-    "res://assets/source_exact/player/may-running.png",
-    "res://assets/source_exact/player/hilbert-running.png",
-    "res://assets/source_exact/player/hilda-running.png",
-    "res://assets/source_exact/player/rosa-running.png",
-    "res://assets/source_exact/player/calem-running.png",
-    "res://assets/source_exact/player/serena-running.png",
-    "res://assets/source_exact/player/chase-running.png",
-    "res://assets/source_exact/player/elaine-running.png",
-    "res://assets/source_exact/player/gloria-running.png",
-    "res://assets/source_exact/player/mark-running.png",
-    "res://assets/source_exact/player/mint-running.png",
-    "res://assets/source_exact/player/lunick-running.png",
-    "res://assets/source_exact/player/summer-running.png",
-    "res://assets/source_exact/player/kellyn-running.png",
-    "res://assets/source_exact/player/agatha-running.png",
-    "res://assets/source_exact/player/blaine1-running.png",
-    "res://assets/source_exact/player/blaine2-running.png",
-    "res://assets/source_exact/player/blue-running.png",
-    "res://assets/source_exact/player/brock-running.png",
-    "res://assets/source_exact/player/bruno-running.png",
-    "res://assets/source_exact/player/bugsy-running.png",
-    "res://assets/source_exact/player/chuck-running.png",
-    "res://assets/source_exact/player/clair-running.png",
-    "res://assets/source_exact/player/erika-running.png",
-    "res://assets/source_exact/player/falkner-running.png",
-    "res://assets/source_exact/player/giovanni1-running.png",
-    "res://assets/source_exact/player/giovanni2-running.png",
-    "res://assets/source_exact/player/janine-running.png",
-    "res://assets/source_exact/player/jasmine-running.png",
-    "res://assets/source_exact/player/karen1-running.png",
-    "res://assets/source_exact/player/karen2-running.png",
-    "res://assets/source_exact/player/koga-running.png",
-    "res://assets/source_exact/player/lance-running.png",
-    "res://assets/source_exact/player/lorelei-running.png",
-    "res://assets/source_exact/player/lt. surge-running.png",
-    "res://assets/source_exact/player/misty1-running.png",
-    "res://assets/source_exact/player/misty2-running.png",
-    "res://assets/source_exact/player/morty-running.png",
-    "res://assets/source_exact/player/pryce1-running.png",
-    "res://assets/source_exact/player/pryce2-running.png",
-    "res://assets/source_exact/player/sabrina1-running.png",
-    "res://assets/source_exact/player/sabrina2-running.png",
-    "res://assets/source_exact/player/whitney-running.png",
-    "res://assets/source_exact/player/will1-running.png",
-    "res://assets/source_exact/player/will2-running.png",
-    "res://assets/source_exact/player/ash-running.png",
-    "res://assets/source_exact/player/wes-running.png",
-    "res://assets/source_exact/player/rocket_M-running.png",
-    "res://assets/source_exact/player/rocket_F-running.png",
-    "res://assets/source_exact/player/gardenia-running.png",
-    "res://assets/source_exact/player/plushbanshee-running.png",
-    "res://assets/source_exact/player/sapphire-running.png",
-    "res://assets/source_exact/player/starbutterfarts-running.png"
-]
-const PLAYER_MODEL_SLEEP_TEXTURES := [
-    "res://assets/source_exact/player/red/sleepingbag.png",
-    "res://assets/source_exact/player/leaf-sleepingbag.png",
-    "res://assets/source_exact/player/gold-sleepingbag.png",
-    "res://assets/source_exact/player/kris-sleepingbag.png",
-    "res://assets/source_exact/player/brendan-sleepingbag.png",
-    "res://assets/source_exact/player/may-sleepingbag.png",
-    "res://assets/source_exact/player/hilbert-sleepingbag.png",
-    "res://assets/source_exact/player/hilda-sleepingbag.png",
-    "res://assets/source_exact/player/rosa-sleepingbag.png",
-    "res://assets/source_exact/player/calem-sleepingbag.png",
-    "res://assets/source_exact/player/serena-sleepingbag.png",
-    "res://assets/source_exact/player/chase-sleepingbag.png",
-    "res://assets/source_exact/player/elaine-sleepingbag.png",
-    "res://assets/source_exact/player/gloria-sleepingbag.png",
-    "res://assets/source_exact/player/mark-sleepingbag.png",
-    "res://assets/source_exact/player/mint-sleepingbag.png",
-    "res://assets/source_exact/player/lunick-sleepingbag.png",
-    "res://assets/source_exact/player/summer-sleepingbag.png",
-    "res://assets/source_exact/player/kellyn-sleepingbag.png",
-    "res://assets/source_exact/player/agatha-sleepingbag.png",
-    "res://assets/source_exact/player/blaine1-sleepingbag.png",
-    "res://assets/source_exact/player/blaine2-sleepingbag.png",
-    "res://assets/source_exact/player/blue-sleepingbag.png",
-    "res://assets/source_exact/player/brock-sleepingbag.png",
-    "res://assets/source_exact/player/bruno-sleepingbag.png",
-    "res://assets/source_exact/player/bugsy-sleepingbag.png",
-    "res://assets/source_exact/player/chuck-sleepingbag.png",
-    "res://assets/source_exact/player/clair-sleepingbag.png",
-    "res://assets/source_exact/player/erika-sleepingbag.png",
-    "res://assets/source_exact/player/falkner-sleepingbag.png",
-    "res://assets/source_exact/player/giovanni1-sleepingbag.png",
-    "res://assets/source_exact/player/giovanni2-sleepingbag.png",
-    "res://assets/source_exact/player/janine-sleepingbag.png",
-    "res://assets/source_exact/player/jasmine-sleepingbag.png",
-    "res://assets/source_exact/player/karen1-sleepingbag.png",
-    "res://assets/source_exact/player/karen2-sleepingbag.png",
-    "res://assets/source_exact/player/koga-sleepingbag.png",
-    "res://assets/source_exact/player/lance-sleepingbag.png",
-    "res://assets/source_exact/player/lorelei-sleepingbag.png",
-    "res://assets/source_exact/player/lt. surge-sleepingbag.png",
-    "res://assets/source_exact/player/misty1-sleepingbag.png",
-    "res://assets/source_exact/player/misty2-sleepingbag.png",
-    "res://assets/source_exact/player/morty-sleepingbag.png",
-    "res://assets/source_exact/player/pryce1-sleepingbag.png",
-    "res://assets/source_exact/player/pryce2-sleepingbag.png",
-    "res://assets/source_exact/player/sabrina1-sleepingbag.png",
-    "res://assets/source_exact/player/sabrina2-sleepingbag.png",
-    "res://assets/source_exact/player/whitney-sleepingbag.png",
-    "res://assets/source_exact/player/will1-sleepingbag.png",
-    "res://assets/source_exact/player/will2-sleepingbag.png",
-    "res://assets/source_exact/player/ash-sleepingbag.png",
-    "res://assets/source_exact/player/wes-sleepingbag.png",
-    "res://assets/source_exact/player/rocket_M-sleepingbag.png",
-    "res://assets/source_exact/player/rocket_F-sleepingbag.png",
-    "res://assets/source_exact/player/gardenia-sleepingbag.png",
-    "res://assets/source_exact/player/plushbanshee-sleepingbag.png",
-    "res://assets/source_exact/player/sapphire-sleepingbag.png",
-    "res://assets/source_exact/player/starbutterfarts-sleepingbag.png"
-]
-const PLAYER_MODEL_SITTING_TEXTURES := [
-    "res://assets/source_exact/player/red/sitting.png",
-    "res://assets/source_exact/player/leaf-sitting.png",
-    "res://assets/source_exact/player/gold-sitting.png",
-    "res://assets/source_exact/player/kris-sitting.png",
-    "res://assets/source_exact/player/brendan-sitting.png",
-    "res://assets/source_exact/player/may-sitting.png",
-    "res://assets/source_exact/player/hilbert-sitting.png",
-    "res://assets/source_exact/player/hilda-sitting.png",
-    "res://assets/source_exact/player/rosa-sitting.png",
-    "res://assets/source_exact/player/calem-sitting.png",
-    "res://assets/source_exact/player/serena-sitting.png",
-    "res://assets/source_exact/player/chase-sitting.png",
-    "res://assets/source_exact/player/elaine-sitting.png",
-    "res://assets/source_exact/player/gloria-sitting.png",
-    "res://assets/source_exact/player/mark-sitting.png",
-    "res://assets/source_exact/player/mint-sitting.png",
-    "res://assets/source_exact/player/lunick-sitting.png",
-    "res://assets/source_exact/player/summer-sitting.png",
-    "res://assets/source_exact/player/kellyn-sitting.png",
-    "res://assets/source_exact/player/agatha-sitting.png",
-    "res://assets/source_exact/player/blaine1-sitting.png",
-    "res://assets/source_exact/player/blaine2-sitting.png",
-    "res://assets/source_exact/player/blue-sitting.png",
-    "res://assets/source_exact/player/brock-sitting.png",
-    "res://assets/source_exact/player/bruno-sitting.png",
-    "res://assets/source_exact/player/bugsy-sitting.png",
-    "res://assets/source_exact/player/chuck-sitting.png",
-    "res://assets/source_exact/player/clair-sitting.png",
-    "res://assets/source_exact/player/erika-sitting.png",
-    "res://assets/source_exact/player/falkner-sitting.png",
-    "res://assets/source_exact/player/giovanni1-sitting.png",
-    "res://assets/source_exact/player/giovanni2-sitting.png",
-    "res://assets/source_exact/player/janine-sitting.png",
-    "res://assets/source_exact/player/jasmine-sitting.png",
-    "res://assets/source_exact/player/karen1-sitting.png",
-    "res://assets/source_exact/player/karen2-sitting.png",
-    "res://assets/source_exact/player/koga-sitting.png",
-    "res://assets/source_exact/player/lance-sitting.png",
-    "res://assets/source_exact/player/lorelei-sitting.png",
-    "res://assets/source_exact/player/lt. surge-sitting.png",
-    "res://assets/source_exact/player/misty1-sitting.png",
-    "res://assets/source_exact/player/misty2-sitting.png",
-    "res://assets/source_exact/player/morty-sitting.png",
-    "res://assets/source_exact/player/pryce1-sitting.png",
-    "res://assets/source_exact/player/pryce2-sitting.png",
-    "res://assets/source_exact/player/sabrina1-sitting.png",
-    "res://assets/source_exact/player/sabrina2-sitting.png",
-    "res://assets/source_exact/player/whitney-sitting.png",
-    "res://assets/source_exact/player/will1-sitting.png",
-    "res://assets/source_exact/player/will2-sitting.png",
-    "res://assets/source_exact/player/ash-sitting.png",
-    "res://assets/source_exact/player/wes-sitting.png",
-    "res://assets/source_exact/player/rocket_M-sitting.png",
-    "res://assets/source_exact/player/rocket_F-sitting.png",
-    "res://assets/source_exact/player/gardenia-sitting.png",
-    "res://assets/source_exact/player/plushbanshee-sitting.png",
-    "res://assets/source_exact/player/sapphire-sitting.png",
-    "res://assets/source_exact/player/starbutterfarts-sitting.png"
-]
-const PLAYER_MODEL_BATTLE_BACK_TEXTURES := [
-    "res://assets/source_exact/player/red/back.png",
-    "res://assets/source_exact/player/leaf-back.png",
-    "res://assets/source_exact/player/gold-back.png",
-    "res://assets/source_exact/player/kris-back.png",
-    "res://assets/source_exact/player/brendan-back.png",
-    "res://assets/source_exact/player/may-back.png",
-    "res://assets/source_exact/player/hilbert-back.png",
-    "res://assets/source_exact/player/hilda-back.png",
-    "res://assets/source_exact/player/rosa-back.png",
-    "res://assets/source_exact/player/calem-back.png",
-    "res://assets/source_exact/player/serena-back.png",
-    "res://assets/source_exact/player/chase-back.png",
-    "res://assets/source_exact/player/elaine-back.png",
-    "res://assets/source_exact/player/gloria-back.png",
-    "res://assets/source_exact/player/mark-back.png",
-    "res://assets/source_exact/player/mint-back.png",
-    "res://assets/source_exact/player/lunick-back.png",
-    "res://assets/source_exact/player/summer-back.png",
-    "res://assets/source_exact/player/kellyn-back.png",
-    "res://assets/source_exact/player/agatha-back.png",
-    "res://assets/source_exact/player/blaine1-back.png",
-    "res://assets/source_exact/player/blaine2-back.png",
-    "res://assets/source_exact/player/blue-back.png",
-    "res://assets/source_exact/player/brock-back.png",
-    "res://assets/source_exact/player/bruno-back.png",
-    "res://assets/source_exact/player/bugsy-back.png",
-    "res://assets/source_exact/player/chuck-back.png",
-    "res://assets/source_exact/player/clair-back.png",
-    "res://assets/source_exact/player/erika-back.png",
-    "res://assets/source_exact/player/falkner-back.png",
-    "res://assets/source_exact/player/giovanni1-back.png",
-    "res://assets/source_exact/player/giovanni2-back.png",
-    "res://assets/source_exact/player/janine-back.png",
-    "res://assets/source_exact/player/jasmine-back.png",
-    "res://assets/source_exact/player/karen1-back.png",
-    "res://assets/source_exact/player/karen2-back.png",
-    "res://assets/source_exact/player/koga-back.png",
-    "res://assets/source_exact/player/lance-back.png",
-    "res://assets/source_exact/player/lorelei-back.png",
-    "res://assets/source_exact/player/lt. surge-back.png",
-    "res://assets/source_exact/player/misty1-back.png",
-    "res://assets/source_exact/player/misty2-back.png",
-    "res://assets/source_exact/player/morty-back.png",
-    "res://assets/source_exact/player/pryce1-back.png",
-    "res://assets/source_exact/player/pryce2-back.png",
-    "res://assets/source_exact/player/sabrina1-back.png",
-    "res://assets/source_exact/player/sabrina2-back.png",
-    "res://assets/source_exact/player/whitney-back.png",
-    "res://assets/source_exact/player/will1-back.png",
-    "res://assets/source_exact/player/will2-back.png",
-    "res://assets/source_exact/player/ash-back.png",
-    "res://assets/source_exact/player/wes-back.png",
-    "res://assets/source_exact/player/rocket_M-back.png",
-    "res://assets/source_exact/player/rocket_F-back.png",
-    "res://assets/source_exact/player/gardenia-back.png",
-    "res://assets/source_exact/player/plushbanshee-back.png",
-    "res://assets/source_exact/player/sapphire-back.png",
-    "res://assets/source_exact/player/starbutterfarts-back.png"
-]
-const PLAYER_MODEL_REPLACE_COLORS := [
-    Color(0.972549, 0.219608, 0.031373, 1.0), # red mod
-    Color(0.313725, 0.282353, 0.972549, 1.0), # leaf
-    Color(0.972549, 0.219608, 0.031373, 1.0), # gold
-    Color(0.313725, 0.282353, 0.972549, 1.0), # kris
-    Color(0.972549, 0.219608, 0.031373, 1.0), # brendan
-    Color(0.313725, 0.282353, 0.972549, 1.0), # may
-    Color(0.972549, 0.219608, 0.031373, 1.0), # hilbert
-    Color(0.313725, 0.282353, 0.972549, 1.0), # hilda
-    Color(0.313725, 0.282353, 0.972549, 1.0), # rosa
-    Color(0.313725, 0.282353, 0.972549, 1.0), # calem
-    Color(0.972549, 0.219608, 0.031373, 1.0), # serena
-    Color(0.972549, 0.219608, 0.031373, 1.0), # chase
-    Color(0.313725, 0.282353, 0.972549, 1.0), # elaine
-    Color(0.972549, 0.219608, 0.031373, 1.0), # gloria
-    Color(0.972549, 0.219608, 0.031373, 1.0), # mark
-    Color(0.313725, 0.282353, 0.972549, 1.0), # mint
-    Color(0.349020, 0.282353, 1.0, 1.0), # lunick
-    Color(0.972549, 0.219608, 0.031373, 1.0), # summer
-    Color(0.964706, 0.031373, 0.003922, 1.0),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(56,56,112),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(216,136,48),
-    Color8(150,105,25),
-    Color8(121,129,42),
-    Color8(249,230,130)
-]
-const PLAYER_MODEL_BATTLE_REPLACE_COLORS := [
-    Color8(176, 72, 40, 255), # red
-    Color8(56, 40, 248, 255), # leaf
-    Color8(176, 72, 40, 255), # gold
-    Color8(56, 40, 248, 255), # kris
-    Color8(176, 72, 40, 255), # brendan
-    Color8(176, 72, 40, 255), # may
-    Color8(88, 96, 184, 255), # hilbert
-    Color8(155, 58, 48, 255), # hilda
-    Color8(80, 72, 64, 255), # rosa
-    Color8(54, 83, 197, 255), # calem
-    Color8(222, 42, 42, 255), # serena
-    Color8(176, 72, 40, 255), # chase
-    Color8(56, 40, 248, 255), # elaine
-    Color8(55, 134, 110, 255), # gloria
-    Color8(232, 79, 79, 255), # mark
-    Color8(41, 107, 210, 255), # mint
-    Color8(198, 57, 74, 255), # lunick
-    Color8(232, 79, 79, 255), # summer
-    Color8(232, 79, 79, 255),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(56,56,112),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(216,136,48),
-    Color8(150,105,25),
-    Color8(121,129,42),
-    Color8(249,230,130)
-]
+const PlayerLooks = preload("res://scripts/player_looks.gd")
+const PLAYER_TEXTURES = PlayerLooks.PLAYER_TEXTURES
+const PLAYER_RUN_TEXTURES = PlayerLooks.PLAYER_RUN_TEXTURES
+const PLAYER_COLOR_NAMES = PlayerLooks.PLAYER_COLOR_NAMES
+const PLAYER_COLOR_VALUES = PlayerLooks.PLAYER_COLOR_VALUES
+const PLAYER_MODEL_NAMES = PlayerLooks.PLAYER_MODEL_NAMES
+const PLAYER_MODEL_WALK_TEXTURES = PlayerLooks.PLAYER_MODEL_WALK_TEXTURES
+const PLAYER_MODEL_RUN_TEXTURES = PlayerLooks.PLAYER_MODEL_RUN_TEXTURES
+const PLAYER_MODEL_SLEEP_TEXTURES = PlayerLooks.PLAYER_MODEL_SLEEP_TEXTURES
+const PLAYER_MODEL_SITTING_TEXTURES = PlayerLooks.PLAYER_MODEL_SITTING_TEXTURES
+const PLAYER_MODEL_BATTLE_BACK_TEXTURES = PlayerLooks.PLAYER_MODEL_BATTLE_BACK_TEXTURES
+const PLAYER_MODEL_REPLACE_COLORS = PlayerLooks.PLAYER_MODEL_REPLACE_COLORS
+const PLAYER_MODEL_BATTLE_REPLACE_COLORS = PlayerLooks.PLAYER_MODEL_BATTLE_REPLACE_COLORS
 const POKEMON_EGG_TEXTURE := preload("res://assets/pokemon_egg.png")
 const GHOST_BATTLE_SHEET := preload("res://assets/events/ghost_battle_front.png")
 const ITEM_BAG_POCKET_TEXTURE := preload("res://assets/item_bag_pockets.png")
@@ -958,7 +445,6 @@ var evolution_greyscale_material: ShaderMaterial
 var player_color_index := 0
 var player_model_index := 0
 var custom_player_name := ""
-var player_appearance_texture_cache: Dictionary = {}
 var current_species := ""
 var current_level := 1
 var caught_species = []
@@ -1310,13 +796,13 @@ func _ready() -> void:
 
     player_preview.hframes = 8
     player_preview.frame = 0
-    _apply_player_appearance()
+    appearance.apply_player_appearance()
 
     start_button.pressed.connect(_start_game)
-    $UI/SetupPanel/ColorUp.pressed.connect(_next_color)
-    $UI/SetupPanel/ColorDown.pressed.connect(_previous_color)
-    $UI/SetupPanel/ModelUp.pressed.connect(_next_model)
-    $UI/SetupPanel/ModelDown.pressed.connect(_previous_model)
+    $UI/SetupPanel/ColorUp.pressed.connect(appearance.next_color)
+    $UI/SetupPanel/ColorDown.pressed.connect(appearance.previous_color)
+    $UI/SetupPanel/ModelUp.pressed.connect(appearance.next_model)
+    $UI/SetupPanel/ModelDown.pressed.connect(appearance.previous_model)
 
     world_edit.gui_input.connect(_display_field_gui_input.bind("world"))
     world_edit.max_length = 24
@@ -3388,7 +2874,7 @@ func _unhandled_input(event: InputEvent) -> void:
     if event.is_action_pressed("move_up"):
         if menu_nav_cooldown <= 0.0:
             if menu_row == MENU_ROW_COLOR and menu_col > 0:
-                _change_player_selector(1)
+                appearance.change_player_selector(1)
             else:
                 _move_menu_vertical(-1)
             menu_nav_cooldown = MENU_NAV_DELAY
@@ -3398,7 +2884,7 @@ func _unhandled_input(event: InputEvent) -> void:
     if event.is_action_pressed("move_down"):
         if menu_nav_cooldown <= 0.0:
             if menu_row == MENU_ROW_COLOR and menu_col > 0:
-                _change_player_selector(-1)
+                appearance.change_player_selector(-1)
             else:
                 _move_menu_vertical(1)
             menu_nav_cooldown = MENU_NAV_DELAY
@@ -3654,9 +3140,9 @@ func _activate_menu_item() -> void:
             if menu_col == 0:
                 menu_col = 1
             elif menu_col == 1:
-                _next_color()
+                appearance.next_color()
             elif menu_col == 2:
-                _next_model()
+                appearance.next_model()
         MENU_ROW_GO:
             _start_game()
 
@@ -3912,7 +3398,7 @@ func _start_game() -> void:
         dialogs.show_message(world.generation_error)
         return
 
-    _apply_world_player_textures()
+    appearance.apply_world_player_textures()
 
     if selected_mode == "LOAD" and not load_data.is_empty():
         await saving.restore_game_save(load_data)
@@ -3967,7 +3453,7 @@ func _load_setup() -> void:
         player_model_index = clampi(
             int(cfg.get_value("setup", "player_model", 0)),
             0,
-            _player_model_count() - 1
+            appearance.player_model_count() - 1
         )
         custom_player_name = str(cfg.get_value("setup","player_name","")).strip_edges().left(24) if bool(cfg.get_value("setup","player_name_custom",false)) else ""
         selected_mode = str(cfg.get_value("setup", "mode", "NEW"))
@@ -4010,140 +3496,13 @@ func _ensure_machop_lead(heal_after_whiteout: bool) -> void:
         pokemon["hp"] = int(int(pokemon.get("max_hp", 1)) / 2)
         caught_pokemon[index] = pokemon
 
-func _previous_color() -> void:
-    player_color_index = wrapi(player_color_index - 1, 0, PLAYER_TEXTURES.size())
-    _apply_player_appearance()
-
-func _next_color() -> void:
-    player_color_index = wrapi(player_color_index + 1, 0, PLAYER_TEXTURES.size())
-    _apply_player_appearance()
-
-func _player_model_count() -> int:
-    return PLAYER_MODEL_NAMES.size()
-
-func _previous_model() -> void:
-    player_model_index = wrapi(
-        player_model_index - 1, 0, _player_model_count()
-    )
-    _apply_player_appearance()
-
-func _next_model() -> void:
-    player_model_index = wrapi(
-        player_model_index + 1, 0, _player_model_count()
-    )
-    _apply_player_appearance()
-
-func _change_player_selector(direction: int) -> void:
-    if menu_col == 1:
-        if direction > 0:
-            _next_color()
-        else:
-            _previous_color()
-    elif menu_col == 2:
-        if direction > 0:
-            _next_model()
-        else:
-            _previous_model()
-
-func _apply_player_color(index: int) -> void:
-    player_color_index = clampi(index, 0, PLAYER_COLOR_VALUES.size() - 1)
-    _apply_player_appearance()
-
-func _apply_player_appearance() -> void:
-    player_color_index = clampi(
-        player_color_index, 0, PLAYER_COLOR_VALUES.size() - 1
-    )
-    player_model_index = clampi(
-        player_model_index, 0, _player_model_count() - 1
-    )
-    player_model_name.text = custom_player_name if not custom_player_name.is_empty() else PLAYER_MODEL_NAMES[player_model_index].to_upper()
-    _fit_player_name()
-    player_preview.texture = _player_appearance_texture(false)
-    player_preview.hframes = 8
-    player_preview.frame = 0
-    player_color_swatch.texture = _recolor_texture(
-        preload("res://assets/source_exact/global/select_color1.png"),
-        Color.WHITE,
-        PLAYER_COLOR_VALUES[player_color_index],
-        "swatch:%d" % player_color_index
-    )
-
-func _player_appearance_texture(running: bool) -> Texture2D:
-    var base: Texture2D = (
-        lazy_texture(PLAYER_MODEL_RUN_TEXTURES[player_model_index])
-        if running
-        else lazy_texture(PLAYER_MODEL_WALK_TEXTURES[player_model_index])
-    )
-    return _recolor_texture(
-        base,
-        PLAYER_MODEL_REPLACE_COLORS[player_model_index],
-        PLAYER_COLOR_VALUES[player_color_index],
-        "%s:%d:%d" % ["run" if running else "walk", player_model_index,
-            player_color_index]
-    )
-
-func _player_sitting_texture(frame: int = 0) -> Texture2D:
-    var texture := _recolor_texture(
-        lazy_texture(PLAYER_MODEL_SITTING_TEXTURES[player_model_index]),
-        PLAYER_MODEL_REPLACE_COLORS[player_model_index],
-        PLAYER_COLOR_VALUES[player_color_index],
-        "sitting:%d:%d" % [player_model_index, player_color_index])
-    # Java Player.Sitting: front pose for stools/couch1, side pose for couch2-5.
-    return _source_texture_region(texture, Rect2(clampi(frame, 0, 2) * 16, 0, 16, 16))
-
-func _player_sleeping_texture() -> Texture2D:
-    var recolored := _recolor_texture(
-        lazy_texture(PLAYER_MODEL_SLEEP_TEXTURES[player_model_index]),
-        PLAYER_MODEL_REPLACE_COLORS[player_model_index],
-        PLAYER_COLOR_VALUES[player_color_index],
-        "sleep:%d:%d" % [player_model_index, player_color_index]
-    )
-    # Summer's source image is 24 px high, while the Java renderer uses the
-    # same 24x16 sleeping region as every other character.
-    if recolored.get_height() <= 16:
-        return recolored
-    var source_region := AtlasTexture.new()
-    source_region.atlas = recolored
-    source_region.region = Rect2(0, 0, 24, 16)
-    return source_region
-
-func _recolor_texture(
-        base: Texture2D, source_color: Color, target_color: Color,
-        cache_key: String
-    ) -> Texture2D:
-    if player_appearance_texture_cache.has(cache_key):
-        return player_appearance_texture_cache[cache_key] as Texture2D
-    # Imported textures can share their decoded Image. Work on a copy so one
-    # chosen color never contaminates another model/color cache entry.
-    var image := Image.new()
-    image.copy_from(TexturePixels.of(base))
-    for y in range(image.get_height()):
-        for x in range(image.get_width()):
-            var pixel := image.get_pixel(x, y)
-            if (pixel.r8 == source_color.r8 and pixel.g8 == source_color.g8
-                    and pixel.b8 == source_color.b8 and pixel.a8 > 0):
-                image.set_pixel(
-                    x, y, Color(target_color.r, target_color.g,
-                        target_color.b, pixel.a)
-                )
-    var texture := ImageTexture.create_from_image(image)
-    player_appearance_texture_cache[cache_key] = texture
-    return texture
-
-func _apply_world_player_textures() -> void:
-    var player_node := world.get_node_or_null("Player")
-    if player_node != null and player_node.has_method("set_character_textures"):
-        player_node.call(
-            "set_character_textures",
-            _player_appearance_texture(false),
-            _player_appearance_texture(true)
-        )
-        return
-    var player_sprite := world.get_node_or_null("Player/Sprite2D") as Sprite2D
-    if player_sprite != null:
-        player_sprite.texture = _player_appearance_texture(false)
-        player_sprite.hframes = 8
-        player_sprite.frame = 0
+## player_appearance.gd under its old names, for the scripts and tests that call them on main.
+func _previous_color() -> void: appearance.previous_color()
+func _next_color() -> void: appearance.next_color()
+func _previous_model() -> void: appearance.previous_model()
+func _next_model() -> void: appearance.next_model()
+func _player_sitting_texture(frame: int = 0) -> Texture2D: return appearance.player_sitting_texture(frame)
+func _recolor_texture(base: Texture2D, source_color: Color, target_color: Color, cache_key: String) -> Texture2D: return appearance.recolor_texture(base, source_color, target_color, cache_key)
 
 func _display_field_gui_input(event: InputEvent, target: String) -> void:
     # On touch the touch setup screen's own name fields take the taps: this
@@ -4618,7 +3977,7 @@ func _trainer_battle_texture() -> Texture2D:
     player_color_index = clampi(
         player_color_index, 0, PLAYER_COLOR_VALUES.size() - 1
     )
-    return _recolor_texture(
+    return appearance.recolor_texture(
         lazy_texture(PLAYER_MODEL_BATTLE_BACK_TEXTURES[player_model_index]),
         PLAYER_MODEL_BATTLE_REPLACE_COLORS[player_model_index],
         PLAYER_COLOR_VALUES[player_color_index],
@@ -7613,12 +6972,12 @@ func _on_structure_action(action: String) -> void:
     elif action == "SHORE_SURF":
         await _prompt_shore_surf()
     elif action == "DRESSER":
-        _next_color()
-        _apply_world_player_textures()
+        appearance.next_color()
+        appearance.apply_world_player_textures()
         dialogs.show_message("Changed outfit color to %s." % PLAYER_COLOR_NAMES[player_color_index])
     elif action == "VANITY":
-        _next_color()
-        _apply_world_player_textures()
+        appearance.next_color()
+        appearance.apply_world_player_textures()
         dialogs.show_message("The VANITY changed your appearance to %s." % PLAYER_COLOR_NAMES[player_color_index])
     elif action.begins_with("BED:"):
         await _prompt_bed_rest(Vector2i(int(action.get_slice(":",1)),int(action.get_slice(":",2))))
@@ -8118,7 +7477,7 @@ func _travel_adjacent_world(direction: Vector2i) -> void:
     world.set_gameplay_enabled(false)
     if not destination.is_empty(): await world.restore_crafting_save_state(destination.state)
     world.world_elapsed_seconds = elapsed
-    _apply_world_player_textures()
+    appearance.apply_world_player_textures()
     bounds = world.get_map_bounds()
     cell = bounds.position + Vector2i(Vector2(bounds.size)*fraction)
     cell.x = clampi(cell.x,bounds.position.x,bounds.end.x-1)
