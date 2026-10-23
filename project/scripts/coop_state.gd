@@ -318,27 +318,45 @@ func change_edits(key: String, value: Variant) -> Dictionary:
 ## record held the server 10-13 ms (25 ms deep, 8.5 ms shallow at 60,000
 ## records), so the records are a copy kept from the last save and brought up
 ## to date from the keys changed since (_saved_dirty), in the same order as
-## `records`. Values are shared, not copied: this script never changes a
-## stored value in place, it replaces it (apply_committed; Patch.apply edits a
-## copy), and no one else changes them (see transact). So are receipts (a
-## stub is a new one); members are changed in place, and are few.
+## `records`; catch_up() does most of that a slice a frame beforehand. Values
+## are shared, not copied: this script never changes a stored value in place,
+## it replaces it (apply_committed; Patch.apply edits a copy), and no one else
+## changes them (see transact). So are receipts (a stub is a new one);
+## members are changed in place, and are few.
 var _saved_records := {}
 var _saved_whole := false
-## key -> true when it came (again) since the last snapshot, false when it
+## key -> true when it came (again) since the copy last had it, false when it
 ## only changed or went.
 var _saved_dirty := {}
 func snapshot() -> Dictionary:
-    if not _saved_whole:
+    catch_up(-1)
+    # Records set directly (tests do) bypass _saved_dirty: copied whole.
+    if not _saved_whole or _saved_records.size() != records.size():
         _saved_records = records.duplicate()
         _saved_whole = true
-    else:
-        for key in _saved_dirty:
-            if _saved_dirty[key]: _saved_records.erase(key)
-            if records.has(key): _saved_records[key] = records[key]
-            else: _saved_records.erase(key)
-    _saved_dirty.clear()
+        _saved_dirty.clear()
     return {"revision":revision,"records":_saved_records,
         "outcomes":outcomes.duplicate(),"members":members.duplicate(true)}
+
+## Brings the save's copy up to date from the keys changed, for about
+## `budget_usec` (all of them when negative), so that the frame of the next
+## snapshot() has few left. Not while a save's worker may still read the copy
+## (coop_game.gd save_checkpoint calls it before its own). True while many
+## are left.
+func catch_up(budget_usec: int) -> bool:
+    if not _saved_whole: return false
+    var started := Time.get_ticks_usec()
+    var done: Array = []
+    for key in _saved_dirty:
+        if _saved_dirty[key]: _saved_records.erase(key)
+        if records.has(key): _saved_records[key] = records[key]
+        else: _saved_records.erase(key)
+        done.append(key)
+        if budget_usec >= 0 and done.size() % 64 == 0 and Time.get_ticks_usec() - started >= budget_usec: break
+    if done.size() == _saved_dirty.size(): _saved_dirty.clear()
+    else:
+        for key in done: _saved_dirty.erase(key)
+    return _saved_dirty.size() > 512
 
 func restore(data: Dictionary) -> bool:
     if not data.get("records") is Dictionary or not data.get("outcomes") is Dictionary or not data.get("members") is Dictionary:

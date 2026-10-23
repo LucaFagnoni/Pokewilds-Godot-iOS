@@ -1378,6 +1378,7 @@ func _off_thread(work:Callable)->Variant:
 ## about 400 ms on every save, a stall every player saw. One at a time, each
 ## with everything up to the moment it starts.
 var _world_writing:=false
+const SAVE_SLICE_USEC:=3000
 func save_checkpoint(data:Dictionary)->bool:
     if not active or not hosting:return false
     while _world_writing:await get_tree().process_frame
@@ -1387,6 +1388,8 @@ func save_checkpoint(data:Dictionary)->bool:
     # Not after other work in the same frame, nor on a journal flush:
     # prepare() ends the journal's segment after the batch on its way to disk.
     await get_tree().process_frame
+    # The state's copy brought up to date a slice a frame (coop_state.gd snapshot).
+    while state.catch_up(SAVE_SLICE_USEC):await get_tree().process_frame
     for i in 30:
         if store.idle():break
         await get_tree().process_frame
