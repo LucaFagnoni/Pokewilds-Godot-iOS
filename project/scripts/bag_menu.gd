@@ -290,8 +290,8 @@ func _use_evolution_item_on(index: int) -> void:
     consume_inventory_item(item)
     var previous_actor := main.battle_player
     main.battle_player = pokemon
-    main._reset_progression_overlay()
-    var evolved := await main._run_evolution_sequence(pokemon, target, index)
+    main.progression.reset_progression_overlay()
+    var evolved := await main.progression.run_evolution_sequence(pokemon, target, index)
     if not evolved:
         main.inventory[item] = int(main.inventory.get(item, 0)) + 1
     elif not field_move.is_empty():
@@ -299,7 +299,7 @@ func _use_evolution_item_on(index: int) -> void:
     if evolved and following:
         main.world.set_follower(pokemon, false)
     main.battle_player = previous_actor
-    main._hide_progression_overlay()
+    main.progression.hide_progression_overlay()
     main.overworld_evolution_running = false
     main.progression_active = false
     main.field_item_busy = false

@@ -26,6 +26,7 @@ signal progression_choice_made(value: int)
 const DataPaths = preload("res://scripts/game_data_paths.gd")
 const WorldSaves = preload("res://scripts/world_saves.gd")
 var saves := WorldSaves.new("user://saves")
+var progression := preload("res://scripts/progression_screens.gd").new(self)
 var edge_travel := preload("res://scripts/world_edge_travel.gd").new(self)
 var touch_config_panel := preload("res://scripts/touch_config_panel.gd").new(self)
 var setup_screen := preload("res://scripts/setup_screen.gd").new(self)
@@ -79,8 +80,6 @@ const SOURCE_POKEBALL_WIGGLE_TEXTURE := preload(
     "res://assets/source_exact/global/pokeball_wiggleSheet1_color.png")
 const SOURCE_EVOLUTION_BACKGROUND := preload(
     "res://assets/source_exact/battle/battle_bg3.png")
-const SOURCE_HATCH_BACKGROUND := preload(
-    "res://assets/source_exact/battle/intro_frame6.png")
 const SOURCE_LEVEL_STATS_BACKGROUND := preload(
     "res://assets/source_exact/battle/gsc/levelup_stats_screen1.png")
 const SOURCE_ATTACK_MENU_BACKGROUND := preload(
@@ -95,10 +94,6 @@ const EXP_GAIN_AUDIO_PATH := SOURCE_SOUND_ROOT + "xp-gain1.ogg"
 const LEVEL_UP_AUDIO_PATH := SOURCE_SOUND_ROOT + "xp-levelup1.ogg"
 const SOURCE_FRAME_TIME := 1.0 / 60.0
 const BATTLE_ENTRY_SLIDE_PX_PER_FRAME: float = 4.0
-const SOURCE_EXP_UNITS := 68
-const SOURCE_LEVEL_STATS_MIN_FRAMES := 82
-const SOURCE_EVOLUTION_CANCEL_END_FRAME := 464
-const SOURCE_HATCH_COMPLETE_FRAME := 588
 const BATTLE_TEXT_CHAR_DELAY := 0.05
 const MESSAGE_HOLD_SECONDS := 1.2
 const ITEM_MENU_VISIBLE_ROWS := 5
@@ -376,14 +371,9 @@ var mansion_switch_index := 0
 var battle_entry_pending: bool:
     get: return screens.is_open(&"battle_entry")
     set(value): screens.set_open(&"battle_entry", value)
-var progression_move_frame: Panel
-var progression_type_frame: Panel
 var progression_choice_frame: Panel
 var progression_move_rows: Array[Label] = []
 var progression_type_label: Label
-var progression_pp_label: Label
-var progression_menu_cursor: Label
-var progression_yes_no_cursor: Label
 var overworld_evolution_item := ""
 var overworld_evolution_running := false
 var capture_experience_presenting := false
@@ -391,14 +381,8 @@ var progression_active: bool:
     get: return screens.is_open(&"progression")
     set(value): screens.set_open(&"progression", value)
 var progression_mode := ""
-var hatch_skip_requested := false
-const HATCH_PLAYBACK_SPEED := 1.2
 var progression_waiting_input := false
 var progression_choice_index := 0
-# The move last shown on the forget screen, kept across its YES/NO questions.
-var progression_move_index := 0
-var progression_pending_move := ""
-var progression_pokemon: Dictionary = {}
 var progression_level_dialogue: Panel
 var progression_level_message: Label
 var setup_load_panel: Control
@@ -443,7 +427,6 @@ var battle_party_action_entries: Array[String] = []
 var battle_party_rows: Array[Dictionary] = []
 var battle_clean_command_cursor: TextureRect
 var evolution_cancel_requested := false
-var evolution_greyscale_material: ShaderMaterial
 var player_color_index := 0
 var player_model_index := 0
 var current_species := ""
@@ -754,7 +737,7 @@ func _ready() -> void:
     pokemon_stats_overlay.visible = false
     battle_party_view.visible = false
     progression_animation.texture = null
-    _create_evolution_greyscale_material()
+    progression.create_evolution_greyscale_material()
     battle_move_type_box.visible = false
     battle_move_box.visible = false
     battle_message_arrow.visible = false
@@ -1373,7 +1356,7 @@ func _build_source_ui() -> void:
     progression_list.z_index = 2
     progression_values.z_index = 2
     progression_sprite_top.z_index = 2
-    _create_progression_menu_frames()
+    progression.create_progression_menu_frames()
 
 ## storage_menu.gd under its old names, for the scripts and tests that call them on main.
 func _storage_pool_locations() -> Array: return storage.storage_pool_locations()
@@ -1540,7 +1523,7 @@ func _type_battle_text(message: String) -> void:
     if overworld_evolution_running:
         progression_overlay.show()
         progression_level_dialogue.show()
-        _set_evolution_message(message)
+        progression.set_evolution_message(message)
     _start_battle_text(message)
     if battle_text_busy:
         await battle_text_finished
@@ -1554,128 +1537,12 @@ func _finish_battle_text() -> void:
     battle_text_accumulator = 0.0
     battle_text_finished.emit()
 
-func _create_evolution_greyscale_material() -> void:
-    var shader := Shader.new()
-    # This is the nonlinear 5-bit greyscale shader used by EvolutionAnim in
-    # the source JAR, translated directly to Godot's canvas shader syntax.
-    shader.code = (
-        "shader_type canvas_item;\n" +
-        "void fragment() {\n" +
-        "  vec4 c = texture(TEXTURE, UV) * COLOR;\n" +
-        "  float r = floor(c.r * 31.0);\n" +
-        "  float g = floor(c.g * 31.0);\n" +
-        "  float b = floor(c.b * 31.0);\n" +
-        "  float sum = r + g + b;\n" +
-        "  float grey = floor(sum * sum * sum / 25947.0) / 31.0;\n" +
-        "  COLOR = vec4(vec3(grey), c.a);\n" +
-        "}\n"
-    )
-    evolution_greyscale_material = ShaderMaterial.new()
-    evolution_greyscale_material.shader = shader
-
-func _handle_progression_input(event: InputEvent) -> void:
-    if progression_mode == "HATCH_ANIMATION":
-        if event.is_action_pressed("confirm") and not event.is_echo():
-            hatch_skip_requested = true
-        get_viewport().set_input_as_handled()
-        return
-    if progression_mode == "EVOLUTION":
-        if not overworld_evolution_running and event.is_action_pressed("cancel"):
-            evolution_cancel_requested = true
-            get_viewport().set_input_as_handled()
-        return
-    if progression_mode in ["STATS", "HATCH_DONE"]:
-        if progression_waiting_input and (event.is_action_pressed("confirm") or
-                event.is_action_pressed("start")):
-            progression_waiting_input = false
-            progression_confirmed.emit()
-            get_viewport().set_input_as_handled()
-        return
-    if progression_mode == "MOVE_SELECT":
-        var moves: Array = progression_pokemon.get("moves", [])
-        if moves.is_empty():
-            return
-        if event.is_action_pressed("move_up") or event.is_action_pressed("move_left"):
-            progression_choice_index = wrapi(
-                progression_choice_index - 1, 0, moves.size())
-            _refresh_progression_move_menu()
-        elif event.is_action_pressed("move_down") or event.is_action_pressed("move_right"):
-            progression_choice_index = wrapi(
-                progression_choice_index + 1, 0, moves.size())
-            _refresh_progression_move_menu()
-        elif event.is_action_pressed("confirm"):
-            progression_mode = ""
-            progression_choice_made.emit(progression_choice_index)
-        elif event.is_action_pressed("cancel"):
-            _show_progression_yes_no(
-                "Give up on learning %s?" % progression_pending_move.replace("_", " "),
-                "MOVE_GIVEUP")
-        else:
-            return
-        get_viewport().set_input_as_handled()
-        return
-    if progression_mode in ["MOVE_GIVEUP", "YES_NO"]:
-        if event.is_action_pressed("move_up") or event.is_action_pressed("move_down") or \
-                event.is_action_pressed("move_left") or event.is_action_pressed("move_right"):
-            progression_choice_index = 1 - progression_choice_index
-            _refresh_progression_yes_no()
-        elif event.is_action_pressed("confirm"):
-            if progression_mode == "MOVE_GIVEUP":
-                if progression_choice_index == 0:
-                    progression_mode = ""
-                    progression_choice_made.emit(-1)
-                else:
-                    _show_progression_move_menu(
-                        progression_pokemon, progression_pending_move)
-            else:
-                progression_mode = ""
-                progression_choice_made.emit(
-                    1 if progression_choice_index == 0 else 0)
-        elif event.is_action_pressed("cancel"):
-            if progression_mode == "MOVE_GIVEUP":
-                _show_progression_move_menu(
-                    progression_pokemon, progression_pending_move)
-            else:
-                progression_mode = ""
-                progression_choice_made.emit(0)
-        else:
-            return
-        get_viewport().set_input_as_handled()
-
-func _reset_progression_overlay() -> void:
-    progression_level_message.add_theme_font_size_override("font_size", 10)
-    progression_level_message.position = Vector2(12,10)
-    progression_level_message.size = Vector2(282,32)
-    for panel in [progression_move_frame, progression_type_frame, progression_choice_frame]:
-        if panel != null:
-            panel.hide()
-    progression_background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    progression_background.position = Vector2.ZERO
-    progression_animation.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    progression_animation.position = Vector2.ZERO
-    progression_background.texture = null
-    progression_animation.texture = null
-    progression_sprite_top.texture = null
-    progression_sprite_bottom.texture = null
-    progression_sprite_top.material = null
-    progression_sprite_bottom.material = null
-    progression_sprite_top.visible = false
-    progression_sprite_bottom.visible = false
-    progression_title.visible = false
-    progression_list.visible = false
-    progression_values.visible = false
-    progression_cursor.visible = false
-    progression_detail.visible = false
-    progression_hint.visible = false
-    progression_level_dialogue.visible = false
-    if progression_stats_frame != null:
-        progression_stats_frame.visible = false
-
-func _hide_progression_overlay() -> void:
-    progression_mode = ""
-    progression_waiting_input = false
-    progression_overlay.visible = capture_experience_presenting
-    _reset_progression_overlay()
+## progression_screens.gd under its old names, for the scripts and tests that call them on main.
+func _hide_progression_overlay() -> void: progression.hide_progression_overlay()
+func _refresh_progression_move_menu() -> void: progression.refresh_progression_move_menu()
+func _refresh_progression_yes_no() -> void: progression.refresh_progression_yes_no()
+func _choose_move_to_forget(pokemon: Dictionary, move_name: String) -> int: return await progression.choose_move_to_forget(pokemon, move_name)
+func _world_source_time_of_day() -> String: return progression.world_source_time_of_day()
 
 func _source_texture_region(texture: Texture2D, region: Rect2) -> Texture2D:
     if texture == null:
@@ -1742,420 +1609,12 @@ func _battle_directive(source_key: String, frame_number: int) -> Dictionary:
         battle_directive_cache[index] = directive
     return directive
 
-func _show_level_up_stats(pokemon: Dictionary) -> void:
-    _reset_progression_overlay()
-    progression_overlay.visible = true
-    progression_background.texture = null
-    var species := String(pokemon.get("species", "machop"))
-    var stats_texture := PokemonData.record_texture(pokemon, "back")
-    if stats_texture == null:
-        stats_texture = PokemonData.record_texture(pokemon, "front")
-    progression_sprite_top.texture = _battle_sprite_frame(stats_texture)
-    # Stands on the text box (top edge at 123), as it does during the battle.
-    progression_sprite_top.position = Vector2(14, 29)
-    progression_sprite_top.size = Vector2(116, 94)
-    progression_sprite_top.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-    progression_sprite_top.visible = progression_sprite_top.texture != null
-    var stats: Dictionary = pokemon.get("stats", {})
-    for index in range(5):
-        progression_stats_fields[index].text = str(int(stats.get(
-            ["attack", "defense", "sp_attack", "sp_defense", "speed"][index], 0)))
-    progression_stats_frame.visible = true
-    progression_level_message.text = "%s grew to LV.%d!" % [
-        PokemonState.display_name(pokemon).to_upper(),
-        int(pokemon.get("level", 1))
-    ]
-    progression_level_dialogue.visible = true
-    progression_mode = "STATS"
-    progression_waiting_input = false
-    await get_tree().create_timer(
-        SOURCE_LEVEL_STATS_MIN_FRAMES * SOURCE_FRAME_TIME).timeout
-    progression_waiting_input = true
-    progression_hint.text = ""
-    progression_hint.visible = false
-    await progression_confirmed
-    _hide_progression_overlay()
-
-func _progression_panel(label: String, rect: Rect2) -> Panel:
-    var panel := Panel.new()
-    panel.name = label
-    panel.position = rect.position
-    panel.size = rect.size
-    panel.z_index = 2
-    panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    panel.add_theme_stylebox_override("panel", _classic_dialogue_style())
-    progression_overlay.add_child(panel)
-    panel.hide()
-    return panel
-
-func _create_progression_menu_frames() -> void:
-    progression_type_frame = _progression_panel("MoveTypeBorder", Rect2(142, 2, 176, 117))
-    progression_move_frame = _progression_panel("MoveListBorder", Rect2(2, 2, 138, 117))
-    progression_choice_frame = _progression_panel("MoveChoiceBorder", Rect2(234, 51, 84, 70))
-    progression_type_label = _source_ui_label(progression_type_frame, "Type", Vector2(10, 10), Vector2(156, 95), 8)
-    progression_type_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    progression_pp_label = _source_ui_label(progression_type_frame, "PP", Vector2(12, 67), Vector2(94, 34), 10)
-    for index in range(4):
-        var row := _source_ui_label(progression_move_frame, "Move%d" % index,
-            Vector2(24, 10 + index * 25), Vector2(104, 20), 10)
-        row.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-        progression_move_rows.append(row)
-    progression_menu_cursor = _source_ui_label(progression_move_frame, "Tick", Vector2(8, 10), Vector2(14, 20), 10, "▶", true)
-    progression_menu_cursor.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-    progression_yes_no_cursor = _source_ui_label(progression_choice_frame, "Tick", Vector2(11, 8), Vector2(14, 20), 10, "▶", true)
-    progression_yes_no_cursor.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-    for index in range(2):
-        var row := _source_ui_label(progression_choice_frame, "Choice%d" % index,
-            Vector2(28, 10 + index * 28), Vector2(46, 22), 10, "YES" if index == 0 else "NO")
-        row.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-
-func _show_progression_move_menu(pokemon: Dictionary, move_name: String) -> void:
-    _reset_progression_overlay()
-    progression_overlay.show()
-    progression_pokemon = pokemon
-    progression_pending_move = move_name.to_upper().replace(" ", "_")
-    var moves: Array = pokemon.get("moves", [])
-    progression_choice_index = clampi(progression_move_index, 0, maxi(0, moves.size() - 1))
-    progression_level_message.text = "Which move should be forgotten?"
-    progression_level_dialogue.show()
-    progression_move_frame.show()
-    progression_type_frame.show()
-    progression_mode = "MOVE_SELECT"
-    _refresh_progression_move_menu()
-
-func _refresh_progression_move_menu() -> void:
-    progression_move_index = progression_choice_index
-    var moves: Array = progression_pokemon.get("moves", [])
-    for index in range(4):
-        var row := progression_move_rows[index]
-        row.text = String(moves[index]).replace("_", " ") if index < moves.size() else "-"
-        var font_size := 10
-        while font_size > 6 and row.get_theme_font("font").get_string_size(row.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x > row.size.x:
-            font_size -= 1
-        row.add_theme_font_size_override("font_size", font_size)
-    _align_menu_tick(progression_menu_cursor, progression_move_rows[progression_choice_index])
-    if moves.is_empty():
-        progression_type_label.text = "TYPE/\n---"
-        progression_pp_label.text = "PP\n0/0"
-        return
-    var selected := String(moves[progression_choice_index])
-    var move_data := PokemonData.move_info(selected)
-    var maximum_pp := int(move_data.get("pp", 0))
-    var current_pp := int((progression_pokemon.get("pp", {}) as Dictionary).get(selected, maximum_pp))
-    var details = preload("res://scripts/move_details.gd")
-    progression_pp_label.hide()
-    progression_type_label.text = "%s\nPP %d / %d\n\n%s" % [details.stats_text(selected).replace("  PP %d" % maximum_pp,""),current_pp,maximum_pp,details.effect_text(selected)]
-    progression_level_message.add_theme_font_size_override("font_size", 7)
-    progression_level_message.position = Vector2(12,7)
-    progression_level_message.size = Vector2(288,44)
-    progression_level_message.text = "NEW: %s  (%s)\n%s\n%s" % [progression_pending_move.replace("_"," "), PokemonState.display_name(progression_pokemon).to_upper(), details.stats_text(progression_pending_move).replace("\n","  "), details.effect_text(progression_pending_move)]
-
-func _show_progression_yes_no(prompt: String, mode: String = "YES_NO") -> void:
-    _reset_progression_overlay()
-    progression_overlay.show()
-    progression_level_message.text = prompt
-    progression_level_dialogue.show()
-    progression_choice_frame.show()
-    progression_choice_index = 0
-    progression_mode = mode
-    _refresh_progression_yes_no()
-
-func _refresh_progression_yes_no() -> void:
-    _align_menu_tick(progression_yes_no_cursor, progression_choice_frame.get_node("Choice%d" % progression_choice_index))
-
-func _ask_progression_yes_no(prompt: String) -> bool:
-    _show_progression_yes_no(prompt)
-    var result = await progression_choice_made
-    return int(result) == 1
-
-func _choose_move_to_forget(pokemon: Dictionary,
-        move_name: String) -> int:
-    progression_move_index = 0
-    while true:
-        _show_progression_move_menu(pokemon, move_name)
-        var choice = await progression_choice_made
-        var selected_index := int(choice)
-        if selected_index < 0:
-            _hide_progression_overlay()
-            return -1
-        var moves: Array = pokemon.get("moves", [])
-        if selected_index >= moves.size():
-            continue
-        var forgotten := String(moves[selected_index]).replace("_", " ")
-        if await _ask_progression_yes_no("Replace %s?" % forgotten):
-            _hide_progression_overlay()
-            return selected_index
-    return -1
-
 ## A battle's experience screens are main.gd's own: the choices made on them
 ## (a move to forget, an evolution let through or stopped) go in the battle's
 ## history so a replay of it makes the same ones.
 func _note_battle_choice(choice: Variant) -> void:
     if battle_active and battle_session != null and battle_session.running:
         battle_session.history.append(choice)
-
-func _learn_level_moves(pokemon: Dictionary, moves_to_learn: Array) -> void:
-    var display_name := PokemonState.display_name(pokemon).to_upper()
-    for raw_move in moves_to_learn:
-        var move_name := String(raw_move).to_upper().replace(" ", "_")
-        if (pokemon.get("moves", []) as Array).has(move_name):
-            continue
-        if (pokemon.get("moves", []) as Array).size() < 4:
-            if BattleEngine.learn_move(pokemon, move_name):
-                _play_source_battle_sound("fanfare1.ogg")
-                await _type_battle_text("%s learned %s!" % [
-                    display_name, move_name.replace("_", " ")])
-            continue
-        await _type_battle_text("%s is trying to learn %s." % [
-            display_name, move_name.replace("_", " ")])
-        await _type_battle_text("Which move should be forgotten?")
-        var replace_index := await _choose_move_to_forget(pokemon, move_name)
-        _note_battle_choice(replace_index)
-        if replace_index < 0:
-            await _type_battle_text("%s did not learn %s." % [
-                display_name, move_name.replace("_", " ")])
-            continue
-        var old_move := String((pokemon.get("moves", []) as Array)[replace_index])
-        await _type_battle_text("And one... two... three... POOF!")
-        await _type_battle_text("%s forgot %s and..." % [
-            display_name, old_move.replace("_", " ")])
-        if BattleEngine.learn_move(pokemon, move_name, replace_index):
-            _play_source_battle_sound("fanfare1.ogg")
-            await _type_battle_text("%s learned %s!" % [
-                display_name, move_name.replace("_", " ")])
-
-func _experience_bar_index(species: String, level: int,
-        experience: int) -> int:
-    if level >= 100:
-        return SOURCE_EXP_UNITS
-    var floor_exp := BattleEngine.exp_for_level(species, level)
-    var ceiling_exp := BattleEngine.exp_for_level(species, level + 1)
-    return clampi(int(floor(float(SOURCE_EXP_UNITS) *
-        float(experience - floor_exp) /
-        maxf(1.0, float(ceiling_exp - floor_exp)))), 0, SOURCE_EXP_UNITS)
-
-func _animate_experience_segment(pokemon: Dictionary, from_exp: int,
-        to_exp: int) -> void:
-    var species := String(pokemon.get("species", "machop"))
-    var level := int(pokemon.get("level", 1))
-    var start_index := _experience_bar_index(species, level, from_exp)
-    var target_index := _experience_bar_index(species, level, to_exp)
-    var segment_start := preload("res://scripts/game_clock.gd").ticks_usec()
-    for bar_index in range(start_index + 1, target_index + 1):
-        _set_player_exp_bar_ratio(
-            float(bar_index) / float(SOURCE_EXP_UNITS))
-        var deadline := segment_start + int((bar_index - start_index) * SOURCE_FRAME_TIME * 1000000.0)
-        while preload("res://scripts/game_clock.gd").ticks_usec() < deadline:
-            await get_tree().process_frame
-
-func _set_player_exp_bar_ratio(ratio: float) -> void:
-    var clamped := clampf(ratio, 0.0, 1.0)
-    var legacy_width := roundf(96.0 * clamped)
-    var source_width := roundf(66.0 * clamped)
-    # Both bars share a fixed right edge like the source GSC HUD.
-    player_exp_fill.position.x = 145.0 - legacy_width
-    player_exp_fill.size.x = legacy_width
-    source_player_exp_fill.position.x = 184.0 - source_width
-    source_player_exp_fill.size.x = source_width
-    player_exp_fill.color = Color8(47, 152, 233)
-    source_player_exp_fill.color = Color8(32, 136, 248)
-
-func _world_source_time_of_day() -> String:
-    if world.has_method("source_time_of_day"):
-        return String(world.call("source_time_of_day"))
-    return "day"
-
-func _run_experience_progression(pokemon: Dictionary, amount: int,
-        party_index: int, defer_evolution: bool = false) -> void:
-    progression_active = true
-    progression_mode = ""
-    _hide_progression_overlay()
-    var original_hud_pokemon := battle_player
-    var showing_other_pokemon := not is_same(pokemon, battle_player)
-    if showing_other_pokemon:
-        battle_player = pokemon
-        _update_battle_hud()
-
-    var current_exp := int(pokemon.get("exp", BattleEngine.exp_for_level(
-        String(pokemon.get("species", "machop")), int(pokemon.get("level", 1)))))
-    var target_exp := current_exp + maxi(0, amount)
-    var gained_level := false
-    if int(pokemon.get("level", 1)) < 100 and target_exp > current_exp:
-        _play_source_battle_sound("xp-gain1.ogg")
-        await get_tree().create_timer(9.0 * SOURCE_FRAME_TIME).timeout
-
-    while int(pokemon.get("level", 1)) < 100:
-        var next_level_exp := BattleEngine.exp_for_level(
-            String(pokemon.get("species", "machop")),
-            int(pokemon.get("level", 1)) + 1)
-        if target_exp < next_level_exp:
-            break
-        await _animate_experience_segment(pokemon, current_exp, next_level_exp)
-        pokemon["exp"] = next_level_exp
-        battle_audio.stop()
-        _play_level_up_sound()
-        _set_player_exp_bar_ratio(1.0)
-        # The source holds a completely filled bar before it rolls into the
-        # next level rather than clearing it on the same frame.
-        await get_tree().create_timer(9.0 * SOURCE_FRAME_TIME).timeout
-        var level_result := BattleEngine.gain_level(pokemon)
-        gained_level = true
-        current_exp = next_level_exp
-        if party_index >= 0 and party_index < caught_pokemon.size():
-            caught_pokemon[party_index] = pokemon
-        _update_battle_hud()
-        _play_source_battle_sound("fanfare1.ogg")
-        await _type_battle_text("%s grew to level %d!" % [
-            PokemonState.display_name(pokemon).to_upper(), int(pokemon.level)])
-        await _learn_level_moves(pokemon, level_result.get("moves", []))
-        if int(pokemon.get("level", 1)) < 100 and target_exp >= \
-                BattleEngine.exp_for_level(String(pokemon.species),
-                    int(pokemon.level) + 1):
-            _play_source_battle_sound("xp-gain1.ogg")
-
-    if int(pokemon.get("level", 1)) < 100 and target_exp > current_exp:
-        await _animate_experience_segment(pokemon, current_exp, target_exp)
-    pokemon["exp"] = target_exp
-    battle_audio.stop()
-    if party_index >= 0 and party_index < caught_pokemon.size():
-        caught_pokemon[party_index] = pokemon
-    _update_battle_hud()
-
-    if gained_level:
-        await _show_level_up_stats(pokemon)
-        if not defer_evolution:
-            await _check_reward_evolution(pokemon, party_index)
-
-    if showing_other_pokemon:
-        battle_player = original_hud_pokemon
-        _update_battle_hud()
-    _hide_progression_overlay()
-    progression_pokemon = {}
-    progression_pending_move = ""
-    progression_active = false
-
-func _set_progression_sprite_half(node: TextureRect, texture: Texture2D,
-        top_half: bool, greyscale: bool,
-        source_baseline_y: float = 72.0, bottom_height: int = -1,
-        horizontal_scale: float = 2.0, horizontal_offset: float = 0.0) -> void:
-    if texture == null:
-        node.texture = null
-        node.visible = false
-        return
-    var width := texture.get_width()
-    var height := texture.get_height()
-    var split := height - bottom_height if bottom_height >= 0 else int(height / 2.0)
-    var region_y := 0 if top_half else split
-    var region_height := split if top_half else height - split
-    node.texture = _source_texture_region(texture,
-        Rect2(0, region_y, width, region_height))
-    var source_left := 84.0 - float(width) / 2.0
-    var source_top := 144.0 - source_baseline_y - float(height)
-    node.position = Vector2(
-        horizontal_offset + source_left * horizontal_scale,
-        (source_top + float(region_y)) * 1.25)
-    node.size = Vector2(float(width) * horizontal_scale, float(region_height) * 1.25)
-    node.material = evolution_greyscale_material if greyscale else null
-    node.visible = true
-
-func _set_evolution_sprite_halves(old_texture: Texture2D,
-        new_texture: Texture2D, directive: Dictionary,
-        sprites_visible: bool) -> void:
-    if not sprites_visible:
-        progression_sprite_top.visible = false
-        progression_sprite_bottom.visible = false
-        return
-    var greyscale := bool(directive.get("sprite_greyscale", false))
-    var top_texture := new_texture if bool(directive.get(
-        "evo_top_sprite_changed", false)) else old_texture
-    var bottom_texture := new_texture if bool(directive.get(
-        "evo_bottom_sprite_changed", false)) else old_texture
-    _set_progression_sprite_half(
-        progression_sprite_top, top_texture, true, greyscale, 72.0,
-        int(old_texture.get_height() / 2.0), 1.25, 60.0)
-    _set_progression_sprite_half(
-        progression_sprite_bottom, bottom_texture, false, greyscale, 72.0,
-        int(old_texture.get_height() / 2.0), 1.25, 60.0)
-
-func _set_progression_full_sprite(texture: Texture2D,
-        source_baseline_y: float) -> void:
-    if texture == null:
-        progression_sprite_top.visible = false
-        progression_sprite_bottom.visible = false
-        return
-    progression_sprite_bottom.visible = false
-    progression_sprite_top.texture = texture
-    progression_sprite_top.material = null
-    progression_sprite_top.position = Vector2(
-        (84.0 - float(texture.get_width()) / 2.0) * 2.0,
-        (144.0 - source_baseline_y - float(texture.get_height())) * 1.25)
-    progression_sprite_top.size = Vector2(
-        float(texture.get_width()) * 2.0,
-        float(texture.get_height()) * 1.25)
-    progression_sprite_top.visible = true
-
-func _set_hatch_progression_canvas() -> void:
-    # The source hatch canvas is 160x144. Fit it to the 320x180 viewport with
-    # one uniform scale (1.25x) so the egg/Pokemon are never horizontally
-    # stretched; the remaining 60 px on each side are intentional pillarbox.
-    for node in [progression_background, progression_animation]:
-        node.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
-        node.position = Vector2(60.0, 0.0)
-        node.size = Vector2(200.0, 180.0)
-
-func _set_hatch_sprite_half(node: TextureRect, texture: Texture2D,
-        top_half: bool, source_baseline_y: float = 64.0) -> void:
-    if texture == null:
-        node.texture = null
-        node.visible = false
-        return
-    var width := texture.get_width()
-    var height := texture.get_height()
-    var split := int(height / 2.0)
-    var region_y := 0 if top_half else split
-    var region_height := split if top_half else height - split
-    node.texture = _source_texture_region(texture,
-        Rect2(0, region_y, width, region_height))
-    var scale := 1.25
-    var source_left := 84.0 - float(width) / 2.0
-    var source_top := 144.0 - source_baseline_y - float(height)
-    node.position = Vector2(
-        60.0 + source_left * scale,
-        (source_top + float(region_y)) * scale)
-    node.size = Vector2(float(width) * scale, float(region_height) * scale)
-    node.material = null
-    node.visible = true
-
-func _set_hatch_full_sprite(texture: Texture2D,
-        source_baseline_y: float = 64.0) -> void:
-    if texture == null:
-        progression_sprite_top.visible = false
-        progression_sprite_bottom.visible = false
-        return
-    var scale := 1.25
-    progression_sprite_bottom.visible = false
-    progression_sprite_top.texture = texture
-    progression_sprite_top.material = null
-    progression_sprite_top.position = Vector2(
-        60.0 + (84.0 - float(texture.get_width()) / 2.0) * scale,
-        (144.0 - source_baseline_y - float(texture.get_height())) * scale)
-    progression_sprite_top.size = Vector2(
-        float(texture.get_width()) * scale,
-        float(texture.get_height()) * scale)
-    progression_sprite_top.visible = true
-
-func _set_hatch_sprite_halves(texture: Texture2D,
-        show_bottom: bool, show_top: bool) -> void:
-    if show_top:
-        _set_hatch_sprite_half(
-            progression_sprite_top, texture, true, 64.0)
-    else:
-        progression_sprite_top.visible = false
-    if show_bottom:
-        _set_hatch_sprite_half(
-            progression_sprite_bottom, texture, false, 64.0)
-    else:
-        progression_sprite_bottom.visible = false
 
 func _play_battle_animation_sound(source_key: String) -> void:
     var audio_entries: Dictionary = battle_animation_manifest.get("audio", {})
@@ -2164,225 +1623,6 @@ func _play_battle_animation_sound(source_key: String) -> void:
         battle_audio.stream = load(audio_path) as AudioStream
         AudioBalance.apply(battle_audio)
         battle_audio.play()
-
-func _play_progression_cry(pokemon: Dictionary) -> void:
-    var cry_path := PokemonData.cry_path(String(pokemon.get("species", "")))
-    if cry_path.is_empty() or not ResourceLoader.exists(cry_path):
-        return
-    var cry_player := AudioStreamPlayer.new()
-    cry_player.stream = load(cry_path) as AudioStream
-    cry_player.finished.connect(func() -> void: cry_player.queue_free())
-    add_child(cry_player)
-    AudioBalance.apply(cry_player)
-    cry_player.play()
-
-func _run_egg_hatch_sequence(party_index: int, hatched: Dictionary) -> void:
-    progression_active = true
-    progression_mode = ""
-    field_item_busy = true
-    world.set_gameplay_enabled(false)
-    caught_pokemon[party_index] = hatched
-    pokedex_progress.mark(hatched, true)
-    var species := String(hatched.get("species", "pidgey")).to_lower()
-    if not caught_species.has(species):
-        caught_species.append(species)
-
-    # PlayerStanding waits 61 + 3 source frames before its random hatch cue.
-    await get_tree().create_timer(61.0 * SOURCE_FRAME_TIME).timeout
-    await get_tree().create_timer(3.0 * SOURCE_FRAME_TIME).timeout
-    message_timer = 0.0
-    message_label.text = ["Huh?", "Oh?"][battle_rng.randi_range(0, 1)]
-    message_panel.visible = true
-    await get_tree().create_timer(51.0 * SOURCE_FRAME_TIME).timeout
-    message_panel.visible = false
-
-    _reset_progression_overlay()
-    progression_overlay.visible = true
-    _set_hatch_progression_canvas()
-    progression_background.texture = _source_texture_region(
-        SOURCE_HATCH_BACKGROUND, Rect2(0, 0, 160, 144))
-    progression_mode = "HATCH_ANIMATION"
-    var skip_hint := _source_ui_label(progression_overlay, "HatchSkipHint", Vector2(190, 167), Vector2(124, 11), 7, "Press A to skip")
-    skip_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-    skip_hint.z_index = 10
-    hatch_skip_requested = false
-    var previous_pitch := battle_audio.pitch_scale
-    battle_audio.pitch_scale = HATCH_PLAYBACK_SPEED
-    _play_battle_animation_sound("egg_hatch_gsc")
-    var front_sheet := PokemonData.record_texture(hatched, "front")
-    var front_frame := _battle_sprite_frame(front_sheet)
-    var show_bottom := false
-    var show_top := false
-    # One elapsed-time clock advances both visuals and pitched source audio.
-    # Per-frame timers accumulated extra display frames on slower devices.
-    var hatch_start := preload("res://scripts/game_clock.gd").ticks_usec()
-    var last_frame := -1
-    while not hatch_skip_requested:
-        var frame_index := int(float(preload("res://scripts/game_clock.gd").ticks_usec() - hatch_start) / 1000000.0 * HATCH_PLAYBACK_SPEED / SOURCE_FRAME_TIME)
-        if frame_index >= SOURCE_HATCH_COMPLETE_FRAME:
-            break
-        progression_animation.texture = _source_animation_frame_texture(
-            "egg_hatch_gsc", frame_index)
-        for directive_frame in range(last_frame + 1, frame_index + 1):
-            var directive := _source_animation_directive("egg_hatch_gsc", directive_frame)
-            show_bottom = show_bottom or bool(directive.get("draw_hatch_bottom_sprite", false))
-            show_top = show_top or bool(directive.get("draw_hatch_top_sprite", false))
-        last_frame = frame_index
-        _set_hatch_sprite_halves(front_frame, show_bottom, show_top)
-        await get_tree().process_frame
-
-    battle_audio.stop()
-    battle_audio.pitch_scale = previous_pitch
-    skip_hint.queue_free()
-    progression_mode = "HATCH_REVEAL"
-    progression_animation.texture = null
-    var intro_frame_count := 1
-    if front_sheet != null and front_sheet.get_width() > 0:
-        intro_frame_count = maxi(1, roundi(
-            float(front_sheet.get_height()) / float(front_sheet.get_width())))
-    var cry_started := false
-    var reveal_start := preload("res://scripts/game_clock.gd").ticks_usec()
-    for intro_index in range(intro_frame_count):
-        var sprite_frame := front_frame
-        if front_sheet != null and front_sheet.get_height() > front_sheet.get_width():
-            var frame_height := mini(front_sheet.get_height(), front_sheet.get_width())
-            sprite_frame = _source_texture_region(front_sheet, Rect2(
-                0, intro_index * frame_height,
-                front_sheet.get_width(), frame_height))
-        _set_hatch_full_sprite(sprite_frame, 64.0)
-        var deadline := reveal_start + int((intro_index + 1) * SOURCE_FRAME_TIME * 1000000.0)
-        while preload("res://scripts/game_clock.gd").ticks_usec() < deadline:
-            await get_tree().process_frame
-        if intro_index == 3:
-            _play_progression_cry(hatched)
-            cry_started = true
-    if not cry_started:
-        _play_progression_cry(hatched)
-    await get_tree().create_timer(4.0 * SOURCE_FRAME_TIME).timeout
-
-    _hide_progression_overlay()
-    _play_source_battle_sound("fanfare2.ogg")
-    message_timer = 0.0
-    message_label.text = "%s came out of its EGG!" % \
-        PokemonState.display_name(hatched).to_upper()
-    message_panel.visible = true
-    progression_mode = "HATCH_DONE"
-    progression_waiting_input = true
-    await progression_confirmed
-    await get_tree().create_timer(13.0 * SOURCE_FRAME_TIME).timeout
-    battle_audio.stop()
-    message_panel.visible = false
-    progression_mode = ""
-    progression_waiting_input = false
-    progression_active = false
-    field_item_busy = false
-    world.set_gameplay_enabled(true)
-
-func _evolution_sprite_texture(species: String, shiny: bool) -> Texture2D:
-    return PokemonData.texture(species, "front", shiny)
-
-func _set_evolution_message(message: String) -> void:
-    var font := progression_level_message.get_theme_font("font")
-    var result := message
-    var chosen_size := 10
-    for size in range(10, 4, -1):
-        var lines: Array[String] = [""]
-        for word in message.split(" "):
-            var candidate := word if lines[-1].is_empty() else lines[-1] + " " + word
-            if font.get_string_size(candidate, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x > 282 and not lines[-1].is_empty():
-                lines.append(word)
-            else:
-                lines[-1] = candidate
-        if lines.size() <= 2:
-            result = "\n".join(lines)
-            chosen_size = size
-            break
-    progression_level_message.add_theme_font_size_override("font_size", chosen_size)
-    progression_level_message.text = result
-
-func _run_evolution_sequence(pokemon: Dictionary, new_species: String,
-        party_index: int) -> bool:
-    new_species = BattleEngine.resolved_evolution_species(pokemon, new_species)
-    var old_display_name := PokemonState.display_name(pokemon).to_upper()
-    var old_texture := _battle_sprite_frame(
-        _evolution_sprite_texture(String(pokemon.get("species", "")), PokemonData.is_shiny(pokemon)))
-    var new_texture := _battle_sprite_frame(
-        _evolution_sprite_texture(new_species, PokemonData.is_shiny(pokemon)))
-    await _type_battle_text("What? %s is evolving!" % old_display_name)
-    await get_tree().create_timer(51.0 * SOURCE_FRAME_TIME).timeout
-
-    _reset_progression_overlay()
-    progression_overlay.visible = true
-    # Keep the source animation in its native proportions above the approved
-    # dialogue panel; its baked-in vanilla border must not replace our UI.
-    progression_background.texture = null
-    progression_animation.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
-    progression_animation.position = Vector2(60.0, 0.0)
-    progression_animation.size = Vector2(200.0, 120.0)
-    progression_level_dialogue.visible = true
-    _set_evolution_message("What? %s is evolving!" % old_display_name)
-    progression_mode = "EVOLUTION"
-    evolution_cancel_requested = false
-    var evolution_music_states: Array[bool] = world.environment_system.pause_music_for_evolution()
-    _play_source_battle_sound("evolution1.ogg")
-    var animations: Dictionary = battle_animation_manifest.get("animations", {})
-    var animation: Dictionary = animations.get("evolve_gsc", {})
-    var frame_count := int(animation.get("frames", 502))
-    var fanfare_played := false
-    var evolution_started_usec := preload("res://scripts/game_clock.gd").ticks_usec()
-    for frame_index in range(frame_count):
-        if frame_index >= SOURCE_EVOLUTION_CANCEL_END_FRAME:
-            progression_mode = "EVOLUTION_FINISHING"
-        progression_animation.texture = _source_animation_frame_texture(
-            "evolve_gsc", frame_index, Rect2(0, 0, 160, 96))
-        var directive := _source_animation_directive("evolve_gsc", frame_index)
-        _set_evolution_sprite_halves(
-            old_texture, new_texture, directive, frame_index >= 33)
-        if bool(directive.get("play_evo_fanfare", false)) and not fanfare_played:
-            fanfare_played = true
-            _play_source_battle_sound("evolve_fanfare1.ogg")
-        # Absolute deadlines preserve the source's 60 Hz timeline. Creating a
-        # fresh one-frame timer per frame accumulated an extra render-frame wait.
-        var deadline := evolution_started_usec + int(
-            float(frame_index + 1) * SOURCE_FRAME_TIME * 1000000.0)
-        while preload("res://scripts/game_clock.gd").ticks_usec() < deadline:
-            await get_tree().process_frame
-        if evolution_cancel_requested:
-            break
-    battle_audio.stop()
-    world.environment_system.resume_music_after_evolution(evolution_music_states)
-    progression_mode = "EVOLUTION_DONE"
-    progression_animation.texture = null
-    _note_battle_choice(not evolution_cancel_requested)
-
-    if evolution_cancel_requested:
-        _set_evolution_sprite_halves(old_texture, old_texture, {}, true)
-        await get_tree().create_timer(30.0 * SOURCE_FRAME_TIME).timeout
-        _set_evolution_message("Huh? %s stopped evolving!" % old_display_name)
-        await _type_battle_text("Huh? %s stopped evolving!" % old_display_name)
-        _hide_progression_overlay()
-        return false
-
-    if not BattleEngine.apply_evolution(pokemon, new_species):
-        _hide_progression_overlay()
-        return false
-    pokedex_progress.mark(pokemon, true)
-    _set_evolution_sprite_halves(new_texture, new_texture, {}, true)
-    if party_index >= 0 and party_index < caught_pokemon.size():
-        caught_pokemon[party_index] = pokemon
-    _refresh_battle_sprites()
-    _update_battle_hud()
-    _play_pokemon_cry(pokemon)
-    await get_tree().create_timer(30.0 * SOURCE_FRAME_TIME).timeout
-    _play_source_battle_sound("fanfare2.ogg")
-    _set_evolution_message("Congratulations! Your %s evolved into %s!" % [
-        old_display_name, new_species.to_upper().replace("_", " ")])
-    await _type_battle_text("Congratulations! Your %s evolved into %s!" % [
-        old_display_name, new_species.to_upper().replace("_", " ")])
-    _hide_progression_overlay()
-    await _learn_level_moves(pokemon, BattleEngine.moves_learned_at_level(
-        new_species, int(pokemon.get("level", 1))))
-    return true
 
 func _notification(what: int) -> void:
     if not startup_complete: return
@@ -2671,7 +1911,7 @@ func _unhandled_input(event: InputEvent) -> void:
         return
 
     if progression_active:
-        _handle_progression_input(event)
+        progression.handle_progression_input(event)
         return
 
 
@@ -4002,7 +3242,7 @@ func _play_battle_event(event: Dictionary) -> Variant:
         "caught":
             await _play_caught_event(event)
         "experience":
-            await _run_experience_progression(event.pokemon, int(event.amount),
+            await progression.run_experience_progression(event.pokemon, int(event.amount),
                 int(event.index), bool(event.defer_evolution))
         "evolution_check":
             await _check_reward_evolution(event.pokemon, int(event.index))
@@ -4473,13 +3713,13 @@ func _double_actor(side: String, slot: int) -> Dictionary:
 var battle_exp_participants: Array[int] = []
 
 func _check_reward_evolution(pokemon: Dictionary, party_index: int) -> void:
-    var target := BattleEngine.evolution_target(pokemon, caught_pokemon, _world_source_time_of_day())
+    var target := BattleEngine.evolution_target(pokemon, caught_pokemon, progression.world_source_time_of_day())
     if not target.is_empty():
         var was_active := progression_active
         var previous_actor := battle_player
         progression_active = true
         battle_player = pokemon
-        await _run_evolution_sequence(pokemon, target, party_index)
+        await progression.run_evolution_sequence(pokemon, target, party_index)
         battle_player = previous_actor
         progression_active = was_active
         progression_mode = ""
@@ -4532,7 +3772,7 @@ func _battle_throw_ball(ball: String) -> void:
     _show_battle_message_screen()
     # What a ball's odds read from the world, as it is thrown.
     await _battle_play(battle_session.submit({"kind":"ball", "ball":ball,
-        "night":_world_source_time_of_day() == "night",
+        "night":progression.world_source_time_of_day() == "night",
         "indoors":String(world.get("active_area_id")) != "OVERWORLD",
         "surfing":String(world.get("active_field_move")) == "SURF"}))
 
@@ -5631,7 +4871,7 @@ func _update_battle_hud() -> void:
             String(battle_player.get("species", "machop")), player_level + 1)
         exp_ratio = clampf(float(int(battle_player.get("exp", exp_floor)) - exp_floor) /
             maxf(1.0, float(exp_ceiling - exp_floor)), 0.0, 1.0)
-    _set_player_exp_bar_ratio(exp_ratio)
+    progression.set_player_exp_bar_ratio(exp_ratio)
     if battle_is_double:
         var ally_text = "NO ALLY"
         var foe_text = "NO FOE"
@@ -6472,7 +5712,7 @@ func _on_player_stepped() -> void:
         var hatched := _pokemon_from_egg_record(entry, species, level)
         hatched["happiness"] = 100
         hatched["friendship"] = 100
-        await _run_egg_hatch_sequence(index, hatched)
+        await progression.run_egg_hatch_sequence(index, hatched)
         # PlayerStanding returns after the first ready egg; another ready egg
         # is handled on a later step instead of merging hatch sequences.
         return

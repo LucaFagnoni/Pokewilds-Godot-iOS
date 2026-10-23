@@ -165,11 +165,11 @@ func ask_yes_no_starting_on_no(prompt: String) -> bool:
     # the question appeared and then answered to nothing.
     var was_active := main.progression_active
     main.progression_active = true
-    main._show_progression_yes_no(prompt)
+    main.progression.show_progression_yes_no(prompt)
     main.progression_choice_index = 1
-    main._refresh_progression_yes_no()
+    main.progression.refresh_progression_yes_no()
     var result = await main.progression_choice_made
-    main._hide_progression_overlay()
+    main.progression.hide_progression_overlay()
     main.progression_active = was_active
     main.world.set_gameplay_enabled(not main._field_ui_blocks_gameplay(main.build_menu_open))
     return int(result) == 1
