@@ -292,7 +292,13 @@ func dropped_items() -> Node2D:
         dropped_item_manager.world = self
     return dropped_item_manager
 
-var wild_pokemon: Dictionary = {}
+const WildPopulation = preload("res://scripts/wild_population.gd")
+## The wild Pokemon (wild_population.gd): where each stands in packed arrays and
+## a grid, the rest in its record.
+var wild_population := WildPopulation.new()
+## Its records by id (the same dictionary): add, move and remove them through
+## wild_population.
+var wild_pokemon: Dictionary = wild_population.records
 var wild_eggs: Dictionary = {}
 var next_wild_id := 1
 var next_deployed_id := 1
@@ -535,7 +541,7 @@ func generate_world(
     discovered_cells.reset(Rect2i())
     dropped_items().restore({})
     map_art_revision += 1
-    wild_pokemon.clear()
+    wild_population.clear()
     sand_trap_ids.clear()
     sand_trap_clocks.clear()
     sand_trap_clock_of.clear()
@@ -1042,8 +1048,7 @@ func _spawn_extra_biome_pokemon(_records: Array[Dictionary], spread: bool = fals
                                 occupied.erase(origin)
                                 occupied[first] = id
                                 occupied[second] = new_id
-                                original.cell = first
-                                _wild_cell_moved(id, first)
+                                wild_population.move(id, first)
                                 var sprite := original.get("sprite") as Sprite2D
                                 if is_instance_valid(sprite): sprite.position = _cell_center(first)
                                 partner_id = new_id
@@ -3260,34 +3265,17 @@ func _refresh_ecology_relationships() -> Array[Dictionary]:
             "data": deployed_pokemon[cell]
         })
     var active_center := _player_cell()
-    # With no habitats out, only the player's square counts: most of the
-    # world's wild Pokemon are settled by these two comparisons.
-    var player_only := deployed_pokemon.is_empty()
-    # The cells near a habitat, once for this pass: asking every habitat about
-    # every wild Pokemon (_wild_ecology_is_active) was most of a pass that took
-    # the host 10 ms and more with a few dozen habitats out.
-    var near_habitat := {}
+    # The wild Pokemon near the player or a habitat (_wild_ecology_is_active),
+    # from the buckets of wild_population's grid those squares touch.
+    var squares: Array = [Vector3i(active_center.x, active_center.y, ECOLOGY_ACTIVE_RADIUS)]
     for raw_cell in deployed_pokemon:
-        var habitat_cell := Vector2i(raw_cell)
-        for y in range(-PokemonEcology.HABITAT_RADIUS, PokemonEcology.HABITAT_RADIUS + 1):
-            for x in range(-PokemonEcology.HABITAT_RADIUS, PokemonEcology.HABITAT_RADIUS + 1):
-                near_habitat[habitat_cell + Vector2i(x, y)] = true
-    for raw_id in wild_pokemon:
+        squares.append(Vector3i(raw_cell.x, raw_cell.y, PokemonEcology.HABITAT_RADIUS))
+    for slot in wild_population.slots_in(squares):
+        var raw_id := wild_population.ids[slot]
         var wild_data: Dictionary = wild_pokemon[raw_id]
         if bool(wild_data.get("burrowed", false)):
             continue
         var wild_cell: Vector2i = wild_data.get("cell", Vector2i.ZERO)
-        if player_only and (
-                absi(wild_cell.x - active_center.x) > ECOLOGY_ACTIVE_RADIUS
-                or absi(wild_cell.y - active_center.y) > ECOLOGY_ACTIVE_RADIUS
-            ):
-            continue
-        if (
-                (absi(wild_cell.x - active_center.x) > ECOLOGY_ACTIVE_RADIUS
-                or absi(wild_cell.y - active_center.y) > ECOLOGY_ACTIVE_RADIUS)
-                and not near_habitat.has(wild_cell)
-            ):
-            continue
         active_wild.append(wild_data)
         records.append({
             "kind": "wild", "key": raw_id,
@@ -4329,7 +4317,7 @@ func _clear_wild_pokemon() -> void:
         var sand_sprite: Sprite2D = data.get("burrow_sand_sprite") as Sprite2D
         if is_instance_valid(sand_sprite):
             sand_sprite.queue_free()
-    wild_pokemon.clear()
+    wild_population.clear()
     sand_trap_ids.clear()
     sand_trap_clocks.clear()
     sand_trap_clock_of.clear()
@@ -4641,8 +4629,7 @@ func _create_wild_pokemon(
     stored["aggro_player"] = bool(stored.get("aggro_player", source_record.get("aggressive", false)))
     stored["fed_until"] = float(stored.get("fed_until", 0.0))
     stored["flee_steps"] = int(stored.get("flee_steps", 0))
-    wild_pokemon[wild_id] = stored
-    _wild_cell_moved(wild_id, cell)
+    wild_population.add(wild_id, stored)
     _sand_trap_leave(wild_id, stored, false)
     if is_burrowed: _sand_trap_join(wild_id, stored)
     _update_pokemon_water_visual(stored)
@@ -4959,24 +4946,21 @@ func _update_wild_pokemon(delta: float) -> void:
     # Which Pokemon are inside a zone is worked out twice a second, not every
     # frame: with hundreds in the world, just asking each one cost 3-4 ms a
     # frame. One that wanders in or spawns is picked up within half a second.
+    # The grid of wild_population looks only at the buckets the zones touch.
     var now_msec := Time.get_ticks_msec()
     if now_msec - _watched_wild_at >= 500:
         _watched_wild_at = now_msec
         var zones: Array = []
         if online:
             for watcher in coordinator.wild.players.values():
-                zones.append([int(watcher.x), int(watcher.y), ECOLOGY_ACTIVE_RADIUS])
+                zones.append(Vector3i(int(watcher.x), int(watcher.y), ECOLOGY_ACTIVE_RADIUS + 2))
         else:
-            zones.append([player_cell.x, player_cell.y, ECOLOGY_ACTIVE_RADIUS])
+            zones.append(Vector3i(player_cell.x, player_cell.y, ECOLOGY_ACTIVE_RADIUS + 2))
         for habitat_cell in deployed_pokemon.keys():
-            zones.append([habitat_cell.x, habitat_cell.y, PokemonEcology.HABITAT_RADIUS])
+            zones.append(Vector3i(habitat_cell.x, habitat_cell.y, PokemonEcology.HABITAT_RADIUS + 2))
         _watched_wild_ids.clear()
-        for raw_id in wild_pokemon:
-            var at = wild_pokemon[raw_id].get("cell", Vector2i.ZERO)
-            for zone in zones:
-                if absi(at.x - zone[0]) <= zone[2] + 2 and absi(at.y - zone[1]) <= zone[2] + 2:
-                    _watched_wild_ids.append(int(raw_id))
-                    break
+        for slot in wild_population.slots_in(zones):
+            _watched_wild_ids.append(wild_population.ids[slot])
     for raw_id in _watched_wild_ids.duplicate():
         var wild_id = int(raw_id)
         var data = wild_pokemon.get(wild_id)
@@ -5127,8 +5111,7 @@ func _update_wild_pokemon(delta: float) -> void:
         var sprite = data.get("sprite") as Sprite2D
         var phase = 1 - int(data.get("anim_phase", 0))
         data["anim_phase"] = phase
-        data["cell"] = target
-        _wild_cell_moved(wild_id, target)
+        wild_population.move(wild_id, target)
         if online:coordinator.wild.mark_motion(wild_id)
         # The step's pace and facing are the Pokemon's own, sprite or not (a
         # dedicated server has none).
@@ -5164,18 +5147,12 @@ func _nearby_same_base_species_cell(
     ) -> Vector2i:
     var base_species := String(data.get("base_species", ""))
     var own_id := int(data.get("id", -1))
-    for raw_id in wild_pokemon.keys():
+    for raw_id in wild_population.ids_near(center, PokemonEcology.HABITAT_RADIUS):
         if int(raw_id) == own_id:
             continue
         var candidate: Dictionary = wild_pokemon[raw_id]
-        if String(candidate.get("base_species", "")) != base_species:
-            continue
-        var candidate_cell: Vector2i = candidate.get("cell", Vector2i.ZERO)
-        if (
-                absi(candidate_cell.x - center.x) <= PokemonEcology.HABITAT_RADIUS
-                and absi(candidate_cell.y - center.y) <= PokemonEcology.HABITAT_RADIUS
-            ):
-            return candidate_cell
+        if String(candidate.get("base_species", "")) == base_species:
+            return candidate.get("cell", Vector2i.ZERO)
     return Vector2i(-2147483648, -2147483648)
 
 func _remove_wild_pokemon(wild_id:int)->void:
@@ -5200,8 +5177,7 @@ func _remove_wild_pokemon(wild_id:int)->void:
     var sand_sprite: Sprite2D = data.get("burrow_sand_sprite") as Sprite2D
     if is_instance_valid(sand_sprite):
         sand_sprite.queue_free()
-    wild_pokemon.erase(wild_id)
-    if is_same(wild_index_of, wild_pokemon): _wild_unindex(wild_id)
+    wild_population.remove(wild_id)
 
 func _cardinal_direction(delta: Vector2i, away: bool) -> Vector2i:
     var direction := Vector2i.ZERO
@@ -5211,67 +5187,9 @@ func _cardinal_direction(delta: Vector2i, away: bool) -> Vector2i:
         direction = Vector2i(0, signi(delta.y))
     return -direction if away else direction
 
-## Wild Pokemon by cell: cell -> id, or an Array of ids when several share a
-## cell. It describes the wild_pokemon dictionary in wild_index_of and is
-## kept by _wild_cell_moved / _wild_unindex at every add, move and removal;
-## it is built again from wild_pokemon whenever that is another dictionary
-## or holds another number of Pokemon.
-var wild_by_cell := {}
-## id -> the cell it is indexed at.
-var wild_indexed_cell := {}
-var wild_index_of: Dictionary = {}
-
-func _wild_index_valid() -> bool:
-    return is_same(wild_index_of, wild_pokemon) and wild_indexed_cell.size() == wild_pokemon.size()
-
-func _wild_index_all() -> void:
-    wild_by_cell = {}
-    wild_indexed_cell = {}
-    wild_index_of = wild_pokemon
-    for raw_id in wild_pokemon:
-        _wild_index_add(int(raw_id), Vector2i(wild_pokemon[raw_id].get("cell", Vector2i(-1, -1))))
-
-func _wild_index_add(wild_id: int, cell: Vector2i) -> void:
-    wild_indexed_cell[wild_id] = cell
-    var at = wild_by_cell.get(cell)
-    if at == null: wild_by_cell[cell] = wild_id
-    elif at is Array: at.append(wild_id)
-    else: wild_by_cell[cell] = [at, wild_id]
-
-func _wild_unindex(wild_id: int) -> void:
-    if not wild_indexed_cell.has(wild_id): return
-    var cell: Vector2i = wild_indexed_cell[wild_id]
-    wild_indexed_cell.erase(wild_id)
-    var at = wild_by_cell.get(cell)
-    if at is Array:
-        at.erase(wild_id)
-        if at.size() == 1: wild_by_cell[cell] = at[0]
-    elif at == wild_id: wild_by_cell.erase(cell)
-
-## Call after every write of a wild Pokemon's "cell" (and after adding one).
-func _wild_cell_moved(wild_id: int, cell: Vector2i) -> void:
-    if not is_same(wild_index_of, wild_pokemon): return
-    _wild_unindex(wild_id)
-    _wild_index_add(wild_id, cell)
-
+## The first wild Pokemon on the cell in wild_pokemon's order, -1 if none.
 func _wild_id_at_cell(cell: Vector2i, ignored_id: int = -1) -> int:
-    if not _wild_index_valid(): _wild_index_all()
-    var at = wild_by_cell.get(cell)
-    if at == null: return -1
-    if at is Array: return _wild_id_at_cell_scan(cell, ignored_id)  # several: the first in wild_pokemon, as before
-    return -1 if at == ignored_id else at
-
-## The first wild Pokemon at the cell in wild_pokemon order (the index's
-## answer must equal this one).
-func _wild_id_at_cell_scan(cell: Vector2i, ignored_id: int = -1) -> int:
-    for raw_id in wild_pokemon.keys():
-        var wild_id := int(raw_id)
-        if wild_id == ignored_id:
-            continue
-        var data: Dictionary = wild_pokemon[raw_id]
-        if Vector2i(data.get("cell", Vector2i(-1, -1))) == cell:
-            return wild_id
-    return -1
+    return wild_population.id_at(cell, ignored_id)
 
 func _attack_wild_egg(cell:Vector2i)->void:
     var coordinator=get_parent().get("coop_game")
@@ -5420,17 +5338,10 @@ func _collect_wild_egg(cell:Vector2i)->void:
         egg_collected.emit(species)
         return
     var anger_count := 0
-    for raw_id in wild_pokemon.keys():
+    for raw_id in wild_population.ids_near(cell, PokemonEcology.PARENT_ALERT_RADIUS):
         var wild_id := int(raw_id)
         var pokemon: Dictionary = wild_pokemon[wild_id]
-        if bool(pokemon.get("burrowed", false)):
-            continue
-        var pokemon_cell: Vector2i = pokemon.get("cell", Vector2i.ZERO)
-        if (
-                absi(pokemon_cell.x - cell.x) > PokemonEcology.PARENT_ALERT_RADIUS
-                or absi(pokemon_cell.y - cell.y) > PokemonEcology.PARENT_ALERT_RADIUS
-                or not PokemonEcology.is_egg_parent_match(pokemon, data)
-            ):
+        if bool(pokemon.get("burrowed", false)) or not PokemonEcology.is_egg_parent_match(pokemon, data):
             continue
         pokemon["aggro_player"] = true
         pokemon["warned"] = true
@@ -5508,8 +5419,7 @@ func _update_sand_traps(delta: float) -> void:
     var ticks := delta * 60.0
     # Traps on a clock are passed over unless the player stands on them; the
     # rest (active ones) run the per-trap code, in the same order as before.
-    if not _wild_index_valid(): _wild_index_all()
-    var under = wild_by_cell.get(player_cell)
+    var under = wild_population.ids_at(player_cell)
     var ran: Array = []
     if sand_trap_clock_of.size() < sand_trap_ids.size() or under != null:
         var keys := sand_trap_ids.keys()
@@ -6657,12 +6567,9 @@ func begin_sleeping_bag(rest_texture: Texture2D = null) -> bool:
         world_message.emit("The grass is too thick to set up the SLEEPING BAG.")
         return false
 
-    for raw_wild in wild_pokemon.values():
-        var wild := raw_wild as Dictionary
-        var wild_cell: Vector2i = wild.get("cell", Vector2i.ZERO)
-        if maxi(absi(wild_cell.x - cell.x), absi(wild_cell.y - cell.y)) <= 2:
-            world_message.emit("A wild POKEMON is too close to sleep safely.")
-            return false
+    if not wild_population.ids_near(cell, 2).is_empty():
+        world_message.emit("A wild POKEMON is too close to sleep safely.")
+        return false
 
     respawn_cell = cell
     respawn_house.clear()
@@ -7672,7 +7579,7 @@ func _try_push_fenced_pokemon(cell: Vector2i, direction: Vector2i, require_fence
     var sprite := data.get("sprite") as Sprite2D
     if not is_instance_valid(sprite) or sprite.position.distance_to(_cell_center(cell)) > 1.5: return false
     data["cell"] = target
-    if not owned: _wild_cell_moved(wild_id, target)
+    if not owned: wild_population.move(wild_id, target)
     data["x"] = target.x
     data["y"] = target.y
     data["move_timer"] = 1.0
@@ -7856,12 +7763,7 @@ func nearby_wild_ids() -> Array:
     var now_msec := Time.get_ticks_msec()
     if now_msec - _near_wild_at >= 500:
         _near_wild_at = now_msec
-        _near_wild_ids.clear()
-        var here := _player_cell()
-        for raw_id in wild_pokemon:
-            var at = wild_pokemon[raw_id].get("cell", Vector2i.ZERO)
-            if absi(at.x - here.x) <= 44 and absi(at.y - here.y) <= 44:
-                _near_wild_ids.append(raw_id)
+        _near_wild_ids = wild_population.ids_near(_player_cell(), 44)
     return _near_wild_ids
 ## Planned escape routes of Pokemon running from a failed catch, by wild id.
 var _flee_routes := {}

@@ -10,9 +10,7 @@ static func deep_forest(world: Node, cell: Vector2i) -> bool:
         tile.route_belongs_to != null and tile.route_belongs_to.name.to_lower() == "deep_forest"))
 
 static func present(world: Node) -> bool:
-    for record in world.wild_pokemon.values():
-        if String(record.get("species", "")).to_lower() == "mew": return true
-    return false
+    return world.wild_population.count_species("mew") > 0
 
 static func eligible(world: Node, cell: Vector2i) -> bool:
     return world.generated and world.gameplay_enabled and world.active_area_id == "OVERWORLD" \

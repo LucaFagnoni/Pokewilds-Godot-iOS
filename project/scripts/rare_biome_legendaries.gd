@@ -22,9 +22,7 @@ static func captured(world: Node, species: String) -> void:
 static func eligible(world: Node, species: String, cell: Vector2i) -> bool:
     if not world.generated or not world.gameplay_enabled or world.active_area_id != "OVERWORLD" or world.active_field_move == "FLY": return false
     if world.event_progress.get(SAVE_KEY, {}).get(species, false) or not habitat(world, species, cell): return false
-    for record in world.wild_pokemon.values():
-        if String(record.get("species", "")) == species: return false
-    return true
+    return world.wild_population.count_species(species) == 0
 
 static func on_step(world: Node, cell: Vector2i) -> void:
     for species: String in HABITATS:

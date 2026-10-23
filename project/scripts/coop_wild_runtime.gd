@@ -167,10 +167,7 @@ func _contact_candidates(world:Node)->Array:
     var now:=Time.get_ticks_msec()
     if now-_contact_at>=CONTACT_REFRESH_MS or not is_same(_contact_herd,world.wild_pokemon) or _contact_size!=world.wild_pokemon.size() or maxi(absi(here.x-_contact_cell.x),absi(here.y-_contact_cell.y))>2:
         _contact_at=now;_contact_cell=here;_contact_herd=world.wild_pokemon;_contact_size=world.wild_pokemon.size()
-        _contact_ids.clear()
-        for wild_id in world.wild_pokemon:
-            var at:Vector2i=world.wild_pokemon[wild_id].get("cell",_contact_cell+Vector2i(CONTACT_REACH*4,0))
-            if maxi(absi(at.x-here.x),absi(at.y-here.y))<=CONTACT_REACH:_contact_ids.append(wild_id)
+        _contact_ids=world.wild_population.ids_near(here,CONTACT_REACH)
     return _contact_ids
 
 func contact()->void:
@@ -477,7 +474,7 @@ func apply_record(wild_id:int,record:Variant)->void:
     var before:Vector2i=data.cell
     var target=Vector2i(int(record.x),int(record.y))
     var audio_tick=data.get("aggro_audio_tick",-1.0)
-    data.merge(record,true);data["cell"]=target;world._wild_cell_moved(wild_id,target);world._sand_trap_merged(wild_id)
+    data.merge(record,true);data["cell"]=target;world.wild_population.refresh(wild_id);world._sand_trap_merged(wild_id)
     data["aggro_audio_tick"]=audio_tick
     var sprite=data.get("sprite") as Sprite2D
     if is_instance_valid(sprite) and before!=target:

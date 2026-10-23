@@ -37,9 +37,11 @@ static func habitat(tile: SourceTile, group: String) -> bool:
 static func available(world: Node, cell: Vector2i, group: String, occupied: Dictionary = {}) -> bool:
     if not tile_allows(world.exact_world.tile_at(cell), group) or not cell_free(world, cell): return false
     if not occupied.is_empty(): return not occupied.has(cell)
-    for record in world.wild_pokemon.values():
-        if record.get("cell", Vector2i(-99999, -99999)) == cell: return false
-        var sprite := record.get("sprite") as Sprite2D
+    if world._wild_id_at_cell(cell) >= 0: return false
+    # A Pokemon still walking from a cell next to this one is drawn on it: the
+    # ones within two cells, not every one in the world.
+    for id in world.wild_population.ids_near(cell, 2):
+        var sprite := (world.wild_pokemon[id] as Dictionary).get("sprite") as Sprite2D
         if is_instance_valid(sprite) and sprite.position.distance_to(world._cell_center(cell)) < 15.0: return false
     return true
 
