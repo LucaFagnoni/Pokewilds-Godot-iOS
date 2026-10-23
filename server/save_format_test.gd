@@ -8,6 +8,7 @@ extends SceneTree
 
 const Paths = preload("res://scripts/game_data_paths.gd")
 const WorldSaves = preload("res://scripts/world_saves.gd")
+const AreaState = preload("res://scripts/area_state.gd")
 const FIXTURES := "res://../server/fixtures/sp_v2"
 
 var main: Node
@@ -85,8 +86,12 @@ func _initialize() -> void:
     for key in ["caught_pokemon", "pokemon_storage", "inventory", "player_name", "adjacent_worlds"]:
         check(_plain(loaded[key]) == old[key], "%s as saved" % key)
     check(_structures(loaded) == _structures(old), "structures as saved: %s" % [_structures(loaded)])
+    # The world holds its cell keys as Vector2i; as text they are the save's.
+    # (A load adds the day's dig sites to the interior mutations.)
+    var loaded_text := AreaState.text_keys(loaded.crafting_state)
     for key in ["terrain_changes", "removed_resources"]:
-        check(_plain(loaded.crafting_state[key]) == old.crafting_state[key], "%s as saved" % key)
+        check(_plain(loaded_text[key]) == old.crafting_state[key], "%s as saved" % key)
+    check(loaded.crafting_state.source_interior_mutations.keys().all(func(key): return key is Vector2i), "cell keys held as Vector2i")
     var seen := {}
     for cell in _discovered(loaded.crafting_state.discovered_cells): seen[cell] = true
     check(_discovered(old.crafting_state.discovered_cells).all(func(cell): return seen.has(cell)), "every discovered cell still discovered")
@@ -107,6 +112,8 @@ func _initialize() -> void:
     check(written.size() * 3 < text_size, "binary is less than a third of JSON: %d %d" % [written.size(), text_size])
     check(saves.write(save, data) == OK and saves.read(save) == data, "a binary save reads back exactly as written")
     check(var_to_bytes(saves.read(save)) == var_to_bytes(data), "with its types and key order")
+    var held: Dictionary = saves.read(save).crafting_state
+    check(held.terrain_changes.keys().all(func(key): return key is Vector2i) and held.removed_resources.all(func(key): return key is Vector2i)         and not held.source_interior_mutations.is_empty() and held.source_interior_mutations.keys().all(func(key): return key is Vector2i), "the binary save keeps the cells as Vector2i")
     check(saves.read_summary(save) == WorldSaves.summary(data), "its head is its summary")
 
     # Loaded again, the same game.
@@ -118,6 +125,8 @@ func _initialize() -> void:
     for key in ["caught_pokemon", "pokemon_storage", "inventory", "adjacent_worlds"]:
         check(_plain(reloaded[key]) == _plain(data[key]), "%s round-trips" % key)
     check(_structures(reloaded) == _structures(data), "structures round-trip")
+    for key in ["terrain_changes", "removed_resources"]:
+        check(reloaded.crafting_state[key] == data.crafting_state[key], "%s round-trip" % key)
     check(_plain(reloaded.crafting_state.discovered_cells) == _plain(data.crafting_state.discovered_cells), "discovered cells round-trip")
 
     # Killed while writing, or cut: the save before is read. A save from a

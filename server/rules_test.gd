@@ -99,7 +99,7 @@ func _initialize() -> void:
     var cut := FieldCut.apply(state, player, {"move":"CUT", "cell":Vector2i(1, 1)}, rng(1))
     check(cut.ok and int(cut.grant.get("GRASS", 0)) == 1, "CUT grass gives GRASS")
     check(names(state, Vector2i(1, 1))[0] == "green1", "the grass is cut to the ground beside it")
-    check(state.source_interior_mutations.get("1,1", {}).get("kind") == "TILE_NAMES", "the cut is saved")
+    check(state.source_interior_mutations.get(Vector2i(1, 1), {}).get("kind") == "TILE_NAMES", "the cut is saved")
     var dirty := state.take_dirty()
     check(dirty.size() == 1 and dirty[0][0] == "source_interior_mutations", "only the mutation is dirty")
     # A tree: one LOG; a large tree needs an evolved Pokemon.
@@ -126,12 +126,12 @@ func _initialize() -> void:
     # Berries: the route's Pokemon first (it is only read), the berry once it has gone.
     var berry := FieldDig.apply(state, player, {"action":"berry", "cell":Vector2i(9, 1)}, rng(1))
     check(berry.ok and berry.grant.is_empty() and berry.events.any(func(event): return event[0] == "encounter" and event[4] == true), "an agitated tree: a Pokemon, no berry")
-    check(state.source_interior_mutations.get("9,1", {}).get("kind") == "BERRY_AGITATED", "online, the tree is marked agitated for every player")
+    check(state.source_interior_mutations.get(Vector2i(9, 1), {}).get("kind") == "BERRY_AGITATED", "online, the tree is marked agitated for every player")
     state.edit(Vector2i(9, 1)).set_names("green1", "berrytree_pecha_full")
     (state.tile_at(Vector2i(9, 1)).route_belongs_to as SourceRoute).stored_pokemon.clear()
     berry = FieldDig.apply(state, player, {"action":"berry", "cell":Vector2i(9, 1)}, rng(1))
     check(berry.ok and berry.grant == {"PECHA BERRY":1} and names(state, Vector2i(9, 1))[1] == "berrytree_pecha_empty", "a berry picked")
-    check(state.source_plant_farms.has("9,1"), "the bush regrows (a farm record)")
+    check(state.source_plant_farms.has(Vector2i(9, 1)), "the bush regrows (a farm record)")
     state.take_dirty()
 
     # DIG: a hole and its material; the cracked site buries its loot; refusals.
@@ -143,7 +143,7 @@ func _initialize() -> void:
     check(not dig.ok and dig.reason == "already_a_hole", "no second hole")
     dig = FieldDig.apply(state, player, {"action":"dig", "cell":Vector2i(5, 3)}, rng(1))
     check(names(state, Vector2i(4, 3))[1] == "hole1_E" and names(state, Vector2i(5, 3))[1] == "hole1_W", "holes side by side join")
-    check(state.source_interior_mutations.get("4,3", {}).get("upper") == "hole1_E", "the joined edge is saved on the neighbour")
+    check(state.source_interior_mutations.get(Vector2i(4, 3), {}).get("upper") == "hole1_E", "the joined edge is saved on the neighbour")
     dig = FieldDig.apply(state, player, {"action":"dig", "cell":Vector2i(11, 1)}, rng(5))
     check(dig.ok and names(state, Vector2i(11, 1))[2] == "LEAF STONE", "a fossil site buries its loot")
     var take := FieldDig.apply(state, player, {"action":"dig", "cell":Vector2i(11, 1)}, rng(5))
@@ -161,7 +161,7 @@ func _initialize() -> void:
     check(names(state, Vector2i(6, 4))[1].begins_with("hole1_N"), "a hole by the water joins it (north is +Y)")
     var plant := FieldDig.apply(state, {"area_id":"OVERWORLD", "now":2000.0, "bag":{"BERRY SEED":1}}, {"action":"plant", "cell":Vector2i(8, 7), "item":"BERRY SEED"}, rng(1))
     check(plant.ok and plant.consume == {"BERRY SEED":1} and names(state, Vector2i(8, 7))[1] == "berry_planted", "a berry seed planted, paid")
-    check(int(state.source_plant_farms.get("8,7", {}).get("day", -1)) == FieldDig.plant_day(2000.0), "the farm counts its days from now")
+    check(int(state.source_plant_farms.get(Vector2i(8, 7), {}).get("day", -1)) == FieldDig.plant_day(2000.0), "the farm counts its days from now")
 
     # The same commands on the same area with the same numbers: the same result.
     var script := [["field_cut", {"move":"CUT", "cell":Vector2i(1, 1)}], ["field_dig", {"action":"dig", "cell":Vector2i(2, 7)}],
@@ -324,7 +324,7 @@ func _house() -> void:
     check(not wall.ok and said(wall, "WALL can only be built outside."), "no outside WALL in a house, said why")
     var ctx: Dictionary = inside.house
     var origin := Vector2i(state.bounds.size.x + 9, 5)
-    check(ctx.origin == origin and ctx.size == Vector2i(3, 2) and int(state.built_house_origins.get("9,7", -1)) == 5, "its room lies off the map, its origin recorded: %s" % [ctx.origin])
+    check(ctx.origin == origin and ctx.size == Vector2i(3, 2) and int(state.built_house_origins.get(Vector2i(9, 7), -1)) == 5, "its room lies off the map, its origin recorded: %s" % [ctx.origin])
     check(ctx.interior.has(origin) and ctx.interior.has(origin + Vector2i(2, 1)) and ctx.walls.has(origin + Vector2i(1, -1)), "its floor and rear wall")
     check(ctx.exits.has(origin + Vector2i(1, 2)), "its door is a way out below the room")
     var bed := Build.apply(state, inside, {"recipe":"BED", "cell":origin + Vector2i(0, 1)}, rng(1))

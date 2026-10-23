@@ -5,6 +5,9 @@ the version description in Feather. Write it for players, not developers.
 
 ## Next version
 
+### Improvements
+- **Long-played worlds load faster:** the ground you have cut, dug, planted and built on is kept in a lighter form. Loading a world with a lot of it takes about 40% less time, saving it is quicker, and the short pause it caused once a second is less than half as long. Old saves still load as before.
+
 ## 0.10.419
 
 ### New

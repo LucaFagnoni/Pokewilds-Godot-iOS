@@ -53,9 +53,6 @@ static func _bundle(out: Dictionary, items: Dictionary) -> void:
     out.events.append(["bundle", items.duplicate(true)])
     for item in items: out.grant[item] = int(out.grant.get(item, 0)) + maxi(1, int(items[item]))
 
-static func _cell_key(cell: Vector2i) -> String:
-    return TileRules.cell_key(cell)
-
 ## A grass tuft cut (a planted crop harvested first).
 static func _grass(state, cell: Vector2i, out: Dictionary, rng: RandomNumberGenerator) -> void:
     if harvest_crop(state, cell, out, rng):
@@ -72,16 +69,15 @@ static func _grass(state, cell: Vector2i, out: Dictionary, rng: RandomNumberGene
         var replacement := TileRules.cuttable_grass_replacement(state, tile, cell)
         tile = state.edit(cell)
         tile.set_names(String(replacement.get("base", tile.name)), String(replacement.get("upper", "")))
-        state.put("source_interior_mutations", _cell_key(cell), {"kind":"TILE_NAMES", "base":tile.name, "upper":tile.name_upper})
+        state.put("source_interior_mutations", cell, {"kind":"TILE_NAMES", "base":tile.name, "upper":tile.name_upper})
         TileRules.unblock_ground(state, cell)
         out.events.append(["refresh"])
     out.ok = true
 
 ## A crop grown on `cell` (source_plant_farming.gd), harvested: false when there is none.
 static func harvest_crop(state, cell: Vector2i, out: Dictionary, rng: RandomNumberGenerator) -> bool:
-    var key := _cell_key(cell)
-    if not state.source_plant_farms.has(key): return false
-    var record: Dictionary = state.source_plant_farms[key]
+    if not state.source_plant_farms.has(cell): return false
+    var record: Dictionary = state.source_plant_farms[cell]
     var rewards: Dictionary = record.get("rewards", {})
     var tile: SourceTile = state.tile_at(cell)
     var is_grass := tile.name.begins_with("grass") or tile.name_upper.begins_with("grass")
@@ -101,8 +97,8 @@ static func harvest_crop(state, cell: Vector2i, out: Dictionary, rng: RandomNumb
         tile.set_names(String(replacement.base), String(replacement.upper))
     else:
         tile.set_names(tile.name, "")
-    state.put("source_interior_mutations", key, {"kind":"TILE_NAMES", "base":tile.name, "upper":""})
-    state.drop("source_plant_farms", key)
+    state.put("source_interior_mutations", cell, {"kind":"TILE_NAMES", "base":tile.name, "upper":""})
+    state.drop("source_plant_farms", cell)
     out.events.append(["sound", "cut1"])
     out.events.append(["refresh"])
     return true
@@ -172,7 +168,7 @@ static func harvest(state, player: Dictionary, cell: Vector2i, move: String, out
         var replacement := TileRules.cut_resource_replacement(state, tile, cell)
         tile = state.edit(cell)
         tile.set_names(String(replacement.get("base", tile.name)), String(replacement.get("upper", "")))
-        state.put("source_interior_mutations", _cell_key(cell), {"kind":"TILE_NAMES", "base":tile.name, "upper":tile.name_upper})
+        state.put("source_interior_mutations", cell, {"kind":"TILE_NAMES", "base":tile.name, "upper":tile.name_upper})
         TileRules.unblock_ground(state, cell)
     out.events.append(["refresh"])
     if move in ["SMASH", "HEADBUTT"]:
@@ -199,5 +195,5 @@ static func _cut_large_tree1(state, anchor: Vector2i) -> void:
             replacement = "green1"
         part = state.edit(part_cell)
         part.set_names(replacement, "")
-        state.put("source_interior_mutations", _cell_key(part_cell), {"kind":"TILE_NAMES", "base":replacement, "upper":""})
+        state.put("source_interior_mutations", part_cell, {"kind":"TILE_NAMES", "base":replacement, "upper":""})
         state.drop("blocked", part_cell)

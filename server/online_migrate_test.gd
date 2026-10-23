@@ -129,7 +129,7 @@ func _check_area(sim, records: Dictionary) -> void:
         if not group in AreaState.GROUPS: continue
         var item := String(key).get_slice("/", 3).uri_decode()
         var value = Delta.decode(String(records[key])) if records[key] is String else null
-        var at: Variant = TileRules.key_cell(item) if group == "structures" else item
+        var at: Variant = AreaState.held_key(group, item)
         var held: bool = state.get(group).has(at)
         if value == null and held:
             # A hole's neighbour rejoining it writes its own mutation: not a stray.
@@ -151,7 +151,7 @@ func _check_area(sim, records: Dictionary) -> void:
         var tile: SourceTile = state.tile_at(cell)
         if tile == null or not TileRules.dig_surface_ok(tile) or TileRules.accepts_soil(state, cell) or TileRules.is_mountain(tile): continue
         if state.structures.has(cell) or TileRules.exact_resource_anchor(state, cell).x > -2147483648 or not tile.has_item.is_empty(): continue
-        if state.source_interior_mutations.has(TileRules.cell_key(cell)): continue
+        if state.source_interior_mutations.has(cell): continue
         state.take_dirty()
         var rng := RandomNumberGenerator.new()
         rng.seed = 5

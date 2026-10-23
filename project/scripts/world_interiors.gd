@@ -838,8 +838,7 @@ func _canonical_house_door(door: Vector2i) -> Vector2i:
     var cells: Array = world._built_house_state(door).get("cells", [])
     # Origin records retain creation order even when a door is cut/rebuilt.
     # Looking through structure order instead can rename the saved house.
-    for raw_key in world.built_house_origins:
-        var saved_door := world._cell_from_key(String(raw_key))
+    for saved_door: Vector2i in world.built_house_origins:
         if saved_door in cells and String(world.built_structures.get(saved_door, {}).get("name", "")) == "DOOR":
             return saved_door
     for raw_cell in world.built_structures:
@@ -855,20 +854,20 @@ func _canonical_house_door(door: Vector2i) -> Vector2i:
 func outdoor_map_position(at: Vector2) -> Vector2:
     if world.active_area_id != "OVERWORLD" or at.x < float(world.map_w + 8) or world.built_house_origins.is_empty():
         return at
-    var door_key := ""
+    var door := Vector2i.ZERO
     var nearest := -2147483648
-    for key in world.built_house_origins:
+    for key: Vector2i in world.built_house_origins:
         var origin_y := int(world.built_house_origins[key])
         if float(origin_y - 2) <= at.y and origin_y > nearest:
             nearest = origin_y
-            door_key = String(key)
-    if door_key.is_empty():
+            door = key
+    if nearest == -2147483648:
         return at
-    return Vector2(world._cell_from_key(door_key)) + Vector2(0.5, 0.5)
+    return Vector2(door) + Vector2(0.5, 0.5)
 
 func _house_origin_for(door: Vector2i) -> Vector2i:
     var canonical := _canonical_house_door(door)
-    var key := world._cell_key(canonical)
+    var key := canonical
     if not world.built_house_origins.has(key):
         var next_y := 5
         for existing in world.built_house_origins.values():
@@ -878,7 +877,7 @@ func _house_origin_for(door: Vector2i) -> Vector2i:
     for raw_cell in world._built_house_state(door).get("cells", []):
         var cell := Vector2i(raw_cell)
         if String(world.built_structures.get(cell, {}).get("name", "")) == "DOOR":
-            world.area.put("built_house_origins", world._cell_key(cell), origin_y)
+            world.area.put("built_house_origins", cell, origin_y)
     return Vector2i(world.map_w + 9, origin_y)
 
 func house_door_transition(action: String, change_area: Callable) -> void:

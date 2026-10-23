@@ -30,9 +30,10 @@ static func capture_personal(world:Node)->Dictionary:
         "respawn_x":world.respawn_cell.x,"respawn_y":world.respawn_cell.y}
 
 ## copy false for a crafting state made just for this (get_crafting_save_state):
-## nothing else holds it, so it is not copied again.
+## nothing else holds it, so it is not copied again. The shared part has its
+## cell keys as "x,y" text, as the records and area snapshots have always had.
 static func split(crafting:Dictionary,copy:bool=true)->Dictionary:
-    var shared=crafting.duplicate(true) if copy else crafting.duplicate()
+    var shared=preload("res://scripts/area_state.gd").text_keys(crafting.duplicate(true) if copy else crafting)
     var personal:Dictionary={}
     for key in PERSONAL_KEYS:
         if shared.has(key):personal[key]=shared[key];shared.erase(key)
