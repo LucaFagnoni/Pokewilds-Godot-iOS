@@ -13,7 +13,9 @@ extends Node
 ## they are read whole), any other change as a commit of its records (not
 ## journaled when it is only wandering). What others' commands change (a claim,
 ## a battle's end, a spawn, a Pokemon left in, taken from or harvested in a
-## habitat, an egg taken) reaches the AreaSim with their commit (committed).
+## habitat, an egg taken) reaches the AreaSim with their commit (committed),
+## as does an item dropped on its ground or picked up (it blocks its cell, as
+## in a World).
 ## Players then neither run nor send any area's Pokemon. Its roaming Megas,
 ## and Mega Gengar at night, step there too (biome_megas.gd and
 ## source_forest_boss.gd step_at), and a horde called there comes there
@@ -241,15 +243,19 @@ func _horde(area:String,sim)->void:
 func _begin(area:String,sim)->Beat:
     var beat:=Beat.new()
     beat.sim=sim
+    # The items on its ground are read again with its Pokemon (_scan).
+    for key in sim.drops.keys():sim.apply_drop(key,null)
     beat.scan=game.state.records.keys()
     _beats[area]=beat
     return beat
 
 ## A slice of the records looked through, until `deadline`, for the area's
-## Pokemon and whether its Mega Gengar is gone for good: true once all are.
+## Pokemon, the items dropped on its ground (they block their cells: AreaSim
+## apply_drop) and whether its Mega Gengar is gone for good: true once all are.
 func _scan(area:String,beat:Beat,deadline:int)->bool:
     var own:="world/"+area+"/"
     var results:="event_result/"+area+"/"
+    var dropped:="drop/"+area+"|"
     var records:Dictionary=game.state.records
     while beat.scanned<beat.scan.size():
         if beat.scanned&255==0 and Time.get_ticks_usec()>=deadline:return false
@@ -257,6 +263,7 @@ func _scan(area:String,beat:Beat,deadline:int)->bool:
         beat.scanned+=1
         if key.begins_with(own):
             if key.get_slice("/",2) in AreaSim.POPULATION:beat.found.append(key)
+        elif key.begins_with(dropped):beat.sim.apply_drop(key,records.get(key))
         elif key.begins_with(results):
             var result=records.get(key)
             if result is Dictionary and result.get("cleared",false) and String(result.get("context",{}).get("id",""))=="mega_gengar":beat.gengar_done=true
@@ -413,6 +420,10 @@ func committed(commit:Dictionary)->void:
         var key:=String(change.get("key",""))
         if key.begins_with("event_result/"):
             _event_result(key.get_slice("/",1),change.get("after"))
+            continue
+        if key.begins_with("drop/"):
+            var dropped:Beat=_beats.get(key.get_slice("/",1).get_slice("|",0))
+            if dropped!=null:dropped.sim.apply_drop(key,change.get("after"))
             continue
         var claim:=key.begins_with("wild_claim/")
         if not claim and not key.begins_with("world/"):continue

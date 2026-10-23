@@ -365,7 +365,10 @@ static func reference_level(player_party: Array) -> int:
     return roundi((levels[middle - 1] + levels[middle]) * 0.5)
 
 static func wild_level(player_party: Array, source_level: int) -> int:
-    var reference := reference_level(player_party)
+    return wild_level_at(reference_level(player_party), source_level)
+
+## wild_level for a party of reference level `reference` (reference_level).
+static func wild_level_at(reference: int, source_level: int) -> int:
     return clampi(maxi(1, source_level), maxi(2, reference - 3), mini(100, reference + 1))
 
 ## Sets up a single-player battle from its (prepared) context: the enemy

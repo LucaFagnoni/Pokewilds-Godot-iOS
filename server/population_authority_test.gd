@@ -10,10 +10,13 @@
 # server has it, a catch or a friendly one recruited takes it away, a habitat
 # Pokemon called back after it walked on (its step not yet sent) is gone and
 # not sent back, one left in a habitat is run there, an egg taken angers its
-# parents. Authority: the server is every area's (coop_state.gd
-# fixed_authority) whoever comes and goes; with players as authorities (a
-# phone hosting) an area passes to the next player with a new epoch and the
-# one before may no longer send it.
+# parents, an item dropped on the ground blocks its cell as in a World. A new
+# area made by the server gets its first Pokemon, Megas and Mega Gengar from
+# its seed (server_area_maker.gd first_population, the same each time), and
+# its player's copy read from the records is the server's. Authority: the
+# server is every area's (coop_state.gd fixed_authority) whoever comes and
+# goes; with players as authorities (a phone hosting) an area passes to the
+# next player with a new epoch and the one before may no longer send it.
 # Run: godot --headless --path project -s ../server/population_authority_test.gd
 #      (headless needs project/override.cfg: [physics] 2d/physics_engine="Dummy")
 extends SceneTree
@@ -28,6 +31,8 @@ const WildPopulation = preload("res://scripts/wild_population.gd")
 const Wire = preload("res://scripts/area_state.gd")
 const Authority = preload("res://scripts/coop_population_authority.gd")
 const Hordes = preload("res://scripts/coop_horde_runtime.gd")
+const Maker = preload("res://scripts/server_area_maker.gd")
+const PopulationRules = preload("res://scripts/rules/population_rules.gd")
 const AREAS := ["1,0", "0,1"]
 const PLAYERS := {"1,0": "alice", "0,1": "bob"}
 const SPECIES := ["rattata", "pidgey", "caterpie", "zubat", "oddish", "sentret"]
@@ -246,6 +251,16 @@ func _same(area: String, what: String) -> void:
     if eggs != copy.eggs: wrong.append(["eggs", eggs, copy.eggs])
     check(wrong.is_empty(), "%s: area %s as the server has it on its player's game (%s)" % [what, area, str(wrong).left(400)])
 
+## Nothing on `cell` of the server's area, and `species` may step there.
+static func _free(sim: AreaSim, species: String, cell: Vector2i) -> bool:
+    return PopulationRules.can_enter(sim.state, species, cell) and sim.state.wild.id_at(cell) < 0 \
+        and not sim.state.habitat.records.has(cell) and not sim.state.eggs.records.has(cell)
+
+## A dropped item blocks `cell` on the server's area.
+static func _dropped(sim: AreaSim, cell: Vector2i) -> bool:
+    var blocker = sim.state.blocked.get(cell)
+    return blocker is String and blocker == AreaSim.DROPPED
+
 func _initialize() -> void:
     create_timer(300.0).timeout.connect(func(): printerr("POPULATION AUTHORITY TEST FAIL: timed out"); quit(2))
     await process_frame
@@ -424,6 +439,37 @@ func _initialize() -> void:
     check(_sim("0,1").state.eggs.size() == 0, "the egg is gone from the server's area")
     _same("0,1", "after an egg is taken")
 
+    # An item dropped on the ground blocks its cell for the server's Pokemon as
+    # it does in a World (source_dropped_items.gd): one with dropped items on
+    # every side stays where it is; picked up, the cells are free again.
+    var sides := [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]
+    var boxed := -1
+    var box_cell := Vector2i(-1, -1)
+    for wild_id in sim.state.wild.records:
+        var at: Vector2i = sim.state.wild.records[wild_id].cell
+        var kind := String(sim.state.wild.records[wild_id].species)
+        if sides.all(func(step): return _free(sim, kind, at + step)):
+            boxed = wild_id
+            box_cell = at
+            break
+    check(boxed >= 0, "a wild Pokemon with room on every side")
+    var boxed_species := String(sim.state.wild.records[boxed].species)
+    var dropped: Array = []
+    for index in sides.size():
+        var at: Vector2i = box_cell + sides[index]
+        dropped.append(state.change("drop/1,0|OVERWORLD/test%d" % index, {"item": "POKE BALL", "amount": 1, "area": "1,0|OVERWORLD", "x": at.x, "y": at.y}))
+    game._committed(state.transact("alice", "drop1", dropped))
+    check(sides.all(func(step): return _dropped(sim, box_cell + step) and not PopulationRules.can_move_between(sim.state, boxed_species, box_cell, box_cell + step)),
+        "a dropped item blocks its cell on the server")
+    _run(10.0)
+    check(sim.state.wild.has(boxed) and sim.state.wild.records[boxed].cell == box_cell, "with dropped items on every side, it stays where it is")
+    var picked: Array = []
+    for index in sides.size(): picked.append(state.change("drop/1,0|OVERWORLD/test%d" % index, null))
+    game._committed(state.transact("alice", "pickup1", picked))
+    check(sides.all(func(step): return not sim.state.blocked.has(box_cell + step)), "picked up, its cells are free again")
+    _run(2.0)
+    _same("1,0", "after items dropped and picked up")
+
     # The roaming Megas, and Mega Gengar at night, step on the server; one in
     # a battle waits; one caught leaves for good.
     var megas_key := "world/1,0/event_progress/biome_megas"
@@ -476,6 +522,60 @@ func _initialize() -> void:
     check(members.all(func(id): return state.records.has(Population.record_key("1,0", int(id)))), "and in the records")
     _run(2.0)
     _same("1,0", "after a horde came")
+
+    # A new area made by the server: its first Pokemon, roaming Megas and Mega
+    # Gengar placed from its seed as a World places them (server_area_maker.gd
+    # first_population), the same each time; written into the records as a
+    # new area's snapshot is (coop_world_delta.gd seed); run by the server
+    # once its player is there, whose copy read from the records is the
+    # server's. An item dropped there before the server began it blocks too.
+    var fresh := "2,0"
+    var made := area_sim(fresh)
+    var tiles = made.state.tiles
+    tiles.spawn_cell = Vector2i(2, 2)
+    var spawns := {}
+    for index in 10:
+        spawns[index] = {"name": ["oddish", "pidgey", "caterpie", "rattata", "sentret"][index % 5], "level": 6,
+            "position": Vector2i(8 + (index % 5) * 4, 6 + (index / 5) * 6) * 16}
+    tiles.pokemon = spawns
+    tiles.burrowed_pokemon = [{"name": "trapinch", "level": 22, "is_trapping": true, "position": Vector2i(20, 26) * 16}]
+    var at_once := func(work: Callable): return work.call()
+    var made_first: Dictionary = await Maker.first_population(tiles, 4242, 0, game.clock_seconds, Callable(), at_once)
+    var again: Dictionary = await Maker.first_population(tiles, 4242, 0, game.clock_seconds, Callable(), at_once)
+    check(Delta.encode(made_first) == Delta.encode(again), "a new area gets the same first Pokemon from the same seed")
+    var newcomers: Array = made_first.get("wild_pokemon", [])
+    var mated := newcomers.filter(func(record): return not String(record.get("mate_id", "")).is_empty()).size()
+    var trapinch := newcomers.filter(func(record): return record.species == "trapinch" and bool(record.get("burrowed", false))).size()
+    check(newcomers.size() >= 11 and mated >= 2 and trapinch == 1,
+        "its source Pokemon, mates and burrowed Trapinch (%d Pokemon, %d mated, %d Trapinch)" % [newcomers.size(), mated, trapinch])
+    var events: Dictionary = made_first.get("event_progress", {})
+    check(events.get("biome_megas", {}).get("venusaur", {}).has("x") and events.get("biome_megas", {}).get("gyarados", {}).has("x"),
+        "its roaming Megas in their habitats (%s)" % str(events.get("biome_megas", {})).left(300))
+    check(events.get("mega_gengar_forest", {}).has("x"), "Mega Gengar in a forest clearing")
+    var taken_cells := {}
+    for record in newcomers: taken_cells[Vector2i(int(record.x), int(record.y))] = true
+    var early := Vector2i(3, 27)
+    while taken_cells.has(early): early.x += 1
+    var seeded: Array = [state.change("world_ready/" + fresh, true), state.change("area/" + fresh, {"seed": 4242, "size": 0, "sha256": "y"}),
+        state.change("drop/%s|OVERWORLD/early" % fresh, {"item": "POTION", "amount": 1, "area": fresh + "|OVERWORLD", "x": early.x, "y": early.y})]
+    var flat := Delta.flatten(made_first)
+    for key in flat: seeded.append(state.change("world/" + fresh + "/" + key, flat[key]))
+    check(state.transact("server", "fresh1", seeded).get("ok", false), "the new area's records are written")
+    # The server's AreaSim of it, its overlays laid from the records (AreaSim.build).
+    made.lay_records({}, state.records)
+    game.rules.sims[fresh] = made
+    state.enroll("dan", {"name": "dan"})
+    state.enter("dan", fresh)
+    game.visuals.last_packets["dan"] = {"area": fresh, "layer": "OVERWORLD", "cell_x": 2, "cell_y": 2, "battle": false,
+        "visual": {"move": ""}, "field_level": 1, "party_level": 10}
+    copies[fresh] = _copy_of(fresh)
+    _run(1.0)
+    check(made.populated and made.state.wild.size() == newcomers.size(), "the server runs them (%d of %d)" % [made.state.wild.size(), newcomers.size()])
+    var venusaur: Dictionary = events.biome_megas.venusaur
+    check(made.state.interactables.get(Vector2i(int(venusaur.x), int(venusaur.y))) == "SPECIAL:" + String(venusaur.species), "its Megas keep their cells there")
+    check(_dropped(made, early), "an item dropped before the server began the area blocks its cell")
+    _run(20.0)
+    _same(fresh, "a new area after 20 s")
 
     # The server stays the authority whoever comes and goes.
     state.enroll("carol", {"name": "carol"})

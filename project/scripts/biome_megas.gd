@@ -12,6 +12,7 @@ const GROUPS := {
     "kangaskhan": ["mega_kangaskhan"]
 }
 const DIRECTIONS := [Vector2i.UP, Vector2i.RIGHT, Vector2i.DOWN, Vector2i.LEFT]
+const PopulationRules = preload("res://scripts/rules/population_rules.gd")
 
 static func is_mega(id: String) -> bool:
     return id in ["mega_charizard_x", "mega_charizard_y", "mega_venusaur", "mega_blastoise", "mega_gyarados", "mega_sharpedo", "mega_kangaskhan"]
@@ -138,8 +139,8 @@ static func choose_cell(world: Node, group: String) -> Variant:
         prepared.erase(group)
         return cell
     var found := {group: []}
-    _find_open(world, found, 0, world.exact_world.tiles.flags.size(), {})
-    return _pick(world, found[group], {})
+    _find_open(world.area, world, found, 0, world.exact_world.tiles.flags.size(), {})
+    return _pick(world.area, world, found[group], {})
 
 ## Adds to `found` (group -> cells) the cells of store indices [from, to) where
 ## that group's Mega could go, Pokemon aside (_pick): its habitat, available()
@@ -148,9 +149,11 @@ static func choose_cell(world: Node, group: String) -> Variant:
 ## build, most of it the sea Gyarados and Sharpedo share. It now reads the
 ## store's arrays, and a
 ## tile holding nothing is judged by its name, biome, route and flags: once
-## per such kind (`kinds`), not per cell.
-static func _find_open(world: Node, found: Dictionary, from: int, to: int, kinds: Dictionary) -> void:
-    var store: WorldTileStore = world.exact_world.tiles
+## per such kind (`kinds`), not per cell. Over the area's data (`state`), and
+## the World's own (its player, helper, follower, resources) when `world` is
+## not null.
+static func _find_open(state, world: Node, found: Dictionary, from: int, to: int, kinds: Dictionary) -> void:
+    var store: WorldTileStore = state.tiles.tiles
     var groups: Array = found.keys()
     for index in range(from, to):
         var bits := store.flags[index]
@@ -166,7 +169,7 @@ static func _find_open(world: Node, found: Dictionary, from: int, to: int, kinds
             kinds[kind] = allowed
         if allowed == 0: continue
         var cell := Vector2i(index % store.width, index / store.width) + store.origin
-        if not cell_free(world, cell): continue
+        if not (cell_free(world, cell) if world != null else cell_free_at(state, cell)): continue
         # -1 not yet asked, else 0/1: walkers and swimmers (Gyarados, Sharpedo).
         var walks := -1
         var swims := -1
@@ -174,21 +177,21 @@ static func _find_open(world: Node, found: Dictionary, from: int, to: int, kinds
             if not allowed & (1 << bit): continue
             var group: String = groups[bit]
             if group in ["gyarados", "sharpedo"]:
-                if swims < 0: swims = int(_open(world, store, cell, true))
+                if swims < 0: swims = int(_open(state, store, cell, true))
                 if swims == 1: found[group].append(cell)
             else:
-                if walks < 0: walks = int(_open(world, store, cell, false))
+                if walks < 0: walks = int(_open(state, store, cell, false))
                 if walks == 1: found[group].append(cell)
 
 ## A Mega at `cell` could step to each of its four neighbours.
-static func _open(world: Node, store: WorldTileStore, cell: Vector2i, swimmer: bool) -> bool:
+static func _open(state, store: WorldTileStore, cell: Vector2i, swimmer: bool) -> bool:
     for direction: Vector2i in DIRECTIONS:
         var next := cell + direction
-        if world.blocked.has(next): return false
+        if state.blocked.has(next): return false
         var at := next - store.origin
         if at.x < 0 or at.y < 0 or at.x >= store.width or at.y >= store.height:
             # Outside the store's rectangle: a tile kept on its own, if any.
-            var tile: SourceTile = world.exact_world.tile_at(next)
+            var tile: SourceTile = state.tiles.tile_at(next)
             if tile == null or (tile.is_solid and not (swimmer and tile.is_water)) or tile.is_lava or tile.is_ledge: return false
             continue
         var bits := store.flags[at.y * store.width + at.x]
@@ -196,12 +199,13 @@ static func _open(world: Node, store: WorldTileStore, cell: Vector2i, swimmer: b
             or (bits & WorldTileStore.SOLID and not (swimmer and bits & WorldTileStore.WATER)): return false
     return true
 
-## One of `cells` at random that no Pokemon, the player or `reserved` takes.
-static func _pick(world: Node, cells: Array, reserved: Dictionary) -> Variant:
-    var occupied: Dictionary = {world._player_cell(): true}
-    for id in world.wild_pokemon:
-        occupied[world.wild_pokemon[id].get("cell", Vector2i.ZERO)] = true
-        var drawn: Vector2 = world.wild_population.visual_position(id)
+## One of `cells` at random (state.rng) that no Pokemon of the area, the
+## World's player (when `world` is not null) or `reserved` takes.
+static func _pick(state, world: Node, cells: Array, reserved: Dictionary) -> Variant:
+    var occupied: Dictionary = {world._player_cell(): true} if world != null else {}
+    for id in state.wild.records:
+        occupied[state.wild.records[id].get("cell", Vector2i.ZERO)] = true
+        var drawn: Vector2 = state.wild.visual_position(id)
         occupied[Vector2i(floori(drawn.x / 16.0), floori(drawn.y / 16.0))] = true
     occupied.merge(reserved)
     # Reservoir sampling avoids allocating another whole-world tile array.
@@ -210,8 +214,41 @@ static func _pick(world: Node, cells: Array, reserved: Dictionary) -> Variant:
     for cell in cells:
         if occupied.has(cell): continue
         count += 1
-        if world.rng.randi_range(1, count) == 1: choice = cell
+        if state.rng.randi_range(1, count) == 1: choice = cell
     return choice
+
+## The cells the roaming Megas of an area just made take, as prepare_load
+## picks them in a world just made (group -> cell, or null when its habitat
+## has no room), over the area's data with no World: the whole map looked
+## through at once (a worker thread's work: it reads the tiles, the area's
+## Pokemon and state.rng only).
+static func choose_at(state) -> Dictionary:
+    var found := {}
+    for group: String in GROUPS: found[group] = []
+    _find_open(state, null, found, 0, state.tiles.tiles.flags.size(), {})
+    var choices := {}
+    var reserved := {}
+    for group in found:
+        choices[group] = _pick(state, null, found[group], reserved)
+        if choices[group] != null: reserved[choices[group]] = true
+    return choices
+
+## The roaming Megas of an area just made, put in without a World as install
+## puts them in a world just made: one of each group's at random, on the cell
+## `choices` (choose_at) has for it, its home there; its cell kept (mark_at).
+static func install_at(state, choices: Dictionary) -> void:
+    var states := {}
+    for group: String in GROUPS:
+        var ids: Array = GROUPS[group]
+        var id := String(ids[state.rng.randi_range(0, ids.size() - 1)])
+        var saved := {"species": id, "record": BattleEngine.make_pokemon(id, 70, state.rng)}
+        var cell: Variant = choices.get(group)
+        if cell is Vector2i:
+            saved.merge({"home_x": cell.x, "home_y": cell.y, "x": cell.x, "y": cell.y,
+                "next_move": state.clock + PopulationRules.wild_move_delay(state, group)})
+        states[group] = saved
+    state.event_progress[SAVE_KEY] = states
+    mark_at(state, {}, states)
 
 static func prepare_load(world: Node) -> void:
     if world.exact_world == null: return
@@ -237,12 +274,12 @@ static func prepare_load(world: Node) -> void:
             if world.exact_world == null or world.exact_world.tiles != store:
                 for group in found: found[group] = []
                 break
-        _find_open(world, found, index, mini(index + 2048, store.flags.size()), kinds)
+        _find_open(world.area, world, found, index, mini(index + 2048, store.flags.size()), kinds)
         index += 2048
     var choices := {}
     var reserved := {}
     for group in found:
-        choices[group] = _pick(world, found[group], reserved)
+        choices[group] = _pick(world.area, world, found[group], reserved)
         if choices[group] != null: reserved[choices[group]] = true
     world.set_meta("mega_load_choices",choices)
 

@@ -3,10 +3,12 @@ extends Node
 ## has to. It makes them in this process (in_process): the world generator
 ## itself (the engine's native one, PokeWildsWorldGen, when present, else the
 ## GDScript one) runs on a WorkerThreadPool thread, the terrain cache is
-## written and the snapshot handed over as if a player had uploaded it; the
-## area's Pokemon are placed by the first player who goes there, as a world
-## just generated places them, and sent back with the area
-## ("population_pending", coop_game.gd). Without the native generator, or if
+## written and the snapshot handed over as if a player had uploaded it. Its
+## first Pokemon and roaming Megas are placed here too when the server runs
+## every area's Pokemon (population_authority=server: first_population, as a
+## world just generated places them); otherwise the first player who goes
+## there places them and sends the area back ("population_pending",
+## coop_game.gd). Without the native generator, or if
 ## that fails, a second copy of the game started headless with
 ## `--generate-area JOB` makes it as before: it reads the seed, size and world
 ## options from JOB, generates the area, writes its snapshot beside JOB and
@@ -16,6 +18,10 @@ const Cache=preload("res://scripts/source_world_cache.gd")
 const Paths=preload("res://scripts/game_data_paths.gd")
 const GameOptions=preload("res://scripts/game_options.gd")
 const NativeWorldGen=preload("res://scripts/native_world_gen.gd")
+const AreaSim=preload("res://scripts/area_sim.gd")
+const PopulationRules=preload("res://scripts/rules/population_rules.gd")
+const Megas=preload("res://scripts/biome_megas.gd")
+const BattleSession=preload("res://scripts/battle_session.gd")
 ## Under the 10 minutes a player waits for a new area (coop_game.prepare_travel):
 ## at 15 the player had given up before their device was asked to make it.
 const TIMEOUT_MS:=8*60*1000
@@ -48,25 +54,78 @@ func _make_here(main:Node,actor:String,area:String,token:String)->bool:
     var size_index:=area_size if area_size>=0 else randi_range(1,4)
     var started:=Time.get_ticks_msec()
     print("SERVER making new area ",area," here (",("native" if NativeWorldGen.enabled() else "GDScript")," generator)...")
-    var bytes:PackedByteArray=await main.coop_game._off_thread(func():return snapshot_of(seed_value,size_index))
-    if bytes.is_empty():
+    var coop:Node=main.coop_game
+    var made:Dictionary=await coop._off_thread(func():return area_of(seed_value,size_index))
+    if made.is_empty():
         print("SERVER ERROR: area ",area," could not be made in this process; trying a second one")
         return false
-    var result:Dictionary=await main.coop_game.service.generated(actor,area,token,{"seed":seed_value,"size":size_index,"population_pending":true},bytes)
+    var metadata:={"seed":seed_value,"size":size_index}
+    var shared:={}
+    if coop.server_population:
+        var placing:=Time.get_ticks_msec()
+        var packet:Dictionary=coop.visuals.last_packets.get(actor,{})
+        shared=await first_population(made.tiles,seed_value,int(packet.get("party_level",0)),coop.clock_seconds,coop.building._breathe,coop._off_thread)
+        print("SERVER placed area ",area,"'s ",shared.wild_pokemon.size()," Pokemon in ",Time.get_ticks_msec()-placing," ms")
+    else:metadata["population_pending"]=true
+    var bytes:PackedByteArray=await coop._off_thread(func():return Snapshot.encode(seed_value,size_index,made.cache,shared))
+    var result:Dictionary=await coop.service.generated(actor,area,token,metadata,bytes)
     print("SERVER made area ",area," in ",(Time.get_ticks_msec()-started)/1000,"s" if result.get("ok",false) else ", but it was no longer wanted (%s)"%result.get("reason",""))
     return true
 
-## A new area's snapshot: generated, adapted, its terrain cache written (where
-## the server keeps its areas' caches) and read back, its shared part empty
-## (its Pokemon come with the first player). Empty when generation failed.
-## Runs on a worker thread: generation, the adapter and the cache writer
-## touch nothing the game holds (world.gd runs them on threads as well).
-static func snapshot_of(seed_value:int,size_index:int)->PackedByteArray:
+## A new area: generated, adapted, its terrain cache written (where the server
+## keeps its areas' caches) and read back as a player's game reads it:
+## {"cache": its bytes, "tiles": the exact world (SourceExactWorldAdapter)};
+## {} when generation failed. Runs on a worker thread: generation, the adapter
+## and the cache touch nothing the game holds (world.gd runs them on threads
+## as well).
+static func area_of(seed_value:int,size_index:int)->Dictionary:
     var result:Dictionary=SourceWorldGenerator.generate_exact_source_world(seed_value,size_index)
-    if result.is_empty() or result.has("generation_error"):return PackedByteArray()
+    if result.is_empty() or result.has("generation_error"):return {}
     var adapter:=SourceExactWorldAdapter.from_generator_result(result,SourceJavaRandom.new(seed_value^0x535041574E))
-    if not Cache.save_world(seed_value,size_index,adapter,result):return PackedByteArray()
-    return Snapshot.encode(seed_value,size_index,FileAccess.get_file_as_bytes(Cache.cache_path(seed_value,size_index)),{})
+    if not Cache.save_world(seed_value,size_index,adapter,result):return {}
+    var cache:=FileAccess.get_file_as_bytes(Cache.cache_path(seed_value,size_index))
+    var loaded:=Cache.load_result(seed_value,size_index)
+    if cache.is_empty() or not loaded.get("store") is WorldTileStore:return {}
+    # The same spawn draw as a World's (world.gd), for the same adapter.
+    return {"cache":cache,"tiles":SourceExactWorldAdapter.from_generator_result(loaded,SourceJavaRandom.new(seed_value^0x535041574E))}
+
+## The first Pokemon of an area just made (`tiles`, its exact world) and its
+## roaming Megas and Mega Gengar, placed as a player's World places them in a
+## world just made (rules/population_rules.gd place_new, source_forest_boss.gd
+## select_cell_at, biome_megas.gd choose_at and install_at) with draws from a
+## generator seeded with the area's seed: the same area gets the same ones.
+## `party_level` (BattleSession.reference_level of the player who arrives
+## first; 0 for none) adapts their species as a World adapts them to its
+## party; `clock` is the world's (the Megas' first steps). A shared part for
+## the area's snapshot: wild_pokemon and event_progress. The Pokemon go in a
+## slice at a time on the game thread (`breathe` awaited between them); the
+## searches over the whole map run on a worker (`off_thread`, coop_game.gd
+## _off_thread), on data nothing else holds.
+static func first_population(tiles,seed_value:int,party_level:int,clock:float,breathe:Callable,off_thread:Callable)->Dictionary:
+    var state=AreaSim.new().state
+    state.tiles=tiles;state.bounds=tiles.bounds();state.clock=clock;state.rng.seed=seed_value
+    var next:=[1]
+    var add:=func(species:String,level:int,cell:Vector2i,home_biome:String,source_record:Dictionary)->int:
+        if party_level>0 and not bool(source_record.get("is_trapping",false)):
+            species=PopulationRules.adapted_species(state,species,level,cell,BattleSession.wild_level_at(party_level,level),seed_value)
+        var wild_id:int=next[0]
+        if not PopulationRules.add_wild(state,species,level,cell,home_biome,wild_id,source_record):return -1
+        next[0]=wild_id+1
+        return wild_id
+    await PopulationRules.place_new(state,add,breathe)
+    var search:=func()->Dictionary:
+        var gengar=SourceForestBoss.select_cell_at(state,tiles.spawn_cell)
+        if gengar is Vector2i:
+            state.event_progress[SourceForestBoss.SAVE_KEY]={"x":gengar.x,"y":gengar.y,"home_x":gengar.x,"home_y":gengar.y}
+            # Its cell kept from the Megas, as a World's is at night.
+            SourceForestBoss.mark_at(state,true,false)
+        return Megas.choose_at(state)
+    var choices:Dictionary=await off_thread.call(search)
+    Megas.install_at(state,choices)
+    var events:={}
+    for key in [Megas.SAVE_KEY,SourceForestBoss.SAVE_KEY]:
+        if state.event_progress.has(key):events[key]=state.event_progress[key]
+    return {"wild_pokemon":state.wild.to_save(),"event_progress":events}
 
 func _make(main:Node,actor:String,area:String,token:String)->bool:
     var folder:=Paths.path("area_maker")
