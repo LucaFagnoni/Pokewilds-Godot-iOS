@@ -2067,6 +2067,126 @@ func _build_source_ui() -> void:
     _align_menu_tick(load_frame.get_node("Next"), setup_load_name)
     (load_frame.get_node("Previous/PixelTick") as TextureRect).flip_h = true
 
+    _build_storage_menu_ui()
+
+    # Keep the MessagePanel's existing down arrow; no extra right-side arrow.
+    trainer_tip_continue = null
+
+    _build_party_menu_ui()
+
+    # Battle PKMN selection uses the same source party row and dialogue border.
+    battle_party_view = Control.new()
+    battle_party_view.name = "SourcePartyView"
+    battle_party_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    battle_party_view.z_index = 10
+    battle_submenu.add_child(battle_party_view)
+    var battle_party_backdrop = ColorRect.new()
+    battle_party_backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    battle_party_backdrop.color = Color.WHITE
+    battle_party_backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
+    battle_party_view.add_child(battle_party_backdrop)
+    battle_party_cursor = _source_ui_label(battle_party_view, "Cursor",
+        Vector2(4, 10), Vector2(10, 16), 9, "▶", true)
+    battle_party_sprite = _source_texture_rect(battle_party_view, "PokemonSprite",
+        Vector2(20, 6), Vector2(32, 32))
+    battle_party_name = _source_ui_label(battle_party_view, "Name",
+        Vector2(58, 10), Vector2(130, 18), 10)
+    battle_party_level = _source_ui_label(battle_party_view, "Level",
+        Vector2(150, 26), Vector2(44, 16), 9)
+    battle_party_gender = _source_texture_rect(battle_party_view, "Gender",
+        Vector2(62, 29), Vector2(10, 10), SOURCE_MALE_SYMBOL)
+    battle_party_hp_value = _source_ui_label(battle_party_view, "HPValue",
+        Vector2(230, 9), Vector2(72, 18), 10)
+    battle_party_hp_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+    var battle_hp_bar = ColorRect.new()
+    battle_hp_bar.name = "HPBar"
+    battle_hp_bar.position = Vector2(208, 34)
+    battle_hp_bar.size = Vector2(94, 10)
+    battle_hp_bar.color = Color.BLACK
+    battle_party_view.add_child(battle_hp_bar)
+    _source_ui_label(battle_hp_bar, "HPLabel", Vector2(-25, -2),
+        Vector2(27, 12), 8, "HP:").add_theme_color_override(
+            "font_color", Color8(240, 194, 69))
+    battle_party_hp_fill = ColorRect.new()
+    battle_party_hp_fill.name = "Fill"
+    battle_party_hp_fill.position = Vector2(3, 3)
+    battle_party_hp_fill.size = Vector2(88, 4)
+    battle_party_hp_fill.color = Color8(0, 184, 0)
+    battle_hp_bar.add_child(battle_party_hp_fill)
+    var battle_prompt_panel = Panel.new()
+    battle_prompt_panel.name = "PromptBox"
+    battle_prompt_panel.position = Vector2(4, 138)
+    battle_prompt_panel.size = Vector2(312, 40)
+    battle_prompt_panel.add_theme_stylebox_override("panel", _classic_dialogue_style())
+    battle_party_view.add_child(battle_prompt_panel)
+    battle_party_prompt = _source_ui_label(battle_prompt_panel, "Prompt",
+        Vector2(14, 10), Vector2(280, 18), 10, "Choose a POKEMON.")
+    battle_party_action_panel = Panel.new()
+    battle_party_action_panel.name = "PokemonActionMenu"
+    battle_party_action_panel.position = Vector2(166, 40)
+    battle_party_action_panel.size = Vector2(150, 138)
+    battle_party_action_panel.add_theme_stylebox_override(
+        "panel", _classic_dialogue_style())
+    battle_party_view.add_child(battle_party_action_panel)
+    battle_party_action_cursor = _source_texture_rect(battle_party_action_panel,
+        "Cursor", Vector2(12, 10), Vector2(5, 7), source_command_cursor.texture)
+    battle_party_action_cursor.stretch_mode = TextureRect.STRETCH_SCALE
+    battle_party_action_list = _source_ui_label(battle_party_action_panel,
+        "List", Vector2(28, 10), Vector2(110, 116), 10)
+    battle_party_action_list.add_theme_constant_override("line_spacing", 6)
+    battle_party_action_panel.visible = false
+    battle_party_cursor.visible = false
+    battle_party_sprite.visible = false
+    battle_party_name.visible = false
+    battle_party_level.visible = false
+    battle_party_gender.visible = false
+    battle_party_hp_value.visible = false
+    battle_hp_bar.visible = false
+    for row_index in range(6):
+        battle_party_rows.append(_create_party_list_row(
+            battle_party_view, row_index))
+    battle_prompt_panel.move_to_front()
+    battle_party_action_panel.move_to_front()
+
+    _build_pokemon_stats_ui()
+    progression_level_dialogue = Panel.new()
+    progression_level_dialogue.name = "LevelUpDialogueBorder"
+    progression_level_dialogue.position = Vector2(4, 121)
+    progression_level_dialogue.size = Vector2(312, 57)
+    progression_level_dialogue.add_theme_stylebox_override(
+        "panel", _classic_dialogue_style())
+    progression_level_dialogue.z_index = 1
+    progression_overlay.add_child(progression_level_dialogue)
+    progression_level_message = _source_ui_label(
+        progression_level_dialogue, "LevelUpMessage", Vector2(12, 10),
+        Vector2(282, 32), 10)
+    progression_level_message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    progression_level_message.clip_text = true
+    progression_level_dialogue.visible = false
+    progression_stats_frame = Panel.new()
+    progression_stats_frame.name = "LevelUpStatsBorder"
+    progression_stats_frame.position = Vector2(142, 0)
+    progression_stats_frame.size = Vector2(178, 121)
+    progression_stats_frame.add_theme_stylebox_override("panel", _classic_dialogue_style())
+    progression_stats_frame.z_index = 2
+    progression_overlay.add_child(progression_stats_frame)
+    for index in range(5):
+        var stat_name = _source_ui_label(progression_stats_frame, "Stat%d" % index,
+            Vector2(16, 7 + index * 20), Vector2(108, 13), 10,
+            ["ATTACK", "DEFENSE", "SPCL.ATK", "SPCL.DEF", "SPEED"][index])
+        stat_name.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        var value = _source_ui_label(progression_stats_frame, "Value%d" % index,
+            Vector2(132, 7 + index * 20), Vector2(32, 13), 10)
+        value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+        progression_stats_fields.append(value)
+    progression_stats_frame.visible = false
+    progression_hint.z_index = 2
+    progression_list.z_index = 2
+    progression_values.z_index = 2
+    progression_sprite_top.z_index = 2
+    _create_progression_menu_frames()
+
+func _build_storage_menu_ui() -> void:
     # Source-style Pokémon storage screen.  It is deliberately created here
     # rather than replacing the existing party menu, so opening a chest cannot
     # perturb unrelated menu geometry.
@@ -2157,9 +2277,7 @@ func _build_source_ui() -> void:
         storage_yes = true
         _refresh_storage_menu())
 
-    # Keep the MessagePanel's existing down arrow; no extra right-side arrow.
-    trainer_tip_continue = null
-
+func _build_party_menu_ui() -> void:
     # Use the full viewport for both party selectors.  Keeping controls at
     # native scale makes the text readable and prevents the right-hand HP
     # values and popup entries from being clipped on Android.
@@ -2203,80 +2321,7 @@ func _build_source_ui() -> void:
     pokemon_action_list.add_theme_constant_override("line_spacing", 6)
     pokemon_action_panel.visible = false
 
-    # Battle PKMN selection uses the same source party row and dialogue border.
-    battle_party_view = Control.new()
-    battle_party_view.name = "SourcePartyView"
-    battle_party_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    battle_party_view.z_index = 10
-    battle_submenu.add_child(battle_party_view)
-    var battle_party_backdrop = ColorRect.new()
-    battle_party_backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    battle_party_backdrop.color = Color.WHITE
-    battle_party_backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
-    battle_party_view.add_child(battle_party_backdrop)
-    battle_party_cursor = _source_ui_label(battle_party_view, "Cursor",
-        Vector2(4, 10), Vector2(10, 16), 9, "▶", true)
-    battle_party_sprite = _source_texture_rect(battle_party_view, "PokemonSprite",
-        Vector2(20, 6), Vector2(32, 32))
-    battle_party_name = _source_ui_label(battle_party_view, "Name",
-        Vector2(58, 10), Vector2(130, 18), 10)
-    battle_party_level = _source_ui_label(battle_party_view, "Level",
-        Vector2(150, 26), Vector2(44, 16), 9)
-    battle_party_gender = _source_texture_rect(battle_party_view, "Gender",
-        Vector2(62, 29), Vector2(10, 10), SOURCE_MALE_SYMBOL)
-    battle_party_hp_value = _source_ui_label(battle_party_view, "HPValue",
-        Vector2(230, 9), Vector2(72, 18), 10)
-    battle_party_hp_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-    var battle_hp_bar = ColorRect.new()
-    battle_hp_bar.name = "HPBar"
-    battle_hp_bar.position = Vector2(208, 34)
-    battle_hp_bar.size = Vector2(94, 10)
-    battle_hp_bar.color = Color.BLACK
-    battle_party_view.add_child(battle_hp_bar)
-    _source_ui_label(battle_hp_bar, "HPLabel", Vector2(-25, -2),
-        Vector2(27, 12), 8, "HP:").add_theme_color_override(
-            "font_color", Color8(240, 194, 69))
-    battle_party_hp_fill = ColorRect.new()
-    battle_party_hp_fill.name = "Fill"
-    battle_party_hp_fill.position = Vector2(3, 3)
-    battle_party_hp_fill.size = Vector2(88, 4)
-    battle_party_hp_fill.color = Color8(0, 184, 0)
-    battle_hp_bar.add_child(battle_party_hp_fill)
-    var battle_prompt_panel = Panel.new()
-    battle_prompt_panel.name = "PromptBox"
-    battle_prompt_panel.position = Vector2(4, 138)
-    battle_prompt_panel.size = Vector2(312, 40)
-    battle_prompt_panel.add_theme_stylebox_override("panel", _classic_dialogue_style())
-    battle_party_view.add_child(battle_prompt_panel)
-    battle_party_prompt = _source_ui_label(battle_prompt_panel, "Prompt",
-        Vector2(14, 10), Vector2(280, 18), 10, "Choose a POKEMON.")
-    battle_party_action_panel = Panel.new()
-    battle_party_action_panel.name = "PokemonActionMenu"
-    battle_party_action_panel.position = Vector2(166, 40)
-    battle_party_action_panel.size = Vector2(150, 138)
-    battle_party_action_panel.add_theme_stylebox_override(
-        "panel", _classic_dialogue_style())
-    battle_party_view.add_child(battle_party_action_panel)
-    battle_party_action_cursor = _source_texture_rect(battle_party_action_panel,
-        "Cursor", Vector2(12, 10), Vector2(5, 7), source_command_cursor.texture)
-    battle_party_action_cursor.stretch_mode = TextureRect.STRETCH_SCALE
-    battle_party_action_list = _source_ui_label(battle_party_action_panel,
-        "List", Vector2(28, 10), Vector2(110, 116), 10)
-    battle_party_action_list.add_theme_constant_override("line_spacing", 6)
-    battle_party_action_panel.visible = false
-    battle_party_cursor.visible = false
-    battle_party_sprite.visible = false
-    battle_party_name.visible = false
-    battle_party_level.visible = false
-    battle_party_gender.visible = false
-    battle_party_hp_value.visible = false
-    battle_hp_bar.visible = false
-    for row_index in range(6):
-        battle_party_rows.append(_create_party_list_row(
-            battle_party_view, row_index))
-    battle_prompt_panel.move_to_front()
-    battle_party_action_panel.move_to_front()
-
+func _build_pokemon_stats_ui() -> void:
     # Three exact source stat-page plates with selected-Pokemon data layered
     # over their intended blank fields.
     pokemon_stats_overlay = Control.new()
@@ -2341,42 +2386,6 @@ func _build_source_ui() -> void:
         tick.add_theme_color_override("font_color", Color.WHITE)
         pokemon_stats_tab_ticks.append(tick)
     _build_pokemon_stats_pages(stats_source)
-    progression_level_dialogue = Panel.new()
-    progression_level_dialogue.name = "LevelUpDialogueBorder"
-    progression_level_dialogue.position = Vector2(4, 121)
-    progression_level_dialogue.size = Vector2(312, 57)
-    progression_level_dialogue.add_theme_stylebox_override(
-        "panel", _classic_dialogue_style())
-    progression_level_dialogue.z_index = 1
-    progression_overlay.add_child(progression_level_dialogue)
-    progression_level_message = _source_ui_label(
-        progression_level_dialogue, "LevelUpMessage", Vector2(12, 10),
-        Vector2(282, 32), 10)
-    progression_level_message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    progression_level_message.clip_text = true
-    progression_level_dialogue.visible = false
-    progression_stats_frame = Panel.new()
-    progression_stats_frame.name = "LevelUpStatsBorder"
-    progression_stats_frame.position = Vector2(142, 0)
-    progression_stats_frame.size = Vector2(178, 121)
-    progression_stats_frame.add_theme_stylebox_override("panel", _classic_dialogue_style())
-    progression_stats_frame.z_index = 2
-    progression_overlay.add_child(progression_stats_frame)
-    for index in range(5):
-        var stat_name = _source_ui_label(progression_stats_frame, "Stat%d" % index,
-            Vector2(16, 7 + index * 20), Vector2(108, 13), 10,
-            ["ATTACK", "DEFENSE", "SPCL.ATK", "SPCL.DEF", "SPEED"][index])
-        stat_name.mouse_filter = Control.MOUSE_FILTER_IGNORE
-        var value = _source_ui_label(progression_stats_frame, "Value%d" % index,
-            Vector2(132, 7 + index * 20), Vector2(32, 13), 10)
-        value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-        progression_stats_fields.append(value)
-    progression_stats_frame.visible = false
-    progression_hint.z_index = 2
-    progression_list.z_index = 2
-    progression_values.z_index = 2
-    progression_sprite_top.z_index = 2
-    _create_progression_menu_frames()
 
 ## The top row: minimap, clock, FPS counter, battery (status_hud.gd).
 var status_hud = preload("res://scripts/status_hud.gd").new(self)
