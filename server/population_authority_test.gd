@@ -27,6 +27,7 @@ const Records = preload("res://scripts/coop_population_records.gd")
 const WildPopulation = preload("res://scripts/wild_population.gd")
 const Wire = preload("res://scripts/area_state.gd")
 const Authority = preload("res://scripts/coop_population_authority.gd")
+const Hordes = preload("res://scripts/coop_horde_runtime.gd")
 const AREAS := ["1,0", "0,1"]
 const PLAYERS := {"1,0": "alice", "0,1": "bob"}
 const SPECIES := ["rattata", "pidgey", "caterpie", "zubat", "oddish", "sentret"]
@@ -58,13 +59,14 @@ class FakeGame extends Node:
     var wild := FakeWild.new()
     var service := {"areas": {"epochs": {}}}
     var session := {"actor": "server"}
-    var hordes := {"spawning": false}
+    var hordes
     var authority
     ## What went out to the players, in order: ["commit", result] and
     ## ["motion", sender, area, motion, frame].
     var sent: Array = []
     var serial := 0
     func _area() -> String: return "0,0"
+    func nobody_here() -> bool: return true
     func _id() -> String:
         serial += 1
         return "t%d" % serial
@@ -81,6 +83,10 @@ class FakeRules extends RefCounted:
 class FakeWild extends RefCounted:
     var moved := {}
     var sent: Array
+    var next_id := 4294967296
+    func allocate_id() -> int:
+        next_id += 1
+        return next_id
     func relay_motion(actor: String, area: String, motion: PackedByteArray, frame: PackedByteArray, _entries: Array = []) -> void:
         sent.append(["motion", actor, area, motion, frame])
 
@@ -140,6 +146,8 @@ func _setup() -> void:
     authority.configure(game)
     authority.enabled = true
     game.authority = authority
+    game.hordes = Hordes.new()
+    game.hordes.configure(game)
     root.add_child(game)
     root.add_child(authority)
     for area in AREAS:
@@ -393,6 +401,22 @@ func _initialize() -> void:
     check(left_megas is Dictionary and not left_megas.has("venusaur"), "a Mega caught leaves for good")
     check(not sim.state.interactables.has(mega_cell), "and its cell is free")
 
+    # A horde called in alice's area comes there, made by the server, ten
+    # seconds after it is called, around her.
+    game._committed(state.transact("server", "horde1", [state.change("horde/1,0", {"id": "h1", "area": "1,0", "phase": "waiting",
+        "players": {"alice": 12}, "members": [], "target_counts": {}, "defeated": [], "total": 0, "spawned": false})]))
+    _run(5.0)
+    check(not bool(state.records["horde/1,0"].spawned), "a horde waits before it comes")
+    _run(8.0)
+    var horde: Dictionary = state.records["horde/1,0"]
+    check(bool(horde.spawned) and horde.phase == "active" and int(horde.total) >= 1, "the horde came (%s)" % [horde])
+    var members: Array = horde.get("members", [])
+    check(members.all(func(id): return sim.state.wild.has(int(id)) and String(sim.state.wild.records[int(id)].get("source_record", {}).get("coop_horde", "")) == "h1"),
+        "its Pokemon are the server's to run")
+    check(members.all(func(id): return state.records.has(Population.record_key("1,0", int(id)))), "and in the records")
+    _run(2.0)
+    _same("1,0", "after a horde came")
+
     # The server stays the authority whoever comes and goes.
     state.enroll("carol", {"name": "carol"})
     check(state.enter("carol", "1,0") == "server", "a player arriving: the server's")
@@ -417,4 +441,5 @@ func _initialize() -> void:
     check(not areas.can_publish("dan", "2,2", int(first.epoch)) and areas.can_publish("eve", "2,2", epoch), "the one before may no longer send it")
 
     print("POPULATION AUTHORITY TEST: %d checks, %d failed" % [checks, failed])
+    game.hordes.free()
     quit(1 if failed else 0)

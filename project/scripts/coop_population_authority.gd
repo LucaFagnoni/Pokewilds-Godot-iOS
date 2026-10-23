@@ -89,6 +89,7 @@ func areas()->Array:
 func _process(delta:float)->void:
     if not enabled or not is_instance_valid(game) or not game.active or not game.hosting or not game.main.started:return
     var started:=Time.get_ticks_usec()
+    _own_events()
     var occupied:=areas()
     for area in _beats.keys():
         if not area in occupied or game.rules.sims.get(area)!=_beats[area].sim:_beats.erase(area)
@@ -129,26 +130,48 @@ func _process(delta:float)->void:
 ## their time comes (as biome_megas.gd update and source_forest_boss.gd
 ## update_visibility do in a World), unless someone is battling one.
 func _events(area:String,sim,beat:Beat)->void:
-    var state=sim.state
-    var night:=int(PopulationRules.is_night(state))
-    var megas:Dictionary=state.event_progress.get(Megas.SAVE_KEY,{})
-    var gengar:Dictionary=state.event_progress.get(Forest.SAVE_KEY,{})
+    var gengar:Dictionary=sim.state.event_progress.get(Forest.SAVE_KEY,{})
     # Out at night only (its record may come at any time).
-    if gengar.has("x"):Forest.mark_at(state,night==1,beat.gengar_done)
-    if megas.is_empty() and (night==0 or gengar.is_empty()):return
+    if gengar.has("x"):Forest.mark_at(sim.state,PopulationRules.is_night(sim.state),beat.gengar_done)
     var taken:Array=[]
     for player in sim.players.by_actor.values():taken.append(Vector2i(int(player.x),int(player.y)))
+    if _step_events(area,sim.state,taken):beat.events_dirty=true
+
+## The server's own area, its World's (whose player never plays, so its
+## update never moves them): its Megas and Mega Gengar step there too, on the
+## World's AreaState, while players are there; coop_special_events.gd sends
+## them as that area's authority.
+func _own_events()->void:
+    if game.nobody_here():return
+    var world=game.main.world
+    if not world.generated or world.exact_world==null or world.active_area_id!="OVERWORLD":return
+    var taken:Array=[]
+    for actor in game.visuals.last_packets:
+        var packet:Dictionary=game.visuals.last_packets[actor]
+        if packet.get("area")==game._area() and packet.get("layer")=="OVERWORLD":taken.append(Vector2i(int(packet.get("cell_x",0)),int(packet.get("cell_y",0))))
+    _step_events(game._area(),world.area,taken)
+
+## Each Mega whose time has come, and Mega Gengar at night, steps (as
+## biome_megas.gd update and source_forest_boss.gd update_visibility do in a
+## World that plays), unless someone is battling it; `taken`: the players'
+## cells. True when one tried.
+func _step_events(area:String,state,taken:Array)->bool:
+    var night:=PopulationRules.is_night(state)
+    var megas:Dictionary=state.event_progress.get(Megas.SAVE_KEY,{})
+    var gengar:Dictionary=state.event_progress.get(Forest.SAVE_KEY,{})
+    var tried:=false
     for group in megas:
         var saved:Dictionary=megas[group]
         if not saved.has("x") or state.clock<float(saved.get("next_move",0.0)):continue
         if game.state.records.has("event_claim/"+area+"/"+String(saved.get("species",""))):continue
         saved["next_move"]=state.clock+PopulationRules.wild_move_delay(state,group)
         Megas.step_at(state,group,Megas.DIRECTIONS[state.rng.randi_range(0,3)],taken)
-        beat.events_dirty=true
-    if night==1 and gengar.has("x") and state.clock>=float(gengar.get("next_move",0.0)) and not game.state.records.has("event_claim/"+area+"/mega_gengar"):
+        tried=true
+    if night and gengar.has("x") and state.clock>=float(gengar.get("next_move",0.0)) and not game.state.records.has("event_claim/"+area+"/mega_gengar"):
         gengar["next_move"]=state.clock+PopulationRules.wild_move_delay(state,"gengar")
         Forest.step_at(state,Forest.DIRECTIONS[state.rng.randi_range(0,3)],taken)
-        beat.events_dirty=true
+        tried=true
+    return tried
 
 ## The Megas' and Mega Gengar's records, when they moved, as one commit.
 func _publish_events(area:String,sim,beat:Beat)->void:
