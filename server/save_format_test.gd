@@ -87,11 +87,30 @@ func _initialize() -> void:
         check(_plain(loaded[key]) == old[key], "%s as saved" % key)
     check(_structures(loaded) == _structures(old), "structures as saved: %s" % [_structures(loaded)])
     # The world holds its cell keys as Vector2i; as text they are the save's.
-    # (A load adds the day's dig sites to the interior mutations.)
+    # The day's dig sites among them are the saved ones, not placed again.
     var loaded_text := AreaState.text_keys(loaded.crafting_state)
-    for key in ["terrain_changes", "removed_resources"]:
+    for key in ["terrain_changes", "removed_resources", "source_interior_mutations"]:
         check(_plain(loaded_text[key]) == old.crafting_state[key], "%s as saved" % key)
     check(loaded.crafting_state.source_interior_mutations.keys().all(func(key): return key is Vector2i), "cell keys held as Vector2i")
+    # Saved while the day's dig sites were being placed (they are, a little a
+    # frame): the load places the rest, the very cells the placement would have.
+    var world: Node = main.world
+    var unplace := func(cells: Array) -> void:
+        for cell in cells:
+            var site: Dictionary = world.source_interior_mutations[cell]
+            world.exact_world.tile_at(cell).set_names(site.base, site.original_upper)
+            world.area.drop("source_interior_mutations", cell)
+    unplace.call(world.source_interior_mutations.keys())
+    await world._refresh_biome_dig_sites(false)
+    var sites: Dictionary = world.source_interior_mutations.duplicate(true)
+    var half := sites.keys().slice(0, sites.size() / 2)
+    unplace.call(half)
+    world.event_progress[world.DIG_SITES_PLACING_KEY] = world._world_day_index()
+    await world._refresh_biome_dig_sites(false)
+    check(not sites.is_empty() and world.source_interior_mutations == sites,
+        "a placement cut short goes on with the same sites: %d of %d" % [world.source_interior_mutations.size(), sites.size()])
+    check(not world.event_progress.has(world.DIG_SITES_PLACING_KEY), "and is done")
+    check(half.all(func(cell): return world.exact_world.tile_at(cell).name_upper == sites[cell].crack), "its tiles cracked again")
     var seen := {}
     for cell in _discovered(loaded.crafting_state.discovered_cells): seen[cell] = true
     check(_discovered(old.crafting_state.discovered_cells).all(func(cell): return seen.has(cell)), "every discovered cell still discovered")
@@ -125,7 +144,7 @@ func _initialize() -> void:
     for key in ["caught_pokemon", "pokemon_storage", "inventory", "adjacent_worlds"]:
         check(_plain(reloaded[key]) == _plain(data[key]), "%s round-trips" % key)
     check(_structures(reloaded) == _structures(data), "structures round-trip")
-    for key in ["terrain_changes", "removed_resources"]:
+    for key in ["terrain_changes", "removed_resources", "source_interior_mutations"]:
         check(reloaded.crafting_state[key] == data.crafting_state[key], "%s round-trip" % key)
     check(_plain(reloaded.crafting_state.discovered_cells) == _plain(data.crafting_state.discovered_cells), "discovered cells round-trip")
 
