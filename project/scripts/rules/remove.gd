@@ -97,7 +97,7 @@ static func remove(state, player: Dictionary, cell: Vector2i, refund: bool, out:
             var cleared := TileRules.cuttable_grass_replacement(state, underneath, cell)
             underneath = state.edit(cell)
             underneath.set_names(String(cleared.base), String(cleared.upper))
-            state.put("source_interior_mutations", TileRules.cell_key(cell), {"kind":"TILE_NAMES", "base":underneath.name, "upper":underneath.name_upper})
+            state.put("source_interior_mutations", cell, {"kind":"TILE_NAMES", "base":underneath.name, "upper":underneath.name_upper})
             out.events.append(["refresh_streams"])
     Build.connect_around(state, player, cell, out)
     if refund:
@@ -151,8 +151,8 @@ static func interior_cells_behind(state, player: Dictionary, cell: Vector2i) -> 
     for piece in house:
         corner = Vector2i(mini(corner.x, piece.x), mini(corner.y, piece.y))
         far_corner = Vector2i(maxi(far_corner.x, piece.x), maxi(far_corner.y, piece.y))
-        if origin_y < 0 and String(state.structures[piece].get("name", "")) == "DOOR" and state.built_house_origins.has(TileRules.cell_key(piece)):
-            origin_y = int(state.built_house_origins[TileRules.cell_key(piece)])
+        if origin_y < 0 and String(state.structures[piece].get("name", "")) == "DOOR" and state.built_house_origins.has(piece):
+            origin_y = int(state.built_house_origins[piece])
     # The first cut into a house fixes where its room is measured from, so
     # that cutting away its corner does not move every later tile along by one.
     if origin_y >= 0 and not state.rooms_seen.has(origin_y):

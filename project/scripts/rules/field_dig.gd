@@ -174,7 +174,7 @@ static func _fill(state, player: Dictionary, cell: Vector2i, choice: String, out
     FieldMoveData.apply_dig_terrain(tile, choice)
     if choice == "CLIFF": FieldMoveData.adjust_dig_cliff(tile, state.tiles.tiles)
     TileRules.save_dig_tile(state, cell)
-    state.drop("terrain_changes", TileRules.cell_key(cell))
+    state.drop("terrain_changes", cell)
     TileRules.connect_holes(state, cell)
     TileRules.recoastify(state, [cell])
     out.events.append(["refresh"])
@@ -199,7 +199,7 @@ static func _house_target(state, player: Dictionary, cell: Vector2i) -> bool:
 
 ## The item a DIG left buried in this cell's hole, if any.
 static func collect_buried(state, cell: Vector2i, out: Dictionary) -> bool:
-    var mutation: Dictionary = state.source_interior_mutations.get(TileRules.cell_key(cell), {})
+    var mutation: Dictionary = state.source_interior_mutations.get(cell, {})
     var item := String(mutation.get("dig_item", ""))
     if item.is_empty(): return false
     var tile: SourceTile = state.edit(cell)
@@ -233,7 +233,7 @@ static func take(state, cell: Vector2i, out: Dictionary, item_action: String = "
     out.grant[item_name] = int(out.grant.get(item_name, 0)) + amount
     if item_name != "POKE BALL": out.events.append(["message", "You found %s x%d!" % [item_name, amount]])
     state.drop("interactables", cell)
-    state.put("source_interior_mutations", TileRules.cell_key(cell), {"kind": "COLLECTED"})
+    state.put("source_interior_mutations", cell, {"kind": "COLLECTED"})
     out.events.append(["collected", cell])
     if state.in_bounds(cell) and tile != null:
         tile = state.edit(cell)
@@ -252,7 +252,6 @@ static func _berry(state, player: Dictionary, cell: Vector2i, out: Dictionary) -
         return
     var tile: SourceTile = state.tile_at(cell)
     if tile == null: return
-    var key := TileRules.cell_key(cell)
     if tile.route_belongs_to != null and not tile.route_belongs_to.stored_pokemon.is_empty():
         # The route's hidden Pokemon: read here, taken off the route by whoever
         # plays the encounter (["encounter", ..., true]).
@@ -261,8 +260,8 @@ static func _berry(state, player: Dictionary, cell: Vector2i, out: Dictionary) -
         if bool(player.get("shared", false)):
             # Online every player sees the tree shake and then stand bare
             # (world.gd _apply_source_interior_mutation); alone a timer does it.
-            state.put("source_interior_mutations", key, {"kind":"BERRY_AGITATED", "base":tile.name, "clear_at":clear_at})
-            state.drop("source_plant_farms", key)
+            state.put("source_interior_mutations", cell, {"kind":"BERRY_AGITATED", "base":tile.name, "clear_at":clear_at})
+            state.drop("source_plant_farms", cell)
         out.events.append(["sound", "ledge2"])
         out.events.append(["message", "The tree became agitated and attacked!"])
         out.events.append(["encounter", String(record.get("name", record.get("species", "sudowoodo"))).to_lower(), int(record.get("level", 1)), record, true, cell])
@@ -275,7 +274,7 @@ static func _berry(state, player: Dictionary, cell: Vector2i, out: Dictionary) -
     tile = state.edit(cell)
     tile.set_names(tile.name, tile.name_upper.replace("_full", "_empty"))
     store_plant(state, cell, float(player.get("now", 0.0)))
-    state.put("source_interior_mutations", key, {"kind":"BERRY_EMPTY", "upper":tile.name_upper})
+    state.put("source_interior_mutations", cell, {"kind":"BERRY_EMPTY", "upper":tile.name_upper})
     out.events.append(["refresh_cell", cell])
     out.events.append(["message", "You picked a %s." % berry])
     out.ok = true
@@ -286,7 +285,7 @@ static func plant_day(now: float) -> int:
 
 static func store_plant(state, cell: Vector2i, now: float, rewards: Dictionary = {}) -> void:
     var tile: SourceTile = state.tile_at(cell)
-    state.put("source_plant_farms", TileRules.cell_key(cell),
+    state.put("source_plant_farms", cell,
         {"base":tile.name, "upper":tile.name_upper, "day":plant_day(now), "rewards":rewards.duplicate(true)})
 
 ## `item` planted at `cell` (PlantTree): a sapling, a berry sprout, grass, or
@@ -314,7 +313,7 @@ static func _plant(state, player: Dictionary, cell: Vector2i, item: String, out:
         tile.set_names(tile.name, upper)
         # A saved DIG hole is replaced too, so it cannot return after the
         # crop is harvested and the world reloaded; neighbouring holes rejoin.
-        var mutation: Dictionary = state.source_interior_mutations.get(TileRules.cell_key(cell), {})
+        var mutation: Dictionary = state.source_interior_mutations.get(cell, {})
         if String(mutation.get("upper", "")).begins_with("hole1"):
             TileRules.save_dig_tile(state, cell)
         TileRules.connect_holes(state, cell)

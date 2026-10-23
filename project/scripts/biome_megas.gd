@@ -63,7 +63,7 @@ static func cell_free(world: Node, cell: Vector2i) -> bool:
 static func cell_free_at(state, cell: Vector2i) -> bool:
     return not (state.blocked.has(cell) or state.interactables.has(cell) or state.structures.has(cell)
         or state.landmarks.has(cell) or state.eggs.records.has(cell) or state.habitat.records.has(cell)
-        or state.source_plant_farms.has("%d,%d" % [cell.x, cell.y]))
+        or state.source_plant_farms.has(cell))
 
 ## available over an area's data, without a World: `taken` are the players' cells.
 static func available_at(state, cell: Vector2i, group: String, taken: Array = []) -> bool:

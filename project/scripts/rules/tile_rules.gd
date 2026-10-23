@@ -21,8 +21,12 @@ static func cell_center(cell: Vector2i) -> Vector2:
 static func cell_key(cell: Vector2i) -> String:
     return "%d,%d" % [cell.x, cell.y]
 
-static func key_cell(key: String) -> Vector2i:
-    var parts := key.split(",")
+## A key's cell: a Vector2i (how the overlays are held) as it is, or text:
+## "x,y" (the wire, the records, saves from before) or "(x, y)" (a Vector2i
+## as JSON writes it).
+static func key_cell(key: Variant) -> Vector2i:
+    if key is Vector2i: return key
+    var parts := String(key).trim_prefix("(").trim_suffix(")").split(",")
     if parts.size() != 2: return NO_CELL
     return Vector2i(int(parts[0]), int(parts[1]))
 
@@ -35,7 +39,7 @@ static func key_cell(key: String) -> Vector2i:
 ## no redraws, no timers (an agitated berry tree is cleared at once). Already
 ## in the state's group (`value` null: gone). For an area held without a
 ## World (area_sim.gd) and for a replica checked against its authority.
-static func apply_overlay(state, group: String, key: String, value: Variant) -> void:
+static func apply_overlay(state, group: String, key: Variant, value: Variant) -> void:
     if state.tiles == null: return
     var cell := key_cell(key)
     match group:
@@ -63,7 +67,7 @@ static func apply_mutation(state, cell: Vector2i, mutation: Dictionary) -> void:
     match kind:
         "BERRY_AGITATED":
             if tile != null: _set_names(state, cell, String(mutation.get("base", tile.name)), "")
-            state.drop("source_plant_farms", cell_key(cell))
+            state.drop("source_plant_farms", cell)
             return
         "BIOME_DIG_SITE":
             if tile != null:
@@ -476,7 +480,7 @@ static func is_mountain(tile: SourceTile) -> bool:
 static func save_dig_tile(state, cell: Vector2i) -> void:
     var tile: SourceTile = state.tile_at(cell)
     if tile == null: return
-    state.put("source_interior_mutations", cell_key(cell), {
+    state.put("source_interior_mutations", cell, {
         "kind":"TILE_NAMES", "base":tile.name, "upper":tile.name_upper,
         "dig_item":tile.has_item, "dig_item_amount":tile.has_item_amount,
         "dig_biome":tile.biome,
@@ -486,7 +490,7 @@ static func save_dig_tile(state, cell: Vector2i) -> void:
 static func leave_hole(state, cell: Vector2i) -> void:
     var tile: SourceTile = state.edit(cell)
     tile.set_names(tile.name, "hole1")
-    state.drop("terrain_changes", cell_key(cell))
+    state.drop("terrain_changes", cell)
     save_dig_tile(state, cell)
     connect_holes(state, cell)
 
@@ -530,9 +534,9 @@ static func clear_dug_mountain(state, cell: Vector2i) -> void:
     tile.shore_ocean = ""
     tile.shore_tidal = ""
     state.drop("blocked", cell)
-    state.drop("terrain_changes", cell_key(cell))
+    state.drop("terrain_changes", cell)
     save_dig_tile(state, cell)
-    state.source_interior_mutations[cell_key(cell)]["dig_mountain_cleared"] = true
+    state.source_interior_mutations[cell]["dig_mountain_cleared"] = true
     recoastify(state, [cell])
 
 static func dig_connects(state, cell: Vector2i, diagonal: bool = false) -> bool:

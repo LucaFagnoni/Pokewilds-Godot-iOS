@@ -292,8 +292,10 @@ func _initialize() -> void:
         await _frames(30)
         await _shot("map")
     var save_data: Dictionary = main._capture_game_save()
-    # Round-trip through JSON as a save does, so numbers compare as saved.
-    save_data = JSON.parse_string(JSON.stringify(save_data))
+    # Round-trip through JSON as a save does, so numbers compare as saved, the
+    # cell keys as the "x,y" text JSON keeps (WorldSaves.json_form): the hash
+    # is the same whether the world holds them as Vector2i or as text.
+    save_data = JSON.parse_string(JSON.stringify(preload("res://scripts/world_saves.gd").json_form(save_data)))
     if not dump.is_empty():
         FileAccess.open(dump, FileAccess.WRITE).store_string(JSON.stringify(save_data, " ", true))
     var state: Dictionary = save_data.get("crafting_state", {})

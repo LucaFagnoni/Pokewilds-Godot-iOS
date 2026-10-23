@@ -20,6 +20,11 @@ const GROUPS := ["terrain_changes", "removed_resources", "source_interior_mutati
     "event_progress", "structures"]
 const SETS := ["removed_resources", "built_house_floor_tiles"]
 const INTS := ["terrain_changes", "built_house_paintings", "built_house_origins"]
+## The overlays keyed by their cell (Vector2i); on the wire, in the records
+## and in JSON a cell key is its "x,y" text (cell_key, key_cell). The house
+## overlays are keyed by "door|floor|cell" text, event_progress by name.
+const CELL_GROUPS := ["terrain_changes", "removed_resources", "source_interior_mutations", "source_plant_farms",
+    "built_house_origins", "structures"]
 ## Fields of a structure record that are the World's nodes and runtime state, never data.
 const STRUCTURE_RUNTIME := ["sprite", "collision", "solid", "bridged_water"]
 ## Kept with undo but never replicated: what the World works out from the rest.
@@ -105,10 +110,28 @@ func group(name: String) -> Dictionary:
 static func cell_key(cell: Vector2i) -> String:
     return "%d,%d" % [cell.x, cell.y]
 
-static func key_cell(key: String) -> Vector2i:
-    var parts := key.split(",")
-    if parts.size() != 2: return Vector2i(-2147483648, -2147483648)
-    return Vector2i(int(parts[0]), int(parts[1]))
+## A key's cell: a Vector2i as it is, "x,y" or "(x, y)" text read (TileRules.key_cell).
+static func key_cell(key: Variant) -> Vector2i:
+    return TileRules.key_cell(key)
+
+## `key` as `name` holds it: its cell for the CELL_GROUPS, its text for the others.
+static func held_key(name: String, key: Variant) -> Variant:
+    return TileRules.key_cell(key) if name in CELL_GROUPS else key
+
+## A crafting state (world.gd get_crafting_save_state, a save's) with its cell
+## keys as "x,y" text, the form of JSON, the co-op records and the area
+## snapshots: a shallow copy, only the cell groups made anew.
+static func text_keys(crafting: Dictionary) -> Dictionary:
+    var result := crafting.duplicate()
+    for name in ["terrain_changes", "source_interior_mutations", "source_plant_farms", "built_house_origins"]:
+        var held = result.get(name)
+        if not held is Dictionary: continue
+        var text := {}
+        for key in held: text[cell_key(key) if key is Vector2i else key] = held[key]
+        result[name] = text
+    if result.get("removed_resources") is Array:
+        result["removed_resources"] = (result.removed_resources as Array).map(func(key): return cell_key(key) if key is Vector2i else key)
+    return result
 
 func in_bounds(cell: Vector2i) -> bool:
     return tiles.contains_cell(cell) if tiles != null else bounds.has_point(cell)
@@ -273,14 +296,14 @@ func forget(name: String, key: Variant, cells: Array = []) -> void:
 
 ## An overlay entry from another copy (a record, a change on the wire) taken
 ## in: its group set and the tiles changed to match (TileRules.apply_overlay).
-## `key` as the wire has it ("x,y" for a structure). Not marked dirty.
+## `key` as the wire has it ("x,y" for a cell). Not marked dirty.
 func apply_change(name: String, key: String, value: Variant) -> void:
     if not name in GROUPS: return
     var held: Dictionary = get(name)
-    var at: Variant = TileRules.key_cell(key) if name == "structures" else key
+    var at: Variant = held_key(name, key)
     if value == null: held.erase(at)
     else: held[at] = value
-    TileRules.apply_overlay(self, name, key, value)
+    TileRules.apply_overlay(self, name, at, value)
 
 # --- Records ----------------------------------------------------------------
 
@@ -338,7 +361,7 @@ static func encode_changes(area_id: String, revision: int, changes: Array) -> Pa
     return out
 
 ## encode_changes' bytes back: {"kind":"area_changes", "area", "revision",
-## "changes": [[group, key (String, "x,y" for structures), value or null]]},
+## "changes": [[group, key (String, "x,y" for a cell), value or null]]},
 ## or {} when they do not read as one.
 static func decode_changes(bytes: PackedByteArray) -> Dictionary:
     if bytes.size() < 2 or bytes[0] != WIRE_TAG or bytes[1] != WIRE_AREA_CHANGES: return {}

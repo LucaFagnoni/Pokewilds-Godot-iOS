@@ -205,7 +205,7 @@ func _initialize() -> void:
         for key in world.source_interior_mutations:
             var mutation = world.source_interior_mutations[key]
             if not mutation is Dictionary or mutation.get("kind") != "BIOME_DIG_SITE" or int(mutation.get("day", -1)) != day + 1: continue
-            var cell: Vector2i = world._cell_from_key(String(key))
+            var cell: Vector2i = key
             if Vector2(cell - world._player_cell()).length() < best:
                 best = Vector2(cell - world._player_cell()).length()
                 nearest = cell

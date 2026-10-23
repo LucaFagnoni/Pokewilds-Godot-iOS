@@ -327,7 +327,7 @@ func supersede(group:String,key:String)->void:
     var cells:Array=[]
     for y in range(-1,2):
         for x in range(-1,2):cells.append(cell+Vector2i(x,y))
-    world.area.forget(group,cell if group=="structures" else key,cells)
+    world.area.forget(group,AreaState.held_key(group,key),cells)
     # Ground changed under a cell rejoins the holes and shores around it.
     if group in ["source_interior_mutations","terrain_changes","source_plant_farms"]:
-        for at in cells:world.area.forget("source_interior_mutations",AreaState.cell_key(at))
+        for at in cells:world.area.forget("source_interior_mutations",at)

@@ -16,7 +16,7 @@ static func write(path:String,id:String,actor:String,data:Dictionary)->Error:
     if path.is_empty() or actor.is_empty():return ERR_INVALID_PARAMETER
     var error=DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path.get_base_dir()))
     if error!=OK:return error
-    var payload=JSON.stringify({"mode":"online","format":1,"id":id,"owner":actor,"game":data},"",true,true)
+    var payload=JSON.stringify({"mode":"online","format":1,"id":id,"owner":actor,"game":preload("res://scripts/world_saves.gd").json_form(data)},"",true,true)
     var file=FileAccess.open(path+".pending",FileAccess.WRITE)
     if file==null:return FileAccess.get_open_error()
     file.store_string(JSON.stringify({"payload":payload,"sha256":payload.sha256_text()}))
