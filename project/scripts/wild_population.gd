@@ -763,9 +763,6 @@ func flee_direction(wild_id: int, species: String, origin: Vector2i, threat: Vec
     flee_routes[wild_id] = route.slice(0, FLEE_REPLAN_STEPS)
     return first - origin
 
-func cell_of_slot(slot: int) -> Vector2i:
-    return Vector2i(cell_x[slot], cell_y[slot])
-
 ## Whatever changed the records dictionary behind this one's back (erased or
 ## added a Pokemon directly) is caught up with here: the slots are made again
 ## from it, in its order. A Pokemon added that way keeps the timer its record

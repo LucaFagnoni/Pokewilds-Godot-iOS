@@ -7554,11 +7554,6 @@ func field_motion_completed(before: Vector2, after: Vector2, movement_direction:
 func try_pre_move_field_jump(before: Vector2, movement_direction: Vector2):
     return field_moves.try_pre_move_field_jump(before, movement_direction)
 
-func _update_friendly_passby(_data: Dictionary, _cell: Vector2i, _owned: bool) -> void:
-    # Proximity alone does not trigger CHARM's heart effect.
-    pass
-
-
 func request_fishing_encounter(rod_name: String) -> void:
     if rod_name not in ["OLD ROD", "GOOD ROD", "SUPER ROD"] or not active_field_move.is_empty():
         world_message.emit("Stop the field move before fishing.")
