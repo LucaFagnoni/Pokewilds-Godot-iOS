@@ -65,8 +65,16 @@ jobs:
           VERSION: ${{ steps.names.outputs.version }}
           BUNDLE: ${{ steps.names.outputs.bundle }}
         run: |
-          git log -1 --pretty=%B > notes.md
+          # The players' changelog: the first "## " section of CHANGELOG.md, when
+          # CHANGELOG.md changed since the last published release; otherwise the
+          # commit message, as before.
+          last=$(gh release list --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || true)
+          if [ -f CHANGELOG.md ] && { [ -z "$last" ] || ! git diff --quiet "$last" HEAD -- CHANGELOG.md 2>/dev/null; }; then
+            awk '/^## /{n++; next} n==1' CHANGELOG.md | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' > notes.md
+          fi
+          [ -s notes.md ] || git log -1 --pretty=%B > notes.md
           echo "" >> notes.md
+          echo "---" >> notes.md
           echo "IPA version $VERSION ($BUNDLE). IPA, APK and server built from ${GITHUB_SHA::8}: they play together (a host refuses players of another build)." >> notes.md
           echo "- **Pokewilds-unsigned.ipa**: sign it with Feather (or similar) before installing." >> notes.md
           echo "- **Pokewilds.apk**: Android, signed; installs over the previous APK." >> notes.md

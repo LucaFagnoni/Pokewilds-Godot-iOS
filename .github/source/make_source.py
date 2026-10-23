@@ -21,7 +21,8 @@ for release in json.load(sys.stdin):
     if release["draft"] or release["prerelease"] or not ipa or not found:
         continue
     # The notes start with the commit message; drop its Co-Authored-By trailer.
-    message = body.split("IPA version")[0].strip()
+    # The players' changelog (or the commit message), without the separator before the build lines.
+    message = body.split("IPA version")[0].strip().rstrip("-").strip()
     versions.append({
         "version": found[1],
         "buildVersion": found[2],
