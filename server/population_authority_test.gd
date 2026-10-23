@@ -33,6 +33,7 @@ const Authority = preload("res://scripts/coop_population_authority.gd")
 const Hordes = preload("res://scripts/coop_horde_runtime.gd")
 const Maker = preload("res://scripts/server_area_maker.gd")
 const PopulationRules = preload("res://scripts/rules/population_rules.gd")
+const Megas = preload("res://scripts/biome_megas.gd")
 const AREAS := ["1,0", "0,1"]
 const PLAYERS := {"1,0": "alice", "0,1": "bob"}
 const SPECIES := ["rattata", "pidgey", "caterpie", "zubat", "oddish", "sentret"]
@@ -540,8 +541,8 @@ func _initialize() -> void:
     tiles.pokemon = spawns
     tiles.burrowed_pokemon = [{"name": "trapinch", "level": 22, "is_trapping": true, "position": Vector2i(20, 26) * 16}]
     var at_once := func(work: Callable): return work.call()
-    var made_first: Dictionary = await Maker.first_population(tiles, 4242, 0, game.clock_seconds, Callable(), at_once)
-    var again: Dictionary = await Maker.first_population(tiles, 4242, 0, game.clock_seconds, Callable(), at_once)
+    var made_first: Dictionary = await Maker.first_population(tiles, Megas.open_cells_at(made.state), 4242, 0, game.clock_seconds, Callable(), at_once)
+    var again: Dictionary = await Maker.first_population(tiles, Megas.open_cells_at(made.state), 4242, 0, game.clock_seconds, Callable(), at_once)
     check(Delta.encode(made_first) == Delta.encode(again), "a new area gets the same first Pokemon from the same seed")
     var newcomers: Array = made_first.get("wild_pokemon", [])
     var mated := newcomers.filter(func(record): return not String(record.get("mate_id", "")).is_empty()).size()

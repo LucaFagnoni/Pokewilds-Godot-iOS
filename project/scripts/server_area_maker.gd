@@ -33,6 +33,15 @@ var area_size:=-1
 ## server.cfg area_generation, --area-generation.
 var in_process:="auto"
 var _busy:=false
+## What placing a new area's first Pokemon gets of a frame (us): twice the
+## areas' Pokemon's (coop_population_authority.gd BUDGET_USEC), as the
+## player who arrives waits on it, still well under a 16 ms frame.
+const PLACE_USEC:=8000
+var _slice_started:=0
+func _breathe()->void:
+    if Time.get_ticks_usec()-_slice_started<PLACE_USEC:return
+    await get_tree().process_frame
+    _slice_started=Time.get_ticks_usec()
 
 func generate_here()->bool:
     return in_process=="on" or (in_process=="auto" and NativeWorldGen.enabled())
@@ -64,7 +73,7 @@ func _make_here(main:Node,actor:String,area:String,token:String)->bool:
     if coop.server_population:
         var placing:=Time.get_ticks_msec()
         var packet:Dictionary=coop.visuals.last_packets.get(actor,{})
-        shared=await first_population(made.tiles,seed_value,int(packet.get("party_level",0)),coop.clock_seconds,coop.building._breathe,coop._off_thread)
+        shared=await first_population(made.tiles,made.megas,seed_value,int(packet.get("party_level",0)),coop.clock_seconds,_breathe,coop._off_thread)
         print("SERVER placed area ",area,"'s ",shared.wild_pokemon.size()," Pokemon in ",Time.get_ticks_msec()-placing," ms")
     else:metadata["population_pending"]=true
     var bytes:PackedByteArray=await coop._off_thread(func():return Snapshot.encode(seed_value,size_index,made.cache,shared))
@@ -74,8 +83,9 @@ func _make_here(main:Node,actor:String,area:String,token:String)->bool:
 
 ## A new area: generated, adapted, its terrain cache written (where the server
 ## keeps its areas' caches) and read back as a player's game reads it:
-## {"cache": its bytes, "tiles": the exact world (SourceExactWorldAdapter)};
-## {} when generation failed. Runs on a worker thread: generation, the adapter
+## {"cache": its bytes, "tiles": the exact world (SourceExactWorldAdapter),
+## "megas": where its Megas could stand (biome_megas.gd open_cells_at)}; {}
+## when generation failed. Runs on a worker thread: generation, the adapter
 ## and the cache touch nothing the game holds (world.gd runs them on threads
 ## as well).
 static func area_of(seed_value:int,size_index:int)->Dictionary:
@@ -87,21 +97,27 @@ static func area_of(seed_value:int,size_index:int)->Dictionary:
     var loaded:=Cache.load_result(seed_value,size_index)
     if cache.is_empty() or not loaded.get("store") is WorldTileStore:return {}
     # The same spawn draw as a World's (world.gd), for the same adapter.
-    return {"cache":cache,"tiles":SourceExactWorldAdapter.from_generator_result(loaded,SourceJavaRandom.new(seed_value^0x535041574E))}
+    var tiles:=SourceExactWorldAdapter.from_generator_result(loaded,SourceJavaRandom.new(seed_value^0x535041574E))
+    # Where its roaming Megas could stand: a pass over the whole map, here
+    # rather than on the game thread (first_population picks among them).
+    var state=AreaSim.new().state
+    state.tiles=tiles
+    return {"cache":cache,"tiles":tiles,"megas":Megas.open_cells_at(state)}
 
 ## The first Pokemon of an area just made (`tiles`, its exact world) and its
 ## roaming Megas and Mega Gengar, placed as a player's World places them in a
 ## world just made (rules/population_rules.gd place_new, source_forest_boss.gd
-## select_cell_at, biome_megas.gd choose_at and install_at) with draws from a
-## generator seeded with the area's seed: the same area gets the same ones.
+## select_cell_at, biome_megas.gd choose_at and install_at; `megas`, where
+## its Megas could stand, is open_cells_at's) with draws from a generator
+## seeded with the area's seed: the same area gets the same ones.
 ## `party_level` (BattleSession.reference_level of the player who arrives
 ## first; 0 for none) adapts their species as a World adapts them to its
 ## party; `clock` is the world's (the Megas' first steps). A shared part for
 ## the area's snapshot: wild_pokemon and event_progress. The Pokemon go in a
 ## slice at a time on the game thread (`breathe` awaited between them); the
-## searches over the whole map run on a worker (`off_thread`, coop_game.gd
+## Megas' pick among their cells runs on a worker (`off_thread`, coop_game.gd
 ## _off_thread), on data nothing else holds.
-static func first_population(tiles,seed_value:int,party_level:int,clock:float,breathe:Callable,off_thread:Callable)->Dictionary:
+static func first_population(tiles,megas:Dictionary,seed_value:int,party_level:int,clock:float,breathe:Callable,off_thread:Callable)->Dictionary:
     var state=AreaSim.new().state
     state.tiles=tiles;state.bounds=tiles.bounds();state.clock=clock;state.rng.seed=seed_value
     var next:=[1]
@@ -113,14 +129,13 @@ static func first_population(tiles,seed_value:int,party_level:int,clock:float,br
         next[0]=wild_id+1
         return wild_id
     await PopulationRules.place_new(state,add,breathe)
-    var search:=func()->Dictionary:
-        var gengar=SourceForestBoss.select_cell_at(state,tiles.spawn_cell)
-        if gengar is Vector2i:
-            state.event_progress[SourceForestBoss.SAVE_KEY]={"x":gengar.x,"y":gengar.y,"home_x":gengar.x,"home_y":gengar.y}
-            # Its cell kept from the Megas, as a World's is at night.
-            SourceForestBoss.mark_at(state,true,false)
-        return Megas.choose_at(state)
-    var choices:Dictionary=await off_thread.call(search)
+    var gengar=SourceForestBoss.select_cell_at(state,tiles.spawn_cell)
+    var reserved:={}
+    if gengar is Vector2i:
+        state.event_progress[SourceForestBoss.SAVE_KEY]={"x":gengar.x,"y":gengar.y,"home_x":gengar.x,"home_y":gengar.y}
+        # Its cell kept from the Megas.
+        reserved[gengar]=true
+    var choices:Dictionary=await off_thread.call(func()->Dictionary:return Megas.choose_at(state,megas,reserved))
     Megas.install_at(state,choices)
     var events:={}
     for key in [Megas.SAVE_KEY,SourceForestBoss.SAVE_KEY]:

@@ -217,20 +217,26 @@ static func _pick(state, world: Node, cells: Array, reserved: Dictionary) -> Var
         if state.rng.randi_range(1, count) == 1: choice = cell
     return choice
 
-## The cells the roaming Megas of an area just made take, as prepare_load
-## picks them in a world just made (group -> cell, or null when its habitat
-## has no room), over the area's data with no World: the whole map looked
-## through at once (a worker thread's work: it reads the tiles, the area's
-## Pokemon and state.rng only).
-static func choose_at(state) -> Dictionary:
+## Where each group's Mega could stand in an area held without a World,
+## its Pokemon aside (group -> cells, _find_open): the whole map looked
+## through at once, a worker thread's work (it only reads the tiles and the
+## area's overlays).
+static func open_cells_at(state) -> Dictionary:
     var found := {}
     for group: String in GROUPS: found[group] = []
     _find_open(state, null, found, 0, state.tiles.tiles.flags.size(), {})
+    return found
+
+## The cells the roaming Megas of an area just made take, as prepare_load
+## picks them in a world just made: one of each group's `found` cells
+## (open_cells_at) at random that no Pokemon of the area, no other Mega and
+## none of `reserved` takes (group -> cell, or null when there is none).
+static func choose_at(state, found: Dictionary, reserved: Dictionary = {}) -> Dictionary:
     var choices := {}
-    var reserved := {}
+    var taken := reserved.duplicate()
     for group in found:
-        choices[group] = _pick(state, null, found[group], reserved)
-        if choices[group] != null: reserved[choices[group]] = true
+        choices[group] = _pick(state, null, found[group], taken)
+        if choices[group] != null: taken[choices[group]] = true
     return choices
 
 ## The roaming Megas of an area just made, put in without a World as install
