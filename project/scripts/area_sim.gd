@@ -272,6 +272,26 @@ func _take_habitat(identity: String) -> void:
     var at := habitat_cell(identity)
     if at != NO_CELL: state.habitat.take(at)
 
+## The items dropped on its ground (the host's "drop/<area>|OVERWORLD/..."
+## records): record key -> cell. Each blocks its cell, as a World's dropped
+## items do (source_dropped_items.gd), unless something else blocks it.
+var drops := {}
+const DROPPED := "dropped-item"
+
+## A "drop/" record (`key`) as the host's records now hold it (`value`; null
+## once picked up).
+func apply_drop(key: String, value: Variant) -> void:
+    var was: Variant = drops.get(key)
+    drops.erase(key)
+    if was is Vector2i and state.blocked.get(was) is String and state.blocked[was] == DROPPED:
+        state.blocked.erase(was)
+    if not value is Dictionary or String(value.get("area", "")) != state.area + "|OVERWORLD":
+        return
+    var cell := Vector2i(int(value.get("x", 0)), int(value.get("y", 0)))
+    drops[key] = cell
+    if not state.blocked.has(cell):
+        state.blocked[cell] = DROPPED
+
 ## A wild Pokemon claimed for a battle (held where it is) or let go: true when
 ## let go (where it stands is to be told again).
 func apply_claim(wild_id: int, claimed: bool) -> bool:

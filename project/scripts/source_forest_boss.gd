@@ -78,46 +78,53 @@ static func step_at(state, direction: Vector2i, taken: Array = []) -> bool:
 ## forest_tile with nothing on it (no upper name, no item). The store's
 ## arrays rule out most cells first: a proxy for each cell select_cell looked
 ## at was most of its time.
-static func _bare_forest(world: Node, cell: Vector2i) -> bool:
-    var store = world.exact_world.tiles
+static func _bare_forest(state, cell: Vector2i) -> bool:
+    var store = state.tiles.tiles
     var index: int = store.index_of(cell * 16) if store is WorldTileStore else -1
     if index >= 0:
         if store.upper_ids[index] != 0 or store.has_item_ids[index] != 0: return false
         var biome: String = store.biome_at(index)
         if not biome.is_empty() and biome.to_lower() not in ["forest", "deep_forest"]: return false
-    var tile: SourceTile = world.exact_world.tile_at(cell)
+    var tile: SourceTile = state.tiles.tile_at(cell)
     return forest_tile(tile) and tile.name_upper.is_empty() and tile.has_item.is_empty() and tile.item_snapshot().is_empty()
 
 static func select_cell(world: Node) -> Variant:
-    var occupied: Dictionary = {world._player_cell(): true}
-    for record in world.wild_pokemon.values():
+    return select_cell_at(world.area, world.spawn_cell, world._player_cell())
+
+## select_cell over an area's data (area_state.gd), with or without a World:
+## the first forest clearing found from `origin` (the area's spawn cell) at
+## least eight cells from it, no Pokemon, egg or plant (nor `taken`, a
+## World's player) on it, a clear ring around it.
+static func select_cell_at(state, origin: Vector2i, taken: Vector2i = Vector2i(-2147483648, -2147483648)) -> Variant:
+    var occupied: Dictionary = {taken: true}
+    for record in state.wild.records.values():
         occupied[record.get("cell", Vector2i.ZERO)] = true
-    for cells in [world.deployed_pokemon, world.wild_eggs]:
+    for cells in [state.habitat.records, state.eggs.records]:
         for cell in cells:
             occupied[cell] = true
-    var queue: Array[Vector2i] = [world.spawn_cell]
-    var visited: Dictionary = {world.spawn_cell: true}
+    var queue: Array[Vector2i] = [origin]
+    var visited: Dictionary = {origin: true}
     var index := 0
     while index < queue.size():
         var cell := queue[index]
         index += 1
-        if walkable(world, cell):
-            if _bare_forest(world, cell) \
-                    and cell.distance_squared_to(world.spawn_cell) >= 64 \
+        if walkable_at(state, cell):
+            if _bare_forest(state, cell) \
+                    and cell.distance_squared_to(origin) >= 64 \
                     and not occupied.has(cell) \
-                    and not world.source_plant_farms.has(world._cell_key(cell)):
+                    and not state.source_plant_farms.has("%d,%d" % [cell.x, cell.y]):
                 # A clear ring keeps all four approaches open and prevents a
                 # solid boss from cutting off a one-cell path.
                 var clear_ring := true
                 for y in range(-1, 2):
                     for x in range(-1, 2):
-                        if not walkable(world, cell + Vector2i(x, y)):
+                        if not walkable_at(state, cell + Vector2i(x, y)):
                             clear_ring = false
                 if clear_ring:
                     return cell
         for direction in DIRECTIONS:
             var neighbor: Vector2i = cell + direction
-            if not visited.has(neighbor) and walkable(world, neighbor):
+            if not visited.has(neighbor) and walkable_at(state, neighbor):
                 visited[neighbor] = true
                 queue.append(neighbor)
     return null

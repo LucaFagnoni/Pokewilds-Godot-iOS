@@ -886,6 +886,208 @@ static func add_wild(state, species: String, level: int, cell: Vector2i, home_bi
     state.wild.add(wild_id, wild_record(state, ecology_source, wild_id, cell, home_biome, source_record, saved_state))
     return true
 
+# --- A new area's first Pokemon ---------------------------------------------------
+
+## The species of a new wild Pokemon of `level` on `cell` that meets a
+## stronger party (`adaptive_level`, BattleSession.wild_level): the source's
+## evolution checks run again at that level, with draws of their own from the
+## world's seed and the cell (never state.rng), kept to its route's species
+## and to those with overworld art. `species` itself otherwise.
+static func adapted_species(state, species: String, level: int, cell: Vector2i, adaptive_level: int, world_seed: int) -> String:
+    if adaptive_level <= level:
+        return species
+    var evolution_rng := RandomNumberGenerator.new()
+    evolution_rng.seed = (
+        int(world_seed) * 1000003
+        + cell.x * 73856093
+        + cell.y * 19349663
+        + adaptive_level * 83492791
+        + species.hash()
+    )
+    var evolved_species := PokemonData.adaptive_source_evolution(species, adaptive_level, evolution_rng)
+    var source_tile: SourceTile = state.tiles.tile_at(cell)
+    var source_route_name := ""
+    var source_is_water := false
+    if source_tile != null:
+        source_is_water = source_tile.is_water
+        if source_tile.route_belongs_to != null:
+            source_route_name = source_tile.route_belongs_to.name
+    var route_allows_evolution := (
+        source_route_name.is_empty()
+        or PokemonData.source_route_species_allowed(evolved_species, source_route_name, source_is_water)
+    )
+    if route_allows_evolution and has_art({"species": evolved_species}):
+        return evolved_species
+    return species
+
+## The wild Pokemon of an area just made, as a World places them (world.gd
+## _ensure_overworld_pokemon_population): its source records' Pokemon, a mate
+## for each that can have one, the burrowed Trapinch, then any authored Alolan
+## one still missing. `add` (species, level, cell, home biome, source record)
+## puts one in and returns its wild id, -1 when it was not put in; `breathe`,
+## when valid, is awaited between Pokemon (an area takes many frames' worth).
+static func place_new(state, add: Callable, breathe: Callable = Callable()) -> void:
+    var records: Array = state.tiles.pokemon_cell_records()
+    await place_source(state, records, add, breathe)
+    await place_mates(state, add, breathe)
+    place_burrowed(state, state.tiles.burrowed_cell_records(), add)
+    restore_alolan(state, add)
+
+## The Pokemon of the source's spawn `records` (pokemon_cell_records).
+static func place_source(state, records: Array, add: Callable, breathe: Callable = Callable()) -> void:
+    for record in records:
+        if breathe.is_valid():
+            await breathe.call()
+        var species := String(record.get("name", "")).to_lower()
+        var cell: Vector2i = record.get("cell", Vector2i.ZERO)
+        if species.is_empty() or not state.tiles.contains_cell(cell):
+            continue
+        var tile: SourceTile = state.tiles.tile_at(cell)
+        var home_biome := "OCEAN" if tile == null else TileRules.source_biome(tile)
+        add.call(species, int(record.get("level", 2)), cell, home_biome, record)
+
+## A mate for each wild Pokemon that can have one (a new world's companions
+## replace the old partial 50% density pass): one already near, else a new one
+## of a species its route allows on a free cell near it in the same route,
+## else the two moved to two free cells side by side in that route.
+static func place_mates(state, add: Callable, breathe: Callable = Callable()) -> void:
+    var wild: Dictionary = state.wild.records
+    var occupied: Dictionary = {}
+    for id in wild:
+        occupied[wild[id].cell] = id
+    var initial_ids := wild.keys()
+    var paired: Dictionary = {}
+    var offsets: Array[Vector2i] = []
+    for radius in range(1, MATE_BOND_RADIUS + 1):
+        for y in range(-radius, radius + 1):
+            for x in range(-radius, radius + 1):
+                if maxi(absi(x), absi(y)) == radius:
+                    offsets.append(Vector2i(x, y))
+    for id in initial_ids:
+        if breathe.is_valid():
+            await breathe.call()
+        if paired.has(id): continue
+        var original: Dictionary = wild[id]
+        var species := String(original.species)
+        var groups: Array = original.get("egg_groups", [])
+        var gender := String(original.get("gender", "unknown"))
+        if groups.has("EGG_NONE") or groups.has("EGG_DITTO") or gender == "unknown" or bool(original.get("burrowed", false)) or bool(original.get("behavior", {}).get("stationary", false)):
+            continue
+        var origin: Vector2i = original.cell
+        # Use an existing adjacent compatible animal before adding another.
+        var partner_id := -1
+        for offset in offsets:
+            var nearby_id := int(occupied.get(origin + offset, -1))
+            if nearby_id >= 0 and not paired.has(nearby_id) and PokemonEcology.can_mate(original, wild[nearby_id]):
+                partner_id = nearby_id
+                break
+        if partner_id < 0:
+            var origin_tile: SourceTile = state.tiles.tile_at(origin)
+            var route := "" if origin_tile == null or origin_tile.route_belongs_to == null else origin_tile.route_belongs_to.name
+            var partner_gender := "male" if gender == "female" else "female"
+            var partner_species := ""
+            var candidates: Array[String] = [species]
+            for candidate_species in SourceRouteData.allowed_pokemon(route):
+                if not candidates.has(String(candidate_species)): candidates.append(String(candidate_species))
+            for candidate_species in candidates:
+                # The first look at a species' art loads it from disk.
+                if breathe.is_valid():
+                    await breathe.call()
+                var info := PokemonData.info(candidate_species)
+                var ratio := String(info.get("gender_ratio", "GENDER_UNKNOWN"))
+                if ratio == "GENDER_UNKNOWN" or (ratio == "GENDER_F0" and partner_gender == "female") or (ratio == "GENDER_F100" and partner_gender == "male"): continue
+                if not has_art({"species": candidate_species}): continue
+                var test_partner := PokemonEcology.ensure_record({"species":candidate_species,"gender":partner_gender}, state.rng)
+                if PokemonEcology.can_mate(original, test_partner):
+                    partner_species = candidate_species
+                    break
+            if partner_species.is_empty(): continue
+            for offset in offsets:
+                var candidate := origin + offset
+                if occupied.has(candidate) or state.eggs.records.has(candidate) or state.habitat.records.has(candidate) or not can_move_between(state, partner_species, origin, candidate): continue
+                var tile: SourceTile = state.tiles.tile_at(candidate)
+                if tile == null or tile.route_belongs_to == null or tile.route_belongs_to.name != route: continue
+                var new_id: int = add.call(partner_species, int(original.level), candidate, String(original.home_biome), {"gender":partner_gender, "generation":original.get("source_record", {}).get("generation", "")})
+                if new_id < 0 or not wild.has(new_id): continue
+                occupied[candidate] = new_id
+                partner_id = new_id
+                break
+            if partner_id < 0:
+                # An isolated authored cell may have no room for two actors.
+                # Find two adjacent cells in the SAME source route, keeping
+                # both the terrain and the encounter species list intact.
+                for radius in range(1, 17):
+                    if partner_id >= 0: break
+                    # A search that finds nothing took ~220 ms: a ring per slice.
+                    if breathe.is_valid():
+                        await breathe.call()
+                    for y in range(-radius, radius + 1):
+                        if partner_id >= 0: break
+                        for x in range(-radius, radius + 1):
+                            if maxi(absi(x), absi(y)) != radius: continue
+                            var first := origin + Vector2i(x, y)
+                            if occupied.has(first) or state.eggs.records.has(first) or state.habitat.records.has(first) or not can_move_between(state, species, origin, first): continue
+                            var first_tile: SourceTile = state.tiles.tile_at(first)
+                            if first_tile == null or first_tile.route_belongs_to == null or first_tile.route_belongs_to.name != route: continue
+                            for direction in [Vector2i.LEFT,Vector2i.RIGHT,Vector2i.UP,Vector2i.DOWN]:
+                                var second: Vector2i = first + direction
+                                if occupied.has(second) or state.eggs.records.has(second) or state.habitat.records.has(second) or not can_move_between(state, partner_species, origin, second): continue
+                                var second_tile: SourceTile = state.tiles.tile_at(second)
+                                if second_tile == null or second_tile.route_belongs_to == null or second_tile.route_belongs_to.name != route: continue
+                                var new_id: int = add.call(partner_species, int(original.level), second, String(original.home_biome), {"gender":partner_gender, "generation":original.get("source_record", {}).get("generation", "")})
+                                if new_id < 0 or not wild.has(new_id): continue
+                                occupied.erase(origin)
+                                occupied[first] = id
+                                occupied[second] = new_id
+                                state.wild.move(id, first)
+                                state.wild.snap(id)
+                                partner_id = new_id
+                                break
+                            if partner_id >= 0: break
+        if partner_id >= 0:
+            var partner: Dictionary = wild[partner_id]
+            original["mate_id"] = partner.ecology_id
+            partner["mate_id"] = original.ecology_id
+            wild[id] = original
+            wild[partner_id] = partner
+            paired[id] = true
+            paired[partner_id] = true
+
+## The burrowed Trapinch of the source's `records` (burrowed_cell_records).
+static func place_burrowed(state, records: Array, add: Callable) -> void:
+    for record in records:
+        var cell: Vector2i = record.get("cell", Vector2i.ZERO)
+        if not state.tiles.contains_cell(cell):
+            continue
+        var tile: SourceTile = state.tiles.tile_at(cell)
+        var home_biome := "DESERT" if tile == null else TileRules.source_biome(tile)
+        add.call("trapinch", int(record.get("level", 22)), cell, home_biome, record)
+
+## The authored Alolan Raichu and Exeggutor, when the population has none
+## (older saves kept theirs from before these had art): never another species.
+static func restore_alolan(state, add: Callable) -> void:
+    var present := {"araichu": false, "aexeggutor": false}
+    for raw_data in state.wild.records.values():
+        var species := String((raw_data as Dictionary).get("species", "")).to_lower()
+        if species == "raichu_alolan":
+            species = "araichu"
+        elif species == "exeggutor_alolan":
+            species = "aexeggutor"
+        if present.has(species):
+            present[species] = true
+    for record in state.tiles.pokemon_cell_records():
+        var species := String(record.get("name", "")).to_lower()
+        if not present.has(species) or bool(present[species]):
+            continue
+        var cell: Vector2i = record.get("cell", Vector2i.ZERO)
+        if state.wild.id_at(cell) >= 0:
+            continue
+        var tile: SourceTile = state.tiles.tile_at(cell)
+        if tile == null:
+            continue
+        add.call(species, int(record.get("level", 2)), cell, TileRules.source_biome(tile), record)
+        present[species] = true
+
 ## The record of a Pokemon left in a habitat (`entry`, as saved) on `cell`,
 ## with its ecology id.
 static func habitat_record(state, entry: Dictionary, cell: Vector2i, ecology_id: String) -> Dictionary:
