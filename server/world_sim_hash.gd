@@ -1,7 +1,7 @@
 # A deterministic run of the overworld: a fixed seed, a fixed frame time and a
 # seeded RNG, then a scripted minute of play (walking, DIG, building, CUT,
-# each field move on and off, a low tide coming in and going out, a new day).
-# Prints one hash of what the
+# each field move on and off, a house built, entered, furnished and left, a
+# low tide coming in and going out, a new day). Prints one hash of what the
 # game would save plus the live tile store, and one hash per part, so a
 # refactor of the world can be checked for "no change in behaviour": run it
 # before and after, the hashes must match.
@@ -12,8 +12,8 @@
 # the day's dig sites) runs with the world paused and the RNG is reseeded
 # after it, so two runs on any machine give the same hash. Reference hashes
 # (unchanged by the world cleanup from 81ba4bd3 on, which this harness checked):
-#   seed 12345 5f7d1e2bbcae53290b5121f9025a49c3d5dc7b138ad8161a8c17b1273b797d6c,
-#   seed 987654321 6fd602e3400971b788b612b91e1b7687162fb3cb606b55a9ec2a6ee5081ff795
+#   seed 12345 0ec0de3f09e4df6179223606300321955ec2abb4b58f5d53230636011d6bfcde,
+#   seed 987654321 189a7c570c3973e35fd5078500145ff2cbf88d49697862cccdfc22fc0d45dd50
 extends SceneTree
 
 const Paths = preload("res://scripts/game_data_paths.gd")
@@ -98,7 +98,7 @@ func _initialize() -> void:
         if arg.begins_with("--shots="): shots = arg.trim_prefix("--shots=")
     # A script error would leave the run waiting forever.
     # Wall time: a game-time timer runs out in seconds at an uncapped --fixed-fps.
-    var give_up_at := Time.get_ticks_msec() + 900000
+    var give_up_at := Time.get_ticks_msec() + 400000
     process_frame.connect(func():
         if Time.get_ticks_msec() > give_up_at:
             printerr("WORLD SIM FAIL: timed out")
@@ -200,6 +200,44 @@ func _initialize() -> void:
         await _frames(150)
     parts["field_moves"] = _digest(used)
     _note("field_moves")
+    # A house: a roof over wall, door, wall, where all six cells and the one
+    # below the door allow it. Walk in, furnish, walk out.
+    var here: Vector2i = world.call("_player_cell")
+    var house := Vector2i(-2147483648, 0)
+    for radius in range(2, 14):
+        for y in range(-radius, radius + 1):
+            for x in range(-radius, radius + 1):
+                var corner := here + Vector2i(x, y)
+                # Clear of the player, with open ground below the door.
+                var clear: bool = corner.y > here.y + 1 and world.call("_is_walkable", corner + Vector2i(1, 3))
+                for dy in 3:
+                    for dx in 3:
+                        if not world.call("can_place_structure", "WALL", corner + Vector2i(dx, dy)): clear = false
+                if clear and house.x == -2147483648: house = corner
+    var visits := []
+    if house.x != -2147483648:
+        for dx in 3: world.call("place_structure", "ROOF", house + Vector2i(dx, 0))
+        world.call("place_structure", "WALL", house + Vector2i(0, 1))
+        world.call("place_structure", "DOOR", house + Vector2i(1, 1))
+        world.call("place_structure", "WALL", house + Vector2i(2, 1))
+        await _frames(30)
+        visits.append(world.call("_built_house_state", house + Vector2i(1, 1)).get("ready", false))
+        world.player.position = world.call("_cell_center", house + Vector2i(1, 2))
+        await _walk("move_up", 45)
+        visits.append([world.get("active_area_id"), world.call("_player_cell")])
+        var inside: Vector2i = world.call("_player_cell")
+        for piece in ["BED", "TABLE", "PLANT"]:
+            var placed := Vector2i(-2147483648, 0)
+            for offset in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(-1, 1), Vector2i(1, 1)]:
+                if placed.x == -2147483648 and world.call("place_structure", piece, inside + offset): placed = inside + offset
+            visits.append([piece, placed])
+        await _walk("move_up", 30)
+        await _walk("move_down", 90)
+        visits.append([world.get("active_area_id"), world.call("_player_cell")])
+        await _frames(60)
+    parts["house"] = _digest([house, visits])
+    print("WORLD SIM house at %s: %s" % [house, visits])
+    _note("house")
     if not shots.is_empty():
         var helper: Dictionary = main.caught_pokemon[0] if not main.caught_pokemon.is_empty() else main._make_starter_machop()
         world.call("set_active_field_move", helper, "BUILD")
