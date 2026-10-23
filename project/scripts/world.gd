@@ -184,6 +184,7 @@ func _bind_area() -> void:
     area.wild = wild_population
     area.habitat = habitat_population
     area.eggs = egg_population
+    area.rooms_seen = built_house_rooms_seen
     area.rng = rng
     area.flowers = flower_cells
     area.walkable = _is_walkable
@@ -1507,9 +1508,6 @@ func _add_built_house_floor_cell(
 
 func _built_house_floor_can_expand(cell: Vector2i) -> bool:
     return interiors.built_house_floor_can_expand(cell)
-
-func _place_built_house_floor(cell: Vector2i) -> bool:
-    return interiors.place_built_house_floor(cell)
 
 func _built_house_stair_metadata(cell: Vector2i) -> Dictionary:
     return interiors.built_house_stair_metadata(cell)

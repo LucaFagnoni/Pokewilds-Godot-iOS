@@ -266,6 +266,12 @@ func _actions(where: String) -> void:
 			await _try("remove a build", func() -> bool:
 				await coop.building.remove(at, "CUT")
 				return not main.world.built_structures.has(at))
+	# Several of the player's own builds at once (each predicted in its own
+	# undo log), the middle one too far for the host to allow.
+	# The bag saved first (setup): a command that pays then has nothing to save ahead of it, and all three go at once.
+	for item in ["LOG", "GRASS"]: main.inventory[item] = int(main.inventory.get(item, 0)) + 3
+	await _try("bag saved (setup)", func() -> bool: return await coop.checkpoint_player(), 20000)
+	await _try("three builds in flight, the middle refused", _builds_in_flight)
 
 	if main.caught_pokemon.size() >= 2:
 		var left_at: Vector2i = main.world._player_cell() + main.world._facing_cell()
@@ -410,6 +416,40 @@ func _cut() -> bool:
 	var before := int(main.inventory.get("GRASS", 0))
 	await coop.building.cut(cell)
 	return not main.world._is_cuttable_grass_cell(cell) and int(main.inventory.get("GRASS", 0)) > before
+
+## Three FENCEs sent one after another without waiting for an answer, the
+## middle one out of reach: the first and last kept, the middle one undone
+## (the last played again over it), two paid for and the bag the record's;
+## then both cut, two at once. True when all of it holds.
+func _builds_in_flight() -> bool:
+	var world: Node = main.world
+	var here: Vector2i = world._player_cell()
+	var near: Array = []
+	for step in [Vector2i.RIGHT, Vector2i.LEFT, Vector2i.DOWN, Vector2i.UP]:
+		var cell: Vector2i = here + step
+		if world.can_place_structure("FENCE", cell) and not world.wild_eggs.has(cell) and not world.deployed_pokemon.has(cell): near.append(cell)
+	var far := Vector2i(999999, 999999)
+	for distance in range(9, 24):
+		for direction in [Vector2i.RIGHT, Vector2i.LEFT, Vector2i.DOWN, Vector2i.UP]:
+			if far.x == 999999 and world.can_place_structure("FENCE", here + direction * distance): far = here + direction * distance
+	if near.size() < 2 or far.x == 999999:
+		print("PROBE note: no room for three FENCEs near ", here)
+		return false
+	var logs := int(main.inventory.get("LOG", 0))
+	coop.building.build("FENCE", near[0])
+	coop.building.build("FENCE", far)
+	coop.building.build("FENCE", near[1])
+	var at_once: int = coop.building.in_flight
+	while coop.building.busy: await process_frame
+	var record: Dictionary = coop.shared_records.get("player/" + coop.session.actor, {})
+	var kept: bool = world.built_structures.has(near[0]) and world.built_structures.has(near[1]) and not world.built_structures.has(far)
+	var paid := int(main.inventory.get("LOG", 0)) == logs - 2 and _same_bag(record.get("inventory", {}), main.inventory)
+	if not (kept and paid and at_once == 3): print("PROBE note: in flight ", at_once, ", kept ", kept, ", LOG ", logs, " -> ", main.inventory.get("LOG"), " / ", record.get("inventory", {}).get("LOG"))
+	coop.building.remove(near[0], "CUT")
+	coop.building.remove(near[1], "CUT")
+	while coop.building.busy: await process_frame
+	var cut: bool = not world.built_structures.has(near[0]) and not world.built_structures.has(near[1]) and int(main.inventory.get("LOG", 0)) == logs
+	return kept and paid and at_once == 3 and cut and not world.area.recording()
 
 func _build_box() -> bool:
 	_cell = _free_cell(_cell)

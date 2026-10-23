@@ -79,15 +79,25 @@ var memo := {}
 var walkable := Callable()
 var view: Node = null
 
+## origin row -> [corner, size]: each house's room as it was last walked
+## into (the World's built_house_rooms_seen). Not replicated: what a cut into
+## a house's outside takes from inside goes by it (rules/remove.gd).
+var rooms_seen := {}
+
 ## group -> {key: true}: changed since take_dirty(). Collected only while
 ## tracking (co-op), so a game alone never keeps them.
 var dirty := {}
 var tracking := false
-var _recording := false
-## [group, key, had it, the value it had] per write while recording.
-var _undo: Array = []
-## store index (or Vector2i for a tile outside the store) -> what it was.
-var _saved_tiles := {}
+## The predictions being recorded, oldest first, each its own undo log:
+## [id, [[group, key, had it, the value it had] per write], {store index (or
+## Vector2i for a tile outside the store) -> what it was}, confirmed]. Writes
+## go to the newest. Several commands of one player can be in flight; a
+## refused one is undone with every newer one, and the newer ones are played
+## again by their owner (rollback, undone).
+var _logs: Array = []
+var _paused := false
+## The ids of the newer predictions the last rollback undid as well, oldest first.
+var undone: Array = []
 
 func group(name: String) -> Dictionary:
     return get(name)
@@ -107,14 +117,14 @@ func in_bounds(cell: Vector2i) -> bool:
 
 func put(name: String, key: Variant, value: Variant) -> void:
     var held: Dictionary = get(name)
-    if _recording: _undo.append([name, key, held.has(key), held.get(key)])
+    if recording(): _logs.back()[1].append([name, key, held.has(key), held.get(key)])
     held[key] = value
     if tracking and not name in LOCAL: _mark(name, key)
 
 func drop(name: String, key: Variant) -> void:
     var held: Dictionary = get(name)
     if not held.has(key): return
-    if _recording: _undo.append([name, key, true, held[key]])
+    if recording(): _logs.back()[1].append([name, key, true, held[key]])
     held.erase(key)
     if tracking and not name in LOCAL: _mark(name, key)
 
@@ -145,8 +155,9 @@ func tile_at(cell: Vector2i) -> SourceTile:
 ## The tile at `cell`, to change: while recording, what it was is kept first.
 func edit(cell: Vector2i) -> SourceTile:
     if tiles == null: return null
-    if _recording:
+    if recording():
         var store = tiles.tiles
+        var _saved_tiles: Dictionary = _logs.back()[2]
         if store is WorldTileStore:
             var index: int = store.index_of(cell * 16)
             if index >= 0:
@@ -163,77 +174,100 @@ func edit(cell: Vector2i) -> SourceTile:
 
 # --- Prediction -------------------------------------------------------------
 
-## Starts keeping what each write replaces, until commit() or rollback().
-func begin() -> void:
-    _recording = true
-    _undo.clear()
-    _saved_tiles.clear()
+## Starts keeping what each write replaces, in a log of its own (`id`: the
+## command's), until commit(id) or rollback(id).
+func begin(id: String = "") -> void:
+    _logs.append([id, [], {}, false])
 
 func recording() -> bool:
-    return _recording
+    return not _logs.is_empty() and not _paused
 
 ## Stops recording for a while (changes from the authority are not the
-## prediction's): returns whether it was, for resume().
+## predictions'): returns what to give resume().
 func suspend() -> bool:
-    var was := _recording
-    _recording = false
+    var was := _paused
+    _paused = true
     return was
 
 func resume(was: bool) -> void:
-    _recording = was
+    _paused = was
 
-## Keeps every write since begin().
-func commit() -> void:
-    _recording = false
-    _undo.clear()
-    _saved_tiles.clear()
+## The log of `id` ("": the newest), -1 when there is none.
+func _log_at(id: String) -> int:
+    if id.is_empty(): return _logs.size() - 1
+    for index in range(_logs.size() - 1, -1, -1):
+        if _logs[index][0] == id: return index
+    return -1
 
-## Puts back everything written since begin(), the last write first. Returns
-## the cells whose tiles were put back (for the view to redraw).
-func rollback() -> Array:
-    _recording = false
-    for index in range(_undo.size() - 1, -1, -1):
-        var entry: Array = _undo[index]
+## Keeps every write of `id` ("": the newest). Its log goes once no older one
+## can still be undone (an older refused one undoes it too, to play it again).
+func commit(id: String = "") -> void:
+    var at := _log_at(id)
+    if at < 0: return
+    _logs[at][3] = true
+    while not _logs.is_empty() and _logs[0][3]: _logs.pop_front()
+
+## Puts back everything `id` ("": the newest) wrote, and before it whatever
+## the newer predictions wrote since (their ids in `undone`, to be played
+## again on what is left), the last write first. Returns the cells whose
+## tiles were put back (for the view to redraw).
+func rollback(id: String = "") -> Array:
+    undone = []
+    var at := _log_at(id)
+    var cells := []
+    if at < 0: return cells
+    for index in range(_logs.size() - 1, at - 1, -1):
+        var entry: Array = _logs[index]
+        if index > at: undone.push_front(entry[0])
+        _undo(entry[1])
+        cells.append_array(_restore_tiles(entry[2]))
+    _logs.resize(at)
+    return cells
+
+func _undo(writes: Array) -> void:
+    for index in range(writes.size() - 1, -1, -1):
+        var entry: Array = writes[index]
         var held: Dictionary = get(entry[0])
         if entry[2]: held[entry[1]] = entry[3]
         else: held.erase(entry[1])
         if tracking and not entry[0] in LOCAL: _mark(entry[0], entry[1])
-    _undo.clear()
+
+func _restore_tiles(saved_tiles: Dictionary) -> Array:
     var cells := []
-    if tiles != null and tiles.tiles is WorldTileStore:
-        var store: WorldTileStore = tiles.tiles
-        for index in _saved_tiles:
-            if index is Vector2i:
-                store.extra[index * 16] = _saved_tiles[index]
-                cells.append(index)
-                continue
-            var was: Array = _saved_tiles[index]
-            store.flags[index] = was[0]; store.name_ids[index] = was[1]; store.upper_ids[index] = was[2]
-            store.biome_ids[index] = was[3]; store.shore_ocean_ids[index] = was[4]; store.shore_tidal_ids[index] = was[5]
-            store.ledge_dir_ids[index] = was[6]; store.has_item_ids[index] = was[7]; store.amounts[index] = was[8]
-            store.route_ids[index] = was[9]
-            store.set_items(index, was[10]); store.set_doors(index, was[11])
-            store.bump(index)
-            # The proxy handed out for the cell holds the values it read: read them again.
-            var cached = store._proxies.get(index)
-            var proxy = (cached as WeakRef).get_ref() if cached != null else null
-            if proxy != null: proxy.repoint(index)
-            var key: Vector2i = store.key_of(index)
-            SourceTile.resident_changed_cells[key] = true
-            cells.append(key / 16)
-    _saved_tiles.clear()
+    if tiles == null or not tiles.tiles is WorldTileStore: return cells
+    var store: WorldTileStore = tiles.tiles
+    for index in saved_tiles:
+        if index is Vector2i:
+            store.extra[index * 16] = saved_tiles[index]
+            cells.append(index)
+            continue
+        var was: Array = saved_tiles[index]
+        store.flags[index] = was[0]; store.name_ids[index] = was[1]; store.upper_ids[index] = was[2]
+        store.biome_ids[index] = was[3]; store.shore_ocean_ids[index] = was[4]; store.shore_tidal_ids[index] = was[5]
+        store.ledge_dir_ids[index] = was[6]; store.has_item_ids[index] = was[7]; store.amounts[index] = was[8]
+        store.route_ids[index] = was[9]
+        store.set_items(index, was[10]); store.set_doors(index, was[11])
+        store.bump(index)
+        # The proxy handed out for the cell holds the values it read: read them again.
+        var cached = store._proxies.get(index)
+        var proxy = (cached as WeakRef).get_ref() if cached != null else null
+        if proxy != null: proxy.repoint(index)
+        var key: Vector2i = store.key_of(index)
+        SourceTile.resident_changed_cells[key] = true
+        cells.append(key / 16)
     return cells
 
 ## While recording: what the authority has said since about these cells and
 ## overlay keys stands, so a rollback no longer puts back what they were.
 func forget(name: String, key: Variant, cells: Array = []) -> void:
-    if not _recording: return
-    for index in range(_undo.size() - 1, -1, -1):
-        if _undo[index][0] == name and _undo[index][1] == key: _undo.remove_at(index)
-    if tiles == null or not tiles.tiles is WorldTileStore: return
-    for cell in cells:
-        var index: int = tiles.tiles.index_of(cell * 16)
-        _saved_tiles.erase(index if index >= 0 else cell)
+    for entry in _logs:
+        var writes: Array = entry[1]
+        for index in range(writes.size() - 1, -1, -1):
+            if writes[index][0] == name and writes[index][1] == key: writes.remove_at(index)
+        if tiles == null or not tiles.tiles is WorldTileStore: continue
+        for cell in cells:
+            var index: int = tiles.tiles.index_of(cell * 16)
+            entry[2].erase(index if index >= 0 else cell)
 
 # --- Changes from elsewhere -------------------------------------------------
 

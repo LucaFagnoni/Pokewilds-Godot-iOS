@@ -18,12 +18,12 @@ const AreaState = preload("res://scripts/area_state.gd")
 const Snapshot = preload("res://scripts/coop_world_snapshot.gd")
 const Delta = preload("res://scripts/coop_world_delta.gd")
 const Cache = preload("res://scripts/source_world_cache.gd")
+const Build = preload("res://scripts/rules/build.gd")
 const WildPopulation = preload("res://scripts/wild_population.gd")
 const HabitatPopulation = preload("res://scripts/habitat_population.gd")
 const PopulationRules = preload("res://scripts/rules/population_rules.gd")
 const Population = preload("res://scripts/coop_wild_population.gd")
 const Hordes = preload("res://scripts/coop_hordes.gd")
-const CraftingData = preload("res://scripts/crafting_data.gd")
 const Megas = preload("res://scripts/biome_megas.gd")
 ## The record groups of an area's Pokemon, in the order a World puts them back.
 const POPULATION := ["deployed_pokemon", "wild_pokemon", "wild_eggs"]
@@ -110,27 +110,19 @@ func lay_records(flat: Dictionary, records: Dictionary) -> void:
             apply_record(group, String(key).get_slice("/", 1).uri_decode(), flat[key])
 
 ## One record ("<group>/<key>"'s encoded value) taken in: the overlay and its
-## tiles; a solid structure blocks its cell, as the World's collision does.
+## tiles; a solid structure blocks its cells, as the World's collision does
+## (rules/build.gd lay); a roaming Mega keeps its cell.
 func apply_record(group: String, key: String, encoded: Variant) -> void:
     var value = Delta.decode(String(encoded)) if encoded is String else null
     if group in AreaState.SETS and value != null: value = true
+    if group == "structures":
+        var cell := AreaState.key_cell(key)
+        Build.lay(state, cell, state.structures.get(cell), value)
     var before = state.event_progress.get(key) if group == "event_progress" else null
     state.apply_change(group, key, value)
     # The roaming Megas keep their cells, as a World's install keeps them.
     if group == "event_progress" and key == Megas.SAVE_KEY:
         Megas.mark_at(state, before if before is Dictionary else {}, value if value is Dictionary else {})
-    if group == "structures":
-        var cell := AreaState.key_cell(key)
-        if value is Dictionary and structure_blocks(value): state.blocked[cell] = true
-        elif state.blocked.get(cell) is bool: state.blocked.erase(cell)
-
-## A built piece Pokemon cannot walk through (world_buildings.gd place_structure:
-## its recipe's solid, a door while shut; a gate is a fence's opening).
-static func structure_blocks(record: Dictionary) -> bool:
-    var name := String(record.get("name", ""))
-    if name == "DOOR":
-        return not bool(record.get("gate", false)) and not bool(record.get("open", false))
-    return bool(CraftingData.build_recipe(String(record.get("recipe_name", name))).get("solid", false))
 
 # --- Its Pokemon -------------------------------------------------------------------
 

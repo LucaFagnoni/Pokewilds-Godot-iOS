@@ -1,12 +1,14 @@
 extends Node
 ## The co-op side of the rules (rules/). The host is their authority: a
-## player's field command runs on the host's own copy of that player's area
-## (its World's AreaState for the area the host plays in, an AreaSim for any
-## other), with the host's random numbers, and what changed is committed in
-## one transaction with what the player gained and paid. A player predicts
-## its own command on its World's AreaState (recorded), shows it at once,
-## and keeps it or rolls it back by the answer: no rewards claimed, nothing
-## patched back by hand, no session ended for a refusal.
+## player's field command (DIG, CUT, a build, a picture, a piece taken away)
+## runs on the host's own copy of that player's area (its World's AreaState
+## for the area the host plays in, an AreaSim for any other), with the host's
+## random numbers, and what changed is committed in one transaction with what
+## the player gained and paid and what it changes outside the area
+## (coop_build_runtime.gd host_records). A player predicts its own commands
+## on its World's AreaState, each in its own undo log, shows them at once and
+## keeps or rolls back each by its answer: several can be in flight, nothing
+## is claimed, patched back by hand or saved whole before them.
 const Rules=preload("res://scripts/rules/rules.gd")
 const AreaSim=preload("res://scripts/area_sim.gd")
 const AreaState=preload("res://scripts/area_state.gd")
@@ -100,13 +102,19 @@ func execute(actor:String,id:String,op:String,args:Dictionary)->Dictionary:
     if profile.is_empty():return {"ok":false,"reason":"profile_missing"}
     var area_state=state_for(area)
     if area_state==null:return {"ok":false,"reason":"area_loading"}
-    var player:=_player(actor,area,profile,cmd,args)
+    var player:=_player(actor,area,profile,cmd,args,area_state)
     if player.has("refused"):return {"ok":false,"reason":player.refused}
+    var occupied:String=game.building.occupied(area,op,cmd)
+    if not occupied.is_empty():return {"ok":false,"reason":occupied}
     area_state.tracking=true
     area_state.take_dirty()
     area_state.begin()
     var result:Dictionary=Rules.apply(op,area_state,player,cmd,rng)
     var changes:Array=area_state.take_dirty() if result.ok else []
+    var outside:Dictionary=game.building.host_records(actor,op,area,cmd,result,area_state) if result.ok else {}
+    if outside.has("reason"):
+        _redraw(area_state,area_state.rollback());area_state.take_dirty()
+        return {"ok":false,"reason":String(outside.reason)}
     if not result.ok or (changes.is_empty() and result.grant.is_empty()):
         var cells:Array=area_state.rollback();area_state.take_dirty()
         _redraw(area_state,cells)
@@ -114,7 +122,11 @@ func execute(actor:String,id:String,op:String,args:Dictionary)->Dictionary:
     var records:Array=[]
     for change in changes:
         var record:=AreaSim.record_of(area,change[0],change[1],change[2])
+        # A staircase's landing above is worked out again wherever its house
+        # is entered (rules/build.gd create_stair_pair): it is no record.
+        if change[0]=="structures" and ((change[2] is Dictionary and change[2].get("generated_stair_pair",false)) or (change[2]==null and not state.records.has(record[0]))):continue
         records.append(state.change(record[0],record[1]))
+    records.append_array(outside.get("changes",[]))
     if not result.grant.is_empty() or not result.consume.is_empty():
         var updated:Dictionary=profile.duplicate(true)
         if not Crafting.can_afford(updated.get("inventory",{}),result.consume):
@@ -128,10 +140,11 @@ func execute(actor:String,id:String,op:String,args:Dictionary)->Dictionary:
         _redraw(area_state,area_state.rollback());area_state.take_dirty()
         return committed
     area_state.commit()
-    # The host's own World shows it: all of it for the host's own action,
-    # only the ground for another player's.
+    # The host's own World shows it: all of it for the host's own action, the
+    # ground and the pieces on it for another player's (what changed inside a
+    # house is drawn from the records, coop_build_runtime.gd apply_records).
     if area_state==game.main.world.area:
-        var shown:Array=COSMETIC if actor==game.session.actor else ["refresh","refresh_cell","refresh_around","farms","house_decoration"]
+        var shown:Array=COSMETIC if actor==game.session.actor else GROUND
         game.main.world.field_moves.play_rule({"events":result.events.filter(func(event):return event[0] in shown)})
     committed["events"]=Rules.answered(result.events)
     committed["grant"]=result.grant
@@ -140,8 +153,9 @@ func execute(actor:String,id:String,op:String,args:Dictionary)->Dictionary:
 
 ## What the rules are told about `actor`, from what the host holds: the bag of
 ## its record, the clock, where it stands (refused when the cell is too far),
-## the field Pokemon checked against its party.
-func _player(actor:String,area:String,profile:Dictionary,cmd:Dictionary,args:Dictionary)->Dictionary:
+## the field Pokemon checked against its party, inside a house the door the
+## rules work its inside out from (the host's own: its World's).
+func _player(actor:String,area:String,profile:Dictionary,cmd:Dictionary,args:Dictionary,area_state)->Dictionary:
     var player:={"bag":profile.get("inventory",{}),"now":game.clock_seconds if game.hosting else 0.0,"shared":true,"area_id":"OVERWORLD"}
     var seen:Dictionary=game.commands.presence.get(actor,{})
     if String(seen.get("area","")).begins_with(area+"|"):
@@ -156,6 +170,11 @@ func _player(actor:String,area:String,profile:Dictionary,cmd:Dictionary,args:Dic
     if player.area_id=="HOUSE":
         player["house_key"]=String(args.get("house_key",""))
         player["house_floor"]=bool(args.get("house_floor",false))
+        var door=args.get("house_door")
+        if actor==game.session.actor and area_state==game.main.world.area:player["house"]=game.main.world.buildings.house_context()
+        elif door is Array and door.size()==2 and Rules._whole(door[0]) and Rules._whole(door[1]):
+            player["house_door"]=Vector2i(int(door[0]),int(door[1]))
+            if Rules._whole(args.get("house_origin")):player["house_origin"]=int(args.house_origin)
     return player
 
 func _redraw(area_state,cells:Array)->void:
@@ -163,46 +182,102 @@ func _redraw(area_state,cells:Array)->void:
 
 # --- The player's side ---------------------------------------------------------
 
-var _predicting:=false
-const COSMETIC:=["sound","refresh","refresh_cell","refresh_around","farms","collected","house_decoration","cut_halves"]
+## This player's commands sent and not settled, oldest first: {"token", "op",
+## "cmd", "player", "events", "done"}. Each is predicted in an undo log of its
+## own (area_state.gd, by its token). A refused one is undone with every one
+## after it, and those are played again on what is left; a kept one stays
+## listed ("done") until the ones before it are settled, since a refusal
+## before it undoes it too.
+var _pending:Array=[]
+## What redraws what a prediction changed: played with it, and again when it is.
+const REDRAW:=["refresh","refresh_cell","refresh_around","farms","collected","house_decoration","structure","unbuilt","restyle","house_floor","decoration_gone","painted","refresh_streams"]
+const COSMETIC:=REDRAW+["sound","cut_halves"]
+## What another player's command shows on the host's own World.
+const GROUND:=["refresh","refresh_cell","refresh_around","farms","structure","unbuilt","restyle","refresh_streams"]
+
 ## Player: `cmd` predicted on this World's area and sent; the answer keeps or
 ## undoes it (a host runs it at once: it is the authority). Shows it all:
 ## what the prediction shows at once (sounds, redraws), then what the answer
 ## says (words, what was gained, a Pokemon). Returns the answer; "planted"
-## in it is the planted crop's tile when that is to be shown growing.
+## in it is the planted crop's tile when that is to be shown growing. Others
+## may be sent before this one is answered.
 func predict(op:String,cmd:Dictionary,extra:Dictionary={})->Dictionary:
     var world=game.main.world
     var player:Dictionary=world.field_moves.rule_player(cmd.cell)
     var args:={"area":game._area(),"cmd":Rules.to_wire(cmd)}
     args.merge(extra)
     if player.has("house_key"):args["house_key"]=player.house_key;args["house_floor"]=player.house_floor
+    if world.active_area_id=="HOUSE":
+        args["house_door"]=[world.active_built_house_door.x,world.active_built_house_door.y]
+        args["house_origin"]=world.built_house_interior_origin.y
     if game.hosting:
         var direct:Dictionary=await game.command(op,args)
         _show_answer(direct)
         return direct
-    var prediction_rng:=RandomNumberGenerator.new();prediction_rng.randomize()
-    world.area.begin()
-    var guess:Dictionary=Rules.apply(op,world.area,player,cmd,prediction_rng)
+    var entry:={"token":game._id(),"op":op,"cmd":cmd,"player":player,"events":[],"done":false}
+    world.area.begin(entry.token)
+    var guess:Dictionary=Rules.apply(op,world.area,player,cmd,_guess_rng())
     var asks_soil:bool=guess.events.any(func(event):return event[0]=="soil")
     if not guess.ok or asks_soil:
         # Nothing to send: say why here (or ask for the soil), as alone.
-        world.area.rollback()
+        world.area.rollback(entry.token)
         world.field_moves.play_rule({"events":guess.events.filter(func(event):return event[0] in ["message","soil"])})
         return guess
+    entry.events=guess.events
     world.field_moves.play_rule({"events":guess.events.filter(func(event):return event[0] in COSMETIC)})
-    _predicting=true
+    _pending.append(entry)
+    # The bag saved ahead of a command that pays (rules.gd reads) must not
+    # pass a command before it that changes the bag: the save would be
+    # refused, and this command with it. Only while there is a save to send.
+    if not Rules.reads(op,cmd).is_empty():
+        while game.active and _pending[0].token!=entry.token and game.bag_unsaved():await get_tree().process_frame
     var answer:Dictionary=await game.command(op,args)
-    _predicting=false
-    if answer.get("ok",false):world.area.commit()
+    if answer.get("ok",false):
+        world.area.commit(entry.token)
+        entry.done=true
     else:
-        var cells:Array=world.area.rollback()
-        if not cells.is_empty():world._refresh_exact_pickup_cells(cells)
+        _undo(entry)
         if not answer.get("reason") in ["conflict","busy","area_loading","disconnected"]:print("ONLINE ",op," not kept: ",answer.get("reason",""))
+    while not _pending.is_empty() and _pending[0].done:_pending.pop_front()
     _show_answer(answer)
     if answer.get("ok",false):
         for event in guess.events:
             if event[0]=="planted":answer["planted"]=String(event[2])
     return answer
+
+## A prediction's own random numbers: its rewards are the host's to decide.
+static func _guess_rng()->RandomNumberGenerator:
+    var made:=RandomNumberGenerator.new()
+    made.randomize()
+    return made
+
+## A refused prediction undone with every one after it (area_state.gd
+## rollback), and those played again on what is left. The pieces they drew are
+## drawn again from the data put back, the inside of a house afresh.
+func _undo(entry:Dictionary)->void:
+    var world=game.main.world
+    var at:=-1
+    for index in _pending.size():
+        if _pending[index].token==entry.token:at=index
+    var later:Array=_pending.slice(at+1) if at>=0 else []
+    var shown:={}
+    for each in [entry]+later:
+        for event in each.events:
+            if not event[0] in ["structure","unbuilt","restyle"]:continue
+            for offset in [Vector2i.ZERO,Vector2i.LEFT,Vector2i.RIGHT,Vector2i.UP,Vector2i.DOWN]:
+                var cell:Vector2i=event[1]+offset
+                if not shown.has(cell):shown[cell]=world.built_structures.get(cell,{})
+    var cells:Array=world.area.rollback(entry.token)
+    if at>=0:_pending.remove_at(at)
+    if not cells.is_empty():world._refresh_exact_pickup_cells(cells)
+    world.buildings.redraw_structures(shown)
+    for each in later:
+        world.area.begin(each.token)
+        var again:Dictionary=Rules.apply(each.op,world.area,each.player,each.cmd,_guess_rng())
+        each.events=again.events if again.ok else []
+        if each.done:world.area.commit(each.token)
+        world.field_moves.play_rule({"events":each.events.filter(func(event):return event[0] in REDRAW)})
+    if world.active_area_id=="HOUSE":game.building.redraw_house()
 
 ## The answer's own events (rules.gd ANSWERED): its words; what was gained, as
 ## the game shows rewards (the bag itself changes with the commit: apply_bag);
@@ -238,7 +313,7 @@ func apply_bag(commit:Dictionary)->void:
 ## Player: the host's changes for this area arrived while a prediction is
 ## kept: theirs stand (a rollback leaves them alone).
 func supersede(group:String,key:String)->void:
-    if not _predicting:return
+    if _pending.is_empty():return
     var world=game.main.world
     var cell:=AreaState.key_cell(key)
     var cells:Array=[]

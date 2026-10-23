@@ -9,6 +9,8 @@ const SOURCE_HOUSE5_WALL := preload("res://assets/source_0_8_11/tiles/buildings/
 const SourceMineRuntime = preload("res://scripts/source_mine_runtime.gd")
 const SourceWorldData = preload("res://scripts/source_world_data.gd")
 const TexturePixels = preload("res://scripts/texture_pixels.gd")
+const Build = preload("res://scripts/rules/build.gd")
+const Paint = preload("res://scripts/rules/paint.gd")
 
 var world: World
 
@@ -203,22 +205,24 @@ func _built_house_floor_tile_key(
 func built_house_floor_origin(floor_index: int) -> Vector2i:
     if world.built_house_floor_origins.has(floor_index):
         return Vector2i(world.built_house_floor_origins[floor_index])
-    return world.built_house_interior_origin + Vector2i(
-        maxi(0, floor_index) * World.BUILT_HOUSE_FLOOR_STRIDE, 0
-    )
+    return world.built_house_interior_origin + Vector2i(maxi(0, floor_index) * World.BUILT_HOUSE_FLOOR_STRIDE, 0)
 
+## Read often (Pokemon and the player's moves ask it): the World's own
+## dictionaries straight, as rules/build.gd floor_index_for_cell reads them.
 func built_house_floor_index_for_cell(cell: Vector2i) -> int:
     if world.built_house_room_size.x <= 0 or world.built_house_room_size.y <= 0:
         return -1
     for raw_index in world.built_house_floor_origins.keys():
-        var floor_index: int = int(raw_index)
-        var origin: Vector2i = Vector2i(world.built_house_floor_origins[raw_index])
-        if Rect2i(origin, world.built_house_room_size).has_point(cell):
-            return floor_index
+        if Rect2i(Vector2i(world.built_house_floor_origins[raw_index]), world.built_house_room_size).has_point(cell):
+            return int(raw_index)
     return -1
 
 func built_house_global_cell(floor_index: int, local_cell: Vector2i) -> Vector2i:
     return built_house_floor_origin(floor_index) + local_cell
+
+## This World's player in its house, for the house helpers of the rules.
+func _in_house() -> Dictionary:
+    return {"area_id": world.active_area_id, "house": world.buildings.house_context()}
 
 func _built_house_floor_saved(
         floor_index: int, local_cell: Vector2i
@@ -234,24 +238,13 @@ func _built_house_floor_saved(
 func add_built_house_floor_cell(
         floor_index: int, local_cell: Vector2i, persist: bool = true
     ) -> bool:
-    if floor_index < 0 or floor_index >= world.built_house_floor_capacity:
-        return false
-    if (
-            local_cell.x < 0 or local_cell.y < 0
-            or local_cell.x >= world.built_house_room_size.x
-            or local_cell.y >= world.built_house_room_size.y
-        ):
-        return false
-    if (floor_index > 0 or not world.built_house_footprint.is_empty()) and not world.built_house_footprint.has(local_cell):
-        return false
-    if floor_index > 0 and persist:
-        world.built_house_floor_tiles[_built_house_floor_tile_key(
-            world.active_built_house_door, floor_index, local_cell
-        )] = true
-    var global_cell: Vector2i = built_house_global_cell(floor_index, local_cell)
-    if world.built_house_interior_cells.has(global_cell):
-        return true
-    world.built_house_interior_cells[global_cell] = true
+    var out := {"events": []}
+    var added := Build.add_floor_cell(world.area, world.buildings.house_context(), floor_index, local_cell, persist, out)
+    world.field_moves.play_rule(out)
+    return added
+
+## A floor tile laid in the house (rules "house_floor"): drawn, and no longer a wall of void.
+func draw_floor_cell(global_cell: Vector2i) -> void:
     var layer: Node2D = world.source_area_layers.get("HOUSE") as Node2D
     if layer != null:
         world._add_source_sprite(layer, world._structure_display_texture("FLOOR"), global_cell, -5)
@@ -260,35 +253,9 @@ func add_built_house_floor_cell(
         if is_instance_valid(collision):
             collision.queue_free()
         world.built_house_void_collisions.erase(global_cell)
-    return true
 
 func built_house_floor_can_expand(cell: Vector2i) -> bool:
-    if world.active_area_id != "HOUSE":
-        return false
-    var floor_index: int = built_house_floor_index_for_cell(cell)
-    if floor_index <= 0 or floor_index >= world.built_house_floor_capacity:
-        return false
-    var local_cell: Vector2i = cell - built_house_floor_origin(floor_index)
-    if (
-            local_cell.x < 0 or local_cell.y < 0
-            or local_cell.x >= world.built_house_room_size.x
-            or local_cell.y >= world.built_house_room_size.y
-        ):
-        return false
-    if world.built_house_interior_cells.has(cell) or world.built_structures.has(cell):
-        return false
-    return world.built_house_footprint.has(local_cell)
-
-func place_built_house_floor(cell: Vector2i) -> bool:
-    if not built_house_floor_can_expand(cell):
-        world.world_message.emit("FLOOR needs an empty space within this house.")
-        return false
-    var floor_index: int = built_house_floor_index_for_cell(cell)
-    var local_cell: Vector2i = cell - built_house_floor_origin(floor_index)
-    if not add_built_house_floor_cell(floor_index, local_cell, true):
-        return false
-    # Successful construction is silent.
-    return true
+    return Build.floor_can_expand(world.area, _in_house(), cell)
 
 func _draw_built_house_upper_floor(
         parent: Node2D, collision_body: CollisionBody,
@@ -324,23 +291,10 @@ func _draw_built_house_upper_floor(
                 )
 
 func built_house_stair_metadata(cell: Vector2i) -> Dictionary:
-    var floor_index: int = built_house_floor_index_for_cell(cell)
-    if floor_index < 0:
-        return {}
-    var local_cell: Vector2i = cell - built_house_floor_origin(floor_index)
-    return {
-        "house_door_x": world.active_built_house_door.x,
-        "house_door_y": world.active_built_house_door.y,
-        "house_floor": floor_index,
-        "house_local_x": local_cell.x,
-        "house_local_y": local_cell.y
-    }
+    return Build.stair_metadata(world.buildings.house_context(), cell)
 
 func stair_belongs_to_active_house(data: Dictionary) -> bool:
-    return (
-        int(data.get("house_door_x", -2147483648)) == world.active_built_house_door.x
-        and int(data.get("house_door_y", -2147483648)) == world.active_built_house_door.y
-    )
+    return Build.belongs_to_house(world.buildings.house_context(), data)
 
 func _remove_generated_house_stair_pairs() -> void:
     var remove_cells: Array[Vector2i] = []
@@ -362,59 +316,10 @@ func _remove_generated_house_stair_pairs() -> void:
         world.blocked.erase(cell)
         world.grass_exclusion.erase(cell)
 
-func _ensure_house_stair_upper_patch(primary_cell: Vector2i) -> Vector2i:
-    if not world.built_structures.has(primary_cell):
-        return Vector2i(-2147483648, -2147483648)
-    var data: Dictionary = world.built_structures[primary_cell]
-    if bool(data.get("generated_stair_pair", false)):
-        return Vector2i(-2147483648, -2147483648)
-    if not stair_belongs_to_active_house(data):
-        return Vector2i(-2147483648, -2147483648)
-    var floor_index: int = int(data.get("house_floor", -1))
-    var upper_floor: int = floor_index + 1
-    if floor_index < 0 or upper_floor >= world.built_house_floor_capacity:
-        return Vector2i(-2147483648, -2147483648)
-    var local_cell: Vector2i = Vector2i(
-        int(data.get("house_local_x", 0)), int(data.get("house_local_y", 0))
-    )
-    for yy in range(local_cell.y - 1, local_cell.y + 2):
-        for xx in range(local_cell.x - 1, local_cell.x + 2):
-            add_built_house_floor_cell(
-                upper_floor, Vector2i(xx, yy), true
-            )
-    return built_house_global_cell(upper_floor, local_cell)
-
 func create_generated_house_stair_pair(primary_cell: Vector2i) -> void:
-    if not world.built_structures.has(primary_cell):
-        return
-    var data: Dictionary = world.built_structures[primary_cell]
-    var upper_cell: Vector2i = _ensure_house_stair_upper_patch(primary_cell)
-    if upper_cell.x <= -2147483648 or world.built_structures.has(upper_cell):
-        return
-    var sprite: Sprite2D = Sprite2D.new()
-    sprite.texture = SourceWorldData.texture_for("stairs_down1")
-    sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-    sprite.centered = false
-    sprite.position = Vector2(upper_cell.x * World.TILE, upper_cell.y * World.TILE)
-    sprite.z_as_relative = false
-    sprite.z_index = World.HOUSE_STAIRS_Z
-    var layer: Node2D = world.get_node_or_null("LandmarkLayer") as Node2D
-    if layer != null:
-        layer.add_child(sprite)
-    world.built_structures[upper_cell] = {
-        "name":"STAIRS", "recipe_name":"STAIRS", "sprite":sprite,
-        "collision":null, "solid":false, "bridged_water":false,
-        "open":false, "variant":0, "text":"", "last_harvest_day":-1,
-        "generated_stair_pair":true,
-        "stair_primary_x":primary_cell.x,
-        "stair_primary_y":primary_cell.y,
-        "house_door_x":int(data.get("house_door_x", world.active_built_house_door.x)),
-        "house_door_y":int(data.get("house_door_y", world.active_built_house_door.y)),
-        "house_floor":int(data.get("house_floor", 0)) + 1,
-        "house_local_x":int(data.get("house_local_x", 0)),
-        "house_local_y":int(data.get("house_local_y", 0))
-    }
-    world.area.mark("structures", upper_cell)
+    var out := {"events": []}
+    Build.create_stair_pair(world.area, world.buildings.house_context(), primary_cell, out)
+    world.field_moves.play_rule(out)
 
 func _normalize_active_house_stairs() -> void:
     # Migrate stairs from earlier port saves by inferring their floor/local cell
@@ -652,24 +557,7 @@ func displace_foreign_house_blocks() -> void:
                 world.blocked.erase(cell)
 
 func built_house_paint_key(cell: Vector2i) -> String:
-    if world.active_built_house_door.x <= -2147483648:
-        return ""
-    var floor_index: int = built_house_floor_index_for_cell(cell)
-    if floor_index < 0:
-        floor_index = world._built_house_rear_wall_floor(cell)
-    var local_cell: Vector2i = (
-        cell - built_house_floor_origin(floor_index)
-        if floor_index >= 0 else cell - world.built_house_interior_origin
-    )
-    if floor_index <= 0:
-        return "%d,%d|%d,%d" % [
-            world.active_built_house_door.x, world.active_built_house_door.y,
-            local_cell.x, local_cell.y
-        ]
-    return "%d,%d|F%d|%d,%d" % [
-        world.active_built_house_door.x, world.active_built_house_door.y,
-        floor_index, local_cell.x, local_cell.y
-    ]
+    return Build.paint_key(world.buildings.house_context(), cell)
 
 func _set_built_house_paint_sprite(cell: Vector2i, index: int) -> bool:
     var path := "res://assets/source_0_8_11/tiles/buildings/house_picture%d.png" % index
@@ -704,27 +592,12 @@ func _restore_built_house_paintings() -> void:
         _set_built_house_paint_sprite(cell, clampi(int(world.built_house_paintings[key]), 1, 20))
 
 func apply_paint(picture_index: int, cell: Vector2i) -> bool:
-    if world.active_area_id != "HOUSE" or world.active_field_species != "smeargle":
-        world.world_message.emit("PAINT can only be used by SMEARGLE on an inside house wall.")
-        return false
-    if not world.built_house_paintable_walls.has(cell):
-        world.world_message.emit("Face an inside house wall to PAINT it.")
-        return false
-    var index := clampi(picture_index, 1, 20)
-    var key := built_house_paint_key(cell)
-    if key.is_empty() or not _set_built_house_paint_sprite(cell, index):
-        return false
-    world.area.put("built_house_paintings", key, index)
-    world.play_source_sound("craft1")
-    world.world_message.emit("SMEARGLE painted PICTURE %d." % index)
-    return true
+    var result := Paint.apply(world.area, world.field_moves.rule_player(cell), {"cell": cell, "picture": picture_index}, world.rng)
+    world.field_moves.play_rule(result)
+    return result.ok
 
 func is_built_house_floor_cell(cell: Vector2i) -> bool:
-    return (
-        world.active_area_id == "HOUSE"
-        and world.built_house_interior_cells.has(cell)
-        and not world.interior_interactables.has(cell)
-    )
+    return world.active_area_id == "HOUSE" and world.built_house_interior_cells.has(cell) and not world.interior_interactables.has(cell)
 
 func active_source_interior_route() -> Dictionary:
     var tile := source_interior_tile_at_world_cell(world._player_cell())

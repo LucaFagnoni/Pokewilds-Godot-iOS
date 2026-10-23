@@ -373,6 +373,21 @@ func set_route(index: int, route: SourceRoute) -> void: route_ids[index] = route
 func bump(index: int) -> void:
     revisions[index] += 1
     edit_count += 1
+## Whether a tile proxy for `index` is in use (writes must then go through it).
+func has_live_proxy(index: int) -> bool:
+    var held = _proxies.get(index)
+    return held != null and (held as WeakRef).get_ref() != null
+## A tide swap recorded by world_tides.gd: [name, upper, flags, ledge, item,
+## amount ids/values after it, revisions bumped, edits counted].
+func write_tide_swap(index: int, swap: Array) -> void:
+    name_ids[index] = swap[0]
+    upper_ids[index] = swap[1]
+    flags[index] = swap[2]
+    ledge_dir_ids[index] = swap[3]
+    has_item_ids[index] = swap[4]
+    amounts[index] = swap[5]
+    revisions[index] += swap[6]
+    edit_count += swap[7]
 func set_items(index: int, value: Variant) -> void:
     if value == null: items.erase(index)
     else: items[index] = value
