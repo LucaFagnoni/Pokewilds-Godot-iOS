@@ -88,8 +88,8 @@ func _initialize() -> void:
     for key in ["terrain_changes", "removed_resources"]:
         check(_plain(loaded.crafting_state[key]) == old.crafting_state[key], "%s as saved" % key)
     var seen := {}
-    for cell in loaded.crafting_state.discovered_cells: seen[cell] = true
-    check(old.crafting_state.discovered_cells.all(func(cell): return seen.has(cell)), "every discovered cell still discovered")
+    for cell in _discovered(loaded.crafting_state.discovered_cells): seen[cell] = true
+    check(_discovered(old.crafting_state.discovered_cells).all(func(cell): return seen.has(cell)), "every discovered cell still discovered")
 
     # SAVE writes the binary format: much smaller, and it reads back as written.
     await main._save_current_game()
@@ -156,3 +156,15 @@ func _initialize() -> void:
 
     print("SAVE FORMAT TEST: %d checks, %d failed" % [checks, failed])
     quit(1 if failed > 0 else 0)
+
+## A save's discovered cells as "x,y" keys, whichever form it has: the old list
+## of keys or the bitset over the map (world.discovered_save_value()).
+static func _discovered(value) -> Array:
+    if not (value is Dictionary and value.has("bits")): return Array(value)
+    var rect: Array = value.bounds
+    var bits := Marshalls.base64_to_raw(String(value.bits))
+    var result := []
+    for bit in mini(int(rect[2]) * int(rect[3]), bits.size() * 8):
+        if bits[bit >> 3] & (1 << (bit & 7)):
+            result.append("%d,%d" % [int(rect[0]) + bit % int(rect[2]), int(rect[1]) + bit / int(rect[2])])
+    return result

@@ -856,6 +856,18 @@ jobs:
       - name: Headless tests
         run: python3 -u server/fast_tests.py "$GODOT" --jobs 4
 
+      # No proxy tile made in a per-frame function (tools/lint_tile_at.py).
+      - name: Per-frame tile_at lint
+        run: python3 tools/lint_tile_at.py
+
+      # The world played the same way gives the same saved state and tiles
+      # (server/world_sim_hash.gd): a refactor that changes behaviour shows here.
+      - name: World simulation hash
+        run: |
+          "$GODOT" --headless --fixed-fps 60 --path project -s "$PWD/server/world_sim_hash.gd" -- \
+            --expect=4e1cc7e47c23a84d7b84c1c02ef5ed64d13658ef1b9dd234d96af55050d08203 2>&1 | tee sim.log
+          grep -q "4e1cc7e47c23a84d7b84c1c02ef5ed64d13658ef1b9dd234d96af55050d08203" sim.log
+
   publish:
     needs: [draft, smoke, ios_xtool, server, android, worldgen, tests]
     # The IPA from the Mac or, failing that, from xtool: ios_xtool says which.

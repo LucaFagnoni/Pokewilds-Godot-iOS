@@ -87,7 +87,7 @@ func _check_solo(data: Dictionary, label: String) -> void:
     left_species.sort()
     check(left_species == ["diglett", "psyduck"], "%s: Pokemon left outside: %s" % [label, _names(outside)])
     check(outside.all(func(entry): return entry.has("x") and entry.has("y")), "%s: and where" % label)
-    check(data.crafting_state.discovered_cells.size() == 3354, "%s: discovered cells: %d" % [label, data.crafting_state.discovered_cells.size()])
+    check(_discovered(data.crafting_state.discovered_cells).size() == 3354, "%s: discovered cells: %d" % [label, _discovered(data.crafting_state.discovered_cells).size()])
 
 func _online() -> void:
     var zip := ZIPReader.new()
@@ -153,7 +153,7 @@ func _initialize() -> void:
         check(_names(old.caught_pokemon) == ["machop"], "sp_v2: the party")
         check(_names(old.pokemon_storage.get("BOX 1", [])).size() == 2, "sp_v2: the box")
         check(_structures(old).size() == 5, "sp_v2: structures: %s" % [_structures(old)])
-        check(old.crafting_state.discovered_cells.size() >= 89, "sp_v2: discovered cells")
+        check(_discovered(old.crafting_state.discovered_cells).size() >= 89, "sp_v2: discovered cells")
         check(old.crafting_state.deployed_pokemon.is_empty(), "sp_v2: nothing left outside")
 
     # The played world, binary and legacy JSON (the same world, so one world cache).
@@ -164,3 +164,15 @@ func _initialize() -> void:
 
     print("FIXTURE LOAD TEST: %d checks, %d failed" % [checks, failed])
     quit(1 if failed > 0 else 0)
+
+## A save's discovered cells as "x,y" keys, whichever form it has: the old list
+## of keys or the bitset over the map (world.discovered_save_value()).
+static func _discovered(value) -> Array:
+    if not (value is Dictionary and value.has("bits")): return Array(value)
+    var rect: Array = value.bounds
+    var bits := Marshalls.base64_to_raw(String(value.bits))
+    var result := []
+    for bit in mini(int(rect[2]) * int(rect[3]), bits.size() * 8):
+        if bits[bit >> 3] & (1 << (bit & 7)):
+            result.append("%d,%d" % [int(rect[0]) + bit % int(rect[2]), int(rect[1]) + bit / int(rect[2])])
+    return result
