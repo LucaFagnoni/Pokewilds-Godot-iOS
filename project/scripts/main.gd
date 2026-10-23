@@ -27,6 +27,7 @@ const SETUP_SAVE_PATH := "user://m3_setup.cfg"
 const DataPaths = preload("res://scripts/game_data_paths.gd")
 const WorldSaves = preload("res://scripts/world_saves.gd")
 var saves := WorldSaves.new("user://saves")
+var bag_menu := preload("res://scripts/bag_menu.gd").new(self)
 var party_menu := preload("res://scripts/party_menu.gd").new(self)
 var storage := preload("res://scripts/storage_menu.gd").new(self)
 var crafting_menu := preload("res://scripts/crafting_menu.gd").new(self)
@@ -1662,70 +1663,11 @@ func _source_texture_rect(parent: Node, node_name: String, at: Vector2,
     parent.add_child(rect)
     return rect
 
-func _configure_clean_item_pocket_layout() -> void:
-    # Draw this menu at the native 320x180 viewport size.  The old 160x144
-    # plate was scaled 2x horizontally and 1.25x vertically, which distorted
-    # both the Johto glyphs and the selection arrow.
-    item_pocket_menu.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    item_pocket_menu.scale = Vector2.ONE
-    item_pocket_menu.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-    item_pocket_menu.get_node("Background").visible = false
-
-    var backdrop := ColorRect.new()
-    backdrop.name = "CleanBackdrop"
-    backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    backdrop.color = Color.WHITE
-    backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    item_pocket_menu.add_child(backdrop)
-    item_pocket_menu.move_child(backdrop, 0)
-
-    var pocket_frame := Panel.new()
-    pocket_frame.name = "PocketFrame"
-    pocket_frame.position = Vector2(4, 2)
-    pocket_frame.size = Vector2(82, 123)
-    pocket_frame.add_theme_stylebox_override("panel", _classic_dialogue_style())
-    pocket_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    item_pocket_menu.add_child(pocket_frame)
-    item_pocket_menu.move_child(pocket_frame, 2)
-
-    var list_frame := Panel.new()
-    list_frame.name = "ListFrame"
-    list_frame.position = Vector2(84, 2)
-    list_frame.size = Vector2(232, 123)
-    list_frame.add_theme_stylebox_override("panel", _classic_dialogue_style())
-    list_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    item_pocket_menu.add_child(list_frame)
-    item_pocket_menu.move_child(list_frame, 3)
-
-    var description_frame := Panel.new()
-    description_frame.name = "DescriptionFrame"
-    description_frame.position = Vector2(4, 123)
-    description_frame.size = Vector2(312, 55)
-    description_frame.add_theme_stylebox_override("panel", _classic_dialogue_style())
-    description_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    item_pocket_menu.add_child(description_frame)
-    item_pocket_menu.move_child(description_frame, 4)
-
-    item_pocket_label.position = Vector2(24, 14)
-    item_pocket_label.size = Vector2(41, 24)
-    item_pocket_label.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-    item_pocket_bag.position = Vector2(24, 57)
-    item_pocket_bag.size = Vector2(41, 26)
-    item_pocket_bag.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-    item_pocket_cursor.position = Vector2(94, 13)
-    item_pocket_cursor.size = Vector2(4, 7)
-    item_pocket_list.position = Vector2(105, 9)
-    item_pocket_list.size = Vector2(154, 88)
-    item_pocket_list.add_theme_font_size_override("font_size", 9)
-    item_pocket_list.add_theme_constant_override("line_spacing", 6)
-    item_pocket_quantities.position = Vector2(260, 9)
-    item_pocket_quantities.size = Vector2(46, 88)
-    item_pocket_quantities.add_theme_font_size_override("font_size", 9)
-    item_pocket_quantities.add_theme_constant_override("line_spacing", 6)
-    item_pocket_description.position = Vector2(16, 134)
-    item_pocket_description.size = Vector2(288, 34)
-    item_pocket_description.add_theme_font_size_override("font_size", 9)
-    item_pocket_description.add_theme_constant_override("line_spacing", 2)
+## bag_menu.gd under its old names, for the scripts and tests that call them on main.
+func _use_overworld_item(item: String) -> void: bag_menu.use_overworld_item(item)
+func _refresh_evolution_item_target() -> void: bag_menu.refresh_evolution_item_target()
+func _consume_inventory_item(item: String) -> void: bag_menu.consume_inventory_item(item)
+func _sleeping_bag_active() -> bool: return bag_menu.sleeping_bag_active()
 
 func _configure_wide_single_battle_layout() -> void:
     # Keep every source HUD element uniformly scaled, then move the enemy
@@ -1756,7 +1698,7 @@ func _finish_pokemon_switch() -> void: party_menu.finish_pokemon_switch()
 func _party_record_frame(row_data: Dictionary) -> Texture2D: return party_menu.party_record_frame(row_data)
 
 func _build_source_ui() -> void:
-    _configure_clean_item_pocket_layout()
+    bag_menu.configure_clean_item_pocket_layout()
     _configure_wide_single_battle_layout()
     setup_go_cursor = _source_texture_rect(setup_panel, "GoCursor",
         Vector2.ZERO, Vector2(6, 8), source_command_cursor.texture)
@@ -1979,7 +1921,7 @@ func _process(delta: float) -> void:
     party_menu.update_party_sprite_animation(delta)
     _update_battle_sprite_animation(delta)
     _stop_fainted_active_field_move()
-    _update_sleeping_bag_rest(delta)
+    bag_menu.update_sleeping_bag_rest(delta)
 
     if build_menu_open:
         if String(world.get("active_field_move")) != "BUILD":
@@ -3117,7 +3059,7 @@ func _input(event: InputEvent) -> void:
         crafting_menu.close_build_menu()
         get_viewport().set_input_as_handled()
         return
-    if started and event.is_action_pressed("cancel") and not world.active_field_move.is_empty() and not _field_ui_blocks_gameplay() and not _sleeping_bag_active() and not world.house_transition_active and not is_instance_valid(world.stool_seated_sprite):
+    if started and event.is_action_pressed("cancel") and not world.active_field_move.is_empty() and not _field_ui_blocks_gameplay() and not bag_menu.sleeping_bag_active() and not world.house_transition_active and not is_instance_valid(world.stool_seated_sprite):
         world.clear_active_field_move()
         get_viewport().set_input_as_handled()
         return
@@ -3312,7 +3254,7 @@ func _unhandled_input(event: InputEvent) -> void:
         if event.is_action_pressed("map_open"):
             if game_menu_open and game_menu_detail_open and game_menu_map_screen.visible and not teleport_map_mode:
                 _close_game_menu()
-            elif not _field_ui_blocks_gameplay() and not field_move_wheel_open and not _sleeping_bag_active():
+            elif not _field_ui_blocks_gameplay() and not field_move_wheel_open and not bag_menu.sleeping_bag_active():
                 _open_game_menu()
                 minimap.show_map_menu()
             get_viewport().set_input_as_handled()
@@ -3321,9 +3263,9 @@ func _unhandled_input(event: InputEvent) -> void:
             _handle_game_menu_input(event)
             return
 
-        if _sleeping_bag_active():
+        if bag_menu.sleeping_bag_active():
             if event.is_action_pressed("cancel"):
-                _end_sleeping_bag_rest()
+                bag_menu.end_sleeping_bag_rest()
                 get_viewport().set_input_as_handled()
             elif event.is_action_pressed("start"):
                 _queue_start_menu(event)
@@ -5699,7 +5641,7 @@ func _refresh_battle_item_pocket_menu() -> void:
     for raw_item_name in ItemData.items_for_pocket(battle_item_pocket_index):
         var item_name := String(raw_item_name)
         if planting_bag_target != null and item_pocket_context == "OVERWORLD":
-            if not _planting_bag_item_allowed(item_name): continue
+            if not bag_menu.planting_bag_item_allowed(item_name): continue
         if int(inventory.get(item_name, 0)) > 0:
             battle_item_menu_names.append(item_name)
 
@@ -7078,7 +7020,7 @@ func _close_trainer_tip() -> void:
 
 func _open_game_menu() -> void:
     if battle_active or generating or not started or \
-            (field_item_busy and not _sleeping_bag_active()):
+            (field_item_busy and not bag_menu.sleeping_bag_active()):
         return
     game_menu_open = true
     game_menu_detail_open = false
@@ -7133,15 +7075,15 @@ func _close_game_menu() -> void:
     game_menu_map.visible = false
     game_menu_map_screen.visible = false
     minimap.clear_map_canvas()
-    world.set_gameplay_enabled(not _sleeping_bag_active())
+    world.set_gameplay_enabled(not bag_menu.sleeping_bag_active())
     touch_controls.set_game_active(true)
 
 func _handle_game_menu_input(event: InputEvent) -> void:
     if not overworld_evolution_item.is_empty():
-        _handle_evolution_item_input(event)
+        bag_menu.handle_evolution_item_input(event)
         return
     if item_pocket_context == "OVERWORLD" and battle_item_pocket_open:
-        _handle_overworld_item_pocket_input(event)
+        bag_menu.handle_overworld_item_pocket_input(event)
         return
 
     if guide_topic_open:
@@ -7313,7 +7255,7 @@ func _activate_game_menu_option() -> void:
         "POKEMON":
             party_menu.show_pokemon_menu()
         "ITEM":
-            _show_item_menu()
+            bag_menu.show_item_menu()
         "MAP":
             minimap.show_map_menu()
         "POKEDEX":
@@ -7336,297 +7278,6 @@ func _open_detail(title: String, body: String) -> void:
     game_menu_detail_body.text = body
     game_menu_map.visible = false
     game_menu_map_screen.visible = false
-
-func _show_item_menu() -> void:
-    if item_pocket_menu.get_parent() != game_menu:
-        item_pocket_menu.reparent(game_menu, false)
-    item_pocket_menu.z_index = 100
-    item_pocket_context = "OVERWORLD"
-    battle_item_pocket_open = true
-    battle_item_pocket_index = ItemData.POCKET_ITEMS
-    battle_item_menu_index = 0
-    item_menu_active = false
-    game_menu_box.visible = false
-    game_menu_detail.visible = false
-    item_pocket_menu.visible = true
-    _refresh_battle_item_pocket_menu()
-
-func _handle_overworld_item_pocket_input(event: InputEvent) -> void:
-    if planting_bag_target != null and field_item_busy:
-        get_viewport().set_input_as_handled()
-        return
-    if event.is_action_pressed("cancel") or event.is_action_pressed("start"):
-        _close_overworld_item_pocket_menu()
-    elif (event.is_action_pressed("move_left") or
-            event.is_action_pressed("shoulder_left")):
-        _switch_battle_item_pocket(-1)
-    elif (event.is_action_pressed("move_right") or
-            event.is_action_pressed("shoulder_right")):
-        _switch_battle_item_pocket(1)
-    elif event.is_action_pressed("move_up"):
-        battle_item_menu_index = wrapi(battle_item_menu_index - 1, 0,
-            battle_item_menu_names.size() + 1)
-        _refresh_battle_item_pocket_menu()
-    elif event.is_action_pressed("move_down"):
-        battle_item_menu_index = wrapi(battle_item_menu_index + 1, 0,
-            battle_item_menu_names.size() + 1)
-        _refresh_battle_item_pocket_menu()
-    elif event.is_action_pressed("confirm"):
-        _confirm_overworld_item_pocket()
-    else:
-        return
-    get_viewport().set_input_as_handled()
-
-func _close_overworld_item_pocket_menu() -> void:
-    if planting_bag_target != null:
-        planting_bag_target = null
-        _close_game_menu()
-        return
-    battle_item_pocket_open = false
-    item_pocket_context = ""
-    item_pocket_menu.visible = false
-    game_menu_box.visible = true
-
-func _confirm_overworld_item_pocket() -> void:
-    if battle_item_menu_index >= battle_item_menu_names.size():
-        _close_overworld_item_pocket_menu()
-        return
-    var selected_item := ItemData.normalize_name(battle_item_menu_names[battle_item_menu_index])
-    if planting_bag_target != null:
-        if not world.is_empty_planting_hole(planting_bag_target) or not _planting_bag_item_allowed(selected_item):
-            item_pocket_description.text = "That plant cannot grow here."
-            return
-        if int(inventory.get(selected_item, 0)) <= 0:
-            _refresh_battle_item_pocket_menu()
-            return
-        field_item_busy = true
-        game_menu.hide()
-        var planted: bool = await world.plants().plant(planting_bag_target, selected_item)
-        field_item_busy = false
-        if planted:
-            if not coop_game.active:_consume_inventory_item(selected_item)
-            planting_bag_target = null
-            world.planting_item = selected_item if int(inventory.get(selected_item,0)) > 0 else ""
-            _close_game_menu()
-        else:
-            game_menu.show()
-            world.set_gameplay_enabled(false)
-        return
-    bag_action_ui = preload("res://scripts/bag_item_actions.gd").new()
-    $UI.add_child(bag_action_ui)
-    bag_action_ui.open(self, selected_item)
-
-func _use_overworld_item(item: String) -> void:
-    if int(inventory.get(item, 0)) <= 0:
-        _refresh_battle_item_pocket_menu()
-        return
-    if ItemData.is_evolution_item(item):
-        overworld_evolution_item = item
-        battle_item_pocket_open = false
-        item_pocket_menu.hide()
-        party_menu.show_pokemon_menu()
-        _refresh_evolution_item_target()
-        return
-    if (preload("res://scripts/source_plant_farming.gd").plantable(item) or item == "SLEEPING BAG") and world.active_field_move == "SURF" and world.terrain_kind_at(world._player_cell()) == 0:
-        _show_message("Reach dry land first.")
-        return
-    if preload("res://scripts/source_plant_farming.gd").plantable(item):
-        world.clear_active_field_move(false)
-        world.planting_item = item
-        _leave_game_menu_for_field_action(true)
-        _show_message("Face the soil and press A to plant." if item != "MANURE" else "Face a sapling or small tree and press A to fertilize.")
-        return
-    if item == "SLEEPING BAG":
-        if not String(world.get("active_field_move")).is_empty():
-            world.call("clear_active_field_move", false)
-        if not bool(world.call("begin_sleeping_bag", _player_sleeping_texture())):
-            return
-        for party_index in range(caught_pokemon.size()):
-            if typeof(caught_pokemon[party_index]) != TYPE_DICTIONARY or bool(
-                    (caught_pokemon[party_index] as Dictionary).get("is_egg", false)):
-                continue
-            var resting_pokemon: Dictionary = BattleEngine.ensure_pokemon(caught_pokemon[party_index])
-            BattleEngine.refill_pp(resting_pokemon)
-            caught_pokemon[party_index] = resting_pokemon
-        field_item_busy = true
-        sleeping_bag_heal_accumulator = 0.0
-        _leave_game_menu_for_field_action(false)
-        return
-    if item == "ESCAPE ROPE":
-        if bool(world.call("use_escape_rope")):
-            _leave_game_menu_for_field_action(true)
-        return
-    if item == "RARE CANDY":
-        if caught_pokemon.is_empty():
-            item_pocket_description.text = "There is no POKEMON to use it on."
-            return
-        var pokemon = BattleEngine.ensure_pokemon(caught_pokemon[0])
-        if int(pokemon.get("level", 1)) >= 100:
-            item_pocket_description.text = "It won't have any effect."
-            return
-        pokemon["level"] = int(pokemon.get("level", 1)) + 1
-        PokemonState.apply_stats(pokemon, true)
-        BattleEngine.refill_pp(pokemon)
-        caught_pokemon[0] = pokemon
-        _consume_inventory_item(item)
-        _play_level_up_sound()
-        _show_message("%s grew to level %d." % [
-            PokemonState.display_name(pokemon), int(pokemon.get("level", 1))])
-        _refresh_battle_item_pocket_menu()
-        return
-    if item in ["REPEL", "MAX REPEL"]:
-        world.repel_until_elapsed = world.world_elapsed_seconds + (
-            240.0 if item == "MAX REPEL" else 120.0)
-        _consume_inventory_item(item)
-        _leave_game_menu_for_field_action(true)
-        _show_message("Used %s." % item)
-        return
-    if item in ["OLD ROD", "GOOD ROD", "SUPER ROD"]:
-        _leave_game_menu_for_field_action(true)
-        world.request_fishing_encounter(item)
-        return
-    if PokemonEcology.is_food(item):
-        if not world.feed_pokemon_in_front(item):
-            item_pocket_description.text = "Face a POKEMON to feed it."
-            return
-        _consume_inventory_item(item)
-        _refresh_battle_item_pocket_menu()
-        return
-    item_pocket_description.text = "It won't have any effect here."
-
-func _refresh_evolution_item_target() -> void:
-    party_menu.refresh_pokemon_category_menu()
-    if caught_pokemon.is_empty():
-        return
-    var target := BattleEngine.item_evolution_target(caught_pokemon[pokemon_menu_index], overworld_evolution_item)
-    pokemon_menu_prompt.text = "%s: %s" % [overworld_evolution_item, ("ABLE." if touch_on() else "ABLE. A: USE") if not target.is_empty() else "NOT ABLE"]
-
-func _handle_evolution_item_input(event: InputEvent) -> void:
-    if event.is_action_pressed("cancel") or event.is_action_pressed("start"):
-        overworld_evolution_item = ""
-        pokemon_menu_open = false
-        pokemon_menu.hide()
-        var pocket := battle_item_pocket_index
-        var selection := battle_item_menu_index
-        _show_item_menu()
-        battle_item_pocket_index = pocket
-        battle_item_menu_index = selection
-        _refresh_battle_item_pocket_menu()
-    elif event.is_action_pressed("move_up") or event.is_action_pressed("move_down"):
-        if not caught_pokemon.is_empty():
-            pokemon_menu_index = wrapi(pokemon_menu_index + (-1 if event.is_action_pressed("move_up") else 1), 0, mini(6, caught_pokemon.size()))
-            _refresh_evolution_item_target()
-    elif event.is_action_pressed("confirm"):
-        _use_evolution_item_on(pokemon_menu_index)
-    else:
-        return
-    get_viewport().set_input_as_handled()
-
-func _use_evolution_item_on(index: int) -> void:
-    if overworld_evolution_running or index < 0 or index >= caught_pokemon.size():
-        return
-    var item := overworld_evolution_item
-    if item.is_empty() or int(inventory.get(item, 0)) <= 0:
-        return
-    var pokemon: Dictionary = caught_pokemon[index]
-    var target := BattleEngine.item_evolution_target(pokemon, item)
-    if target.is_empty():
-        pokemon_menu_prompt.text = "It won't have any effect."
-        return
-    var identity := _ensure_party_ecology_id(index)
-    var field_move := String(world.active_field_move) if String(world.active_field_pokemon.get("party_ecology_id", "")) == identity else ""
-    var following := String(world.follower_pokemon.get("party_ecology_id", "")) == identity
-    overworld_evolution_item = ""
-    overworld_evolution_running = true
-    progression_active = true
-    field_item_busy = true
-    pokemon_menu_open = false
-    pokemon_menu.hide()
-    _leave_game_menu_for_field_action(false)
-    world.set_gameplay_enabled(false)
-    _consume_inventory_item(item)
-    var previous_actor := battle_player
-    battle_player = pokemon
-    _reset_progression_overlay()
-    var evolved := await _run_evolution_sequence(pokemon, target, index)
-    if not evolved:
-        inventory[item] = int(inventory.get(item, 0)) + 1
-    elif not field_move.is_empty():
-        world.set_active_field_move(pokemon, field_move)
-    if evolved and following:
-        world.set_follower(pokemon, false)
-    battle_player = previous_actor
-    _hide_progression_overlay()
-    overworld_evolution_running = false
-    progression_active = false
-    field_item_busy = false
-    world.set_gameplay_enabled(not _field_ui_blocks_gameplay())
-
-func _consume_inventory_item(item: String) -> void:
-    inventory[item] = maxi(0, int(inventory.get(item, 0)) - 1)
-
-func _leave_game_menu_for_field_action(enable_world: bool) -> void:
-    battle_item_pocket_open = false
-    item_pocket_context = ""
-    item_pocket_menu.visible = false
-    game_menu_detail_open = false
-    game_menu_open = false
-    game_menu.visible = false
-    if enable_world:
-        world.set_gameplay_enabled(true)
-        touch_controls.set_game_active(true)
-
-func _sleeping_bag_active() -> bool:
-    var sprite = world.get("sleeping_bag_sprite")
-    return sprite is Sprite2D and is_instance_valid(sprite)
-
-func _update_sleeping_bag_rest(delta: float) -> void:
-    if battle_active:
-        return
-    if not field_item_busy or not _sleeping_bag_active():
-        sleeping_bag_heal_accumulator = 0.0
-        return
-    sleeping_bag_heal_accumulator += delta
-    var interval := 128.0 / 60.0 if world.bed_rest_active else 1.0
-    while sleeping_bag_heal_accumulator >= interval:
-        sleeping_bag_heal_accumulator -= interval
-        var party_changed := false
-        for party_index in range(caught_pokemon.size()):
-            if typeof(caught_pokemon[party_index]) != TYPE_DICTIONARY or bool(
-                    (caught_pokemon[party_index] as Dictionary).get(
-                        "is_egg", false)):
-                continue
-            var pokemon := BattleEngine.ensure_pokemon(
-                caught_pokemon[party_index])
-            var old_hp := int(pokemon.get("hp", 0))
-            var max_hp := maxi(1, int(pokemon.get("max_hp", 1)))
-            if old_hp < max_hp:
-                var recovery := (ceili(float(max_hp) / 25.0) + ceili(float(max_hp) / 15.0)) if world.bed_rest_active else (4 if world.active_area_id == "HOUSE" else 2)
-                pokemon["hp"] = mini(max_hp, old_hp + recovery)
-                party_changed = true
-            # Source bed recovery clears status at full HP. Apply that same
-            # completion rule to sleeping-bag rest, including full-HP status.
-            if int(pokemon["hp"]) >= max_hp and not String(pokemon.get("status", "")).is_empty():
-                pokemon["status"] = ""
-                pokemon["status_counter"] = 0
-                pokemon["toxic_counter"] = 0
-                party_changed = true
-            caught_pokemon[party_index] = pokemon
-        if party_changed and pokemon_menu_open and pokemon_menu != null and \
-                pokemon_menu.visible:
-            party_menu.refresh_party_list_rows(
-                pokemon_party_rows, caught_pokemon, pokemon_menu_index)
-
-func _end_sleeping_bag_rest() -> void:
-    if not _sleeping_bag_active():
-        return
-    var was_bed: bool = world.bed_rest_active
-    world.call("end_sleeping_bag")
-    field_item_busy = false
-    sleeping_bag_heal_accumulator = 0.0
-    world.set_gameplay_enabled(true)
-    touch_controls.set_game_active(true)
-    _show_message("You got out of bed." if was_bed else "Your POKEMON rested. This is now your return point.")
 
 func _show_guide_menu() -> void:
     guide_menu_open = true
@@ -7814,7 +7465,7 @@ func _finish_single_player_save(data: Dictionary, save_path: String, error: Erro
 ## thread). Online worlds keep their own journal.
 func _save_on_pause() -> void:
     if not started or generating or battle_active or edge_travel_busy or coop_game.active or \
-            (field_item_busy and not _sleeping_bag_active()):
+            (field_item_busy and not bag_menu.sleeping_bag_active()):
         return
     _wait_for_save_thread()
     _sync_pokedex_owned()
@@ -8707,7 +8358,7 @@ func _confirm_sign_text() -> void:
 
 func _on_structure_action(action: String) -> void:
     if action.begins_with("PLANT_HOLE:"):
-        _open_planting_bag(Vector2i(int(action.get_slice(":",1)), int(action.get_slice(":",2))))
+        bag_menu.open_planting_bag(Vector2i(int(action.get_slice(":",1)), int(action.get_slice(":",2))))
     elif action == "SHORE_SURF":
         await _prompt_shore_surf()
     elif action == "DRESSER":
@@ -9130,7 +8781,7 @@ func _start_menu_context_available() -> bool:
         and not trainer_tip_open and not setup_load_open and not pokemon_stats_open \
         and not touch_config.visible and not touch_controls.edit_mode and not progression_active \
         and not field_move_wheel_open and not quit_prompt_open and not build_menu_open \
-        and not craft_menu_open and (not field_item_busy or _sleeping_bag_active()) \
+        and not craft_menu_open and (not field_item_busy or bag_menu.sleeping_bag_active()) \
         and not (is_instance_valid(game_files_menu) and game_files_menu.visible) \
         and not (is_instance_valid(mod_menu_panel) and mod_menu_panel.visible)
 
@@ -9379,29 +9030,6 @@ func _travel_adjacent_world(direction: Vector2i) -> void:
     message_panel.hide()
     generation_panel.hide()
     generating = false
-
-func _planting_bag_item_allowed(item: String) -> bool:
-    if planting_bag_target == null or item == "MANURE": return false
-    if not preload("res://scripts/source_plant_farming.gd").plantable(item): return false
-    return world.plants().valid(world.exact_world.tile_at(planting_bag_target), item)
-
-func _open_planting_bag(cell: Vector2i) -> void:
-    if not world.is_empty_planting_hole(cell): return
-    _open_game_menu()
-    if not game_menu_open: return
-    planting_bag_target = cell
-    _show_item_menu()
-    for pocket in range(ItemData.POCKET_COUNT):
-        var found := false
-        for item in ItemData.items_for_pocket(pocket):
-            if int(inventory.get(item,0)) > 0 and _planting_bag_item_allowed(item):
-                found = true
-                break
-        if found:
-            battle_item_pocket_index = pocket
-            _refresh_battle_item_pocket_menu()
-            return
-    item_pocket_description.text = "No seeds or apricorns in your bag can grow here."
 
 func _sync_pokedex_owned() -> void:
     pokedex_progress.seed_owned(caught_pokemon)

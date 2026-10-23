@@ -657,7 +657,7 @@ func _activate_selected_field_move() -> void:
         pokemon_move_index = 0
         refresh_pokemon_category_menu()
         return
-    if main._sleeping_bag_active():
+    if main.bag_menu.sleeping_bag_active():
         main._show_message("Get up before using a Field Move.")
         return
     var activated := bool(main.world.set_active_field_move(entry, move))
