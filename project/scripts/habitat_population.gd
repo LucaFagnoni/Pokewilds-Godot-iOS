@@ -146,7 +146,7 @@ func restore(entry: Dictionary, cell: Vector2i) -> bool:
                 return false
     take(cell)
     var species := String(entry.get("species", "")).to_lower()
-    if PokemonData.record_texture(entry, "overworld") == null and not species in PopulationRules.FARM_SPECIES:
+    if not PopulationRules.has_art(entry) and not species in PopulationRules.FARM_SPECIES:
         return false
     place(cell, PopulationRules.habitat_record(area, entry, cell, identity))
     return true

@@ -857,6 +857,19 @@ static func wild_record(state, ecology_source: Dictionary, wild_id: int, cell: V
     stored["flee_steps"] = int(stored.get("flee_steps", 0))
     return stored
 
+## Whether `record` has overworld art (PokemonData.record_texture is not
+## null), worked out once per species, form and shininess: the texture is
+## loaded for the answer and let go, so asking for every Pokemon read in
+## loaded it from disk again each time (most of an area's read on a server).
+static var _art := {}
+static func has_art(record: Dictionary) -> bool:
+    var key := "%s|%s|%s" % [record.get("species", record.get("name", "")), String(record.get("form", "")).to_lower(), PokemonData.is_shiny(record)]
+    var known = _art.get(key)
+    if known == null:
+        known = PokemonData.record_texture(record, "overworld") != null
+        _art[key] = known
+    return known
+
 ## A wild Pokemon added to the area's population as world.gd
 ## _create_wild_pokemon adds one (its sprite and sand trap aside): false when
 ## the cell is out of the world or taken, or its species has no overworld art.
@@ -865,7 +878,7 @@ static func add_wild(state, species: String, level: int, cell: Vector2i, home_bi
     if not state.in_bounds(cell) or state.wild.id_at(cell) >= 0:
         return false
     var ecology_source := wild_source(state, species, level, source_record, saved_state)
-    if not bool(source_record.get("is_trapping", false)) and PokemonData.record_texture(ecology_source, "overworld") == null:
+    if not bool(source_record.get("is_trapping", false)) and not has_art(ecology_source):
         return false
     # No world drawn yet, no wild Pokemon (its sprite is the WildPokemonLayer's).
     if state.view != null and state.view.get_node_or_null("WildPokemonLayer") == null:
