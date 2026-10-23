@@ -876,6 +876,17 @@ jobs:
             --expect=4e1cc7e47c23a84d7b84c1c02ef5ed64d13658ef1b9dd234d96af55050d08203 2>&1 | tee sim.log
           grep -q "4e1cc7e47c23a84d7b84c1c02ef5ed64d13658ef1b9dd234d96af55050d08203" sim.log
 
+      # The world's Pokemon played the same way give the same population
+      # (server/population_sim_hash.gd), drawn and as the dedicated server runs it.
+      - name: Population simulation hash
+        run: |
+          "$GODOT" --headless --fixed-fps 60 --path project -s "$PWD/server/population_sim_hash.gd" -- \
+            --expect=d60bd575a137bc966c7eb37c8c5fbd67e7dba8c36692c4e71ab634739865e312 2>&1 | tee pop.log
+          grep -q "d60bd575a137bc966c7eb37c8c5fbd67e7dba8c36692c4e71ab634739865e312" pop.log
+          "$GODOT" --headless --fixed-fps 60 --path project -s "$PWD/server/population_sim_hash.gd" -- \
+            --no-sprites --expect=d60bd575a137bc966c7eb37c8c5fbd67e7dba8c36692c4e71ab634739865e312 2>&1 | tee pop_server.log
+          grep -q "d60bd575a137bc966c7eb37c8c5fbd67e7dba8c36692c4e71ab634739865e312" pop_server.log
+
   publish:
     needs: [draft, smoke, ios_xtool, server, android, worldgen, tests]
     # The IPA from the Mac or, failing that, from xtool: ios_xtool says which.

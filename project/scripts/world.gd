@@ -120,8 +120,6 @@ const SOURCE_STORAGE_BOX := preload(
     "res://assets/source_0_8_11/tiles/chest1.png"
 )
 const TRAPINCH_BURROW := preload("res://assets/ecology/trapinch_ow1.png")
-const DESERT_WHIRLPOOL := preload("res://assets/ecology/whirlpool_desert2.png")
-const DESERT_BURROW_SAND := preload("res://assets/ecology/grass_over_sheet3.png")
 const LANDMARK_BALL := preload("res://assets/landmark_pokeball.png")
 const SOURCE_SIGN := preload("res://assets/world_source/sign1.png")
 const SOURCE_CAVE_DOOR := preload("res://assets/world_source/cave_door.png")
@@ -166,7 +164,13 @@ var ground_collisions: Dictionary = {}
 var removed_resources: Dictionary = {}
 var terrain_changes: Dictionary = {}
 var built_structures: Dictionary = {}
-var deployed_pokemon: Dictionary = {}
+const HabitatPopulation = preload("res://scripts/habitat_population.gd")
+## The Pokemon left out in habitats (habitat_population.gd): their frame, and
+## which cells are near one.
+var habitat_population := HabitatPopulation.new(self)
+## Its records by cell (the same dictionary): place, take and move them through
+## habitat_population.
+var deployed_pokemon: Dictionary = habitat_population.records
 var build_mode_active := false
 var build_selection_index := 0
 var build_preview_sprite: Sprite2D
@@ -292,8 +296,47 @@ func dropped_items() -> Node2D:
         dropped_item_manager.world = self
     return dropped_item_manager
 
-var wild_pokemon: Dictionary = {}
-var wild_eggs: Dictionary = {}
+const WildPopulation = preload("res://scripts/wild_population.gd")
+## The wild Pokemon (wild_population.gd): where each stands and its timer in
+## packed arrays with a grid, the rest in its record; their frame.
+var wild_population := WildPopulation.new(self)
+## Its records by id (the same dictionary): add, move and remove them through
+## wild_population.
+var wild_pokemon: Dictionary = wild_population.records
+const PopulationView = preload("res://scripts/population_view.gd")
+## The wild Pokemon's pooled sprites (the WildPokemonLayer): only those in view.
+var population_view: PopulationView
+const HabitatView = preload("res://scripts/habitat_view.gd")
+## The habitat Pokemon's and the eggs' pooled sprites (in the LandmarkLayer and
+## the WildEggLayer): only those outdoors in view.
+var habitat_view: HabitatView
+var egg_view: HabitatView
+## The eggs lying in the world (a HabitatPopulation of their own, for the
+## tiles changed since co-op last sent them).
+var egg_population := HabitatPopulation.new(self, "wild_eggs")
+## Its records by cell (the same dictionary): place and take them through
+## egg_population.
+var wild_eggs: Dictionary = egg_population.records
+
+## The sprite showing a wild Pokemon's, habitat Pokemon's or egg's record now:
+## null when it has none (a wild one out of view, or on a dedicated server).
+func _sprite_of(data: Dictionary) -> Sprite2D:
+    var wild_id := int(data.get("id", -1))
+    if is_same(wild_pokemon.get(wild_id), data):
+        return population_view.sprite_of(wild_id) if is_instance_valid(population_view) else null
+    return data.get("sprite") as Sprite2D
+
+## A habitat Pokemon's or egg's record lets go of its sprite: back to its
+## view's pool, or freed (one in a house has its own).
+func _drop_record_sprite(data: Dictionary) -> void:
+    var sprite = data.get("sprite")
+    if not is_instance_valid(sprite):
+        return
+    var view = sprite.get_parent()
+    if view is HabitatView:
+        view.release(sprite)
+    else:
+        sprite.queue_free()
 var next_wild_id := 1
 var next_deployed_id := 1
 var ecology_accumulator := 0.0
@@ -511,7 +554,7 @@ func generate_world(
     removed_resources.clear()
     terrain_changes.clear()
     built_structures.clear()
-    deployed_pokemon.clear()
+    habitat_population.clear()
     build_mode_active = false
     build_selection_index = 0
     build_preview_sprite = null
@@ -535,11 +578,11 @@ func generate_world(
     discovered_cells.reset(Rect2i())
     dropped_items().restore({})
     map_art_revision += 1
-    wild_pokemon.clear()
+    wild_population.clear()
     sand_trap_ids.clear()
     sand_trap_clocks.clear()
     sand_trap_clock_of.clear()
-    wild_eggs.clear()
+    egg_population.clear()
     next_wild_id = 1
     next_deployed_id = 1
     ecology_accumulator = 0.0
@@ -662,16 +705,24 @@ func generate_world(
     landmark_layer.name = "LandmarkLayer"
     landmark_layer.z_index = 0
     add_child(landmark_layer)
+    habitat_view = HabitatView.new()
+    habitat_view.configure_records(self, habitat_population)
+    landmark_layer.add_child(habitat_view)
 
-    var wild_layer := Node2D.new()
+    var wild_layer := PopulationView.new()
     wild_layer.name = "WildPokemonLayer"
     wild_layer.z_index = 0
+    wild_layer.configure(self, wild_population)
     add_child(wild_layer)
+    population_view = wild_layer
 
     var egg_layer := Node2D.new()
     egg_layer.name = "WildEggLayer"
     egg_layer.z_index = 0
     add_child(egg_layer)
+    egg_view = HabitatView.new()
+    egg_view.configure_records(self, egg_population)
+    egg_layer.add_child(egg_view)
 
     var collision_body := CollisionBody.new()
     collision_body.name = "WorldCollision"
@@ -1042,10 +1093,8 @@ func _spawn_extra_biome_pokemon(_records: Array[Dictionary], spread: bool = fals
                                 occupied.erase(origin)
                                 occupied[first] = id
                                 occupied[second] = new_id
-                                original.cell = first
-                                _wild_cell_moved(id, first)
-                                var sprite := original.get("sprite") as Sprite2D
-                                if is_instance_valid(sprite): sprite.position = _cell_center(first)
+                                wild_population.move(id, first)
+                                wild_population.snap(id)
                                 partner_id = new_id
                                 break
                             if partner_id >= 0: break
@@ -2033,6 +2082,7 @@ func feed_pokemon_in_front(item_name: String) -> bool:
         var deployed: Dictionary = deployed_pokemon[target]
         _feed_ecology_record(deployed, happiness_gain)
         deployed_pokemon[target] = deployed
+        habitat_population.mark(target)
         _show_ecology_emote(deployed.get("sprite") as Sprite2D, "heart")
         world_message.emit("%s enjoyed the %s." % [
             PokemonData.battle_display_name(String(deployed.get("species", "POKEMON"))), item_name
@@ -2048,7 +2098,7 @@ func feed_pokemon_in_front(item_name: String) -> bool:
         wild["aggro_player"] = false
         wild["warned"] = false
         wild_pokemon[wild_id] = wild
-        _show_ecology_emote(wild.get("sprite") as Sprite2D, "heart")
+        _show_ecology_emote(_sprite_of(wild), "heart")
         world_message.emit("Wild %s is eating the %s." % [
             PokemonData.battle_display_name(String(wild.get("species", "POKEMON"))), item_name
         ])
@@ -2377,13 +2427,11 @@ func _interact_wild_pokemon(wild_id: int) -> void:
     if active_field_move == "ATTACK":
         _begin_wild_encounter(wild_id, true)
         return
-    var sprite = data.get("sprite") as Sprite2D
-    if is_instance_valid(sprite):
-        _set_overworld_motion_frame(sprite, -_facing_cell(), 0)
+    wild_population.pose(wild_id, -_facing_cell(), 0)
     var kind = PokemonEcology.wild_interaction_kind(String(data.get("species", "")))
     var warned = bool(data.get("warned",false))
     # It stays where it was reached while the player is talking to it.
-    data["move_timer"] = maxf(float(data.get("move_timer", 0.0)), 1.5)
+    wild_population.set_timer(wild_id, maxf(wild_population.timer_of(wild_id), 1.5))
     set_gameplay_enabled(false)
     await get_tree().create_timer(20.0/60.0).timeout
     if not wild_pokemon.has(wild_id):
@@ -2391,7 +2439,7 @@ func _interact_wild_pokemon(wild_id: int) -> void:
         return
     # One still shaken by a failed catch can be befriended, but is not glad of it.
     var frightened = kind == "FRIENDLY" and world_elapsed_seconds < float(data.get("ball_flee_until", 0.0))
-    _show_ecology_emote(sprite, "sad" if frightened else "happy" if kind=="FRIENDLY" else "skull" if kind=="AGGRESSIVE" and not warned else "alert")
+    _show_ecology_emote(_sprite_of(data), "sad" if frightened else "happy" if kind=="FRIENDLY" else "skull" if kind=="AGGRESSIVE" and not warned else "alert")
     await get_tree().create_timer(20.0/60.0).timeout
     get_parent()._play_pokemon_cry({"species":String(data.get("species",""))})
     if kind == "SKITTISH":
@@ -2434,7 +2482,7 @@ func confirm_wild_provocation(wild_id: int) -> void:
     data["warned"] = true
     data["aggro_player"] = true
     data["source_aggro_emote_seconds"] = 32.0 / 60.0
-    data["move_timer"] = 32.0 / 60.0
+    wild_population.set_timer(wild_id, 32.0 / 60.0)
     data["provocation_count"] = int(data.get("provocation_count", 0)) + 1
     wild_pokemon[wild_id] = data
     # The provocation interaction has finished. Start the battle immediately,
@@ -2458,7 +2506,7 @@ func take_friendly_wild(wild_id: int) -> Dictionary:
             result[property] = source_record[property]
     result["species"] = String(data.get("species", "pidgey")).to_lower()
     result["level"] = maxi(1, int(data.get("level", 2)))
-    _show_ecology_emote(data.get("sprite") as Sprite2D, "happy")
+    _show_ecology_emote(_sprite_of(data), "happy")
     _remove_wild_pokemon(wild_id)
     return result
 
@@ -2917,18 +2965,10 @@ func deploy_pokemon(pokemon_data: Dictionary) -> bool:
         world_message.emit("That Pokemon's overworld sprite is not available yet.")
         return false
 
-    var sprite := Sprite2D.new()
-    sprite.texture = pokemon_texture
-    sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-    sprite.position = _cell_center(cell)
-    sprite.z_as_relative = false
-    sprite.z_index = _depth_z(cell)
-    _configure_overworld_sprite(sprite)
-    var layer := _house_pokemon_layer() if indoors else get_node_or_null("LandmarkLayer") as Node2D
-    if layer == null:
+    if not indoors and get_node_or_null("LandmarkLayer") == null:
         return false
-    layer.add_child(sprite)
-    preload("res://scripts/shiny_sparkles.gd").attach(sprite, pokemon_data)
+    # Outdoors habitat_view draws it while it is in view.
+    var sprite := _house_record_sprite(pokemon_texture, cell, pokemon_data) if indoors else null
 
     var stored := PokemonEcology.ensure_record(
         pokemon_data, rng, "owned:%d" % next_deployed_id
@@ -2943,9 +2983,10 @@ func deploy_pokemon(pokemon_data: Dictionary) -> bool:
     stored["move_timer"] = _wild_move_delay(species)
     stored["anim_phase"] = 0
     stored["behavior"] = PokemonData.info(species).get("overworld_behavior", {})
-    stored["sprite"] = sprite
+    if sprite != null:
+        stored["sprite"] = sprite
     stored = _refresh_record_habitat(stored, cell)
-    deployed_pokemon[cell] = stored
+    habitat_population.place(cell, stored)
     return true
 
 func _recall_deployed_pokemon(cell:Vector2i,data:Dictionary)->void:
@@ -2974,10 +3015,8 @@ func _recall_deployed_pokemon(cell:Vector2i,data:Dictionary)->void:
             "missing_habitats", "manured", "house_door", "house_floor"
         ]:
         recalled.erase(runtime_key)
-    var sprite: Sprite2D = data.get("sprite") as Sprite2D
-    if is_instance_valid(sprite):
-        sprite.queue_free()
-    deployed_pokemon.erase(cell)
+    _drop_record_sprite(data)
+    habitat_population.take(cell)
     deployed_recall_candidate = Vector2i(-2147483648, -2147483648)
     deployed_recall_candidate_msec = 0
     pokemon_recalled.emit(recalled)
@@ -3010,6 +3049,7 @@ func _interact_deployed_pokemon(cell:Vector2i)->void:
         data["held_item"] = ""
         data["harvest_progress"] = 0.0
         deployed_pokemon[cell] = data
+        habitat_population.mark(cell)
         _show_ecology_emote(data.get("sprite") as Sprite2D,
             "uncomfortable" if not bool(data.get("in_habitat", false)) else (
             "heart" if not String(data.get("mate_id", "")).is_empty() else "happy"))
@@ -3124,9 +3164,45 @@ func respawn_after_whiteout() -> void:
     _configure_camera()
     _refresh_exact_tile_streams()
 
+## A packed tile's ecology names (its two names lowered, and whether one of
+## them is grass1), by its names' ids, and a packed tile's biome
+## (_source_biome_for_tile), by its biome, route and water: the same for every
+## cell with that tile. For _tile_names_store's tiles.
+var _tile_names := {}
+var _tile_biomes := {}
+var _tile_names_store: Object
+
 func _ecology_names_at(cell: Vector2i) -> String:
     if active_area_id == "HOUSE" and built_house_interior_cells.has(cell):
         return "house_floor " + String((built_structures.get(cell, {}) as Dictionary).get("name", "")).to_lower()
+    # A packed tile: the same names as below from the tile's, without the
+    # lookups, the lowering and the biome (a tile object each) for every cell.
+    var tiles = exact_world.tiles if exact_world != null else null
+    if tiles is WorldTileStore:
+        var store: WorldTileStore = tiles
+        var index: int = store.index_of(cell * TILE)
+        if index >= 0:
+            if not is_same(store, _tile_names_store):
+                _tile_names_store = store
+                _tile_names.clear()
+                _tile_biomes.clear()
+            var pair: int = store.name_ids[index] << 24 | store.upper_ids[index]
+            var own = _tile_names.get(pair)
+            if own == null:
+                var name: String = store.name_at(index)
+                var upper: String = store.upper_at(index)
+                own = [name.to_lower() + " " + upper.to_lower(), _source_tile_key(name) == "grass1" or _source_tile_key(upper) == "grass1"]
+                _tile_names[pair] = own
+            # _is_tall_grass_cell, from the same fields.
+            var flags: int = store.flags[index]
+            var grass: bool
+            if tall_grass.has(cell):
+                grass = _packed_tile_biome(store, index, cell) != "SNOW"
+            elif flags & WorldTileStore.TIDAL != 0 and _packed_tile_biome(store, index, cell) != "BEACH":
+                grass = false
+            else:
+                grass = own[1] or flags & WorldTileStore.GRASS != 0
+            return own[0] + (" grass" if grass else "") + _placed_ecology_names(cell)
     if not _in_bounds(cell):
         return ""
     var names: Array[String] = []
@@ -3142,24 +3218,41 @@ func _ecology_names_at(cell: Vector2i) -> String:
         names.append(String(source_data.get("biome", "")).to_lower())
     if _is_tall_grass_cell(cell):
         names.append("grass")
+    var own := " ".join(names)
+    var placed := _placed_ecology_names(cell)
+    return placed.substr(1) if own.is_empty() else own + placed
+
+## biome_at(cell) for packed tile `index` of `store` (cached in _tile_biomes).
+func _packed_tile_biome(store: WorldTileStore, index: int, cell: Vector2i) -> String:
+    var kind: int = (store.biome_ids[index] << 32) | (store.route_ids[index] << 1) | int(store.flags[index] & WorldTileStore.WATER != 0)
+    var biome = _tile_biomes.get(kind)
+    if biome == null:
+        biome = _source_biome_for_tile(exact_world.tile_at(cell))
+        _tile_biomes[kind] = biome
+    return biome
+
+## The ecology names of what lies on `cell` (flowers, resources, buildings,
+## landmarks, ice), each after a space.
+func _placed_ecology_names(cell: Vector2i) -> String:
+    var names := ""
     if flower_cells.has(cell):
-        names.append("flower")
+        names += " flower"
     if resource_objects.has(cell):
-        names.append(String((resource_objects[cell] as Dictionary).get("type", "")).to_lower())
+        names += " " + String((resource_objects[cell] as Dictionary).get("type", "")).to_lower()
     if built_structures.has(cell):
         var built_name := String((built_structures[cell] as Dictionary).get("name", "")).to_lower()
-        names.append(built_name)
+        names += " " + built_name
         if built_name == "flowers":
-            names.append("flower")
+            names += " flower"
         elif built_name == "plant":
-            names.append("potted")
+            names += " potted"
         elif built_name == "grave":
-            names.append("gravestone")
+            names += " gravestone"
     if landmarks.has(cell):
-        names.append(String((landmarks[cell] as Dictionary).get("type", "")).to_lower())
+        names += " " + String((landmarks[cell] as Dictionary).get("type", "")).to_lower()
     if not terrain_changes.is_empty() and bool(terrain_changes.get("ice:%d,%d" % [cell.x, cell.y], false)):
-        names.append("snow")
-    return " ".join(names)
+        names += " snow"
+    return names
 
 ## per-frame
 func _update_ecology(delta:float)->void:
@@ -3169,21 +3262,28 @@ func _update_ecology(delta:float)->void:
         if ecology_accumulator+delta<PokemonEcology.HABITAT_CHECK_SECONDS:
             ecology_accumulator+=delta
             return
-        # Only advance records simulated by this peer, while retaining the
-        # original habitat, relationship and breeding calculations.
-        var all_deployed=deployed_pokemon
-        var all_wild=wild_pokemon
-        deployed_pokemon={}
-        for cell in all_deployed:
-            if coordinator.population.authority(preload("res://scripts/coop_population_records.gd").record_scope(all_deployed[cell])):deployed_pokemon[cell]=all_deployed[cell]
-        if not coordinator.population.authority():wild_pokemon={}
-        _run_ecology_step(delta)
-        all_deployed.merge(deployed_pokemon,true)
-        deployed_pokemon=all_deployed;wild_pokemon=all_wild
+        # Only the records this peer simulates move on: the habitat Pokemon
+        # of the scopes it has authority over, and the wild ones when it is
+        # the area's authority. The habitat, relationship and breeding rules
+        # are the same.
+        var population=coordinator.population
+        var scopes:={}
+        var simulated:=func(record:Dictionary)->bool:
+            var scope:String=preload("res://scripts/coop_population_records.gd").record_scope(record)
+            if not scopes.has(scope):scopes[scope]=population.authority(scope)
+            return scopes[scope]
+        _run_ecology_step(delta,simulated,population.authority())
         return
     _run_ecology_step(delta)
 
-func _run_ecology_step(delta: float) -> void:
+## The fields of a habitat Pokemon the ecology pass sets, other than its clocks.
+const ECOLOGY_FIELDS: Array[String] = ["mate_id", "friend_id", "can_lay_egg", "mate_nearby", "nearby_pokemon",
+    "in_habitat", "in_shelter", "missing_habitats", "held_item"]
+
+## The ecology pass every HABITAT_CHECK_SECONDS. `simulated` (a record ->
+## bool) picks the habitat Pokemon this peer moves on (all when invalid);
+## with_wild false leaves the wild ones to the area's authority.
+func _run_ecology_step(delta: float, simulated: Callable = Callable(), with_wild: bool = true) -> void:
     ecology_accumulator += delta
     if ecology_accumulator < PokemonEcology.HABITAT_CHECK_SECONDS:
         return
@@ -3191,7 +3291,13 @@ func _run_ecology_step(delta: float) -> void:
     ecology_accumulator = fmod(
         ecology_accumulator, PokemonEcology.HABITAT_CHECK_SECONDS
     )
-    var active_wild := _refresh_ecology_relationships()
+    # What the pass sets of each habitat Pokemon besides its clocks, as it was:
+    # one whose changes is marked for co-op (habitat_population.dirty).
+    var before := {}
+    for raw_cell in deployed_pokemon:
+        var record: Dictionary = deployed_pokemon[raw_cell]
+        before[raw_cell] = ECOLOGY_FIELDS.map(func(field: String) -> Variant: return record.get(field))
+    var active_wild := _refresh_ecology_relationships(simulated, with_wild)
     _release_old_eggs()
 
     for raw_cell in deployed_pokemon.keys():
@@ -3199,6 +3305,8 @@ func _run_ecology_step(delta: float) -> void:
         if not deployed_pokemon.has(cell):
             continue
         var data: Dictionary = deployed_pokemon[cell]
+        if simulated.is_valid() and not simulated.call(data):
+            continue
         if (
                 bool(data.get("in_habitat", false))
                 and String(data.get("held_item", "")).is_empty()
@@ -3212,6 +3320,8 @@ func _run_ecology_step(delta: float) -> void:
                     data["held_item"] = choices[rng.randi_range(0, choices.size() - 1)]
         data = _advance_breeding_clock(data, ecology_delta)
         deployed_pokemon[cell] = data
+        if before.get(cell) != ECOLOGY_FIELDS.map(func(field: String) -> Variant: return data.get(field)):
+            habitat_population.mark(cell)
 
     # The wild Pokemon in play are the ones the relationship pass just took
     # (not burrowed, near the player or a habitat); nothing since has moved
@@ -3245,49 +3355,35 @@ func _advance_breeding_clock(
         )
     return data
 
-## Returns the wild records it covered, in wild_pokemon order.
-func _refresh_ecology_relationships() -> Array[Dictionary]:
+## Returns the wild records it covered, in wild_pokemon order. `simulated`
+## and with_wild: as _run_ecology_step.
+func _refresh_ecology_relationships(simulated: Callable = Callable(), with_wild: bool = true) -> Array[Dictionary]:
     var records: Array[Dictionary] = []
     var active_wild: Array[Dictionary] = []
     # Habitat windows heavily overlap. Cache each cell's ecology string for this
     # refresh so the 1.6-second relationship pass does not repeatedly resolve
     # the same tile/biome dozens of times and hitch while the player is running.
     var ecology_name_cache: Dictionary = {}
+    var active_center := _player_cell()
+    # The wild Pokemon near the player or a habitat (as WildPopulation.tick
+    # keeps going), from the buckets of wild_population's grid those squares
+    # touch.
+    var squares: Array = [Vector3i(active_center.x, active_center.y, ECOLOGY_ACTIVE_RADIUS)]
     for raw_cell in deployed_pokemon.keys():
         var cell: Vector2i = raw_cell
+        if simulated.is_valid() and not simulated.call(deployed_pokemon[cell]):
+            continue
         records.append({
             "kind": "deployed", "key": cell, "cell": cell,
             "data": deployed_pokemon[cell]
         })
-    var active_center := _player_cell()
-    # With no habitats out, only the player's square counts: most of the
-    # world's wild Pokemon are settled by these two comparisons.
-    var player_only := deployed_pokemon.is_empty()
-    # The cells near a habitat, once for this pass: asking every habitat about
-    # every wild Pokemon (_wild_ecology_is_active) was most of a pass that took
-    # the host 10 ms and more with a few dozen habitats out.
-    var near_habitat := {}
-    for raw_cell in deployed_pokemon:
-        var habitat_cell := Vector2i(raw_cell)
-        for y in range(-PokemonEcology.HABITAT_RADIUS, PokemonEcology.HABITAT_RADIUS + 1):
-            for x in range(-PokemonEcology.HABITAT_RADIUS, PokemonEcology.HABITAT_RADIUS + 1):
-                near_habitat[habitat_cell + Vector2i(x, y)] = true
-    for raw_id in wild_pokemon:
+        squares.append(Vector3i(cell.x, cell.y, PokemonEcology.HABITAT_RADIUS))
+    for slot in (wild_population.slots_in(squares) if with_wild else PackedInt32Array()):
+        var raw_id := wild_population.ids[slot]
         var wild_data: Dictionary = wild_pokemon[raw_id]
         if bool(wild_data.get("burrowed", false)):
             continue
         var wild_cell: Vector2i = wild_data.get("cell", Vector2i.ZERO)
-        if player_only and (
-                absi(wild_cell.x - active_center.x) > ECOLOGY_ACTIVE_RADIUS
-                or absi(wild_cell.y - active_center.y) > ECOLOGY_ACTIVE_RADIUS
-            ):
-            continue
-        if (
-                (absi(wild_cell.x - active_center.x) > ECOLOGY_ACTIVE_RADIUS
-                or absi(wild_cell.y - active_center.y) > ECOLOGY_ACTIVE_RADIUS)
-                and not near_habitat.has(wild_cell)
-            ):
-            continue
         active_wild.append(wild_data)
         records.append({
             "kind": "wild", "key": raw_id,
@@ -3452,32 +3548,12 @@ func _refresh_ecology_relationships() -> Array[Dictionary]:
                 not mate_id.is_empty()
                 and mate_id != String(data.get("previous_mate_id", ""))
             ):
-            _show_ecology_emote(data.get("sprite") as Sprite2D, "heart")
+            _show_ecology_emote(_sprite_of(data), "heart")
         data.erase("previous_mate_id")
         descriptor["data"] = data
         records[index] = descriptor
         _store_ecology_descriptor(descriptor)
     return active_wild
-
-func _wild_ecology_is_active(
-        cell: Vector2i, active_center: Vector2i
-    ) -> bool:
-    if (
-            absi(cell.x - active_center.x) <= ECOLOGY_ACTIVE_RADIUS
-            and absi(cell.y - active_center.y) <= ECOLOGY_ACTIVE_RADIUS
-        ):
-        return true
-    # Player-owned habitat populations keep their nearby wild interactions
-    # even while the player is elsewhere; unrelated offscreen wild Pokemon do
-    # not need per-frame behavior or relationship scans.
-    for raw_cell in deployed_pokemon:
-        var deployed_cell := Vector2i(raw_cell)
-        if (
-                absi(cell.x - deployed_cell.x) <= PokemonEcology.HABITAT_RADIUS
-                and absi(cell.y - deployed_cell.y) <= PokemonEcology.HABITAT_RADIUS
-            ):
-            return true
-    return false
 
 func _store_ecology_descriptor(descriptor: Dictionary) -> void:
     var data: Dictionary = descriptor["data"]
@@ -3494,89 +3570,27 @@ func _store_ecology_descriptor(descriptor: Dictionary) -> void:
 func _update_deployed_pokemon(delta: float) -> void:
     var coordinator=get_parent().get("coop_game")
     if is_instance_valid(coordinator) and coordinator.active and not coordinator.population.authority():return
-    var directions = [
-        Vector2i.ZERO, Vector2i.LEFT, Vector2i.RIGHT,
-        Vector2i.UP, Vector2i.DOWN
-    ]
-    for raw_cell in deployed_pokemon.keys():
-        var old_cell = raw_cell
-        if not deployed_pokemon.has(old_cell):
-            continue
-        var data = deployed_pokemon[old_cell]
-        if data.has("house_door"):
-            continue
-        # The Pokemon the player is calling back waits for them.
-        if not recall_hold.is_empty() and String(data.get("ecology_id", "")) == recall_hold:
-            continue
-        _update_pokemon_water_visual(data)
-        _update_friendly_passby(data, old_cell, true)
-        data["move_timer"] = float(data.get("move_timer", 0.0)) - delta
-        if float(data["move_timer"]) > 0.0:
-            deployed_pokemon[old_cell] = data
-            continue
-        data["move_timer"] = _wild_move_delay(String(data.get("species", "")))
-        data = _try_create_parent_egg(data, old_cell)
-        var behavior = data.get("behavior", {})
-        if bool(behavior.get("stationary", false)):
-            deployed_pokemon[old_cell] = data
-            continue
-        if not String(data.get("held_item", "")).is_empty():
-            var dance_sprite = data.get("sprite") as Sprite2D
-            data["anim_phase"] = 1 - int(data.get("anim_phase", 0))
-            if is_instance_valid(dance_sprite):
-                _set_overworld_motion_frame(
-                    dance_sprite, Vector2.DOWN, int(data["anim_phase"])
-                )
-            deployed_pokemon[old_cell] = data
-            continue
+    habitat_population.tick(delta, rng)
 
-        var direction = directions[rng.randi_range(0, directions.size() - 1)]
-        var friend_id = String(data.get("friend_id", ""))
-        var friend_reunion = (
-            not friend_id.is_empty()
-            and float(data.get("friend_seconds", PokemonEcology.FRIEND_SECONDS)) <= 0.0
-        )
-        var companion_id = friend_id
-        if friend_reunion:
-            data["friend_seconds"] = PokemonEcology.FRIEND_SECONDS
-            _show_friend_reunion(data, friend_id)
-        elif companion_id.is_empty() or rng.randf() < 0.18:
-            companion_id = String(data.get("mate_id", companion_id))
-        if not companion_id.is_empty() and (friend_reunion or rng.randf() < 0.20):
-            var companion_cell = _ecology_cell_by_id(companion_id)
-            if companion_cell.x > -2147483648:
-                direction = _cardinal_direction(companion_cell - old_cell, false)
-        direction = _paired_wander_direction(data, old_cell, direction)
-        var target = old_cell + direction
-        if (
-                direction == Vector2i.ZERO
-                or not _pokemon_can_move_between(String(data.get("species", "")), old_cell, target)
-                or target == _player_cell()
-                or target == follower_cell
-                or target == field_helper_cell
-                or deployed_pokemon.has(target)
-                or _wild_id_at_cell(target) >= 0
-                or wild_eggs.has(target)
-            ):
-            deployed_pokemon[old_cell] = data
-            continue
+## The look of a habitat Pokemon standing still (its walk phase, facing
+## `direction`), and of one stepping to `target`.
+func _habitat_pose(data: Dictionary, direction: Vector2i) -> void:
+    var sprite := data.get("sprite") as Sprite2D
+    if is_instance_valid(sprite):
+        _set_overworld_motion_frame(sprite, direction, int(data.get("anim_phase", 0)))
 
-        deployed_pokemon.erase(old_cell)
-        data["cell"] = target
-        data["x"] = target.x
-        data["y"] = target.y
-        data["anim_phase"] = 1 - int(data.get("anim_phase", 0))
-        var sprite = data.get("sprite") as Sprite2D
-        if is_instance_valid(sprite):
-            _set_overworld_motion_frame(sprite, direction, int(data["anim_phase"]))
-            sprite.z_index = _depth_z(target)
-            var move_seconds = 0.20
-            if bool(behavior.get("flee", false)):
-                move_seconds = 16.0 / (2.0 * 60.0)
-            create_tween().tween_property(
-                sprite, "position", _cell_center(target), move_seconds
-            ).set_trans(Tween.TRANS_LINEAR)
-        deployed_pokemon[target] = data
+func _habitat_step_visuals(data: Dictionary, direction: Vector2i, target: Vector2i, move_seconds: float) -> void:
+    var sprite := data.get("sprite") as Sprite2D
+    if is_instance_valid(sprite):
+        _set_overworld_motion_frame(sprite, direction, int(data["anim_phase"]))
+        sprite.z_index = _depth_z(target)
+        var tween := create_tween()
+        tween.tween_property(
+            sprite, "position", _cell_center(target), move_seconds
+        ).set_trans(Tween.TRANS_LINEAR)
+        # A pooled sprite's step stops when it goes back to the pool.
+        if is_instance_valid(habitat_view) and habitat_view.held.has(sprite):
+            habitat_view.steps[sprite] = tween
 
 func _egg_ground_cell_is_valid(cell: Vector2i, ignored_wild_id: int = -1) -> bool:
     if not _in_bounds(cell):
@@ -3667,9 +3681,8 @@ func _try_create_parent_egg(
     var egg := PokemonEcology.egg_record(data, partner, rng)
     _add_wild_egg_record(egg, resolved_cell, ignored_wild_id)
     data["lay_egg_seconds"] = PokemonEcology.LAY_EGG_SECONDS
-    _show_ecology_emote(data.get("sprite") as Sprite2D, "heart")
-    var partner_sprite: Sprite2D = partner.get("sprite") as Sprite2D
-    _show_ecology_emote(partner_sprite, "heart")
+    _show_ecology_emote(_sprite_of(data), "heart")
+    _show_ecology_emote(_sprite_of(partner), "heart")
     return data
 
 func _may_release_egg(egg:Dictionary)->bool:
@@ -3689,13 +3702,12 @@ func _release_old_eggs() -> void:
             continue
         if not egg.has("laid_at") or float(egg["laid_at"]) > world_elapsed_seconds:
             egg["laid_at"] = world_elapsed_seconds
+            egg_population.mark(raw_cell)
             continue
         if world_elapsed_seconds - float(egg["laid_at"]) < lifetime:
             continue
-        var egg_sprite: Sprite2D = egg.get("sprite") as Sprite2D
-        if is_instance_valid(egg_sprite):
-            egg_sprite.queue_free()
-        wild_eggs.erase(raw_cell)
+        _drop_record_sprite(egg)
+        egg_population.take(raw_cell)
 
 func _couple_egg_count(first_id: String, second_id: String) -> int:
     if first_id.is_empty() or second_id.is_empty():
@@ -3918,30 +3930,9 @@ func get_crafting_save_state(include_population: bool = true) -> Dictionary:
         saved_structure["y"] = cell.y
         structures.append(saved_structure)
 
-    var farms: Array = []
-    for key in (deployed_pokemon.keys() if include_population else []):
-        var cell: Vector2i = key
-        var data: Dictionary = deployed_pokemon[cell]
-        farms.append(_serializable_ecology_record(data, cell))
-
-    var saved_wild_pokemon: Array = []
-    for raw_id in (wild_pokemon.keys() if include_population else []):
-        var data: Dictionary = wild_pokemon[raw_id]
-        var cell: Vector2i = data.get("cell", Vector2i.ZERO)
-        var saved_wild := _serializable_ecology_record(data, cell)
-        saved_wild["id"] = int(raw_id)
-        saved_wild_pokemon.append(saved_wild)
-
-    var saved_eggs: Array = []
-    for raw_cell in (wild_eggs.keys() if include_population else []):
-        var cell: Vector2i = raw_cell
-        var data: Dictionary = wild_eggs[cell]
-        var saved_egg := data.duplicate(true)
-        saved_egg.erase("sprite")
-        saved_egg.erase("cell")
-        saved_egg["x"] = cell.x
-        saved_egg["y"] = cell.y
-        saved_eggs.append(saved_egg)
+    var farms: Array = habitat_population.to_save() if include_population else []
+    var saved_wild_pokemon: Array = wild_population.to_save() if include_population else []
+    var saved_eggs: Array = egg_population.to_save() if include_population else []
 
     var saved_follower: Dictionary = {}
     if not follower_pokemon.is_empty():
@@ -3996,12 +3987,24 @@ func get_crafting_save_state(include_population: bool = true) -> Dictionary:
         "respawn_y": respawn_cell.y
     }
 
+## What is saved of an egg lying on `cell`.
+func _serializable_egg_record(data: Dictionary, cell: Vector2i) -> Dictionary:
+    var saved_egg := data.duplicate(true)
+    saved_egg.erase("sprite")
+    saved_egg.erase("cell")
+    saved_egg["x"] = cell.x
+    saved_egg["y"] = cell.y
+    return saved_egg
+
 func _serializable_ecology_record(data: Dictionary, cell: Vector2i) -> Dictionary:
     var saved := data.duplicate(true)
-    # A hidden sand trap's clock values live on its shared clock.
-    var trap_id := int(data.get("id", -1))
-    if sand_trap_clock_of.has(trap_id) and is_same(wild_pokemon.get(trap_id), data):
-        _sand_trap_write(sand_trap_clock_of[trap_id], saved)
+    var wild_id := int(data.get("id", -1))
+    if is_same(wild_pokemon.get(wild_id), data):
+        # A wild Pokemon's move timer lives in wild_population's slot.
+        saved["move_timer"] = wild_population.timer_of(wild_id)
+        # A hidden sand trap's clock values live on its shared clock.
+        if sand_trap_clock_of.has(wild_id):
+            _sand_trap_write(sand_trap_clock_of[wild_id], saved)
     for runtime_key in [
             "sprite", "burrow_whirl_sprite", "burrow_sand_sprite",
             "behavior", "cell",
@@ -4318,18 +4321,7 @@ func restore_crafting_save_state(state: Dictionary) -> void:
     gameplay_enabled = prior_gameplay
 
 func _clear_wild_pokemon() -> void:
-    for raw_id in wild_pokemon.keys():
-        var data: Dictionary = wild_pokemon[raw_id]
-        var sprite: Sprite2D = data.get("sprite") as Sprite2D
-        if is_instance_valid(sprite):
-            sprite.queue_free()
-        var whirl_sprite: Sprite2D = data.get("burrow_whirl_sprite") as Sprite2D
-        if is_instance_valid(whirl_sprite):
-            whirl_sprite.queue_free()
-        var sand_sprite: Sprite2D = data.get("burrow_sand_sprite") as Sprite2D
-        if is_instance_valid(sand_sprite):
-            sand_sprite.queue_free()
-    wild_pokemon.clear()
+    wild_population.clear()
     sand_trap_ids.clear()
     sand_trap_clocks.clear()
     sand_trap_clock_of.clear()
@@ -4337,11 +4329,8 @@ func _clear_wild_pokemon() -> void:
 
 func _clear_wild_eggs() -> void:
     for raw_cell in wild_eggs.keys():
-        var data: Dictionary = wild_eggs[raw_cell]
-        var sprite: Sprite2D = data.get("sprite") as Sprite2D
-        if is_instance_valid(sprite):
-            sprite.queue_free()
-    wild_eggs.clear()
+        _drop_record_sprite(wild_eggs[raw_cell])
+    egg_population.clear()
 
 func _restore_deployed_pokemon(entry: Dictionary, cell: Vector2i) -> void:
     var indoors := entry.has("house_door")
@@ -4356,28 +4345,18 @@ func _restore_deployed_pokemon(entry: Dictionary, cell: Vector2i) -> void:
             if other_cell != cell and String(deployed_pokemon[other_cell].get("ecology_id", "")) == restored_id:
                 return
     if deployed_pokemon.has(cell):
-        var replaced = deployed_pokemon[cell].get("sprite")
-        if is_instance_valid(replaced):
-            replaced.queue_free()
-        deployed_pokemon.erase(cell)
+        _drop_record_sprite(deployed_pokemon[cell])
+        habitat_population.take(cell)
     var species := String(entry.get("species", "")).to_lower()
     var pokemon_texture: Texture2D = PokemonData.record_texture(entry, "overworld")
     if pokemon_texture == null:
         pokemon_texture = FARM_POKEMON_TEXTURES.get(species) as Texture2D
     if pokemon_texture == null:
         return
-    var sprite := Sprite2D.new()
-    sprite.texture = pokemon_texture
-    sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-    sprite.position = _cell_center(cell)
-    sprite.z_as_relative = false
-    sprite.z_index = _depth_z(cell)
-    _configure_overworld_sprite(sprite)
-    var layer := _house_pokemon_layer() if indoors else get_node_or_null("LandmarkLayer") as Node2D
-    if layer == null:
+    if not indoors and get_node_or_null("LandmarkLayer") == null:
         return
-    layer.add_child(sprite)
-    preload("res://scripts/shiny_sparkles.gd").attach(sprite, entry)
+    # Outdoors habitat_view draws it while it is in view.
+    var sprite := _house_record_sprite(pokemon_texture, cell, entry) if indoors else null
     var ecology_id := String(entry.get("ecology_id", ""))
     if ecology_id.is_empty():
         ecology_id = "owned:%d" % next_deployed_id
@@ -4390,10 +4369,27 @@ func _restore_deployed_pokemon(entry: Dictionary, cell: Vector2i) -> void:
     stored["y"] = cell.y
     stored["behavior"] = PokemonData.info(species).get("overworld_behavior", {})
     stored["move_timer"] = float(stored.get("move_timer", _wild_move_delay(species)))
-    stored["sprite"] = sprite
-    deployed_pokemon[cell] = stored
-    if indoors:
+    stored.erase("sprite")
+    if sprite != null:
+        stored["sprite"] = sprite
         sprite.visible = _house_pokemon_visible(stored)
+    habitat_population.place(cell, stored)
+
+## The sprite of a habitat Pokemon (`data`) or, with no data, an egg in a
+## house: its own (outdoors habitat_view and egg_view draw them).
+func _house_record_sprite(texture: Texture2D, cell: Vector2i, data: Dictionary = {}) -> Sprite2D:
+    var sprite := Sprite2D.new()
+    sprite.texture = texture
+    sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+    sprite.position = _cell_center(cell)
+    sprite.z_as_relative = false
+    sprite.z_index = _depth_z(cell)
+    if not data.is_empty():
+        _configure_overworld_sprite(sprite)
+    _house_pokemon_layer().add_child(sprite)
+    if not data.is_empty():
+        preload("res://scripts/shiny_sparkles.gd").attach(sprite, data)
+    return sprite
 
 func _cell_key(cell: Vector2i) -> String:
     return "%d,%d" % [cell.x, cell.y]
@@ -4548,63 +4544,10 @@ func _create_wild_pokemon(
     var texture: Texture2D = TRAPINCH_BURROW if is_burrowed else PokemonData.record_texture(ecology_source, "overworld")
     if texture == null:
         return
-    var layer := get_node_or_null("WildPokemonLayer") as Node2D
-    if layer == null:
+    # No world drawn yet, no wild Pokemon. Its sprite (if it comes into view)
+    # is the WildPokemonLayer's (population_view.gd).
+    if get_node_or_null("WildPokemonLayer") == null:
         return
-
-    # A dedicated server draws nothing: its wild Pokemon get no sprites (every
-    # use of one checks is_instance_valid first), so no node, material or
-    # tween per Pokemon or per step either.
-    var drawn := not preload("res://scripts/dedicated_server.gd").active
-    var sprite: Sprite2D = null
-    if drawn:
-        sprite = Sprite2D.new()
-        sprite.texture = texture
-        sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-        sprite.position = _cell_center(cell)
-        if species.to_lower() in ["aexeggutor", "exeggutor_alolan"]:
-            sprite.scale = Vector2.ONE
-            sprite.offset = Vector2(0, -16)
-        sprite.z_as_relative = false
-        sprite.z_index = _depth_z(cell)
-        if is_burrowed:
-            sprite.hframes = 2
-            sprite.vframes = 1
-            sprite.frame = 0
-            sprite.visible = false
-        else:
-            _configure_overworld_sprite(sprite)
-            if species.to_lower() in ["aexeggutor", "exeggutor_alolan"]:
-                sprite.hframes = 6
-                sprite.vframes = 1
-                sprite.frame = 4
-                sprite.set_meta("alolan_exeggutor_walk", true)
-        layer.add_child(sprite)
-        preload("res://scripts/shiny_sparkles.gd").attach(sprite, ecology_source)
-
-    var whirl_sprite: Sprite2D = null
-    var sand_sprite: Sprite2D = null
-    if is_burrowed and drawn:
-        whirl_sprite = Sprite2D.new()
-        whirl_sprite.texture = DESERT_WHIRLPOOL
-        whirl_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-        whirl_sprite.hframes = 2
-        whirl_sprite.position = _cell_center(cell)
-        whirl_sprite.z_as_relative = false
-        whirl_sprite.z_index = _depth_z(cell) - 1
-        whirl_sprite.visible = false
-        layer.add_child(whirl_sprite)
-        sand_sprite = Sprite2D.new()
-        sand_sprite.texture = DESERT_BURROW_SAND
-        sand_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-        sand_sprite.hframes = 2
-        sand_sprite.vframes = 2
-        sand_sprite.frame = 0
-        sand_sprite.position = _cell_center(cell) + Vector2(0, 6)
-        sand_sprite.z_as_relative = false
-        sand_sprite.z_index = _depth_z(cell) + 1
-        sand_sprite.visible = false
-        layer.add_child(sand_sprite)
 
     var wild_id := requested_id if requested_id > 0 else next_wild_id
     next_wild_id = maxi(next_wild_id, wild_id + 1)
@@ -4633,19 +4576,14 @@ func _create_wild_pokemon(
     stored["anim_phase"] = 0
     stored["behavior"] = PokemonData.info(species).get("overworld_behavior", {})
     stored["source_record"] = source_record.duplicate(true)
-    stored["sprite"] = sprite
-    stored["burrow_whirl_sprite"] = whirl_sprite
-    stored["burrow_sand_sprite"] = sand_sprite
     # Source aggression affects how quickly a Pokemon becomes provoked; it is
     # not permission to force a battle on the first click or spawn frame.
     stored["aggro_player"] = bool(stored.get("aggro_player", source_record.get("aggressive", false)))
     stored["fed_until"] = float(stored.get("fed_until", 0.0))
     stored["flee_steps"] = int(stored.get("flee_steps", 0))
-    wild_pokemon[wild_id] = stored
-    _wild_cell_moved(wild_id, cell)
+    wild_population.add(wild_id, stored)
     _sand_trap_leave(wild_id, stored, false)
     if is_burrowed: _sand_trap_join(wild_id, stored)
-    _update_pokemon_water_visual(stored)
 
 func _wild_move_delay(species: String, data: Dictionary = {}) -> float:
     if bool(data.get("burrowed", false)):
@@ -4802,16 +4740,11 @@ func _add_wild_egg(
         cell = _resolve_egg_ground_cell(cell, ignored_wild_id)
     if cell.x <= -2147483648:
         return
-    var layer := _house_pokemon_layer() if egg_record.has("house_door") else get_node_or_null("WildEggLayer") as Node2D
-    if layer == null:
+    var indoors := egg_record.has("house_door")
+    if not indoors and get_node_or_null("WildEggLayer") == null:
         return
-    var sprite := Sprite2D.new()
-    sprite.texture = POKEMON_EGG
-    sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-    sprite.position = _cell_center(cell)
-    sprite.z_as_relative = false
-    sprite.z_index = _depth_z(cell)
-    layer.add_child(sprite)
+    # Outdoors egg_view draws it while it is in view.
+    var sprite := _house_record_sprite(POKEMON_EGG, cell) if indoors else null
     var stored := egg_record.duplicate(true)
     stored["species"] = species.to_lower()
     stored["egg_species"] = String(stored.get("egg_species", species)).to_lower()
@@ -4829,12 +4762,13 @@ func _add_wild_egg(
         "hatch_steps", int(stored["hatch_cycles"]) * PokemonEcology.EGG_STEP_INTERVAL
     ))
     stored["cell"] = cell
-    stored["sprite"] = sprite
+    stored.erase("sprite")
+    if sprite != null:
+        stored["sprite"] = sprite
+        sprite.visible = _house_pokemon_visible(stored)
     if bool(stored.get("dropped_party_egg", false)) and egg_record.has("hatch_cycles"):
         stored["hatch_cycles"] = int(egg_record["hatch_cycles"])
-    if stored.has("house_door"):
-        sprite.visible = _house_pokemon_visible(stored)
-    wild_eggs[cell] = stored
+    egg_population.place(cell, stored)
 
 func _add_wild_egg_record(
         egg_record: Dictionary, cell: Vector2i, ignored_wild_id: int = -1
@@ -4942,241 +4876,27 @@ func _charm_suppresses(data: Dictionary) -> bool:
         int(data.get("level", 1)))
 
 ## per-frame
+## The wild Pokemon's frame (WildPopulation.tick): the players who keep
+## them going are this one offline, the area's players online (where only
+## the area's authority runs it).
 func _update_wild_pokemon(delta: float) -> void:
     var coordinator=get_parent().get("coop_game")
     var online=is_instance_valid(coordinator) and coordinator.active
     if online and not coordinator.wild.authority():return
-    if online:coordinator.wild.refresh_players()
-    var directions = [
-        Vector2i.ZERO, Vector2i.LEFT, Vector2i.RIGHT,
-        Vector2i.UP, Vector2i.DOWN
-    ]
-    var player_cell = _player_cell()
-    # Most wild Pokemon in a big world are nowhere near anyone. Settle that
-    # with a few comparisons before the per-Pokemon work below, which for
-    # hundreds of them every frame was a third of the host's frame time.
-    # The zones are the same ones _wild_ecology_is_active tests.
-    # Which Pokemon are inside a zone is worked out twice a second, not every
-    # frame: with hundreds in the world, just asking each one cost 3-4 ms a
-    # frame. One that wanders in or spawns is picked up within half a second.
-    var now_msec := Time.get_ticks_msec()
-    if now_msec - _watched_wild_at >= 500:
-        _watched_wild_at = now_msec
-        var zones: Array = []
-        if online:
-            for watcher in coordinator.wild.players.values():
-                zones.append([int(watcher.x), int(watcher.y), ECOLOGY_ACTIVE_RADIUS])
-        else:
-            zones.append([player_cell.x, player_cell.y, ECOLOGY_ACTIVE_RADIUS])
-        for habitat_cell in deployed_pokemon.keys():
-            zones.append([habitat_cell.x, habitat_cell.y, PokemonEcology.HABITAT_RADIUS])
-        _watched_wild_ids.clear()
-        for raw_id in wild_pokemon:
-            var at = wild_pokemon[raw_id].get("cell", Vector2i.ZERO)
-            for zone in zones:
-                if absi(at.x - zone[0]) <= zone[2] + 2 and absi(at.y - zone[1]) <= zone[2] + 2:
-                    _watched_wild_ids.append(int(raw_id))
-                    break
-    for raw_id in _watched_wild_ids.duplicate():
-        var wild_id = int(raw_id)
-        var data = wild_pokemon.get(wild_id)
-        if data == null:
-            continue
-        if bool(data.get("ball_reserved", false)): continue
-        if bool(data.get("burrowed", false)):
-            continue
-        var old_cell = data.get("cell", Vector2i.ZERO)
-        # A dedicated server skips the frames nobody would see (coop_wild_runtime.gd).
-        if online and coordinator.wild.idle_frame(data, delta): continue
-        var local_target=true
-        var target_player = null
-        if online:
-            target_player=coordinator.wild.target_for(data,old_cell)
-            if target_player.is_empty():continue
-            player_cell=Vector2i(target_player.x,target_player.y)
-            local_target=target_player.actor==coordinator.session.actor
-        if not _wild_ecology_is_active(old_cell, player_cell):
-            continue
-        var active_sprite = data.get("sprite") as Sprite2D
-        if is_instance_valid(active_sprite):
-            active_sprite.visible = true
-            # z_index has no same-value check: writing it every frame for
-            # every nearby Pokemon re-sent it to the renderer each time.
-            var depth := _depth_z(old_cell)
-            if active_sprite.z_index != depth: active_sprite.z_index = depth
-        _update_pokemon_water_visual(data)
-        var was_charmed = bool(data.get("charmed", false))
-        var is_charmed = _charm_suppresses(data) if local_target else coordinator.wild.remote_charm(data,target_player)
-        data["charmed"] = is_charmed
-        if not online:_update_source_aggro_audio(data, old_cell, player_cell, delta)
-        if is_charmed and not was_charmed:
-            _show_ecology_emote(data.get("sprite") as Sprite2D, "heart")
-        if bool(data.get("aggro_player", false)):
-            data["source_aggro_emote_seconds"] = float(data.get("source_aggro_emote_seconds", 0.0)) - delta
-            if float(data["source_aggro_emote_seconds"]) <= 0.0:
-                _show_ecology_emote(data.get("sprite") as Sprite2D, "skull")
-                data["source_aggro_emote_seconds"] = 241.0 / 60.0
-        var move_timer := float(data.get("move_timer", 0.0)) - delta
-        data["move_timer"] = move_timer
-        # One that has just broken out of a ball bolts at once; it does not
-        # first wait out whatever pause its wandering had left.
-        var flee_until := float(data.get("ball_flee_until", 0.0))
-        if world_elapsed_seconds < flee_until and float(_flee_started.get(wild_id, -1.0)) != flee_until:
-            _flee_started[wild_id] = flee_until
-        elif move_timer > 0.0:
-            # data is wild_pokemon's own record: nothing to store back.
-            continue
-        data["move_timer"] = _wild_move_delay(String(data.get("species", "")), data)
-        data = _try_create_parent_egg(data, old_cell, wild_id)
-        var behavior = data.get("behavior", {})
-        if bool(behavior.get("stationary", false)):
-            wild_pokemon[wild_id] = data
-            continue
-
-        var player_delta = player_cell - old_cell
-        var pursuing = bool(data.get("aggro_player", false)) and not is_charmed
-        if world_elapsed_seconds < float(data.get("fed_until", 0.0)):
-            var eating_sprite = data.get("sprite") as Sprite2D
-            data["anim_phase"] = 1 - int(data.get("anim_phase", 0))
-            if is_instance_valid(eating_sprite):
-                _set_overworld_motion_frame(
-                    eating_sprite, Vector2.DOWN, int(data["anim_phase"])
-                )
-            wild_pokemon[wild_id] = data
-            continue
-        if (
-                pursuing
-                and local_target
-                and active_field_move not in ["SURF", "FLY"]
-                and player_delta.length_squared() <= 1
-                and not encounter_grace_active()
-                and not _repel_blocks(int(data.get("level", 1)))
-            ):
-            _begin_wild_encounter(wild_id)
-            return
-        var direction = directions[rng.randi_range(0, directions.size() - 1)]
-        # Timid species keep their distance; one that just broke out of a ball
-        # runs from the player for a while, from further off.
-        var scared = world_elapsed_seconds < float(data.get("ball_flee_until", 0.0))
-        var fleeing = (bool(behavior.get("flee", false)) and player_delta.length_squared() <= 16) or \
-            (scared and player_delta.length_squared() <= FLEE_RANGE_TILES * FLEE_RANGE_TILES)
-        if fleeing:
-            direction = _cardinal_direction(player_delta, true)
-        elif pursuing and player_delta.length_squared() <= 64:
-            direction = _cardinal_direction(player_delta, false)
-        else:
-            var friend_id = String(data.get("friend_id", ""))
-            var friend_reunion = (
-                not friend_id.is_empty()
-                and float(data.get("friend_seconds", PokemonEcology.FRIEND_SECONDS)) <= 0.0
-            )
-            var companion_id = friend_id
-            if friend_reunion:
-                data["friend_seconds"] = PokemonEcology.FRIEND_SECONDS
-                _show_friend_reunion(data, friend_id)
-            elif companion_id.is_empty() or rng.randf() < 0.18:
-                companion_id = String(data.get("mate_id", companion_id))
-            if not companion_id.is_empty() and (friend_reunion or rng.randf() < 0.20):
-                var companion_cell = _ecology_cell_by_id(companion_id)
-                if companion_cell.x > -2147483648:
-                    direction = _cardinal_direction(companion_cell - old_cell, false)
-            elif rng.randf() < 0.12:
-                var same_species_cell = _nearby_same_base_species_cell(data, old_cell)
-                if same_species_cell.x > -2147483648:
-                    direction = _cardinal_direction(same_species_cell - old_cell, false)
-        if not pursuing and not fleeing:
-            direction = _paired_wander_direction(data, old_cell, direction)
-        if not scared:
-            _flee_routes.erase(wild_id)
-            _flee_started.erase(wild_id)
-        elif fleeing:
-            # Running from a failed catch: follow a route planned several steps
-            # ahead (see _flee_direction), so walls, water and dead ends are
-            # gone around rather than paced in front of.
-            var runner = String(data.get("species", ""))
-            var free_step = func(step: Vector2i) -> bool:
-                return not (
-                    step == player_cell or step == follower_cell or step == field_helper_cell
-                    or (online and coordinator.wild.occupied(step))
-                    or _wild_id_at_cell(step, wild_id) >= 0
-                    or wild_eggs.has(step) or deployed_pokemon.has(step)
-                )
-            direction = _flee_direction(wild_id, runner, old_cell, player_cell, free_step)
-        var target = old_cell + direction
-        if bool(data.get("source_record", {}).get("rare_forest_mew", false)) and not preload("res://scripts/rare_forest_mew.gd").deep_forest(self,target):
-            wild_pokemon[wild_id] = data
-            continue
-        var rare_species := String(data.get("source_record", {}).get("rare_legendary", ""))
-        if not rare_species.is_empty() and not preload("res://scripts/rare_biome_legendaries.gd").habitat(self, rare_species, target):
-            wild_pokemon[wild_id] = data
-            continue
-        if (
-                direction == Vector2i.ZERO
-                or not _pokemon_can_move_between(String(data.get("species", "")), old_cell, target)
-                or target == player_cell
-                or target == follower_cell
-                or target == field_helper_cell
-                or (online and coordinator.wild.occupied(target))
-                or _wild_id_at_cell(target, wild_id) >= 0
-                or wild_eggs.has(target)
-                or deployed_pokemon.has(target)
-            ):
-            wild_pokemon[wild_id] = data
-            continue
-
-        var sprite = data.get("sprite") as Sprite2D
-        var phase = 1 - int(data.get("anim_phase", 0))
-        data["anim_phase"] = phase
-        data["cell"] = target
-        _wild_cell_moved(wild_id, target)
-        if online:coordinator.wild.mark_motion(wild_id)
-        # The step's pace and facing are the Pokemon's own, sprite or not (a
-        # dedicated server has none).
-        var move_seconds = 0.20
-        if bool(behavior.get("flee", false)) or (scared and fleeing):
-            move_seconds = 16.0 / (2.0 * 60.0)
-        elif pursuing:
-            move_seconds = 16.0 / (1.5 * 60.0)
-        data["ball_facing"] = Vector2(direction)
-        if is_instance_valid(sprite):
-            _set_overworld_motion_frame(sprite, direction, phase)
-            sprite.z_index = _depth_z(target)
-            var movement = create_tween()
-            data["ball_move_tween"] = movement
-            movement.tween_property(sprite, "position", _cell_center(target), move_seconds).set_trans(Tween.TRANS_LINEAR)
-        if pursuing or fleeing:
-            data["move_timer"] = move_seconds
-        if bool(behavior.get("flee", false)):
-            data["flee_steps"] = int(data.get("flee_steps", 0)) + 1
-            if int(data["flee_steps"]) >= 3 and _is_tall_grass_cell(target):
-                _remove_wild_pokemon(wild_id)
-                continue
-        wild_pokemon[wild_id] = data
+    var observers: Array
+    if online:
+        coordinator.wild.refresh_players()
+        observers = coordinator.wild.players.values()
+    else:
+        var cell := _player_cell()
+        observers = [{"x": cell.x, "y": cell.y}]
+    wild_population.tick(delta, observers, rng)
 
 func _show_friend_reunion(data: Dictionary, friend_id: String) -> void:
-    _show_ecology_emote(data.get("sprite") as Sprite2D, "happy")
+    _show_ecology_emote(_sprite_of(data), "happy")
     var friend := _ecology_record_by_id(friend_id)
     if not friend.is_empty():
-        _show_ecology_emote(friend.get("sprite") as Sprite2D, "happy")
-
-func _nearby_same_base_species_cell(
-        data: Dictionary, center: Vector2i
-    ) -> Vector2i:
-    var base_species := String(data.get("base_species", ""))
-    var own_id := int(data.get("id", -1))
-    for raw_id in wild_pokemon.keys():
-        if int(raw_id) == own_id:
-            continue
-        var candidate: Dictionary = wild_pokemon[raw_id]
-        if String(candidate.get("base_species", "")) != base_species:
-            continue
-        var candidate_cell: Vector2i = candidate.get("cell", Vector2i.ZERO)
-        if (
-                absi(candidate_cell.x - center.x) <= PokemonEcology.HABITAT_RADIUS
-                and absi(candidate_cell.y - center.y) <= PokemonEcology.HABITAT_RADIUS
-            ):
-            return candidate_cell
-    return Vector2i(-2147483648, -2147483648)
+        _show_ecology_emote(_sprite_of(friend), "happy")
 
 func _remove_wild_pokemon(wild_id:int)->void:
     var coordinator=get_parent().get("coop_game")
@@ -5191,87 +4911,14 @@ func _remove_wild_pokemon(wild_id:int)->void:
         var tile := exact_world.tile_at(Vector2i(data.get("cell", Vector2i.ZERO)))
         if tile != null:
             tile.items.erase("trapinch")
-    var sprite: Sprite2D = data.get("sprite") as Sprite2D
-    if is_instance_valid(sprite):
-        sprite.queue_free()
-    var whirl_sprite: Sprite2D = data.get("burrow_whirl_sprite") as Sprite2D
-    if is_instance_valid(whirl_sprite):
-        whirl_sprite.queue_free()
-    var sand_sprite: Sprite2D = data.get("burrow_sand_sprite") as Sprite2D
-    if is_instance_valid(sand_sprite):
-        sand_sprite.queue_free()
-    wild_pokemon.erase(wild_id)
-    if is_same(wild_index_of, wild_pokemon): _wild_unindex(wild_id)
+    wild_population.remove(wild_id)
 
 func _cardinal_direction(delta: Vector2i, away: bool) -> Vector2i:
-    var direction := Vector2i.ZERO
-    if absi(delta.x) >= absi(delta.y):
-        direction = Vector2i(signi(delta.x), 0)
-    else:
-        direction = Vector2i(0, signi(delta.y))
-    return -direction if away else direction
+    return WildPopulation.cardinal_direction(delta, away)
 
-## Wild Pokemon by cell: cell -> id, or an Array of ids when several share a
-## cell. It describes the wild_pokemon dictionary in wild_index_of and is
-## kept by _wild_cell_moved / _wild_unindex at every add, move and removal;
-## it is built again from wild_pokemon whenever that is another dictionary
-## or holds another number of Pokemon.
-var wild_by_cell := {}
-## id -> the cell it is indexed at.
-var wild_indexed_cell := {}
-var wild_index_of: Dictionary = {}
-
-func _wild_index_valid() -> bool:
-    return is_same(wild_index_of, wild_pokemon) and wild_indexed_cell.size() == wild_pokemon.size()
-
-func _wild_index_all() -> void:
-    wild_by_cell = {}
-    wild_indexed_cell = {}
-    wild_index_of = wild_pokemon
-    for raw_id in wild_pokemon:
-        _wild_index_add(int(raw_id), Vector2i(wild_pokemon[raw_id].get("cell", Vector2i(-1, -1))))
-
-func _wild_index_add(wild_id: int, cell: Vector2i) -> void:
-    wild_indexed_cell[wild_id] = cell
-    var at = wild_by_cell.get(cell)
-    if at == null: wild_by_cell[cell] = wild_id
-    elif at is Array: at.append(wild_id)
-    else: wild_by_cell[cell] = [at, wild_id]
-
-func _wild_unindex(wild_id: int) -> void:
-    if not wild_indexed_cell.has(wild_id): return
-    var cell: Vector2i = wild_indexed_cell[wild_id]
-    wild_indexed_cell.erase(wild_id)
-    var at = wild_by_cell.get(cell)
-    if at is Array:
-        at.erase(wild_id)
-        if at.size() == 1: wild_by_cell[cell] = at[0]
-    elif at == wild_id: wild_by_cell.erase(cell)
-
-## Call after every write of a wild Pokemon's "cell" (and after adding one).
-func _wild_cell_moved(wild_id: int, cell: Vector2i) -> void:
-    if not is_same(wild_index_of, wild_pokemon): return
-    _wild_unindex(wild_id)
-    _wild_index_add(wild_id, cell)
-
+## The first wild Pokemon on the cell in wild_pokemon's order, -1 if none.
 func _wild_id_at_cell(cell: Vector2i, ignored_id: int = -1) -> int:
-    if not _wild_index_valid(): _wild_index_all()
-    var at = wild_by_cell.get(cell)
-    if at == null: return -1
-    if at is Array: return _wild_id_at_cell_scan(cell, ignored_id)  # several: the first in wild_pokemon, as before
-    return -1 if at == ignored_id else at
-
-## The first wild Pokemon at the cell in wild_pokemon order (the index's
-## answer must equal this one).
-func _wild_id_at_cell_scan(cell: Vector2i, ignored_id: int = -1) -> int:
-    for raw_id in wild_pokemon.keys():
-        var wild_id := int(raw_id)
-        if wild_id == ignored_id:
-            continue
-        var data: Dictionary = wild_pokemon[raw_id]
-        if Vector2i(data.get("cell", Vector2i(-1, -1))) == cell:
-            return wild_id
-    return -1
+    return wild_population.id_at(cell, ignored_id)
 
 func _attack_wild_egg(cell:Vector2i)->void:
     var coordinator=get_parent().get("coop_game")
@@ -5409,33 +5056,24 @@ func _collect_wild_egg(cell:Vector2i)->void:
         world_message.emit("Your party and storage are full.")
         return
     var species := String(data.get("species", "pidgey"))
-    var sprite: Sprite2D = data.get("sprite") as Sprite2D
-    if is_instance_valid(sprite):
-        sprite.queue_free()
+    _drop_record_sprite(data)
     pending_egg_record = data.duplicate(true)
     pending_egg_record.erase("sprite")
     pending_egg_record.erase("cell")
-    wild_eggs.erase(cell)
+    egg_population.take(cell)
     if bool(data.get("dropped_party_egg", false)):
         egg_collected.emit(species)
         return
     var anger_count := 0
-    for raw_id in wild_pokemon.keys():
+    for raw_id in wild_population.ids_near(cell, PokemonEcology.PARENT_ALERT_RADIUS):
         var wild_id := int(raw_id)
         var pokemon: Dictionary = wild_pokemon[wild_id]
-        if bool(pokemon.get("burrowed", false)):
-            continue
-        var pokemon_cell: Vector2i = pokemon.get("cell", Vector2i.ZERO)
-        if (
-                absi(pokemon_cell.x - cell.x) > PokemonEcology.PARENT_ALERT_RADIUS
-                or absi(pokemon_cell.y - cell.y) > PokemonEcology.PARENT_ALERT_RADIUS
-                or not PokemonEcology.is_egg_parent_match(pokemon, data)
-            ):
+        if bool(pokemon.get("burrowed", false)) or not PokemonEcology.is_egg_parent_match(pokemon, data):
             continue
         pokemon["aggro_player"] = true
         pokemon["warned"] = true
         wild_pokemon[wild_id] = pokemon
-        _show_ecology_emote(pokemon.get("sprite") as Sprite2D, "alert")
+        _show_ecology_emote(_sprite_of(pokemon), "alert")
         anger_count += 1
     egg_collected.emit(species)
 
@@ -5508,8 +5146,7 @@ func _update_sand_traps(delta: float) -> void:
     var ticks := delta * 60.0
     # Traps on a clock are passed over unless the player stands on them; the
     # rest (active ones) run the per-trap code, in the same order as before.
-    if not _wild_index_valid(): _wild_index_all()
-    var under = wild_by_cell.get(player_cell)
+    var under = wild_population.ids_at(player_cell)
     var ran: Array = []
     if sand_trap_clock_of.size() < sand_trap_ids.size() or under != null:
         var keys := sand_trap_ids.keys()
@@ -5578,29 +5215,13 @@ func _update_sand_trap(wild_id: int, data: Dictionary, player_cell: Vector2i, fl
             if tick >= 63 and on_trap and not encounter_grace_active():
                 _begin_wild_encounter(wild_id)
                 return false
+        # Risen this far out of the sand, it is drawn this much lower from
+        # now on (population_view.gd draws the rest of the trap).
         var tick := int(data.get("burrow_tick", 0))
         var height := clampi((tick - 50) * 4, 0, 12)
         if tick >= 141:
             height = maxi(0, 12 - (tick - 140))
-        var sprite := data.get("sprite") as Sprite2D
-        var whirl := data.get("burrow_whirl_sprite") as Sprite2D
-        var sand := data.get("burrow_sand_sprite") as Sprite2D
-        if is_instance_valid(sprite):
-            sprite.visible = height > 0
-            sprite.hframes = 1
-            sprite.region_enabled = true
-            var frame := 0 if tick < 52 else 1
-            if tick >= 120:
-                frame = 0 if tick % 8 < 4 else 1
-            sprite.region_rect = Rect2(frame * 16, 0, 16, height)
-            sprite.position = _cell_center(cell) + Vector2(0, 2.0 - float(height) / 2.0)
-        if is_instance_valid(whirl):
-            whirl.visible = tick > 0
-            whirl.frame = 0 if int(data.get("burrow_whirl_tick", 0)) < 40 else 1
-        if is_instance_valid(sand):
-            sand.visible = tick >= 50 and tick < 66
-            sand.frame = 0 if tick < 58 else 1
-            sand.position = _cell_center(cell) + Vector2(0, -6)
+        wild_population.set_trap_offset(wild_id, 2.0 - float(height) / 2.0)
     return true
 
 func _level_for_cell(cell: Vector2i) -> int:
@@ -5973,19 +5594,15 @@ func complete_battle_event(result: Dictionary) -> void:
         # Running leaves the egg untouched. Defeating it destroys the egg.
         if outcome == "defeated" and wild_eggs.has(cell):
             var egg_data: Dictionary = wild_eggs[cell]
-            var egg_sprite: Sprite2D = egg_data.get("sprite") as Sprite2D
-            if is_instance_valid(egg_sprite):
-                egg_sprite.queue_free()
-            wild_eggs.erase(cell)
+            _drop_record_sprite(egg_data)
+            egg_population.take(cell)
             world_message.emit("The EGG was destroyed.")
         return
     if kind == "attack_deployed":
         if outcome in ["captured", "defeated"] and deployed_pokemon.has(cell):
             var deployed: Dictionary = deployed_pokemon[cell]
-            var deployed_sprite: Sprite2D = deployed.get("sprite") as Sprite2D
-            if is_instance_valid(deployed_sprite):
-                deployed_sprite.queue_free()
-            deployed_pokemon.erase(cell)
+            _drop_record_sprite(deployed)
+            habitat_population.take(cell)
             blocked.erase(cell)
         return
     if kind == "trainer":
@@ -6657,12 +6274,9 @@ func begin_sleeping_bag(rest_texture: Texture2D = null) -> bool:
         world_message.emit("The grass is too thick to set up the SLEEPING BAG.")
         return false
 
-    for raw_wild in wild_pokemon.values():
-        var wild := raw_wild as Dictionary
-        var wild_cell: Vector2i = wild.get("cell", Vector2i.ZERO)
-        if maxi(absi(wild_cell.x - cell.x), absi(wild_cell.y - cell.y)) <= 2:
-            world_message.emit("A wild POKEMON is too close to sleep safely.")
-            return false
+    if not wild_population.ids_near(cell, 2).is_empty():
+        world_message.emit("A wild POKEMON is too close to sleep safely.")
+        return false
 
     respawn_cell = cell
     respawn_house.clear()
@@ -7652,12 +7266,17 @@ func _try_push_fenced_pokemon(cell: Vector2i, direction: Vector2i, require_fence
     var data: Dictionary = deployed_pokemon.get(cell, {}) if owned else wild_pokemon.get(wild_id, {})
     if data.is_empty() or bool(data.get("burrowed", false)) or bool(data.get("behavior", {}).get("stationary", false)): return false
     var target := cell + direction
-    # The logical destination is reserved before a walking tween finishes.
-    # Check the visible position as well, so pushing cannot overlap its origin.
-    for resident in deployed_pokemon.values() + wild_pokemon.values():
+    # The logical destination is reserved before a walking step is drawn to it.
+    # Check where Pokemon are drawn as well, so pushing cannot overlap one (a
+    # wild one drawn near the target stands within two cells of it).
+    var target_center := _cell_center(target)
+    for resident in deployed_pokemon.values():
         var other := resident.get("sprite") as Sprite2D
-        if resident == data or not is_instance_valid(other) or not other.visible: continue
-        if other.position.distance_to(_cell_center(target)) < TILE - 0.01: return false
+        if is_same(resident, data) or not is_instance_valid(other) or not other.visible: continue
+        if other.position.distance_to(target_center) < TILE - 0.01: return false
+    for near_id in wild_population.ids_near(target, 2):
+        if is_same(wild_pokemon[near_id], data) or not population_view.is_drawn(near_id): continue
+        if wild_population.visual_position(near_id).distance_to(target_center) < TILE - 0.01: return false
     if active_area_id != "HOUSE" and blocked.has(target): return false
     if active_area_id == "HOUSE" and not _house_pokemon_cell_allowed(target): return false
     if active_area_id == "OVERWORLD" and exact_world != null:
@@ -7670,21 +7289,25 @@ func _try_push_fenced_pokemon(cell: Vector2i, direction: Vector2i, require_fence
     if target == _player_cell(): return false
     if active_area_id == "OVERWORLD" and not _pokemon_can_move_between(String(data.get("species", "")), cell, target): return false
     var sprite := data.get("sprite") as Sprite2D
-    if not is_instance_valid(sprite) or sprite.position.distance_to(_cell_center(cell)) > 1.5: return false
+    # Outdoors one with no sprite (out of view, or a dedicated server's) stands on its cell.
+    if owned and (sprite.position.distance_to(_cell_center(cell)) > 1.5 if is_instance_valid(sprite) else data.has("house_door")): return false
+    if not owned and wild_population.visual_position(wild_id).distance_to(_cell_center(cell)) > 1.5: return false
     data["cell"] = target
-    if not owned: _wild_cell_moved(wild_id, target)
+    if not owned: wild_population.move(wild_id, target)
     data["x"] = target.x
     data["y"] = target.y
-    data["move_timer"] = 1.0
+    if owned: data["move_timer"] = 1.0
+    else: wild_population.set_timer(wild_id, 1.0)
     data["anim_phase"] = 1 - int(data.get("anim_phase", 0))
-    _set_overworld_motion_frame(sprite, Vector2(direction), int(data.anim_phase))
-    sprite.position = _cell_center(target)
-    sprite.z_index = _depth_z(target)
     if owned:
-        deployed_pokemon.erase(cell)
-        deployed_pokemon[target] = data
+        if is_instance_valid(sprite):
+            _set_overworld_motion_frame(sprite, Vector2(direction), int(data.anim_phase))
+            sprite.position = _cell_center(target)
+            sprite.z_index = _depth_z(target)
+        habitat_population.move(cell, target)
     else:
-        wild_pokemon[wild_id] = data
+        wild_population.snap(wild_id)
+        wild_population.pose(wild_id, direction, int(data.anim_phase))
     last_pokemon_push_msec = preload("res://scripts/game_clock.gd").ticks_msec()
     return true
 
@@ -7773,12 +7396,11 @@ func _update_house_pokemon(delta:float)->void:
         var target: Vector2i = old_cell + direction
         if not _house_pokemon_cell_allowed(target) or deployed_pokemon.has(target) or wild_eggs.has(target) or target == _player_cell() or target == follower_cell or target == field_helper_cell:
             continue
-        deployed_pokemon.erase(old_cell)
+        habitat_population.move(old_cell, target)
         data["cell"] = target
         data["x"] = target.x
         data["y"] = target.y
         data["anim_phase"] = 1 - int(data.get("anim_phase", 0))
-        deployed_pokemon[target] = data
         if is_instance_valid(sprite):
             _set_overworld_motion_frame(sprite,direction,int(data.anim_phase))
             sprite.z_index = _depth_z(target)
@@ -7843,8 +7465,13 @@ var source_dig_water_elapsed := 0.0
 
 var camera_build_centered := false
 
-var _watched_wild_ids: Array = []
-var _watched_wild_at := -100000
+## The wild Pokemon in a zone, and when that was worked out
+## (WildPopulation.watched, watched_at).
+var _watched_wild_ids: Array:
+    get: return wild_population.watched
+var _watched_wild_at: int:
+    get: return wild_population.watched_at
+    set(value): wild_population.watched_at = value
 var _near_wild_ids: Array = []
 var _near_wild_at := -100000
 
@@ -7856,87 +7483,14 @@ func nearby_wild_ids() -> Array:
     var now_msec := Time.get_ticks_msec()
     if now_msec - _near_wild_at >= 500:
         _near_wild_at = now_msec
-        _near_wild_ids.clear()
-        var here := _player_cell()
-        for raw_id in wild_pokemon:
-            var at = wild_pokemon[raw_id].get("cell", Vector2i.ZERO)
-            if absi(at.x - here.x) <= 44 and absi(at.y - here.y) <= 44:
-                _near_wild_ids.append(raw_id)
+        _near_wild_ids = wild_population.ids_near(_player_cell(), 44)
     return _near_wild_ids
-## Planned escape routes of Pokemon running from a failed catch, by wild id.
-var _flee_routes := {}
-var _flee_started := {}
-## How near the player has to be for a frightened Pokemon to keep running:
-## well past the edge of the screen, so it is not found waiting just out of view.
-const FLEE_RANGE_TILES := 28
-const FLEE_LOOK_AHEAD := 14
-const FLEE_SEARCH_TILES := 180
-const FLEE_REPLAN_STEPS := 5
-
-## The next step for a Pokemon running from `threat`. It searches every tile it
-## could walk to within FLEE_LOOK_AHEAD steps and heads for the one furthest
-## from the player, keeping to that route for a few steps before looking again.
-## One step at a time (always the tile furthest away) left it pacing back and
-## forth in front of any wall or pond, which made it easy to catch.
-func _flee_direction(wild_id: int, species: String, origin: Vector2i, threat: Vector2i, free_step: Callable) -> Vector2i:
-    var route: Array = _flee_routes.get(wild_id, [])
-    if not route.is_empty():
-        var planned: Vector2i = route[0]
-        if (
-                (planned - origin).length_squared() == 1
-                and (threat - planned).length_squared() > 2
-                and _pokemon_can_move_between(species, origin, planned)
-                and free_step.call(planned)
-            ):
-            route.pop_front()
-            _flee_routes[wild_id] = route
-            return planned - origin
-    var came := {origin: origin}
-    var depth := {origin: 0}
-    var queue: Array[Vector2i] = [origin]
-    var head := 0
-    var goal := origin
-    var goal_score := float((threat - origin).length_squared())
-    while head < queue.size() and queue.size() < FLEE_SEARCH_TILES:
-        var cell := queue[head]
-        head += 1
-        if int(depth[cell]) >= FLEE_LOOK_AHEAD:
-            continue
-        for option in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
-            var step: Vector2i = cell + option
-            # Never plan a way that brushes past the player.
-            if came.has(step) or (threat - step).length_squared() <= 2:
-                continue
-            if not _pokemon_can_move_between(species, cell, step):
-                continue
-            if cell == origin and not free_step.call(step):
-                continue
-            came[step] = cell
-            depth[step] = int(depth[cell]) + 1
-            queue.append(step)
-            # Further from the player is better; between equals, the nearer one.
-            var score := float((threat - step).length_squared()) - 0.05 * float(depth[step])
-            if score > goal_score:
-                goal = step
-                goal_score = score
-    route = []
-    while goal != origin:
-        route.push_front(goal)
-        goal = came[goal]
-    if route.is_empty():
-        _flee_routes.erase(wild_id)
-        return Vector2i.ZERO
-    var first: Vector2i = route.pop_front()
-    _flee_routes[wild_id] = route.slice(0, FLEE_REPLAN_STEPS)
-    return first - origin
-
 ## per-frame
+## The habitat Pokemon's and the follower's standing shuffle (the wild ones'
+## is population_view.gd's).
 func _update_overworld_idle_sprites(delta: float) -> void:
     var sprites: Array[Sprite2D] = []
-    var animated: Array = deployed_pokemon.values()
-    for near_id in nearby_wild_ids():
-        if wild_pokemon.has(near_id): animated.append(wild_pokemon[near_id])
-    for data in animated:
+    for data in deployed_pokemon.values():
         if bool(data.get("burrowed", false)) or bool(data.get("is_egg", false)):
             continue
         var sprite := data.get("sprite") as Sprite2D
@@ -8064,11 +7618,6 @@ func field_motion_completed(before: Vector2, after: Vector2, movement_direction:
 ## per-frame
 func try_pre_move_field_jump(before: Vector2, movement_direction: Vector2):
     return field_moves.try_pre_move_field_jump(before, movement_direction)
-
-func _update_friendly_passby(_data: Dictionary, _cell: Vector2i, _owned: bool) -> void:
-    # Proximity alone does not trigger CHARM's heart effect.
-    pass
-
 
 func request_fishing_encounter(rod_name: String) -> void:
     if rod_name not in ["OLD ROD", "GOOD ROD", "SUPER ROD"] or not active_field_move.is_empty():

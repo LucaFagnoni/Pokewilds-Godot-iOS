@@ -315,3 +315,34 @@ func _prompt_bed_rest(cell: Vector2i) -> void:
             return
         main.field_item_busy = false
     main.world.set_gameplay_enabled(not main._field_ui_blocks_gameplay())
+
+## The answer to a structure switch's YES/NO (opened above).
+func handle_mansion_switch_input(event: InputEvent) -> void:
+    if main.mansion_switch_stage == 3:
+        if event.is_action_pressed("confirm") or event.is_action_pressed("start"):
+            main.mansion_switch_stage = 2
+            main.mansion_switch_answered.emit(true)
+            main.get_viewport().set_input_as_handled()
+        return
+    if main.mansion_switch_stage == 2:
+        return
+    if event.is_action_pressed("cancel"):
+        main.mansion_switch_stage = 2
+        main.mansion_switch_answered.emit(false)
+    elif main.mansion_switch_stage == 0 and (event.is_action_pressed("confirm") or event.is_action_pressed("start")):
+        main.mansion_switch_stage = 1
+        main.egg_dialogue_arrow.hide()
+        main.egg_choice_panel.show()
+        main._align_menu_tick(main.egg_choice_cursor, main.egg_choice_panel.get_node("Yes"))
+    elif main.mansion_switch_stage == 1:
+        if event.is_action_pressed("move_up") or event.is_action_pressed("move_down"):
+            main.mansion_switch_index = 1 - main.mansion_switch_index
+            main._align_menu_tick(main.egg_choice_cursor, main.egg_choice_panel.get_node("Yes" if main.mansion_switch_index == 0 else "No"))
+        elif event.is_action_pressed("confirm") or event.is_action_pressed("start"):
+            main.mansion_switch_stage = 2
+            main.mansion_switch_answered.emit(main.mansion_switch_index == 0)
+        else:
+            return
+    else:
+        return
+    main.get_viewport().set_input_as_handled()

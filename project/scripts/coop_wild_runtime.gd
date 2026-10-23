@@ -23,10 +23,6 @@ var players:Dictionary={}
 var motion_dirty:Dictionary={}
 var _whole_motion:=false
 const Server=preload("res://scripts/dedicated_server.gd")
-## For idle_frame: where the players who can be chased stand, and whether one
-## of them could charm a wild Pokemon. Made with `players`.
-var _chased_cells:Array=[]
-var _charm_near:=false
 
 func mark_motion(wild_id:int)->void:
     motion_dirty[wild_id]=true
@@ -50,37 +46,6 @@ func refresh_players()->void:
         var cell:Vector2i=game.main.world._player_cell()
         players[game.session.actor]={"area":game._area()+"|OVERWORLD","x":cell.x,"y":cell.y,"battle":game.main.battle_active or game.main.battle_entry_pending,"move":game.main.world.active_field_move}
     else:players.erase(game.session.actor)
-    _chased_cells.clear();_charm_near=false
-    for player in players.values():
-        if player.battle:continue
-        _chased_cells.append(Vector2i(player.x,player.y))
-        if player.move=="CHARM":_charm_near=true
-
-## Tests turn idle_frame off to compare with the full update.
-static var idle_frames:=true
-
-## Dedicated server: true when a wild Pokemon's update this frame
-## (world._update_wild_pokemon) would change nothing but its move timer, which
-## is counted down here exactly as there, and the look of the server's own
-## sprite for it, which nobody sees. That is a calm one in play near every
-## player who could chase it, that nothing can charm, frighten or set on
-## anyone, and whose timer does not run out this frame. Every other frame,
-## and any other Pokemon, gets the full update, so records, saves and the
-## random numbers drawn are the same. Most of a server's frames were these.
-func idle_frame(data:Dictionary,delta:float)->bool:
-    if not idle_frames or not Server.active or _chased_cells.is_empty() or _charm_near:return false
-    if bool(data.get("aggro_player",false)) or not data.has("charmed") or bool(data.charmed) or not data.has("coop_target") or not String(data.coop_target).is_empty():return false
-    if not String(data.get("source_record",{}).get("coop_horde","")).is_empty():return false
-    var now:float=game.main.world.world_elapsed_seconds
-    if now<float(data.get("ball_flee_until",0.0)) or float(data.get("ball_charm_until",0.0))>now:return false
-    var cell:Vector2i=data.get("cell",Vector2i.ZERO)
-    var reach:int=game.main.world.ECOLOGY_ACTIVE_RADIUS
-    for at in _chased_cells:
-        if absi(cell.x-at.x)>reach or absi(cell.y-at.y)>reach:return false
-    var left:=float(data.get("move_timer",0.0))-delta
-    if left<=0.0:return false
-    data["move_timer"]=left
-    return true
 
 func target_for(data:Dictionary,cell:Vector2i)->Dictionary:
     var scope=game._area()+"|OVERWORLD"
@@ -110,9 +75,13 @@ func remote_charm(data:Dictionary,target:Dictionary)->bool:
     var level=clampi(maxi(1,int(data.get("level",1))),maxi(2,reference-3),mini(100,reference+1))
     return int(target.get("field_level",1))>=level
 
+## The wild Pokemon that changed here, sent to the shared records (wild_motion):
+## those WildPopulation marked (moved, added, removed, a new target) and those
+## marked here, each once it differs from its record.
 func publish_motion()->void:
     var records:Dictionary=game.state.records if game.hosting else game.shared_records
     var world=game.main.world
+    for wild_id in world.wild_population.take_dirty():motion_dirty[wild_id]=true
     var patches:Array=[]
     var sent:Dictionary={}
     for wild_id in motion_dirty.keys():
@@ -167,10 +136,7 @@ func _contact_candidates(world:Node)->Array:
     var now:=Time.get_ticks_msec()
     if now-_contact_at>=CONTACT_REFRESH_MS or not is_same(_contact_herd,world.wild_pokemon) or _contact_size!=world.wild_pokemon.size() or maxi(absi(here.x-_contact_cell.x),absi(here.y-_contact_cell.y))>2:
         _contact_at=now;_contact_cell=here;_contact_herd=world.wild_pokemon;_contact_size=world.wild_pokemon.size()
-        _contact_ids.clear()
-        for wild_id in world.wild_pokemon:
-            var at:Vector2i=world.wild_pokemon[wild_id].get("cell",_contact_cell+Vector2i(CONTACT_REACH*4,0))
-            if maxi(absi(at.x-here.x),absi(at.y-here.y))<=CONTACT_REACH:_contact_ids.append(wild_id)
+        _contact_ids=world.wild_population.ids_near(here,CONTACT_REACH)
     return _contact_ids
 
 func contact()->void:
@@ -367,6 +333,7 @@ func publish_spawn()->void:
 
 func request_sync()->void:
     motion_dirty.clear()
+    game.main.world.wild_population.dirty.clear()
     sync_pending=true
 
 func configure(coordinator:Node)->void:
@@ -477,19 +444,11 @@ func apply_record(wild_id:int,record:Variant)->void:
     var before:Vector2i=data.cell
     var target=Vector2i(int(record.x),int(record.y))
     var audio_tick=data.get("aggro_audio_tick",-1.0)
-    data.merge(record,true);data["cell"]=target;world._wild_cell_moved(wild_id,target);world._sand_trap_merged(wild_id)
+    # Drawn walking there over 0.1 s of real time, from where it is drawn now.
+    if before!=target:world.wild_population.begin_step(wild_id,0.1*Engine.time_scale)
+    data.merge(record,true);data["cell"]=target;world.wild_population.refresh(wild_id);world._sand_trap_merged(wild_id)
     data["aggro_audio_tick"]=audio_tick
-    var sprite=data.get("sprite") as Sprite2D
-    if is_instance_valid(sprite) and before!=target:
-        var movement=data.get("ball_move_tween") as Tween
-        if movement!=null and movement.is_valid():movement.kill()
-        if before!=target:world._set_overworld_motion_frame(sprite,world._cardinal_direction(target-before,false),int(data.get("anim_phase",0)))
-        sprite.z_index=world._depth_z(target)
-        var next=world.create_tween()
-        next.set_speed_scale(1.0/maxf(0.01,Engine.time_scale))
-        next.tween_property(sprite,"position",world._cell_center(target),0.1).set_trans(Tween.TRANS_LINEAR)
-        data["ball_move_tween"]=next
-    world._update_pokemon_water_visual(data)
+    if before!=target:world.wild_population.pose(wild_id,world._cardinal_direction(target-before,false),int(data.get("anim_phase",0)))
 
 func retry_additions()->void:
     var world=game.main.world
@@ -516,11 +475,7 @@ func set_claim(wild_id:int,claimed:bool,owner:String="")->void:
         apply_record(wild_id,Delta.decode(records.get(Population.record_key(game._area(),wild_id),Delta.encode(null))))
 
 func remove_record(wild_id:int)->void:
-    var world=game.main.world
-    var data:Dictionary=world.wild_pokemon.get(wild_id,{})
-    var movement=data.get("ball_move_tween") as Tween
-    if movement!=null and movement.is_valid():movement.kill()
-    world._remove_wild_pokemon(wild_id)
+    game.main.world._remove_wild_pokemon(wild_id)
 
 func synchronize()->void:
     pending_additions.clear()

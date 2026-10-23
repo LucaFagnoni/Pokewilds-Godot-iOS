@@ -17,10 +17,7 @@ func can_drop(cell: Vector2i) -> bool:
         var tile: SourceTile = world.exact_world.tile_at(cell) if world.active_area_id=="OVERWORLD" and world.exact_world!=null else world._source_interior_tile_at_world_cell(cell)
         if tile==null or tile.is_solid or not tile.has_item.is_empty() or "sign" in tile.name or "sign" in tile.name_upper:return false
     if world.deployed_pokemon.has(cell):return false
-    for collection in [world.wild_pokemon]:
-        for record in collection.values():
-            if Vector2i(record.get("cell",Vector2i(-99999,-99999)))==cell:return false
-    return true
+    return world._wild_id_at_cell(cell)<0
 func drop(item: String, amount: int, cell: Vector2i) -> bool:
     if amount<1 or not can_drop(cell):return false
     records[key(cell)]={"scope":scope(),"x":cell.x,"y":cell.y,"item":item,"amount":amount}

@@ -503,3 +503,127 @@ func handle_swipe_menu(event: InputEvent) -> void:
     elif event.is_action_pressed("confirm") or change!=0:
         if row is CheckButton:row.button_pressed=not row.button_pressed
         elif event.is_action_pressed("confirm"):row.pressed.emit()
+
+## The setup screen's keys and buttons before a game starts: a name being
+## typed (a direction or confirm ends it), the rows and the PLAYER
+## selectors, BACK to the SOLO / CO-OP choice, START.
+func handle_setup_menu_input(event: InputEvent) -> void:
+    # Text-entry mode never owns controller focus. If the user navigates away,
+    # accept the current text, close the Android keyboard, and continue moving
+    # through the menu in the same input press.
+    if main.text_entry_target != "":
+        if event.is_action_pressed("move_up"):
+            finish_text_entry(true)
+            move_menu_vertical(-1)
+            main.menu_nav_cooldown = main.MENU_NAV_DELAY
+            main.get_viewport().set_input_as_handled()
+            return
+
+        if event.is_action_pressed("move_down"):
+            finish_text_entry(true)
+            move_menu_vertical(1)
+            main.menu_nav_cooldown = main.MENU_NAV_DELAY
+            main.get_viewport().set_input_as_handled()
+            return
+
+        if event.is_action_pressed("move_left"):
+            finish_text_entry(true)
+            menu_left_right(-1)
+            main.menu_nav_cooldown = main.MENU_NAV_DELAY
+            main.get_viewport().set_input_as_handled()
+            return
+
+        if event.is_action_pressed("move_right"):
+            finish_text_entry(true)
+            menu_left_right(1)
+            main.menu_nav_cooldown = main.MENU_NAV_DELAY
+            main.get_viewport().set_input_as_handled()
+            return
+
+        if event.is_action_pressed("confirm") or event.is_action_pressed("start"):
+            finish_text_entry(true)
+            main.get_viewport().set_input_as_handled()
+            return
+
+        if event.is_action_pressed("cancel"):
+            finish_text_entry(true)
+            main.get_viewport().set_input_as_handled()
+            return
+
+        # Characters from the Android soft keyboard arrive as key events.
+        if event is InputEventKey:
+            var key = event as InputEventKey
+            if key.pressed and not key.echo:
+                if key.keycode == KEY_BACKSPACE:
+                    if main.text_entry_buffer.length() > 0:
+                        main.text_entry_buffer = main.text_entry_buffer.left(main.text_entry_buffer.length() - 1)
+                        refresh_text_entry_display()
+                    main.get_viewport().set_input_as_handled()
+                    return
+
+                if key.unicode >= 32 and key.unicode != 127:
+                    if main.text_entry_buffer.length() < 24:
+                        main.text_entry_buffer += String.chr(key.unicode)
+                        refresh_text_entry_display()
+                    main.get_viewport().set_input_as_handled()
+                    return
+
+        return
+
+    # Restore D-pad / left-stick menu navigation using the EXISTING actions.
+    if event.is_action_pressed("move_up"):
+        if main.menu_nav_cooldown <= 0.0:
+            if main.menu_row == main.MENU_ROW_COLOR and main.menu_col > 0:
+                main.appearance.change_player_selector(1)
+            else:
+                move_menu_vertical(-1)
+            main.menu_nav_cooldown = main.MENU_NAV_DELAY
+        main.get_viewport().set_input_as_handled()
+        return
+
+    if event.is_action_pressed("move_down"):
+        if main.menu_nav_cooldown <= 0.0:
+            if main.menu_row == main.MENU_ROW_COLOR and main.menu_col > 0:
+                main.appearance.change_player_selector(-1)
+            else:
+                move_menu_vertical(1)
+            main.menu_nav_cooldown = main.MENU_NAV_DELAY
+        main.get_viewport().set_input_as_handled()
+        return
+
+    if event.is_action_pressed("move_left"):
+        if main.menu_nav_cooldown <= 0.0:
+            menu_left_right(-1)
+            main.menu_nav_cooldown = main.MENU_NAV_DELAY
+        main.get_viewport().set_input_as_handled()
+        return
+
+    if event.is_action_pressed("move_right"):
+        if main.menu_nav_cooldown <= 0.0:
+            menu_left_right(1)
+            main.menu_nav_cooldown = main.MENU_NAV_DELAY
+        main.get_viewport().set_input_as_handled()
+        return
+
+    if event.is_action_pressed("confirm"):
+        activate_menu_item()
+        main.get_viewport().set_input_as_handled()
+        return
+
+    if event.is_action_pressed("cancel"):
+        # Leaving either PLAYER selector returns focus to the PLAYER row so
+        # vertical navigation works again.  It must never trap the user in
+        # color/model selection.
+        if main.menu_row == main.MENU_ROW_COLOR and main.menu_col > 0:
+            main.menu_col = 0
+            update_menu_cursor()
+            main.get_viewport().set_input_as_handled()
+        elif not main.started and not main.generating:
+            # Back to the SOLO / CO-OP choice.
+            main.coop_game.cancel_join();main.coop_menu.open()
+            main.get_viewport().set_input_as_handled()
+        return
+
+    if event.is_action_pressed("start"):
+        main._start_game()
+        main.get_viewport().set_input_as_handled()

@@ -548,7 +548,7 @@ func finish_flight(serial: int) -> void:
 func restore_target() -> void:
     if held_target.is_empty(): return
     held_target.erase("ball_reserved")
-    var sprite = held_target.get("sprite")
+    var sprite = world()._sprite_of(held_target)
     if is_instance_valid(sprite):
         sprite.scale = held_scale
         sprite.modulate = held_modulate
@@ -638,9 +638,9 @@ func capture(id: int, ball: String, direction: Vector2i, serial: int) -> void:
     var stealth = not record.get("aggro_player",false) and not alert and int(record.get("flee_steps",0))<=0 and Vector2(facing)!=-Vector2(direction)
     var ground = tile_at(cell)
     var result = Rules.roll(pokemon,main.caught_pokemon,ball,{"stealth":stealth,"alert":alert,"water":ground!=null and ground.is_water,"dusk":world().active_area_id!="OVERWORLD" or main._world_source_time_of_day()=="night"},world().rng)
-    record.ball_reserved = true
+    world().wild_population.claim(id, true)
     held_target = record
-    var sprite: Sprite2D = record.get("sprite")
+    var sprite: Sprite2D = world()._sprite_of(record)
     if not is_instance_valid(sprite):
         if online:await main.coop_game.wild.finish_encounter("ran")
         return
@@ -649,8 +649,8 @@ func capture(id: int, ball: String, direction: Vector2i, serial: int) -> void:
     held_visible = sprite.visible
     held_material = sprite.material
     var center: Vector2 = world()._cell_center(cell)
-    var movement = record.get("ball_move_tween")
-    if movement is Tween and movement.is_valid(): movement.kill()
+    # Taken out of whatever step was being drawn, onto its tile.
+    world().wild_population.snap(id)
     sprite.position = center
     projectile.hide()
     capture_presenting = true
@@ -836,7 +836,7 @@ func party_landing(member: Dictionary, cell: Vector2i, target_cell: Vector2i, wi
         if "CHARM" in moves and choice == "CHARM" and not world()._wild_chases_when_provoked(wild):
             wild.charmed = true
             wild.ball_charm_until = world().world_elapsed_seconds+30.0
-            world()._show_ecology_emote(wild.get("sprite"),"heart")
+            world()._show_ecology_emote(world()._sprite_of(wild),"heart")
             if choice=="CHARM": world().set_active_field_move(member,choice)
             else: await recall_actor(serial)
             return
