@@ -15,6 +15,7 @@ the version description in Feather. Write it for players, not developers.
 - **Smoother players in co-op:** other players move smoothly even when 4G stutters, with no teleporting.
 - **Less battery:** players off screen are no longer drawn.
 - **Cheaper walking:** the game does much less work on every step, especially in tall grass.
+- **Lighter wild Pokémon:** areas full of wild Pokémon, habitats and eggs cost far less: only the Pokémon on screen get a sprite, and finding nearby Pokémon is up to 40 times faster.
 - **Digging and cutting in co-op answer at once:** the hole or the cut grass shows straight away, and the host decides what you find, so everyone sees the same ground and gets fair rewards.
 - **Lighter co-op traffic:** wild Pokémon movement and changes to the ground are sent in a compact form; a server with players standing around sends about a fifth of what it did.
 - **Fewer waits in co-op:** digging, cutting, picking up and storing things no longer save your whole game first.
@@ -25,6 +26,9 @@ the version description in Feather. Write it for players, not developers.
 - **Battles:** all battle logic now lives in one place, shared by wild, trainer, boss and PvP battles. It behaves exactly as before, checked against 30 recorded battles.
 - **No more "REJOIN THE WORLD":** when the host turns down a dig, a cut or a build, the action is simply undone and you keep playing.
 - **Wild battles in co-op:** when the host does not accept a battle's result, your party and bag go back to how they were and the game goes on instead of ending the session.
+
+### Downloads
+- **The Android file is now called `Pokewilds-arm64.apk`:** it runs on 64-bit ARM phones, which is nearly every Android phone from the last years.
 
 ### Server and multiplayer
 - **Update the server and the app together:** this version uses a new co-op protocol.

@@ -221,8 +221,7 @@ func execute(actor:String,id:String,operation:String,args:Dictionary)->Dictionar
 func remove(group:String,cell:Vector2i)->void:
     var values:Dictionary=game.main.world.get(group)
     var record:Dictionary=values.get(cell,{})
-    var sprite=record.get("sprite")
-    if is_instance_valid(sprite):sprite.queue_free()
+    game.main.world._drop_record_sprite(record)
     var tween=record.get("ball_move_tween")
     if tween is Tween and tween.is_valid():tween.kill()
     (game.main.world.habitat_population if group=="deployed_pokemon" else game.main.world.egg_population).take(cell)
@@ -279,7 +278,7 @@ func committed(changes:Array,source_actor:String="",request_id:String="")->void:
             else:
                 var spare=shown.get("ball_move_tween") as Tween
                 if spare!=null and spare.is_valid():spare.kill()
-                if is_instance_valid(shown.get("sprite")):shown.sprite.queue_free()
+                world._drop_record_sprite(shown)
     var placed:Dictionary={}
     for change in changes:
         var key=String(change.key)
@@ -314,7 +313,7 @@ func committed(changes:Array,source_actor:String="",request_id:String="")->void:
     for data in reusable.values():
         var tween=data.get("ball_move_tween") as Tween
         if tween!=null and tween.is_valid():tween.kill()
-        if is_instance_valid(data.get("sprite")):data.sprite.queue_free()
+        world._drop_record_sprite(data)
     if vanished:
         var records:Dictionary=game.state.records if game.hosting else game.shared_records
         var recorded:Dictionary={}
