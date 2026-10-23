@@ -1,6 +1,6 @@
 extends RefCounted
-## The field commands the rules decide, by op (DIG, CUT, building, paint and
-## taking built pieces away): each rule's
+## The field commands the rules decide, by op (DIG, CUT, building, paint,
+## taking built pieces away and changing them): each rule's
 ## apply(state, player, cmd, rng) -> {"ok", "reason", "events", "grant",
 ## "consume"} (field_dig.gd has the shape). A game alone calls the rule and
 ## plays its events; online the player predicts with the same call and sends
@@ -13,6 +13,7 @@ const OPS := {
     "build": preload("res://scripts/rules/build.gd"),
     "paint": preload("res://scripts/rules/paint.gd"),
     "remove_build": preload("res://scripts/rules/remove.gd"),
+    "interact": preload("res://scripts/rules/interact.gd"),
 }
 const CraftingData = preload("res://scripts/crafting_data.gd")
 const DIG_ACTIONS := ["dig", "fill", "surface", "take", "berry", "plant"]
@@ -70,6 +71,12 @@ static func from_wire(op: String, wire: Variant) -> Variant:
     elif op == "paint":
         if not _whole(wire.get("picture")) or int(wire.picture) < 1 or int(wire.picture) > 20: return null
         cmd["picture"] = int(wire.picture)
+    elif op == "interact":
+        if not wire.get("action") in OPS.interact.ACTIONS: return null
+        cmd["action"] = String(wire.action)
+        if wire.has("text"):
+            if not wire.text is String or wire.text.length() > 64: return null
+            cmd["text"] = wire.text
     else:
         if not wire.get("move") in ["CUT", "SMASH"]: return null
         cmd["move"] = String(wire.move)

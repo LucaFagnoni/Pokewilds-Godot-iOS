@@ -271,8 +271,9 @@ static func _edit(state, cell: Vector2i) -> Dictionary:
         state.mark("structures", cell)
     return piece
 
-## One field of the structure at `cell` set, unless it already holds that.
-static func _set_field(state, cell: Vector2i, key: String, value: Variant) -> void:
+## One field of the structure at `cell` set, unless it already holds that
+## (marked changed, and kept for undo while a prediction records).
+static func set_field(state, cell: Vector2i, key: String, value: Variant) -> void:
     var piece: Dictionary = state.structures[cell]
     if piece.has(key) and typeof(piece[key]) == typeof(value) and piece[key] == value: return
     _edit(state, cell)[key] = value
@@ -284,7 +285,7 @@ static func set_solid(state, cell: Vector2i, solid: bool) -> void:
     var was := bool(state.structures[cell].get("solid", false))
     if solid and not was: state.put("blocked", cell, true)
     elif not solid and was: state.drop("blocked", cell)
-    _set_field(state, cell, "solid", solid)
+    set_field(state, cell, "solid", solid)
 
 ## An area held without a World (area_sim.gd) takes a structure record: its
 ## runtime fields and the cells it blocks, as placing it would.
@@ -322,7 +323,7 @@ static func connect_around(state, player: Dictionary, center: Vector2i, out: Dic
         if name == "DOOR":
             var gate := (is_fence_cell(state, cell + Vector2i.LEFT) and is_fence_cell(state, cell + Vector2i.RIGHT)) \
                 or (is_fence_cell(state, cell + Vector2i.UP) and is_fence_cell(state, cell + Vector2i.DOWN))
-            _set_field(state, cell, "gate", gate)
+            set_field(state, cell, "gate", gate)
             set_solid(state, cell, false if gate else not bool(data.get("open", false)))
             name = connection_piece(state, cell)
             if name == "DOOR": continue
@@ -336,13 +337,13 @@ static func connect_around(state, player: Dictionary, center: Vector2i, out: Dic
                 elif direction.x != 0 and is_floor_cell(state, player, cell):
                     joined = joined or not is_floor_cell(state, player, neighbor)
                 if joined: wall_suffix += "N" if direction == Vector2i.UP else "S" if direction == Vector2i.DOWN else "E" if direction == Vector2i.RIGHT else "W"
-            _set_field(state, cell, "wall_connections", wall_suffix)
+            set_field(state, cell, "wall_connections", wall_suffix)
             continue
         if name not in ["FENCE", "WALL", "INTERIOR WALL", "ROOF", "TABLE"]: continue
         var sides := connected_sides(state, cell, name)
         var horizontal: bool = sides[2] or sides[3]
         var vertical: bool = sides[0] or sides[1]
-        _set_field(state, cell, "connections", (1 if horizontal else 0) | (2 if vertical else 0))
+        set_field(state, cell, "connections", (1 if horizontal else 0) | (2 if vertical else 0))
     out.events.append(["restyle", center])
 
 ## [north, south, east, west]: which neighbours the piece at `cell`, acting as

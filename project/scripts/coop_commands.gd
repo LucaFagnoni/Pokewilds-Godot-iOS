@@ -163,7 +163,7 @@ func execute(actor:String,payload:Dictionary)->Dictionary:
                 if profile is Dictionary and profile.get("party") is Array and profile.party.size()<=6 and profile.get("inventory") is Dictionary and profile.inventory.size()<=1024 and profile.get("save") is Dictionary and _valid_wild_aftermath(args.get("aftermath",{})):result=wild_action.call(actor,id,operation,args)
         "wild_motion":
             if wild_action.is_valid() and _strings(args,["area"]) and _integers(args,["epoch"]) and args.get("patches") is Array:result=wild_action.call(actor,id,operation,args)
-        "field_dig","field_cut","build","paint","remove_build":
+        "field_dig","field_cut","build","paint","remove_build","interact":
             # The rules (rules/): the host runs the command and decides what it gives and costs.
             if rules_action.is_valid() and _strings(args,["area"]) and args.get("cmd") is Dictionary:result=rules_action.call(actor,id,operation,args)
         "drop":

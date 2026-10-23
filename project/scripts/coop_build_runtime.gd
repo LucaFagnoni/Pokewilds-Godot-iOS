@@ -159,6 +159,12 @@ func remove_decoration(cell:Vector2i)->void:
     if game._request_busy:return
     await _send("remove_build",{"cell":cell,"move":"CUT","decoration":true})
 
+## A built piece changed for everyone (rules/interact.gd: a sign, a beacon's
+## name, a torch, a window, a plant's seed).
+func interact(cmd:Dictionary)->void:
+    if game._request_busy:return
+    await _send("interact",cmd)
+
 func cut(cell:Vector2i,move:String="CUT")->void:
     if game._request_busy:return
     await _send("field_cut",{"move":move,"cell":cell,"target":"" if move=="CUT" else "resource"},{"species":String(game.main.world.active_field_species)})
@@ -218,6 +224,14 @@ func host_records(actor:String,op:String,area:String,cmd:Dictionary,result:Dicti
         elif recipe=="BEACON" and placed.get("name")=="BEACON" and not placed.has("house_door"):
             changes.append(state.change("beacon/"+box,{"area":area,"x":cell.x,"y":cell.y,"name":"BEACON"}))
         return {"changes":changes}
+    if op=="interact" and cmd.action=="beacon":
+        # Its name, as the BEACONS menu lists it (coop_beacons.gd).
+        var key:="beacon/"+area+"|%d,%d"%[cmd.cell.x,cmd.cell.y]
+        if state.records.get(key) is Dictionary:
+            var named:Dictionary=state.records[key].duplicate(true)
+            named["name"]=String(cmd.get("text","")).strip_edges().left(32)
+            if String(named.name).is_empty():named["name"]="BEACON"
+            changes.append(state.change(key,named))
     if op!="remove_build":return {"changes":changes}
     var going:Array=[]
     var boxes_going:Array=[]

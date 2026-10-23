@@ -19,6 +19,7 @@ const TexturePixels = preload("res://scripts/texture_pixels.gd")
 ## The rules of building (rules/): this World plays their events.
 const Build = preload("res://scripts/rules/build.gd")
 const Remove = preload("res://scripts/rules/remove.gd")
+const Interact = preload("res://scripts/rules/interact.gd")
 
 var world: World
 
@@ -313,6 +314,8 @@ func draw_structure(cell: Vector2i) -> void:
     var sprite := data.get("sprite") as Sprite2D
     if is_instance_valid(sprite):
         if name == "BED" and int(data.get("bed_carpet", 0)) > 0: sprite.texture = colored_bed_texture(int(data.bed_carpet))
+        elif name == "WINDOW": sprite.texture = structure_display_texture("WINDOW", int(data.get("variant", 0)))
+        elif name == "TORCH": sprite.modulate = Color.WHITE if bool(data.get("lit", true)) else Color(0.45, 0.45, 0.45)
         refresh_shell_attachment(cell)
         return
     var layer := world.get_node_or_null("LandmarkLayer") as Node2D
@@ -541,23 +544,9 @@ func interact_built_structure(cell: Vector2i) -> void:
         else:
             toggle_structure_door(cell)
     elif build_name == "WINDOW":
-        data["variant"] = wrapi(int(data.get("variant", 0)) + 1, 0, 3)
-        world.built_structures[cell] = data
-        world.area.mark("structures", cell)
-        var window_sprite := data.get("sprite") as Sprite2D
-        if is_instance_valid(window_sprite):
-            window_sprite.texture = structure_display_texture("WINDOW", int(data["variant"]))
-        world.world_message.emit("You adjusted the WINDOW.")
+        _interact(cell, "window")
     elif build_name == "PLANT":
-        var day := world._world_day_index()
-        if int(data.get("last_harvest_day", -1)) < day:
-            data["last_harvest_day"] = day
-            world.built_structures[cell] = data
-            world.area.mark("structures", cell)
-            world.material_collected.emit("MIRACLE SEED", 1)
-            world.world_message.emit("The PLANT yielded a MIRACLE SEED.")
-        else:
-            world.world_message.emit("The PLANT needs another day to grow.")
+        _interact(cell, "plant")
     elif build_name == "CLOCK":
         var total_minutes := world.clock_minutes()
         world.world_message.emit("The CLOCK reads %02d:%02d on day %d." % [total_minutes / 60, total_minutes % 60, world._world_day_index() + 1])
@@ -576,13 +565,7 @@ func interact_built_structure(cell: Vector2i) -> void:
     elif build_name == "STAIRS":
         use_linked_stairs(cell)
     elif build_name == "TORCH":
-        data["lit"] = not bool(data.get("lit", true))
-        world.built_structures[cell] = data
-        world.area.mark("structures", cell)
-        var torch_sprite := data.get("sprite") as Sprite2D
-        if is_instance_valid(torch_sprite):
-            torch_sprite.modulate = Color.WHITE if bool(data["lit"]) else Color(0.45, 0.45, 0.45)
-        world.world_message.emit("The TORCH is now %s." % ("lit" if bool(data["lit"]) else "out"))
+        _interact(cell, "torch")
     else:
         world.world_message.emit("You inspect the %s." % build_name)
 
@@ -632,29 +615,21 @@ func end_stool_sitting() -> void:
     world.set_gameplay_enabled(true)
 
 func set_structure_sign_text(cell: Vector2i, value: String) -> void:
-    if not world.built_structures.has(cell):
-        return
-    var data: Dictionary = world.built_structures[cell]
-    if String(data.get("name", "")) != "SIGN":
-        return
-    data["text"] = value.strip_edges().left(64)
-    world.built_structures[cell] = data
-    world.area.mark("structures", cell)
-    world.world_message.emit("The SIGN now reads: %s" % String(data["text"]))
+    _interact(cell, "sign", value)
 
 func set_structure_beacon_label(cell: Vector2i, value: String) -> void:
-    if not world.built_structures.has(cell):
+    _interact(cell, "beacon", value)
+
+## A built piece changed for everyone (rules/interact.gd): online it is the
+## host's to decide, sent as a command; alone the rule is played here.
+func _interact(cell: Vector2i, action: String, text: String = "") -> void:
+    var cmd := {"cell": cell, "action": action}
+    if action in ["sign", "beacon"]: cmd["text"] = text
+    var coordinator = world.get_parent().get("coop_game") if world.get_parent() != null else null
+    if is_instance_valid(coordinator) and coordinator.active:
+        coordinator.building.interact(cmd)
         return
-    var data: Dictionary = world.built_structures[cell]
-    if String(data.get("name", "")) != "BEACON":
-        return
-    data["label"] = value.strip_edges().left(32)
-    world.built_structures[cell] = data
-    world.area.mark("structures", cell)
-    if String(data["label"]).is_empty():
-        world.world_message.emit("The BEACON name was cleared.")
-    else:
-        world.world_message.emit("BEACON named %s." % String(data["label"]))
+    world.field_moves.play_rule(Interact.apply(world.area, _player(cell), cmd, world.rng))
 
 func _set_structure_solid(cell: Vector2i, solid: bool) -> void:
     if not world.built_structures.has(cell):
@@ -1113,25 +1088,8 @@ func restore_house_decorations() -> void:
     for cell in world.built_house_paintable_walls: draw_house_decoration(cell)
 
 func interact_house_window(cell: Vector2i) -> bool:
-    if world.active_area_id == "OVERWORLD":
-        var wall: Dictionary = world.built_structures.get(cell, {})
-        var kind := String(wall.get("window_recipe", ""))
-        if not bool(wall.get("window", false)) or not kind.begins_with("INDOOR WINDOW "):
-            return false
-        wall["window_variant"] = wrapi(int(wall.get("window_variant", 0)) + 1, 0, 3 if kind.ends_with("1") else 2)
-        refresh_shell_attachment(cell)
-        world.play_source_sound("seed1")
-        return true
-    if world.active_area_id != "HOUSE": return false
-    var key := world._built_house_paint_key(cell)
-    var data: Dictionary = world.built_house_decorations.get(key,{})
-    var build_name := String(data.get("name",""))
-    if not _is_window_recipe(build_name): return false
-    if build_name == "INDOOR WINDOW 1": return true
-    data.variant = wrapi(int(data.get("variant",0))+1,0,2 if build_name.ends_with("2") else 3)
-    world.area.put("built_house_decorations", key, data)
-    draw_house_decoration(cell)
-    world.play_source_sound("seed1")
+    if not Interact.has_glass(world.area, _player(cell), cell): return false
+    _interact(cell, "glass")
     return true
 
 func _private_chest_texture(source:Texture2D)->Texture2D:

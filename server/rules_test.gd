@@ -8,7 +8,8 @@
 # go where, what it costs, how pieces join, a house's inside worked out from
 # the data alone, furniture, pictures and clocks; taking pieces away
 # (remove.gd) and what comes back; several predictions in flight, the middle
-# one refused, undone with the one after it and that one played again.
+# one refused, undone with the one after it and that one played again;
+# what a player changes on a piece (interact.gd): a sign, a torch, a plant's seed.
 # Run: godot --headless --path project -s ../server/rules_test.gd
 extends SceneTree
 
@@ -22,6 +23,7 @@ const TileRules = preload("res://scripts/rules/tile_rules.gd")
 const Build = preload("res://scripts/rules/build.gd")
 const Remove = preload("res://scripts/rules/remove.gd")
 const Paint = preload("res://scripts/rules/paint.gd")
+const Interact = preload("res://scripts/rules/interact.gd")
 const Delta = preload("res://scripts/coop_world_delta.gd")
 
 var failed := 0
@@ -233,10 +235,13 @@ func _initialize() -> void:
     check(Rules.from_wire("remove_build", {"move":"SMASH", "cell":[2, 3], "wipe":true}) == {"move":"SMASH", "cell":Vector2i(2, 3), "wipe":true}, "a removal from the wire")
     check(Rules.from_wire("remove_build", {"move":"HEADBUTT", "cell":[2, 3]}) == null, "a piece is cut or smashed, nothing else")
     check(Rules.from_wire("remove_build", {"move":"CUT", "cell":[2, 3], "decoration":"yes"}) == null, "flags are true or false")
+    check(Rules.from_wire("interact", {"action":"sign", "cell":[2, 3], "text":"HELLO"}) == {"action":"sign", "cell":Vector2i(2, 3), "text":"HELLO"}, "a sign written, from the wire")
+    check(Rules.from_wire("interact", {"action":"burn", "cell":[2, 3]}) == null and Rules.from_wire("interact", {"action":"sign", "cell":[2, 3], "text":"x".repeat(65)}) == null, "an unknown change or too many words: refused")
     check(Rules.reads("build", {"recipe":"FENCE"}) == ["bag"] and Rules.reads("paint", {}) == ["bag"] and Rules.reads("remove_build", {}).is_empty(), "builds and pictures read the bag, a removal nothing")
     _builds()
     _house()
     _in_flight()
+    _interactions()
     print("RULES TEST: %d failed (of %d checks)" % [failed, checks])
     quit(1 if failed else 0)
 
@@ -377,3 +382,26 @@ func _in_flight() -> void:
         check(not copy.recording(), "nothing left recording")
         check(pieces(copy) == pieces(authority) and copy.blocked == authority.blocked, "%s: the copy's pieces are the authority's" % ("c answered first" if confirmed_first else "in order"))
         check(store_bytes(copy) == store_bytes(authority), "%s: the copy's tiles are the authority's" % ("c answered first" if confirmed_first else "in order"))
+
+## A built piece changed for everyone: a sign written, a torch put out, a
+## plant's seed once a day by the authority's clock, a window's glass.
+func _interactions() -> void:
+    var state := area()
+    var outside := {"area_id":"OVERWORLD", "now":1000.0}
+    for piece in [["SIGN", Vector2i(2, 3)], ["TORCH", Vector2i(4, 3)], ["PLANT", Vector2i(6, 3)], ["WALL", Vector2i(8, 3)]]:
+        Build.apply(state, outside, {"recipe":piece[0], "cell":piece[1]}, rng(1))
+    var sign := Interact.apply(state, outside, {"cell":Vector2i(2, 3), "action":"sign", "text":"  WELCOME HOME  "}, rng(1))
+    check(sign.ok and state.structures[Vector2i(2, 3)].text == "WELCOME HOME" and said(sign, "The SIGN now reads: WELCOME HOME"), "a SIGN written")
+    check(not Interact.apply(state, outside, {"cell":Vector2i(4, 3), "action":"sign", "text":"X"}, rng(1)).ok, "a TORCH is no sign")
+    var torch := Interact.apply(state, outside, {"cell":Vector2i(4, 3), "action":"torch"}, rng(1))
+    check(torch.ok and state.structures[Vector2i(4, 3)].lit == false and said(torch, "The TORCH is now out."), "a TORCH put out")
+    var seed := Interact.apply(state, outside, {"cell":Vector2i(6, 3), "action":"plant"}, rng(1))
+    check(seed.ok and seed.grant == {"MIRACLE SEED":1} and said(seed, "The PLANT yielded a MIRACLE SEED."), "a PLANT gives its seed")
+    var again := Interact.apply(state, outside, {"cell":Vector2i(6, 3), "action":"plant"}, rng(1))
+    check(not again.ok and again.grant.is_empty() and said(again, "The PLANT needs another day to grow."), "once a day")
+    var tomorrow := Interact.apply(state, {"area_id":"OVERWORLD", "now":1000.0 + Interact.DAY_SECONDS}, {"cell":Vector2i(6, 3), "action":"plant"}, rng(1))
+    check(tomorrow.ok and tomorrow.grant == {"MIRACLE SEED":1}, "and again the next day")
+    check(not Interact.apply(state, outside, {"cell":Vector2i(8, 3), "action":"glass"}, rng(1)).ok, "a bare WALL has no glass")
+    Build.apply(state, outside, {"recipe":"INDOOR WINDOW 1", "cell":Vector2i(8, 3)}, rng(1))
+    var glass := Interact.apply(state, outside, {"cell":Vector2i(8, 3), "action":"glass"}, rng(1))
+    check(glass.ok and int(state.structures[Vector2i(8, 3)].window_variant) == 1, "an indoor window in a wall: its glass changed")
