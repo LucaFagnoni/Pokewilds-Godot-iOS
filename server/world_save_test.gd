@@ -89,8 +89,8 @@ func _init() -> void:
 			store.sync()
 			store._close_journal()
 			_has_all(_loaded(base), 13, what + ", saved again")
-			# (A damaged world.json became the .bak: damaging the new one too is a second fault.)
-			if not damaged: _has_all(_loaded(base, true), 13, what + ", saved again, from the .bak")
+			# A damaged world.json never replaces the .bak: the next save makes the .bak good again.
+			_has_all(_loaded(base, true), 13, what + ", saved again, from the .bak")
 	# A whole save leaves in the journal only what came after it began.
 	var base := root.path_join("whole")
 	_world(base, 4)

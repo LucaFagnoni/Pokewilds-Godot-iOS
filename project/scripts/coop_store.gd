@@ -193,7 +193,10 @@ static func write(job: Dictionary) -> Error:
     if _read_file(path + ".pending", String(job.id)).is_empty(): return ERR_FILE_CORRUPT
     if stop < 2: return OK
     if FileAccess.file_exists(path):
-        error = DirAccess.copy_absolute(path, path + ".bak")
+        # A damaged world.json (the world was loaded from the .bak) must not
+        # replace the good .bak: the new world, already checked, becomes it.
+        var good := not _read_file(path, String(job.id)).is_empty()
+        error = DirAccess.copy_absolute(path if good else path + ".pending", path + ".bak")
         if error != OK: return error
     if stop < 3: return OK
     error = DirAccess.rename_absolute(path + ".pending", path)
