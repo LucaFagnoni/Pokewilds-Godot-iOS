@@ -1,8 +1,10 @@
 # The online journal's group commit (coop_store.gd): commits are written once a
 # frame on a worker and nothing sent after a commit leaves before it is on disk
 # (coop_transport.gd journal). A host process committing hundreds of times a
-# frame is killed mid-batch, again and again; each time the world loads, has
-# every commit it acknowledged, and goes on from there.
+# frame, and folding its journal into a world save on a worker one save after
+# another as the host does (coop_store.gd prepare, write), is killed mid-batch
+# and mid-save, again and again; each time the world loads, has every commit it
+# acknowledged, and goes on from there.
 # Run: godot --headless --path project -s ../server/journal_batch_test.gd
 extends SceneTree
 
@@ -11,7 +13,7 @@ const Store = preload("res://scripts/coop_store.gd")
 const Transport = preload("res://scripts/coop_transport.gd")
 const ID := "0123456789abcdef0123456789abcdef"
 const PER_FRAME := 200
-const KILLS := 6
+const KILLS := 12
 
 var failed := 0
 
@@ -42,11 +44,21 @@ func _child(base: String) -> void:
 	var first := state.revision
 	var told := 0
 	var padding := "x".repeat(300)
+	var saving := -1
+	var job := {}
 	while true:
 		for i in PER_FRAME:
 			var n := state.revision
 			if not state.transact("host", "c%d" % n, [state.change("note/%d" % n, padding + str(n))]).get("ok", false):
 				printerr("child commit refused"); quit(2); return
+		# One world save after another, written on a worker while commits go on.
+		if saving != -1 and WorkerThreadPool.is_task_completed(saving):
+			WorkerThreadPool.wait_for_task_completion(saving)
+			saving = -1
+			if job.error != OK: printerr("child save failed"); quit(2); return
+		if saving == -1 and store.idle():
+			job = store.prepare(state, {"world_name": "TEST"})
+			saving = WorkerThreadPool.add_task(func(): job["error"] = Store.write(job))
 		await process_frame
 		if store.written > told:
 			told = store.written
@@ -72,6 +84,10 @@ func _parent() -> void:
 		while Time.get_ticks_msec() - started < wait: await process_frame
 		OS.kill(pid)
 		while OS.is_process_running(pid): await process_frame
+		# Where the kill found the save: which files it left.
+		var left := []
+		for file_name in ["journal.folding.jsonl", "world.json.pending"]:
+			if FileAccess.file_exists(base.path_join(ID).path_join(file_name)): left.append(file_name)
 		var lines := FileAccess.get_file_as_string(base.path_join("acks.txt")).strip_edges().split("\n")
 		var last := int(lines[-1]) if not lines.is_empty() and not lines[-1].is_empty() else acknowledged
 		check(last >= acknowledged, "round %d: acknowledgements go on (%d after %d)" % [round, last, acknowledged])
@@ -86,9 +102,9 @@ func _parent() -> void:
 			if not String(loaded.records.get("note/%d" % n, "")).ends_with(str(n)): missing += 1
 		check(missing == 0, "round %d: %d commits missing below revision %d" % [round, missing, loaded.revision])
 		# Folded into a world save, as the host does, so the journal stays short.
-		var job := reader.prepare(loaded, {"world_name": "TEST"})
-		check(Store.write(job) == OK and reader.rotate(job) == OK, "round %d: saved" % round)
-		print("JOURNAL BATCH TEST round %d: killed after %d ms, %d acknowledged, %d on disk" % [round, wait, acknowledged, loaded.revision])
+		check(Store.write(reader.prepare(loaded, {"world_name": "TEST"})) == OK, "round %d: saved" % round)
+		reader._close_journal()
+		print("JOURNAL BATCH TEST round %d: killed after %d ms, %d acknowledged, %d on disk, left %s" % [round, wait, acknowledged, loaded.revision, left])
 	check(acknowledged > PER_FRAME * KILLS, "the children got some work done (%d)" % acknowledged)
 	print("JOURNAL BATCH TEST: %d failed" % failed)
 	quit(1 if failed > 0 else 0)

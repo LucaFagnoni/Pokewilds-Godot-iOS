@@ -12,6 +12,12 @@ kind by the server and by every player:
              long enough for autosaves (--autosave MINUTES) and journal folds
   walkNfour  N players walking in four areas: one in four stays, the others go
              west, east and south of where they are (two areas the server makes)
+  walkNsave  (with --save-phase) N players walking where walkNfour left them
+             while the server saves the world (the console's `save`) at 2 s and
+             12 s and folds the journal into a world save at 7 s and 17 s;
+             --pad N first gives the world N more records (300 bytes each,
+             journaled as the server commits them, in areas no one goes
+             to), for a long-played world
 
 After each walking phase every player's wild Pokemon are compared with the
 server's, in the player's area (CONSISTENCY: how many stand where the server
@@ -21,7 +27,7 @@ its frame time distribution per phase (FRAMES) and, for frames over 16 ms,
 what took the most (SPIKES: the sections a test build times into Engine meta
 "probe_frame", name -> microseconds this frame, "_top" the outermost summed).
 
-    python server/coop_net_profile.py GODOT [--clients N] [--seconds S] [--long S] [--autosave MINUTES] [--breakdown]
+    python server/coop_net_profile.py GODOT [--clients N] [--seconds S] [--long S] [--autosave MINUTES] [--breakdown] [--save-phase [--pad N]]
         [--project DIR] [--world-from DIR] [--world NAME] [--port N] [--area-generation auto|on|off] [--keep]
 
 --world-from copies a server data folder (a server_data, or a server folder
@@ -90,6 +96,7 @@ try:
     server = start("server", ["--server", "--port", str(port), "--world", world, "--size", "S", "--data", os.path.join(work, "server"),
         "--no-upnp", "--area-size", "S", "--accounts", "off", "--config", config]
         + (["--area-generation", sys.argv[sys.argv.index("--area-generation") + 1]] if "--area-generation" in sys.argv else [])
+        + (["--pad", sys.argv[sys.argv.index("--pad") + 1]] if "--pad" in sys.argv else [])
         + ["--", "--phase=" + phase_file], subprocess.PIPE)
     wait_for("server", "listening on TCP port", 900)
 
@@ -134,6 +141,20 @@ try:
     while sum(text(f"client{i}").count("spread to") for i in movers) < len(movers) and time.time() < deadline: time.sleep(1)
     time.sleep(3)
     measure(f"walk{clients}four")
+    if "--save-phase" in sys.argv:
+        if "--pad" in sys.argv:
+            set_phase("pad")
+            wait_for("server", "PROFILE SERVER padded", 900)
+            set_phase("rest")
+            time.sleep(3)
+        print("phase", f"walk{clients}save", flush=True)
+        set_phase(f"walk{clients}save")
+        started = time.time()
+        for at in (2, 12):
+            time.sleep(max(0, started + at - time.time()))
+            server.stdin.write(b"save\n"); server.stdin.flush()
+        time.sleep(max(0, started + 24 - time.time()))
+        set_phase("rest")
     if "--breakdown" in sys.argv:
         set_phase("walk-breakdown")
         wait_for("server", "PROFILE SERVER breakdown", 900)
@@ -142,7 +163,7 @@ try:
     rows = []
     for name in logs:
         for line in text(name).splitlines():
-            if line.startswith("PROFILE") and " rest " not in line and " setup " not in line and ("-travel " not in line or " FRAMES " in line or " SPIKES " in line): rows.append(line)
+            if line.startswith("PROFILE") and " rest " not in line and " setup " not in line and " pad " not in line and ("-travel " not in line or " FRAMES " in line or " SPIKES " in line): rows.append(line)
     # Each player's wild Pokemon against the server's, phase by phase.
     for dump in sorted(f for f in os.listdir(work) if f.startswith("wild_SERVER_")):
         phase = dump[len("wild_SERVER_"):-len(".json")]

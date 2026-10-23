@@ -112,6 +112,12 @@ static func _write_lines(job: Dictionary) -> void:
     file.flush()
     job.error = file.get_error()
 
+## True while no batch is on its way to disk: prepare() then ends the
+## segment without waiting here for a flush.
+func idle() -> bool:
+    _settle()
+    return _task == -1
+
 func _settle() -> void:
     if _task != -1 and WorkerThreadPool.is_task_completed(_task): _wait()
 
@@ -143,59 +149,58 @@ func sync() -> bool:
     _start(true)
     return written == queued
 
-## A world save, in three steps so the slow one runs off the game thread
-## (coop_game.gd save_checkpoint): prepare() takes what to write, on the game
-## thread; write() writes and checks it, on any thread, while the game goes on
-## adding to the journal; rotate() then leaves in the journal only what came
-## after, on the game thread again.
+## A world save, in two steps so the slow one runs off the game thread
+## (coop_game.gd save_checkpoint): prepare() takes what to write and starts a
+## new journal segment, on the game thread; write() writes and checks it, on
+## any thread, while the game goes on adding to the new journal.
+## The journal is a chain of segments, replayed in order on load (load_state),
+## each commit at most once (by revision):
+##   journal.previous.jsonl  the commits between world.json.bak and world.json
+##   journal.folding.jsonl   the commits a save in progress is folding in
+##   journal.jsonl           the commits since
+## Every step below is a rename or a new file, so a crash at any point leaves
+## a chain that loads with every commit written (server/world_save_test.gd
+## stops after each step; journal_batch_test.gd kills a process saving).
 func prepare(state, metadata: Dictionary) -> Dictionary:
     if not valid_id(world_id): return {}
     var home := directory.path_join(world_id)
-    # The journal so far holds only commits the world below already has.
-    sync()
+    # The batch on its way to disk ends this segment. Lines still queued go
+    # to the next one: their commits are in the state below too, and a load
+    # skips them there.
     _close_journal()
     var journal := home.path_join("journal.jsonl")
-    # Only its length: write() reads it, off the game thread (megabytes: up
-    # to 17 ms here). Lines added meanwhile go after it.
-    var file := FileAccess.open(journal, FileAccess.READ) if FileAccess.file_exists(journal) else null
-    var journal_size := file.get_length() if file != null else 0
-    if file != null: file.close()
+    var folding := home.path_join("journal.folding.jsonl")
+    # A folding segment left by a save that failed or was cut short stays
+    # where it is, and so does the journal after it: the world.json this save
+    # writes has both. A batch that could not be written is first cut off
+    # (_open_journal), not moved.
+    if not _failed and FileAccess.file_exists(journal) and not FileAccess.file_exists(folding):
+        DirAccess.rename_absolute(journal, folding)
     return {"id":world_id,"home":home,
-        "journal_size":journal_size,
         "data":{"mode":"online","format":1,"id":world_id,"metadata":metadata.duplicate(true),"state":state.snapshot()}}
 
 ## world.json as a .pending file, read back and checked, the one it replaces
-## kept as .bak; then the journal it covers becomes journal.previous.jsonl,
-## which stays with the .bak for recovery. Touches only these files.
+## kept as .bak; then the folding segment, which the new world.json has,
+## becomes journal.previous.jsonl, which stays with the .bak for recovery.
+## Touches only these files. `job.stop_after` (tests): return after that step,
+## as if killed there.
 static func write(job: Dictionary) -> Error:
-    var journal := _read_journal(job)
-    if journal.size() != int(job.get("journal_size", 0)): return ERR_FILE_CORRUPT
+    var stop := int(job.get("stop_after", 4))
     var path := String(job.home).path_join("world.json")
     var text := JSON.stringify(job.data, "", true, true)
     var error := _write_file(path, JSON.stringify({"payload":text,"sha256":text.sha256_text()}).to_utf8_buffer())
     if error != OK: return error
     if _read_file(path + ".pending", String(job.id)).is_empty(): return ERR_FILE_CORRUPT
+    if stop < 2: return OK
     if FileAccess.file_exists(path):
         error = DirAccess.copy_absolute(path, path + ".bak")
         if error != OK: return error
+    if stop < 3: return OK
     error = DirAccess.rename_absolute(path + ".pending", path)
-    if error != OK: return error
-    # Only after the replacement checkpoint is durable and verified. Until
-    # rotate() the journal still starts with these commits too: a load skips
-    # any it already has (by revision).
-    if journal.is_empty(): return OK
-    var previous := String(job.home).path_join("journal.previous.jsonl")
-    error = _write_file(previous, journal)
-    return error if error != OK else DirAccess.rename_absolute(previous + ".pending", previous)
-
-## The journal as it was at prepare(): its first `journal_size` bytes.
-static func _read_journal(job: Dictionary) -> PackedByteArray:
-    var size := int(job.get("journal_size", 0))
-    var file := FileAccess.open(String(job.home).path_join("journal.jsonl"), FileAccess.READ) if size > 0 else null
-    if file == null: return PackedByteArray()
-    var bytes := file.get_buffer(size)
-    file.close()
-    return bytes
+    if error != OK or stop < 4: return error
+    var folding := String(job.home).path_join("journal.folding.jsonl")
+    if not FileAccess.file_exists(folding): return OK
+    return DirAccess.rename_absolute(folding, String(job.home).path_join("journal.previous.jsonl"))
 
 ## `bytes` into PATH.pending, flushed.
 static func _write_file(path: String, bytes: PackedByteArray) -> Error:
@@ -206,21 +211,6 @@ static func _write_file(path: String, bytes: PackedByteArray) -> Error:
     var error := file.get_error()
     file.close()
     return error
-
-## After write(): the journal keeps only the commits made while it ran.
-func rotate(job: Dictionary) -> Error:
-    var done := int(job.get("journal_size", 0))
-    if done == 0: return OK
-    _close_journal()
-    var path := String(job.home).path_join("journal.jsonl")
-    var file := FileAccess.open(path, FileAccess.READ)
-    if file == null: return FileAccess.get_open_error()
-    file.seek(done)
-    var after := file.get_buffer(file.get_length() - done)
-    file.close()
-    if after.is_empty(): return DirAccess.remove_absolute(path)
-    var error := _write_file(path, after)
-    return error if error != OK else DirAccess.rename_absolute(path + ".pending", path)
 
 const BACKUPS_KEPT := 5
 
@@ -234,7 +224,7 @@ func backup() -> void:
     var root := home.path_join("backups")
     var target := root.path_join(Time.get_datetime_string_from_system().replace(":", "-"))
     if DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(target)) != OK: return
-    for file_name in ["world.json", "host.save", "journal.jsonl"]:
+    for file_name in ["world.json", "host.save", "journal.folding.jsonl", "journal.jsonl"]:
         var source := home.path_join(file_name)
         if FileAccess.file_exists(source): DirAccess.copy_absolute(source, target.path_join(file_name))
     var listing := DirAccess.open(root)
@@ -249,10 +239,12 @@ func backup() -> void:
             for file_name in old.get_files(): old.remove(file_name)
         listing.remove(oldest)
 
-## Bytes waiting to be replayed on the next load.
+## Bytes waiting to be replayed on the next load (in the current segment),
+## without waiting here for a batch on its way to disk: it counts once written.
 func journal_size() -> int:
     if not valid_id(world_id): return 0
-    _wait()
+    _settle()
+    if _task != -1: return int(_job.get("start", 0))
     if _journal != null: return _journal.get_length()
     var file := FileAccess.open(directory.path_join(world_id).path_join("journal.jsonl"), FileAccess.READ)
     if file == null: return 0
@@ -284,6 +276,7 @@ func load_state(state) -> Dictionary:
     if data.is_empty() or not state.restore(data.get("state", {})): return {}
     var journals:Array[String]=[]
     if backup:journals.append(path.get_base_dir().path_join("journal.previous.jsonl"))
+    journals.append(path.get_base_dir().path_join("journal.folding.jsonl"))
     journals.append(path.get_base_dir().path_join("journal.jsonl"))
     for journal in journals:
         if not FileAccess.file_exists(journal):continue

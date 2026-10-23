@@ -43,10 +43,12 @@ static func split(crafting:Dictionary,copy:bool=true)->Dictionary:
 ## committed_population(shared, population_records(area, records)): the
 ## records are picked on the game thread, still packed; unpacking them, a
 ## thousand wild Pokemon in a long-played area, can then run on a worker.
-static func population_records(area:String,records:Dictionary)->Array:
+## `keys`: the area's keys when the caller has them (coop_state.gd
+## keys_by_area), not every record of the world to walk.
+static func population_records(area:String,records:Dictionary,keys:Variant=null)->Array:
     var picked:Array=[]
     var prefix="world/"+area+"/"
-    for key in records:
+    for key in (records if keys==null else keys):
         if not String(key).begins_with(prefix):continue
         var group=String(key).get_slice("/",2)
         if group in ["wild_pokemon","deployed_pokemon","wild_eggs"]:picked.append([group,records[key]])
