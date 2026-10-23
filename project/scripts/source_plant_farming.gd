@@ -120,7 +120,7 @@ func update() -> void:
             started = Time.get_ticks_usec()
         if not world.source_plant_farms.has(key): continue
         var record: Dictionary=world.source_plant_farms[key]
-        var cell: Vector2i=world._cell_from_key(key)
+        var cell: Vector2i=key
         var tile: SourceTile=world.exact_world.tile_at(cell)
         if tile==null: continue
         if tile.name_upper != String(record.upper):
@@ -155,7 +155,7 @@ func index_existing_plants() -> void:
         var upper := tile.name_upper
         if "tree_planted" in upper or upper == "bush2_color_fertilized" or upper == "berry_planted" or upper == "grass_planted" or (upper.begins_with("berrytree_") and ("_mid" in upper or "_empty" in upper)):
             var cell := SourceWorldData.pixel_to_cell(position)
-            if not world.source_plant_farms.has(world._cell_key(cell)):
+            if not world.source_plant_farms.has(cell):
                 store(cell,tile)
         if Time.get_ticks_usec()-started >= 4000:
             await world.get_tree().process_frame
@@ -199,13 +199,13 @@ func restore() -> void:
     last_checked_day = -1
     for key in world.source_plant_farms:
         var record: Dictionary=world.source_plant_farms[key]
-        var tile: SourceTile=world.exact_world.tile_at(world._cell_from_key(key))
+        var tile: SourceTile=world.exact_world.tile_at(key)
         if tile!=null: tile.set_names(String(record.base),String(record.upper))
     # Upgrade harvested trees saved before crop timers were introduced.
     for key in world.source_interior_mutations:
         var mutation: Dictionary = world.source_interior_mutations[key]
         if mutation.get("kind","") != "BERRY_EMPTY" or world.source_plant_farms.has(key): continue
-        var cell: Vector2i = world._cell_from_key(key)
+        var cell: Vector2i = key
         var tile: SourceTile = world.exact_world.tile_at(cell)
         if tile != null and "_empty" in tile.name_upper: store(cell,tile)
     update()
@@ -215,7 +215,7 @@ func snapshot() -> Dictionary:
     # CUT, DIG, or building may replace a crop between growth checks.
     for key in world.source_plant_farms.keys():
         var record: Dictionary=world.source_plant_farms[key]
-        var tile: SourceTile=world.exact_world.tile_at(world._cell_from_key(key)) if world.exact_world!=null else null
+        var tile: SourceTile=world.exact_world.tile_at(key) if world.exact_world!=null else null
         if tile==null or tile.name!=String(record.base) or tile.name_upper!=String(record.upper):
             world.area.drop("source_plant_farms", key)
     return world.source_plant_farms.duplicate(true)

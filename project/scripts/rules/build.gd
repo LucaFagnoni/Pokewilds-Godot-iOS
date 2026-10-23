@@ -507,7 +507,7 @@ static func canonical_door(state, door: Vector2i, cells: Array) -> Vector2i:
     # Origin records retain creation order even when a door is cut/rebuilt.
     # Looking through structure order instead can rename the saved house.
     for raw_key in state.built_house_origins:
-        var saved_door := TileRules.key_cell(String(raw_key))
+        var saved_door := TileRules.key_cell(raw_key)
         if saved_door in cells and String(state.structures.get(saved_door, {}).get("name", "")) == "DOOR": return saved_door
     for raw_cell in state.structures:
         var cell := Vector2i(raw_cell)
@@ -532,10 +532,9 @@ static func house(state, door: Vector2i, origin_hint: int = -1) -> Dictionary:
     var footprint := {}
     for raw_cell in cells: footprint[Vector2i(raw_cell) - min_cell] = true
     var canonical := canonical_door(state, door, cells)
-    var key := TileRules.cell_key(canonical)
     var origin_y: int
-    if state.built_house_origins.has(key):
-        origin_y = int(state.built_house_origins[key])
+    if state.built_house_origins.has(canonical):
+        origin_y = int(state.built_house_origins[canonical])
     else:
         var taken := {}
         var next_y := 5
@@ -545,7 +544,7 @@ static func house(state, door: Vector2i, origin_hint: int = -1) -> Dictionary:
         origin_y = origin_hint if origin_hint >= 5 and not taken.has(origin_hint) else next_y
     for raw_cell in cells:
         if String(state.structures.get(raw_cell, {}).get("name", "")) != "DOOR": continue
-        var door_key := TileRules.cell_key(raw_cell)
+        var door_key := Vector2i(raw_cell)
         if not state.built_house_origins.has(door_key) or int(state.built_house_origins[door_key]) != origin_y:
             state.put("built_house_origins", door_key, origin_y)
     var origin := Vector2i(state.bounds.size.x + 9, origin_y)

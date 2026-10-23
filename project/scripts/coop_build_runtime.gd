@@ -6,6 +6,7 @@ extends Node
 ## records of an area are laid on this World as they come (apply_records),
 ## and an area's snapshot seeds them (seed).
 const Delta=preload("res://scripts/coop_world_delta.gd")
+const AreaState=preload("res://scripts/area_state.gd")
 const Crafting=preload("res://scripts/crafting_data.gd")
 const GROUPS=["structures","built_house_floor_tiles","built_house_paintings",
     "built_house_decorations","built_house_origins","source_interior_mutations","source_plant_farms","removed_resources","terrain_changes"]
@@ -337,32 +338,34 @@ func apply_records(area:String,records:Array,arriving:bool=false)->void:
         if group=="structures":structures.append(record);continue
         if group not in GROUPS:continue
         var dictionary:Dictionary=world.get(group)
+        # The World holds the cell overlays by cell, the records by "x,y".
+        var at=AreaState.held_key(group,key)
         # A dig site changes its own cell only (the layers redraw around it
         # themselves), and a new day brings ~200 of them: 25 cells each, all in
         # one frame, was ~90 ms on a desktop. The world hands them to the
         # layers a few at a time instead.
-        if group=="source_interior_mutations" and _dig_site(record.value) and _dig_site(dictionary.get(key)):
-            dug_cells.append(world._cell_from_key(key))
+        if group=="source_interior_mutations" and _dig_site(record.value) and _dig_site(dictionary.get(at)):
+            dug_cells.append(at)
         elif group in ["source_interior_mutations","source_plant_farms","terrain_changes","removed_resources"]:
-            var center:Vector2i=world._cell_from_key(key)
+            var center:Vector2i=at
             for y in range(-2,3):
                 for x in range(-2,3):changed_cells[center+Vector2i(x,y)]=true
-        if record.value==null:dictionary.erase(key)
-        else:dictionary[key]=true if group in ["built_house_floor_tiles","removed_resources"] else record.value
+        if record.value==null:dictionary.erase(at)
+        else:dictionary[at]=true if group in ["built_house_floor_tiles","removed_resources"] else record.value
         if group=="removed_resources":
-            if record.value!=null:world._remove_resource(world._cell_from_key(key),false)
+            if record.value!=null:world._remove_resource(at,false)
             continue
         if group=="terrain_changes":
             if record.value!=null:
-                var at:Vector2i=world._cell_from_key(key)
                 world._set_exact_tile_names(at,"sand1" if int(record.value)==1 else "green1","")
             continue
         if group=="source_plant_farms":
             if record.value is Dictionary and world.exact_world!=null:
-                world._set_exact_tile_names(world._cell_from_key(key),String(record.value.base),String(record.value.upper))
+                world._set_exact_tile_names(at,String(record.value.base),String(record.value.upper))
             continue
         if group=="source_interior_mutations":
-            if record.value is Dictionary:world._apply_source_interior_mutation(world._cell_from_key(key),record.value)
+            world.area.index_hole(at,record.value)
+            if record.value is Dictionary:world._apply_source_interior_mutation(at,record.value)
             continue
         # A floor tile added upstairs is laid on its own. Rebuilding the whole
         # inside of the house for each one made every floor blink black.

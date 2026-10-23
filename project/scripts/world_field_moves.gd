@@ -1213,20 +1213,20 @@ func _clear_agitated_berry_tree(cell: Vector2i, tile: SourceTile) -> void:
     await world.get_tree().create_timer(400.0/60.0).timeout
     if world.exact_world == null or world.exact_world.tile_at(cell) != tile: return
     tile.set_names(tile.name, "")
-    world.area.drop("source_plant_farms", world._cell_key(cell))
-    world.area.put("source_interior_mutations", world._cell_key(cell), {"kind":"TILE_NAMES","base":tile.name,"upper":""})
+    world.area.drop("source_plant_farms", cell)
+    world.area.put("source_interior_mutations", cell, {"kind":"TILE_NAMES","base":tile.name,"upper":""})
     world._refresh_exact_streams()
 
 func finish_shared_agitated_tree(cell:Vector2i,mutation:Dictionary)->void:
     var original_world=world.exact_world
     var delay=maxf(0.0,float(mutation.get("clear_at",0.0))-world.world_elapsed_seconds)
     if delay>0.0:await world.get_tree().create_timer(delay).timeout
-    if world.source_interior_mutations.get(world._cell_key(cell),{})!=mutation:return
+    if world.source_interior_mutations.get(cell,{})!=mutation:return
     if world.exact_world==null or world.exact_world!=original_world:return
     var tile:SourceTile=world.exact_world.tile_at(cell)
     if tile==null:return
     tile.set_names(String(mutation.get("base",tile.name)),"")
-    world.area.drop("source_plant_farms", world._cell_key(cell))
+    world.area.drop("source_plant_farms", cell)
     world._refresh_exact_pickup_cell(cell)
 
 func _exact_tile_is_large_tree(cell: Vector2i) -> bool:
@@ -1481,13 +1481,11 @@ func connect_source_dig_holes(changed: Vector2i) -> void:
 func fill_source_dig_holes() -> void:
     if world.exact_world == null or world.active_area_id != "OVERWORLD": return
     var replacements := {}
-    # Inspect only edited cells, never scan the full world each frame. Collect
-    # before applying so a water pulse advances one hole at a time.
-    for key in world.source_interior_mutations:
-        var parts := String(key).split(",")
-        if parts.size() != 2: continue
-        var cell := Vector2i(int(parts[0]), int(parts[1]))
-        # Names straight from the tile store: no tile object per edited cell.
+    var lava_cells := 0
+    # Inspect only the holes dug (area.holes), never every edit nor the whole
+    # world. Collect before applying so a water pulse advances one hole at a time.
+    for cell: Vector2i in world.area.holes:
+        # Names straight from the tile store: no tile object per hole.
         var here := world._exact_names_at(cell)
         if here.is_empty() or not here[1].begins_with("hole1"): continue
         var water := false
@@ -1499,7 +1497,11 @@ func fill_source_dig_holes() -> void:
             if "water" in names: water = true
             elif "lava" in names: lava = true
         if water or lava: replacements[cell] = "soot1" if water and lava else "water2" if water else "lava1"
-    for cell in replacements:
+        if lava and not water: lava_cells += 1
+    var cells: Array = replacements.keys()
+    # Lava's variants draw on world.rng cell by cell: in the mutations' order, as always.
+    if lava_cells > 1: cells = world.source_interior_mutations.keys().filter(func(cell): return replacements.has(cell))
+    for cell in cells:
         var tile: SourceTile = world.area.edit(cell)
         tile.set_names(replacements[cell], "")
         if tile.is_lava:

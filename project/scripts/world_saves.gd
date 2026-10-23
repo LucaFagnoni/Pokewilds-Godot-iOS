@@ -183,11 +183,11 @@ static func summary(data: Dictionary) -> Dictionary:
 
 ## A save as written (BINARY_SAVES): "PWSV", u32 FORMAT, u32 length + the
 ## summary (var_to_bytes), u32 length of the save's var_to_bytes, u32 length +
-## that zstd-compressed; numbers little-endian. Cell keys stay "x,y" strings,
-## as the world keeps them.
+## that zstd-compressed; numbers little-endian. Cell keys are Vector2i, as the
+## world holds them (saves of before have "x,y" text: the world reads both).
 static func encode(data: Dictionary) -> PackedByteArray:
     if not BINARY_SAVES:
-        return JSON.stringify(data).to_utf8_buffer()
+        return JSON.stringify(json_form(data)).to_utf8_buffer()
     var head := var_to_bytes(summary(data))
     var body := var_to_bytes(data)
     var packed := body.compress(FileAccess.COMPRESSION_ZSTD)
@@ -200,6 +200,25 @@ static func encode(data: Dictionary) -> PackedByteArray:
     out.put_u32(packed.size())
     out.put_data(packed)
     return out.data_array
+
+## `data` (a save) as JSON keeps it: the cell keys of its worlds' states as
+## "x,y" text (AreaState.text_keys); JSON would write a Vector2i "(x, y)".
+## A shallow copy, only what changes made anew.
+static func json_form(data: Dictionary) -> Dictionary:
+    const AreaState = preload("res://scripts/area_state.gd")
+    var result := data.duplicate()
+    if result.get("crafting_state") is Dictionary:
+        result["crafting_state"] = AreaState.text_keys(result.crafting_state)
+    if result.get("adjacent_worlds") is Dictionary:
+        var neighbors := {}
+        for key in result.adjacent_worlds:
+            var neighbor = result.adjacent_worlds[key]
+            if neighbor is Dictionary and neighbor.get("state") is Dictionary:
+                neighbor = neighbor.duplicate()
+                neighbor["state"] = AreaState.text_keys(neighbor.state)
+            neighbors[key] = neighbor
+        result["adjacent_worlds"] = neighbors
+    return result
 
 ## One save file, binary or JSON, without its .bak: the whole save or its
 ## summary; {} if it cannot be read (cut, or from a newer game).

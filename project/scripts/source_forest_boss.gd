@@ -112,7 +112,7 @@ static func select_cell_at(state, origin: Vector2i, taken: Vector2i = Vector2i(-
             if _bare_forest(state, cell) \
                     and cell.distance_squared_to(origin) >= 64 \
                     and not occupied.has(cell) \
-                    and not state.source_plant_farms.has("%d,%d" % [cell.x, cell.y]):
+                    and not state.source_plant_farms.has(cell):
                 # A clear ring keeps all four approaches open and prevents a
                 # solid boss from cutting off a one-cell path.
                 var clear_ring := true

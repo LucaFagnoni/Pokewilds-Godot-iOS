@@ -85,6 +85,9 @@ const WorldEnvironmentSystem = preload(
 const SOURCE_DAY_TICKS := 18000.0
 const SOURCE_NIGHT_TICKS := 5000.0
 const WORLD_DAY_SECONDS := (SOURCE_DAY_TICKS + SOURCE_NIGHT_TICKS) / 60.0
+## event_progress: the day whose dig sites are being placed, while they are
+## (_refresh_biome_dig_sites): a world saved meanwhile places the rest on load.
+const DIG_SITES_PLACING_KEY := "dig_sites_placing_day"
 const NIGHT_START_FRACTION := (
     SOURCE_DAY_TICKS / (SOURCE_DAY_TICKS + SOURCE_NIGHT_TICKS)
 )
@@ -702,6 +705,7 @@ func generate_world(
     interior_interactables.clear()
     source_interior_upper_sprites.clear()
     source_interior_mutations.clear()
+    area.holes.clear()
     source_mine_pokemon.clear()
     built_house_rooms_seen.clear()
     built_house_interior_cells.clear()
@@ -2606,7 +2610,7 @@ func _harvest_resource(cell: Vector2i, source_move: String = "") -> void:
             material_collected.emit("MIRACLE SEED", 1)
             if _in_bounds(cell):
                 terrain[cell.y][cell.x] = 1
-                area.put("terrain_changes", _cell_key(cell), 1)
+                area.put("terrain_changes", cell, 1)
                 var ground_sprite := ground_sprites.get(cell) as Sprite2D
                 if is_instance_valid(ground_sprite):
                     ground_sprite.texture = SAND
@@ -2674,7 +2678,7 @@ func _remove_resource(cell: Vector2i, remember: bool) -> void:
         tall_grass.erase(cell)
 
     if remember:
-        area.put("removed_resources", _cell_key(cell), true)
+        area.put("removed_resources", cell, true)
 
 func _cut_tall_grass(cell: Vector2i) -> void:
     field_moves.cut_grass(cell)
@@ -3302,7 +3306,7 @@ func restore_crafting_save_state(state: Dictionary) -> void:
     built_house_paintings.clear()
     built_house_floor_tiles.clear()
     built_house_decorations.clear()
-    built_house_origins = (state.get("built_house_origins", {}) as Dictionary).duplicate(true)
+    built_house_origins = _cell_keyed(state.get("built_house_origins", {}))
     built_house_decorations = state.get("built_house_decorations", {}).duplicate(true)
     var saved_house_floors = state.get("built_house_floor_tiles", [])
     if typeof(saved_house_floors) == TYPE_ARRAY:
@@ -3369,10 +3373,10 @@ func restore_crafting_save_state(state: Dictionary) -> void:
             if Time.get_ticks_usec() >= restore_deadline:
                 await get_tree().process_frame
                 restore_deadline = Time.get_ticks_usec() + 13000
-            var cell := _cell_from_key(String(key))
+            var cell := AreaState.key_cell(key)
             if _in_bounds(cell):
                 var kind := int(saved_terrain[key])
-                terrain_changes[String(key)] = kind
+                terrain_changes[cell] = kind
                 _set_exact_tile_names(
                     cell, "sand1" if kind == 1 else "green1", ""
                 )
@@ -3383,8 +3387,7 @@ func restore_crafting_save_state(state: Dictionary) -> void:
             if Time.get_ticks_usec() >= restore_deadline:
                 await get_tree().process_frame
                 restore_deadline = Time.get_ticks_usec() + 13000
-            var key := String(raw_key)
-            var cell := _cell_from_key(key)
+            var cell := AreaState.key_cell(raw_key)
             if exact_world != null:
                 var tile := exact_world.tile_at(cell)
                 if tile != null:
@@ -3392,7 +3395,7 @@ func restore_crafting_save_state(state: Dictionary) -> void:
                     _refresh_exact_streams()
             else:
                 _remove_resource(cell, false)
-            removed_resources[key] = true
+            removed_resources[cell] = true
 
     var saved_structures = state.get("structures", [])
     if typeof(saved_structures) == TYPE_ARRAY:
@@ -3524,18 +3527,16 @@ func restore_crafting_save_state(state: Dictionary) -> void:
             if Time.get_ticks_usec() >= restore_deadline:
                 await get_tree().process_frame
                 restore_deadline = Time.get_ticks_usec() + 13000
-            var key := String(raw_key)
             var mutation = saved_interior_mutations[raw_key]
             if typeof(mutation) != TYPE_DICTIONARY:
                 continue
-            var cell := _cell_from_key(key)
+            var cell := AreaState.key_cell(raw_key)
             if int(state.get("source_interior_layout_version", 0)) == 0:
                 cell = _legacy_source_interior_cell(cell)
-                key = _cell_key(cell)
-            source_interior_mutations[key] = (mutation as Dictionary).duplicate(true)
+            source_interior_mutations[cell] = (mutation as Dictionary).duplicate(true)
             _apply_source_interior_mutation(cell, mutation as Dictionary)
     SourceRegiRuntime.sync(self)
-    source_plant_farms = state.get("source_plant_farms", {}).duplicate(true)
+    source_plant_farms = _cell_keyed(state.get("source_plant_farms", {}))
     SourceMineRuntime.restore(self, state.get("mine_pokemon", {}))
     plants().restore()
     if exact_world != null:
@@ -3544,10 +3545,11 @@ func restore_crafting_save_state(state: Dictionary) -> void:
             if Time.get_ticks_usec() >= restore_deadline:
                 await get_tree().process_frame
                 restore_deadline = Time.get_ticks_usec() + 13000
-            source_interior_mutations.erase(_cell_key(cell))
-            source_plant_farms.erase(_cell_key(cell))
+            source_interior_mutations.erase(cell)
+            source_plant_farms.erase(cell)
         if not repaired_roof_cells.is_empty():
             _refresh_exact_streams()
+    area.reindex_holes()
     await _refresh_daily_events(true)
     SourceForestBoss.install(self)
     await preload("res://scripts/biome_megas.gd").prepare_load(self)
@@ -3631,6 +3633,14 @@ func _house_record_sprite(texture: Texture2D, cell: Vector2i, data: Dictionary =
 
 func _cell_key(cell: Vector2i) -> String:
     return "%d,%d" % [cell.x, cell.y]
+
+## A saved overlay (source_plant_farms, built_house_origins) keyed by cell:
+## a save from before, a JSON one and the co-op records have "x,y" text.
+static func _cell_keyed(saved: Variant) -> Dictionary:
+    var result := {}
+    if saved is Dictionary:
+        for key in saved: result[AreaState.key_cell(key)] = saved[key].duplicate(true) if saved[key] is Dictionary else saved[key]
+    return result
 
 func _cell_from_key(key: String) -> Vector2i:
     var parts := key.split(",")
@@ -4474,7 +4484,7 @@ func _use_interior_interactable(action: String, action_cell: Vector2i = Vector2i
             if item_name != "POKE BALL":
                 world_message.emit("You found %s x%d!" % [item_name, amount])
             interior_interactables.erase(action_cell)
-            area.put("source_interior_mutations", _cell_key(action_cell), {"kind": "COLLECTED"})
+            area.put("source_interior_mutations", action_cell, {"kind": "COLLECTED"})
             SourceMansionRuntime.clear_collected_item(self, action_cell)
             SourceMineRuntime.clear_collected_item(self, action_cell)
             var item_sprite := source_interior_upper_sprites.get(action_cell) as Sprite2D
@@ -4700,7 +4710,7 @@ func complete_battle_event(result: Dictionary) -> void:
         return
     if event_id == "mewtwo" and outcome == "defeated":
         event_progress["mewtwo_defeated_day"] = _world_day_index()
-        area.put("source_interior_mutations", _cell_key(cell), {
+        area.put("source_interior_mutations", cell, {
             "kind": "EVENT_COOLDOWN", "event_id": event_id,
             "day": _world_day_index()
         })
@@ -4726,11 +4736,11 @@ func _complete_regi_capture(species: String, cell: Vector2i) -> void:
     world_message.emit(String(SourceEventData.REGI_LORE.get(species, "%s was caught." % species)))
     _hide_event_cell(cell)
     if caught.size() < SourceEventData.REGI_SPECIES.size():
-        area.put("source_interior_mutations", _cell_key(cell), {"kind": "REGI_PEDESTAL"})
+        area.put("source_interior_mutations", cell, {"kind": "REGI_PEDESTAL"})
         _restore_regi_pedestal(cell)
         world_message.emit("A voice whispers: I desire more...")
     else:
-        area.put("source_interior_mutations", _cell_key(cell), {
+        area.put("source_interior_mutations", cell, {
             "kind": "EVENT_CLEARED", "event_id": "regi_pedestal"
         })
         world_message.emit("My work is complete... REGIGIGAS awakened!")
@@ -4743,7 +4753,7 @@ func _clear_event_cell(cell: Vector2i, event_id: String) -> void:
     if event_id == "mega_gengar" and event_progress.has(SourceForestBoss.SAVE_KEY):
         _hide_event_cell(cell)
         return
-    area.put("source_interior_mutations", _cell_key(cell), {
+    area.put("source_interior_mutations", cell, {
         "kind": "EVENT_CLEARED", "event_id": event_id
     })
     _hide_event_cell(cell)
@@ -4791,7 +4801,7 @@ func add_keystone_life_force(cell: Vector2i, available: int) -> int:
     var new_amount := old_amount + used
     amounts[key] = new_amount
     event_progress["keystone_life_force"] = amounts
-    area.put("source_interior_mutations", key, {
+    area.put("source_interior_mutations", cell, {
         "kind": "KEYSTONE", "amount": new_amount
     })
     if new_amount >= 107:
@@ -4850,20 +4860,24 @@ func _refresh_biome_dig_sites(spread: bool = false) -> void:
     var day := _world_day_index()
     var identity := exact_world
     var slice_started := Time.get_ticks_usec()
+    var store: WorldTileStore = exact_world.tiles
+    # Store index -> true: the day's sites already placed.
+    var placed := {}
     # Remove only untouched dynamic sites from an older day. A site that was
     # dug already became a normal TILE_NAMES mutation and is never restored.
-    for raw_key in source_interior_mutations.keys().duplicate():
+    for key in source_interior_mutations.keys():
         if spread and Time.get_ticks_usec()-slice_started>=_daily_slice_usec():
             await get_tree().process_frame
             if exact_world!=identity or _world_day_index()!=day: return
             slice_started=Time.get_ticks_usec()
-        var key := String(raw_key)
         var mutation := source_interior_mutations.get(key, {}) as Dictionary
         if String(mutation.get("kind", "")) != "BIOME_DIG_SITE":
             continue
         if int(mutation.get("day", -1)) == day:
+            var at: Vector2i = key - store.origin
+            placed[at.y * store.width + at.x] = true
             continue
-        var old_cell := _cell_from_key(key)
+        var old_cell: Vector2i = key
         var old_tile := exact_world.tile_at(old_cell)
         if old_tile != null and "_cracked" in old_tile.name_upper.to_lower():
             old_tile.set_names(
@@ -4871,11 +4885,17 @@ func _refresh_biome_dig_sites(spread: bool = false) -> void:
                 String(mutation.get("original_upper", ""))
             )
         area.drop("source_interior_mutations", key)
+    # The day's sites came with the world (a load, a co-op join): placed
+    # again, the cells taken and changed since would draw other cells as
+    # well. Only a placement cut short (saved meanwhile) goes on.
+    # ponytail: a day whose every site was dug gets a fresh set on load.
+    if not placed.is_empty() and int(event_progress.get(DIG_SITES_PLACING_KEY, -1)) != day:
+        return
+    event_progress[DIG_SITES_PLACING_KEY] = day
 
     var candidates: Dictionary = {}
     for crack_name in FieldMoveData.CRACKED_LOOT:
         candidates[crack_name] = []
-    var store: WorldTileStore = exact_world.tiles
     var cell_flags := store.flags
     var cell_uppers := store.upper_ids
     var cell_names := store.name_ids
@@ -4884,6 +4904,9 @@ func _refresh_biome_dig_sites(spread: bool = false) -> void:
     # (a proxy per cell made this scan ~1 s of every load).
     var crack_of := {}
     var ruled_out := WorldTileStore.WATER | WorldTileStore.LAVA | WorldTileStore.SOLID | WorldTileStore.LEDGE | WorldTileStore.GRASS
+    # A placement going on after a load: the day's sites already placed stay
+    # candidates, as they were, so the same draws pick the same cells.
+    var replay := not placed.is_empty()
     for index in cell_flags.size():
         if spread and Time.get_ticks_usec()-slice_started>=_daily_slice_usec():
             await get_tree().process_frame
@@ -4894,7 +4917,8 @@ func _refresh_biome_dig_sites(spread: bool = false) -> void:
             cell_uppers = store.upper_ids
             cell_names = store.name_ids
             cell_biomes = store.biome_ids
-        if not cell_flags[index] & WorldTileStore.PRESENT or cell_flags[index] & ruled_out or cell_uppers[index] != 0:
+        if (not cell_flags[index] & WorldTileStore.PRESENT or cell_flags[index] & ruled_out or cell_uppers[index] != 0) \
+                and not (replay and placed.has(index)):
             continue
         var pair: int = (cell_names[index] << 24) | cell_biomes[index]
         if not crack_of.has(pair): crack_of[pair] = FieldMoveData.dig_site_name(store.cursor(index))
@@ -4902,8 +4926,8 @@ func _refresh_biome_dig_sites(spread: bool = false) -> void:
         if not candidates.has(crack):
             continue
         var cell := Vector2i(index % store.width, index / store.width) + store.origin
-        if built_structures.has(cell) or landmarks.has(cell) or \
-                resource_objects.has(cell) or blocked.has(cell):
+        if (built_structures.has(cell) or landmarks.has(cell) or \
+                resource_objects.has(cell) or blocked.has(cell)) and not placed.has(index):
             continue
         (candidates[crack] as Array).append(cell)
 
@@ -4925,8 +4949,7 @@ func _refresh_biome_dig_sites(spread: bool = false) -> void:
                 slice_started=Time.get_ticks_usec()
             var pick := daily_rng.randi_range(0, cells.size() - 1)
             var cell := cells.pop_at(pick) as Vector2i
-            var key := _cell_key(cell)
-            if source_interior_mutations.has(key):
+            if source_interior_mutations.has(cell):
                 continue
             var tile := exact_world.tile_at(cell)
             if tile == null:
@@ -4935,10 +4958,11 @@ func _refresh_biome_dig_sites(spread: bool = false) -> void:
             var original_base := tile.name
             var crack := FieldMoveData.dig_site_name(tile)
             tile.set_names(original_base, crack)
-            area.put("source_interior_mutations", key, {
+            area.put("source_interior_mutations", cell, {
                 "kind":"BIOME_DIG_SITE", "day":day,
                 "base":original_base, "original_upper":original_upper, "crack":crack
             })
+    event_progress.erase(DIG_SITES_PLACING_KEY)
     # Spread, the layers take the day's cells a few at a time.
     if spread: _queue_exact_refresh()
     else: _refresh_exact_tile_streams()
@@ -5013,7 +5037,7 @@ func _refresh_daily_events(spread: bool = false) -> void:
         var mutation := source_interior_mutations[raw_key] as Dictionary
         if String(mutation.get("kind", "")) != "EVENT_COOLDOWN":
             continue
-        var cell := _cell_from_key(String(raw_key))
+        var cell: Vector2i = raw_key
         area.drop("source_interior_mutations", raw_key)
         interior_interactables[cell] = "SPECIAL:mewtwo"
         blocked[cell] = true
@@ -5044,7 +5068,7 @@ func complete_regi_forge(species_name: String) -> bool:
     var mutation := {
         "kind": "REGI", "species": species
     }
-    area.put("source_interior_mutations", _cell_key(cell), mutation)
+    area.put("source_interior_mutations", cell, mutation)
     _apply_source_interior_mutation(cell, mutation)
     SourceRegiRuntime.sync(self)
     active_regi_pedestal_cell = Vector2i(-2147483648, -2147483648)
@@ -5068,7 +5092,7 @@ func unlock_mansion_door(cell: Vector2i) -> bool:
         return false
     tile.set_names("pkmnmansion_ext_door", "")
     interior_interactables[cell] = "GOTO_AREA:MANSION_0"
-    area.put("source_interior_mutations", _cell_key(cell), {"kind": "MANSION_DOOR"})
+    area.put("source_interior_mutations", cell, {"kind": "MANSION_DOOR"})
     _refresh_exact_streams()
     return true
 

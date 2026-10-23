@@ -16,7 +16,7 @@ static func signs(world: Node) -> Dictionary:
         var cell := Vector2i(raw_cell)
         var tile = world.exact_world.tile_at(cell)
         if tile == null or not String(tile.has_item).begins_with("trainer_tips"): continue
-        if world.removed_resources.has(world._cell_key(cell)) or world.built_structures.has(cell): continue
+        if world.removed_resources.has(cell) or world.built_structures.has(cell): continue
         if tile.name_upper != "sign1": continue
         result[world._cell_key(cell)] = tile.has_item == "trainer_tips_unown"
     return result

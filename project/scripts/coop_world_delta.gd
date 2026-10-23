@@ -205,6 +205,10 @@ func expand(area:String,patches:Array,failed:Array=[])->Variant:
         else:result.append(patch)
     return result
 
+## A record's key text: a cell (how the World holds its cell overlays) as "x,y".
+static func key_text(key:Variant)->String:
+    return "%d,%d"%[key.x,key.y] if key is Vector2i else str(key)
+
 static func flatten(shared:Dictionary)->Dictionary:
     var result:Dictionary={}
     for group in CELLS+["wild_pokemon"]:
@@ -212,7 +216,9 @@ static func flatten(shared:Dictionary)->Dictionary:
             var id=str(int(record.id)) if group=="wild_pokemon" else "%d,%d"%[int(record.x),int(record.y)]
             result[group+"/"+id.uri_encode()]=encode(record)
     for group in SETS:
-        for key in shared.get(group,[]):result[group+"/"+str(key).uri_encode()]=encode(key)
+        for key in shared.get(group,[]):
+            var text:=key_text(key)
+            result[group+"/"+text.uri_encode()]=encode(text)
     for group in MAPS:
         for key in shared.get(group,{}):
             var value=shared[group][key]
@@ -220,7 +226,7 @@ static func flatten(shared:Dictionary)->Dictionary:
             # Replicas reconnect them locally; they are not competing edits.
             if group=="source_interior_mutations" and value is Dictionary and String(value.get("upper","")).begins_with("hole1"):
                 value=value.duplicate(true);value["upper"]="hole1"
-            result[group+"/"+str(key).uri_encode()]=encode(value)
+            result[group+"/"+key_text(key).uri_encode()]=encode(value)
     for group in SCALARS:
         if shared.has(group):result[group+"/value"]=encode(shared[group])
     return result
