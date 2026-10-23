@@ -439,19 +439,11 @@ func apply_record(wild_id:int,record:Variant)->void:
     var before:Vector2i=data.cell
     var target=Vector2i(int(record.x),int(record.y))
     var audio_tick=data.get("aggro_audio_tick",-1.0)
+    # Drawn walking there over 0.1 s of real time, from where it is drawn now.
+    if before!=target:world.wild_population.begin_step(wild_id,0.1*Engine.time_scale)
     data.merge(record,true);data["cell"]=target;world.wild_population.refresh(wild_id);world._sand_trap_merged(wild_id)
     data["aggro_audio_tick"]=audio_tick
-    var sprite=data.get("sprite") as Sprite2D
-    if is_instance_valid(sprite) and before!=target:
-        var movement=data.get("ball_move_tween") as Tween
-        if movement!=null and movement.is_valid():movement.kill()
-        if before!=target:world._set_overworld_motion_frame(sprite,world._cardinal_direction(target-before,false),int(data.get("anim_phase",0)))
-        sprite.z_index=world._depth_z(target)
-        var next=world.create_tween()
-        next.set_speed_scale(1.0/maxf(0.01,Engine.time_scale))
-        next.tween_property(sprite,"position",world._cell_center(target),0.1).set_trans(Tween.TRANS_LINEAR)
-        data["ball_move_tween"]=next
-    world._update_pokemon_water_visual(data)
+    if before!=target:world.wild_population.pose(wild_id,world._cardinal_direction(target-before,false),int(data.get("anim_phase",0)))
 
 func retry_additions()->void:
     var world=game.main.world
@@ -478,11 +470,7 @@ func set_claim(wild_id:int,claimed:bool,owner:String="")->void:
         apply_record(wild_id,Delta.decode(records.get(Population.record_key(game._area(),wild_id),Delta.encode(null))))
 
 func remove_record(wild_id:int)->void:
-    var world=game.main.world
-    var data:Dictionary=world.wild_pokemon.get(wild_id,{})
-    var movement=data.get("ball_move_tween") as Tween
-    if movement!=null and movement.is_valid():movement.kill()
-    world._remove_wild_pokemon(wild_id)
+    game.main.world._remove_wild_pokemon(wild_id)
 
 func synchronize()->void:
     pending_additions.clear()

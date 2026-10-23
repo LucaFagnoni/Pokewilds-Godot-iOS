@@ -73,6 +73,25 @@ var watched_at := -100000
 var flee_routes := {}
 var flee_started := {}
 
+## Where each Pokemon is drawn, without a sprite. A step is drawn from where
+## the one before left it to the new cell's center over its seconds, exactly
+## as the linear tween that used to move its sprite: it takes its start at the
+## end of the frame it begins in, and every frame's end moves it on by that
+## frame's time (advance(), called by PopulationView after everything else
+## has run, when tweens ran). Sprites only copy this, and what asks "is a
+## Pokemon drawn here" (the Megas, pushing) gets the same answer on a
+## dedicated server, which has no sprites.
+## id -> [from: Vector2, to: Vector2, elapsed: float, seconds: float].
+var motion := {}
+## id -> [the step before (a motion Array, or where it rests), seconds]: a step
+## begun this frame.
+var _starting := {}
+## id -> how much lower a sand trap that has risen is drawn from then on.
+var trap_offsets := {}
+## id -> Vector3i(facing as a DIRECTIONS index, walk phase, changes): the frame
+## its sprite shows.
+var poses := {}
+
 func _init(owner: Node = null) -> void:
     world = owner
 
@@ -122,6 +141,10 @@ func remove(id: int) -> void:
     slot_of.erase(id)
     records.erase(id)
     live -= 1
+    motion.erase(id)
+    _starting.erase(id)
+    trap_offsets.erase(id)
+    poses.erase(id)
     mark(id)
     if not _ticking:
         _maybe_compact()
@@ -132,6 +155,10 @@ func clear() -> void:
     records.clear()
     _clear_slots()
     dirty.clear()
+    motion.clear()
+    _starting.clear()
+    trap_offsets.clear()
+    poses.clear()
 
 ## Puts the Pokemon on `cell` (its record's "cell" too).
 func move(id: int, cell: Vector2i) -> void:
@@ -241,6 +268,98 @@ func ids_near(center: Vector2i, radius: int) -> Array:
     for slot in slots_in([Vector3i(center.x, center.y, radius)]):
         result.append(ids[slot])
     return result
+
+## The ids standing in `cells` (a rectangle of cells), in no order.
+func ids_in_rect(cells: Rect2i) -> Array:
+    sync()
+    var result := []
+    var end := cells.end - Vector2i.ONE
+    for by in range(cells.position.y >> BUCKET_SHIFT, (end.y >> BUCKET_SHIFT) + 1):
+        for bx in range(cells.position.x >> BUCKET_SHIFT, (end.x >> BUCKET_SHIFT) + 1):
+            var bucket = buckets.get(Vector2i(bx, by))
+            if bucket == null:
+                continue
+            for slot: int in bucket:
+                if cells.has_point(Vector2i(cell_x[slot], cell_y[slot])):
+                    result.append(ids[slot])
+    return result
+
+static func cell_center(cell: Vector2i) -> Vector2:
+    return Vector2(cell.x * 16 + 8.0, cell.y * 16 + 8.0)
+
+## Where the Pokemon is drawn when it is not stepping.
+func rest_position(id: int) -> Vector2:
+    var slot: int = slot_of.get(id, -1)
+    if slot < 0:
+        return Vector2.ZERO
+    return cell_center(Vector2i(cell_x[slot], cell_y[slot])) + Vector2(0.0, float(trap_offsets.get(id, 0.0)))
+
+## Where the Pokemon is drawn now.
+func visual_position(id: int) -> Vector2:
+    var step = motion.get(id)
+    if step != null:
+        return _step_at(step)
+    var start = _starting.get(id)
+    if start != null:
+        return _step_at(start[0]) if start[0] is Array else start[0]
+    return rest_position(id)
+
+## Whether a step is being drawn (or begins this frame).
+func stepping(id: int) -> bool:
+    return motion.has(id) or _starting.has(id)
+
+## A step drawn over `seconds` from where the Pokemon is drawn now to the cell
+## it is about to be moved to (call before move()).
+func begin_step(id: int, seconds: float) -> void:
+    if not slot_of.has(id):
+        return
+    var before = motion.get(id)
+    _starting[id] = [(before as Array).duplicate() if before != null else visual_position(id), seconds]
+    motion.erase(id)
+
+## Drawn at rest on its cell at once (a push, a placement, a ball taking it).
+func snap(id: int) -> void:
+    motion.erase(id)
+    _starting.erase(id)
+
+## The frame shown: facing `direction`, walk phase `phase`.
+func pose(id: int, direction: Vector2i, phase: int) -> void:
+    var before: Vector3i = poses.get(id, Vector3i(-1, 0, 0))
+    poses[id] = Vector3i(maxi(0, DIRECTIONS.find(direction)), phase, before.z + 1)
+
+## A sand trap that has risen: drawn this much lower from then on.
+func set_trap_offset(id: int, offset: float) -> void:
+    trap_offsets[id] = offset
+
+## The end of a frame: every step drawn moves on by `delta`.
+func advance(delta: float) -> void:
+    var begun := {}
+    for raw_id in _starting:
+        var slot: int = slot_of.get(raw_id, -1)
+        if slot < 0:
+            continue
+        var start: Array = _starting[raw_id]
+        var from: Vector2
+        if start[0] is Array:
+            # The step before is still drawn: it moves on first, as the older
+            # tween was stepped first, and the new one starts where it is.
+            var before: Array = start[0]
+            before[2] += delta
+            from = _step_at(before)
+        else:
+            from = start[0]
+        motion[raw_id] = [from, cell_center(Vector2i(cell_x[slot], cell_y[slot])), delta, float(start[1])]
+        begun[raw_id] = true
+    _starting.clear()
+    for raw_id in motion.keys():
+        var step: Array = motion[raw_id]
+        if not begun.has(raw_id):
+            step[2] += delta
+        if float(step[2]) >= float(step[3]):
+            motion.erase(raw_id)
+
+static func _step_at(step: Array) -> Vector2:
+    return (step[0] as Vector2).lerp(step[1], float(minf(step[2], step[3]) / float(step[3])))
 
 ## What is saved of the Pokemon (World._serializable_ecology_record), or {}.
 func record_for_save(id: int) -> Dictionary:
@@ -390,7 +509,6 @@ func tick(delta: float, observers: Array, rng: RandomNumberGenerator) -> PackedI
                 active = absi(old_cell.x - player_cell.x) <= ACTIVE_RADIUS and absi(old_cell.y - player_cell.y) <= ACTIVE_RADIUS
             if not active:
                 continue
-        world._wild_frame_visuals(data, old_cell)
         var was_charmed = data.get("charmed")
         var is_charmed := false
         if online:
@@ -412,11 +530,11 @@ func tick(delta: float, observers: Array, rng: RandomNumberGenerator) -> PackedI
             if aggro or data.has("aggro_audio_tick"):
                 world._update_source_aggro_audio(data, old_cell, player_cell, delta)
         if is_charmed and not bool(was_charmed):
-            world._show_ecology_emote(data.get("sprite") as Sprite2D, "heart")
+            world._show_ecology_emote(world._sprite_of(data), "heart")
         if aggro:
             data["source_aggro_emote_seconds"] = float(data.get("source_aggro_emote_seconds", 0.0)) - delta
             if float(data["source_aggro_emote_seconds"]) <= 0.0:
-                world._show_ecology_emote(data.get("sprite") as Sprite2D, "skull")
+                world._show_ecology_emote(world._sprite_of(data), "skull")
                 data["source_aggro_emote_seconds"] = 241.0 / 60.0
         var move_timer := timers[slot] - delta
         timers[slot] = move_timer
@@ -462,7 +580,7 @@ func _act(wild_id: int, slot: int, data: Dictionary, old_cell: Vector2i, player_
     var now: float = world.world_elapsed_seconds
     if now < float(data.get("fed_until", 0.0)):
         data["anim_phase"] = 1 - int(data.get("anim_phase", 0))
-        world._wild_pose(data, Vector2i.DOWN)
+        pose(wild_id, Vector2i.DOWN, int(data["anim_phase"]))
         return true
     if (
             pursuing
@@ -542,9 +660,6 @@ func _act(wild_id: int, slot: int, data: Dictionary, old_cell: Vector2i, player_
         return true
     var phase := 1 - int(data.get("anim_phase", 0))
     data["anim_phase"] = phase
-    move(wild_id, target)
-    if online:
-        coordinator.wild.mark_motion(wild_id)
     # The step's pace and facing are the Pokemon's own, sprite or not (a
     # dedicated server has none).
     var move_seconds := 0.20
@@ -552,8 +667,12 @@ func _act(wild_id: int, slot: int, data: Dictionary, old_cell: Vector2i, player_
         move_seconds = 16.0 / (2.0 * 60.0)
     elif pursuing:
         move_seconds = 16.0 / (1.5 * 60.0)
+    begin_step(wild_id, move_seconds)
+    move(wild_id, target)
+    if online:
+        coordinator.wild.mark_motion(wild_id)
     data["ball_facing"] = Vector2(direction)
-    world._wild_step_visuals(data, direction, phase, target, move_seconds)
+    pose(wild_id, direction, phase)
     if pursuing or fleeing:
         timers[slot] = move_seconds
     if bool(behavior.get("flee", false)):

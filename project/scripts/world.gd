@@ -120,8 +120,6 @@ const SOURCE_STORAGE_BOX := preload(
     "res://assets/source_0_8_11/tiles/chest1.png"
 )
 const TRAPINCH_BURROW := preload("res://assets/ecology/trapinch_ow1.png")
-const DESERT_WHIRLPOOL := preload("res://assets/ecology/whirlpool_desert2.png")
-const DESERT_BURROW_SAND := preload("res://assets/ecology/grass_over_sheet3.png")
 const LANDMARK_BALL := preload("res://assets/landmark_pokeball.png")
 const SOURCE_SIGN := preload("res://assets/world_source/sign1.png")
 const SOURCE_CAVE_DOOR := preload("res://assets/world_source/cave_door.png")
@@ -305,6 +303,17 @@ var wild_population := WildPopulation.new(self)
 ## Its records by id (the same dictionary): add, move and remove them through
 ## wild_population.
 var wild_pokemon: Dictionary = wild_population.records
+const PopulationView = preload("res://scripts/population_view.gd")
+## The wild Pokemon's pooled sprites (the WildPokemonLayer): only those in view.
+var population_view: PopulationView
+
+## The sprite showing a wild Pokemon's, habitat Pokemon's or egg's record now:
+## null when it has none (a wild one out of view, or on a dedicated server).
+func _sprite_of(data: Dictionary) -> Sprite2D:
+    var wild_id := int(data.get("id", -1))
+    if is_same(wild_pokemon.get(wild_id), data):
+        return population_view.sprite_of(wild_id) if is_instance_valid(population_view) else null
+    return data.get("sprite") as Sprite2D
 var wild_eggs: Dictionary = {}
 var next_wild_id := 1
 var next_deployed_id := 1
@@ -675,10 +684,12 @@ func generate_world(
     landmark_layer.z_index = 0
     add_child(landmark_layer)
 
-    var wild_layer := Node2D.new()
+    var wild_layer := PopulationView.new()
     wild_layer.name = "WildPokemonLayer"
     wild_layer.z_index = 0
+    wild_layer.configure(self, wild_population)
     add_child(wild_layer)
+    population_view = wild_layer
 
     var egg_layer := Node2D.new()
     egg_layer.name = "WildEggLayer"
@@ -1055,8 +1066,7 @@ func _spawn_extra_biome_pokemon(_records: Array[Dictionary], spread: bool = fals
                                 occupied[first] = id
                                 occupied[second] = new_id
                                 wild_population.move(id, first)
-                                var sprite := original.get("sprite") as Sprite2D
-                                if is_instance_valid(sprite): sprite.position = _cell_center(first)
+                                wild_population.snap(id)
                                 partner_id = new_id
                                 break
                             if partner_id >= 0: break
@@ -2059,7 +2069,7 @@ func feed_pokemon_in_front(item_name: String) -> bool:
         wild["aggro_player"] = false
         wild["warned"] = false
         wild_pokemon[wild_id] = wild
-        _show_ecology_emote(wild.get("sprite") as Sprite2D, "heart")
+        _show_ecology_emote(_sprite_of(wild), "heart")
         world_message.emit("Wild %s is eating the %s." % [
             PokemonData.battle_display_name(String(wild.get("species", "POKEMON"))), item_name
         ])
@@ -2388,9 +2398,7 @@ func _interact_wild_pokemon(wild_id: int) -> void:
     if active_field_move == "ATTACK":
         _begin_wild_encounter(wild_id, true)
         return
-    var sprite = data.get("sprite") as Sprite2D
-    if is_instance_valid(sprite):
-        _set_overworld_motion_frame(sprite, -_facing_cell(), 0)
+    wild_population.pose(wild_id, -_facing_cell(), 0)
     var kind = PokemonEcology.wild_interaction_kind(String(data.get("species", "")))
     var warned = bool(data.get("warned",false))
     # It stays where it was reached while the player is talking to it.
@@ -2402,7 +2410,7 @@ func _interact_wild_pokemon(wild_id: int) -> void:
         return
     # One still shaken by a failed catch can be befriended, but is not glad of it.
     var frightened = kind == "FRIENDLY" and world_elapsed_seconds < float(data.get("ball_flee_until", 0.0))
-    _show_ecology_emote(sprite, "sad" if frightened else "happy" if kind=="FRIENDLY" else "skull" if kind=="AGGRESSIVE" and not warned else "alert")
+    _show_ecology_emote(_sprite_of(data), "sad" if frightened else "happy" if kind=="FRIENDLY" else "skull" if kind=="AGGRESSIVE" and not warned else "alert")
     await get_tree().create_timer(20.0/60.0).timeout
     get_parent()._play_pokemon_cry({"species":String(data.get("species",""))})
     if kind == "SKITTISH":
@@ -2469,7 +2477,7 @@ func take_friendly_wild(wild_id: int) -> Dictionary:
             result[property] = source_record[property]
     result["species"] = String(data.get("species", "pidgey")).to_lower()
     result["level"] = maxi(1, int(data.get("level", 2)))
-    _show_ecology_emote(data.get("sprite") as Sprite2D, "happy")
+    _show_ecology_emote(_sprite_of(data), "happy")
     _remove_wild_pokemon(wild_id)
     return result
 
@@ -3454,7 +3462,7 @@ func _refresh_ecology_relationships(simulated: Callable = Callable(), with_wild:
                 not mate_id.is_empty()
                 and mate_id != String(data.get("previous_mate_id", ""))
             ):
-            _show_ecology_emote(data.get("sprite") as Sprite2D, "heart")
+            _show_ecology_emote(_sprite_of(data), "heart")
         data.erase("previous_mate_id")
         descriptor["data"] = data
         records[index] = descriptor
@@ -3583,9 +3591,8 @@ func _try_create_parent_egg(
     var egg := PokemonEcology.egg_record(data, partner, rng)
     _add_wild_egg_record(egg, resolved_cell, ignored_wild_id)
     data["lay_egg_seconds"] = PokemonEcology.LAY_EGG_SECONDS
-    _show_ecology_emote(data.get("sprite") as Sprite2D, "heart")
-    var partner_sprite: Sprite2D = partner.get("sprite") as Sprite2D
-    _show_ecology_emote(partner_sprite, "heart")
+    _show_ecology_emote(_sprite_of(data), "heart")
+    _show_ecology_emote(_sprite_of(partner), "heart")
     return data
 
 func _may_release_egg(egg:Dictionary)->bool:
@@ -4237,17 +4244,6 @@ func restore_crafting_save_state(state: Dictionary) -> void:
     gameplay_enabled = prior_gameplay
 
 func _clear_wild_pokemon() -> void:
-    for raw_id in wild_pokemon.keys():
-        var data: Dictionary = wild_pokemon[raw_id]
-        var sprite: Sprite2D = data.get("sprite") as Sprite2D
-        if is_instance_valid(sprite):
-            sprite.queue_free()
-        var whirl_sprite: Sprite2D = data.get("burrow_whirl_sprite") as Sprite2D
-        if is_instance_valid(whirl_sprite):
-            whirl_sprite.queue_free()
-        var sand_sprite: Sprite2D = data.get("burrow_sand_sprite") as Sprite2D
-        if is_instance_valid(sand_sprite):
-            sand_sprite.queue_free()
     wild_population.clear()
     sand_trap_ids.clear()
     sand_trap_clocks.clear()
@@ -4467,63 +4463,10 @@ func _create_wild_pokemon(
     var texture: Texture2D = TRAPINCH_BURROW if is_burrowed else PokemonData.record_texture(ecology_source, "overworld")
     if texture == null:
         return
-    var layer := get_node_or_null("WildPokemonLayer") as Node2D
-    if layer == null:
+    # No world drawn yet, no wild Pokemon. Its sprite (if it comes into view)
+    # is the WildPokemonLayer's (population_view.gd).
+    if get_node_or_null("WildPokemonLayer") == null:
         return
-
-    # A dedicated server draws nothing: its wild Pokemon get no sprites (every
-    # use of one checks is_instance_valid first), so no node, material or
-    # tween per Pokemon or per step either.
-    var drawn := not preload("res://scripts/dedicated_server.gd").active
-    var sprite: Sprite2D = null
-    if drawn:
-        sprite = Sprite2D.new()
-        sprite.texture = texture
-        sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-        sprite.position = _cell_center(cell)
-        if species.to_lower() in ["aexeggutor", "exeggutor_alolan"]:
-            sprite.scale = Vector2.ONE
-            sprite.offset = Vector2(0, -16)
-        sprite.z_as_relative = false
-        sprite.z_index = _depth_z(cell)
-        if is_burrowed:
-            sprite.hframes = 2
-            sprite.vframes = 1
-            sprite.frame = 0
-            sprite.visible = false
-        else:
-            _configure_overworld_sprite(sprite)
-            if species.to_lower() in ["aexeggutor", "exeggutor_alolan"]:
-                sprite.hframes = 6
-                sprite.vframes = 1
-                sprite.frame = 4
-                sprite.set_meta("alolan_exeggutor_walk", true)
-        layer.add_child(sprite)
-        preload("res://scripts/shiny_sparkles.gd").attach(sprite, ecology_source)
-
-    var whirl_sprite: Sprite2D = null
-    var sand_sprite: Sprite2D = null
-    if is_burrowed and drawn:
-        whirl_sprite = Sprite2D.new()
-        whirl_sprite.texture = DESERT_WHIRLPOOL
-        whirl_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-        whirl_sprite.hframes = 2
-        whirl_sprite.position = _cell_center(cell)
-        whirl_sprite.z_as_relative = false
-        whirl_sprite.z_index = _depth_z(cell) - 1
-        whirl_sprite.visible = false
-        layer.add_child(whirl_sprite)
-        sand_sprite = Sprite2D.new()
-        sand_sprite.texture = DESERT_BURROW_SAND
-        sand_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-        sand_sprite.hframes = 2
-        sand_sprite.vframes = 2
-        sand_sprite.frame = 0
-        sand_sprite.position = _cell_center(cell) + Vector2(0, 6)
-        sand_sprite.z_as_relative = false
-        sand_sprite.z_index = _depth_z(cell) + 1
-        sand_sprite.visible = false
-        layer.add_child(sand_sprite)
 
     var wild_id := requested_id if requested_id > 0 else next_wild_id
     next_wild_id = maxi(next_wild_id, wild_id + 1)
@@ -4552,9 +4495,6 @@ func _create_wild_pokemon(
     stored["anim_phase"] = 0
     stored["behavior"] = PokemonData.info(species).get("overworld_behavior", {})
     stored["source_record"] = source_record.duplicate(true)
-    stored["sprite"] = sprite
-    stored["burrow_whirl_sprite"] = whirl_sprite
-    stored["burrow_sand_sprite"] = sand_sprite
     # Source aggression affects how quickly a Pokemon becomes provoked; it is
     # not permission to force a battle on the first click or spawn frame.
     stored["aggro_player"] = bool(stored.get("aggro_player", source_record.get("aggressive", false)))
@@ -4563,7 +4503,6 @@ func _create_wild_pokemon(
     wild_population.add(wild_id, stored)
     _sand_trap_leave(wild_id, stored, false)
     if is_burrowed: _sand_trap_join(wild_id, stored)
-    _update_pokemon_water_visual(stored)
 
 func _wild_move_delay(species: String, data: Dictionary = {}) -> float:
     if bool(data.get("burrowed", false)):
@@ -4876,40 +4815,11 @@ func _update_wild_pokemon(delta: float) -> void:
         observers = [{"x": cell.x, "y": cell.y}]
     wild_population.tick(delta, observers, rng)
 
-## A wild Pokemon in play this frame: shown, drawn at its depth, and
-## floating if it stands in water.
-func _wild_frame_visuals(data: Dictionary, cell: Vector2i) -> void:
-    var sprite = data.get("sprite") as Sprite2D
-    if not is_instance_valid(sprite):
-        return
-    sprite.visible = true
-    # z_index has no same-value check: writing it every frame for
-    # every nearby Pokemon re-sent it to the renderer each time.
-    var depth := _depth_z(cell)
-    if sprite.z_index != depth: sprite.z_index = depth
-    _update_pokemon_water_visual(data)
-
-## A wild Pokemon's look standing (its walk phase, facing `direction`).
-func _wild_pose(data: Dictionary, direction: Vector2i) -> void:
-    var sprite = data.get("sprite") as Sprite2D
-    if is_instance_valid(sprite):
-        _set_overworld_motion_frame(sprite, direction, int(data["anim_phase"]))
-
-## A wild Pokemon's step to `target`, drawn over `move_seconds`.
-func _wild_step_visuals(data: Dictionary, direction: Vector2i, phase: int, target: Vector2i, move_seconds: float) -> void:
-    var sprite = data.get("sprite") as Sprite2D
-    if is_instance_valid(sprite):
-        _set_overworld_motion_frame(sprite, direction, phase)
-        sprite.z_index = _depth_z(target)
-        var movement = create_tween()
-        data["ball_move_tween"] = movement
-        movement.tween_property(sprite, "position", _cell_center(target), move_seconds).set_trans(Tween.TRANS_LINEAR)
-
 func _show_friend_reunion(data: Dictionary, friend_id: String) -> void:
-    _show_ecology_emote(data.get("sprite") as Sprite2D, "happy")
+    _show_ecology_emote(_sprite_of(data), "happy")
     var friend := _ecology_record_by_id(friend_id)
     if not friend.is_empty():
-        _show_ecology_emote(friend.get("sprite") as Sprite2D, "happy")
+        _show_ecology_emote(_sprite_of(friend), "happy")
 
 func _remove_wild_pokemon(wild_id:int)->void:
     var coordinator=get_parent().get("coop_game")
@@ -4924,15 +4834,6 @@ func _remove_wild_pokemon(wild_id:int)->void:
         var tile := exact_world.tile_at(Vector2i(data.get("cell", Vector2i.ZERO)))
         if tile != null:
             tile.items.erase("trapinch")
-    var sprite: Sprite2D = data.get("sprite") as Sprite2D
-    if is_instance_valid(sprite):
-        sprite.queue_free()
-    var whirl_sprite: Sprite2D = data.get("burrow_whirl_sprite") as Sprite2D
-    if is_instance_valid(whirl_sprite):
-        whirl_sprite.queue_free()
-    var sand_sprite: Sprite2D = data.get("burrow_sand_sprite") as Sprite2D
-    if is_instance_valid(sand_sprite):
-        sand_sprite.queue_free()
     wild_population.remove(wild_id)
 
 func _cardinal_direction(delta: Vector2i, away: bool) -> Vector2i:
@@ -5097,7 +4998,7 @@ func _collect_wild_egg(cell:Vector2i)->void:
         pokemon["aggro_player"] = true
         pokemon["warned"] = true
         wild_pokemon[wild_id] = pokemon
-        _show_ecology_emote(pokemon.get("sprite") as Sprite2D, "alert")
+        _show_ecology_emote(_sprite_of(pokemon), "alert")
         anger_count += 1
     egg_collected.emit(species)
 
@@ -5239,29 +5140,13 @@ func _update_sand_trap(wild_id: int, data: Dictionary, player_cell: Vector2i, fl
             if tick >= 63 and on_trap and not encounter_grace_active():
                 _begin_wild_encounter(wild_id)
                 return false
+        # Risen this far out of the sand, it is drawn this much lower from
+        # now on (population_view.gd draws the rest of the trap).
         var tick := int(data.get("burrow_tick", 0))
         var height := clampi((tick - 50) * 4, 0, 12)
         if tick >= 141:
             height = maxi(0, 12 - (tick - 140))
-        var sprite := data.get("sprite") as Sprite2D
-        var whirl := data.get("burrow_whirl_sprite") as Sprite2D
-        var sand := data.get("burrow_sand_sprite") as Sprite2D
-        if is_instance_valid(sprite):
-            sprite.visible = height > 0
-            sprite.hframes = 1
-            sprite.region_enabled = true
-            var frame := 0 if tick < 52 else 1
-            if tick >= 120:
-                frame = 0 if tick % 8 < 4 else 1
-            sprite.region_rect = Rect2(frame * 16, 0, 16, height)
-            sprite.position = _cell_center(cell) + Vector2(0, 2.0 - float(height) / 2.0)
-        if is_instance_valid(whirl):
-            whirl.visible = tick > 0
-            whirl.frame = 0 if int(data.get("burrow_whirl_tick", 0)) < 40 else 1
-        if is_instance_valid(sand):
-            sand.visible = tick >= 50 and tick < 66
-            sand.frame = 0 if tick < 58 else 1
-            sand.position = _cell_center(cell) + Vector2(0, -6)
+        wild_population.set_trap_offset(wild_id, 2.0 - float(height) / 2.0)
     return true
 
 func _level_for_cell(cell: Vector2i) -> int:
@@ -7310,12 +7195,17 @@ func _try_push_fenced_pokemon(cell: Vector2i, direction: Vector2i, require_fence
     var data: Dictionary = deployed_pokemon.get(cell, {}) if owned else wild_pokemon.get(wild_id, {})
     if data.is_empty() or bool(data.get("burrowed", false)) or bool(data.get("behavior", {}).get("stationary", false)): return false
     var target := cell + direction
-    # The logical destination is reserved before a walking tween finishes.
-    # Check the visible position as well, so pushing cannot overlap its origin.
-    for resident in deployed_pokemon.values() + wild_pokemon.values():
+    # The logical destination is reserved before a walking step is drawn to it.
+    # Check where Pokemon are drawn as well, so pushing cannot overlap one (a
+    # wild one drawn near the target stands within two cells of it).
+    var target_center := _cell_center(target)
+    for resident in deployed_pokemon.values():
         var other := resident.get("sprite") as Sprite2D
-        if resident == data or not is_instance_valid(other) or not other.visible: continue
-        if other.position.distance_to(_cell_center(target)) < TILE - 0.01: return false
+        if is_same(resident, data) or not is_instance_valid(other) or not other.visible: continue
+        if other.position.distance_to(target_center) < TILE - 0.01: return false
+    for near_id in wild_population.ids_near(target, 2):
+        if is_same(wild_pokemon[near_id], data) or not population_view.is_drawn(near_id): continue
+        if wild_population.visual_position(near_id).distance_to(target_center) < TILE - 0.01: return false
     if active_area_id != "HOUSE" and blocked.has(target): return false
     if active_area_id == "HOUSE" and not _house_pokemon_cell_allowed(target): return false
     if active_area_id == "OVERWORLD" and exact_world != null:
@@ -7328,7 +7218,8 @@ func _try_push_fenced_pokemon(cell: Vector2i, direction: Vector2i, require_fence
     if target == _player_cell(): return false
     if active_area_id == "OVERWORLD" and not _pokemon_can_move_between(String(data.get("species", "")), cell, target): return false
     var sprite := data.get("sprite") as Sprite2D
-    if not is_instance_valid(sprite) or sprite.position.distance_to(_cell_center(cell)) > 1.5: return false
+    if owned and (not is_instance_valid(sprite) or sprite.position.distance_to(_cell_center(cell)) > 1.5): return false
+    if not owned and wild_population.visual_position(wild_id).distance_to(_cell_center(cell)) > 1.5: return false
     data["cell"] = target
     if not owned: wild_population.move(wild_id, target)
     data["x"] = target.x
@@ -7336,11 +7227,14 @@ func _try_push_fenced_pokemon(cell: Vector2i, direction: Vector2i, require_fence
     if owned: data["move_timer"] = 1.0
     else: wild_population.set_timer(wild_id, 1.0)
     data["anim_phase"] = 1 - int(data.get("anim_phase", 0))
-    _set_overworld_motion_frame(sprite, Vector2(direction), int(data.anim_phase))
-    sprite.position = _cell_center(target)
-    sprite.z_index = _depth_z(target)
     if owned:
+        _set_overworld_motion_frame(sprite, Vector2(direction), int(data.anim_phase))
+        sprite.position = _cell_center(target)
+        sprite.z_index = _depth_z(target)
         habitat_population.move(cell, target)
+    else:
+        wild_population.snap(wild_id)
+        wild_population.pose(wild_id, direction, int(data.anim_phase))
     last_pokemon_push_msec = preload("res://scripts/game_clock.gd").ticks_msec()
     return true
 
@@ -7519,12 +7413,11 @@ func nearby_wild_ids() -> Array:
         _near_wild_ids = wild_population.ids_near(_player_cell(), 44)
     return _near_wild_ids
 ## per-frame
+## The habitat Pokemon's and the follower's standing shuffle (the wild ones'
+## is population_view.gd's).
 func _update_overworld_idle_sprites(delta: float) -> void:
     var sprites: Array[Sprite2D] = []
-    var animated: Array = deployed_pokemon.values()
-    for near_id in nearby_wild_ids():
-        if wild_pokemon.has(near_id): animated.append(wild_pokemon[near_id])
-    for data in animated:
+    for data in deployed_pokemon.values():
         if bool(data.get("burrowed", false)) or bool(data.get("is_egg", false)):
             continue
         var sprite := data.get("sprite") as Sprite2D

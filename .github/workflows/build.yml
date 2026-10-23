@@ -876,8 +876,8 @@ jobs:
             --expect=d60bd575a137bc966c7eb37c8c5fbd67e7dba8c36692c4e71ab634739865e312 2>&1 | tee pop.log
           grep -q "d60bd575a137bc966c7eb37c8c5fbd67e7dba8c36692c4e71ab634739865e312" pop.log
           "$GODOT" --headless --fixed-fps 60 --path project -s "$PWD/server/population_sim_hash.gd" -- \
-            --no-sprites --expect=c92cd0f5959daca73e922958153064c40b5bbdb2783ec55263e9f2f48402d648 2>&1 | tee pop_server.log
-          grep -q "c92cd0f5959daca73e922958153064c40b5bbdb2783ec55263e9f2f48402d648" pop_server.log
+            --no-sprites --expect=d60bd575a137bc966c7eb37c8c5fbd67e7dba8c36692c4e71ab634739865e312 2>&1 | tee pop_server.log
+          grep -q "d60bd575a137bc966c7eb37c8c5fbd67e7dba8c36692c4e71ab634739865e312" pop_server.log
 
   publish:
     needs: [draft, smoke, ios_xtool, server, android, worldgen, tests]

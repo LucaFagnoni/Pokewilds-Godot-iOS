@@ -14,11 +14,13 @@
 #      (headless needs project/override.cfg: [physics] 2d/physics_engine="Dummy")
 # --no-sprites runs it (after the start) as the dedicated server does: no sprites
 # for wild Pokemon.
-# Reference hashes (recorded with the dictionary population, before WildPopulation):
-#   seed 12345 d60bd575a137bc966c7eb37c8c5fbd67e7dba8c36692c4e71ab634739865e312,
-#     --no-sprites c92cd0f5959daca73e922958153064c40b5bbdb2783ec55263e9f2f48402d648
-#   seed 987654321 1d502635a5fa724800d8537edc8e92ea9d8d0f0fd4606af5406221e03d2a73a7,
-#     --no-sprites fcfcec6d106e9025191f3a4d82430c947e39ed0452e8eef02d072ed4fe66aae6
+# Reference hashes (recorded with the dictionary population, before WildPopulation,
+# and unchanged by it):
+#   seed 12345 d60bd575a137bc966c7eb37c8c5fbd67e7dba8c36692c4e71ab634739865e312
+#   seed 987654321 1d502635a5fa724800d8537edc8e92ea9d8d0f0fd4606af5406221e03d2a73a7
+# --no-sprites gave c92cd0f5... (12345) and fcfcec6d... (987654321) while what
+# the Megas and pushing see came from the sprites (a server had none); since
+# PopulationView it comes from WildPopulation and equals the drawn run's hash.
 extends SceneTree
 
 const Paths = preload("res://scripts/game_data_paths.gd")

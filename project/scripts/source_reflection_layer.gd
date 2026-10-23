@@ -68,13 +68,11 @@ func _reflected_sprites() -> Array[Sprite2D]:
     _append_sprite(sprites, tracked_player)
     _append_sprite(sprites, world.get("follower_sprite"))
     _append_sprite(sprites, world.get("field_helper_sprite"))
-    # Only Pokemon near the player can be reflected on screen; asking every
-    # one in the world each frame cost about 2 ms.
-    var wild := world.get("wild_pokemon") as Dictionary
-    for near_id in world.nearby_wild_ids():
-        var record = wild.get(near_id)
-        if record is Dictionary:
-            _append_sprite(sprites, (record as Dictionary).get("sprite"))
+    # The wild Pokemon's sprites are only those in view (population_view.gd).
+    var view = world.get("population_view")
+    if is_instance_valid(view):
+        for sprite in view.sprites():
+            _append_sprite(sprites, sprite)
     for record in (world.get("deployed_pokemon") as Dictionary).values():
         if record is Dictionary:
             _append_sprite(sprites, (record as Dictionary).get("sprite"))

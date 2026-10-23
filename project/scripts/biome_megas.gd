@@ -40,9 +40,9 @@ static func available(world: Node, cell: Vector2i, group: String, occupied: Dict
     if world._wild_id_at_cell(cell) >= 0: return false
     # A Pokemon still walking from a cell next to this one is drawn on it: the
     # ones within two cells, not every one in the world.
+    var center: Vector2 = world._cell_center(cell)
     for id in world.wild_population.ids_near(cell, 2):
-        var sprite := (world.wild_pokemon[id] as Dictionary).get("sprite") as Sprite2D
-        if is_instance_valid(sprite) and sprite.position.distance_to(world._cell_center(cell)) < 15.0: return false
+        if world.wild_population.visual_position(id).distance_to(center) < 15.0: return false
     return true
 
 ## What `group` needs of the cell's own tile.
@@ -127,12 +127,10 @@ static func _open(world: Node, store: WorldTileStore, cell: Vector2i, swimmer: b
 ## One of `cells` at random that no Pokemon, the player or `reserved` takes.
 static func _pick(world: Node, cells: Array, reserved: Dictionary) -> Variant:
     var occupied: Dictionary = {world._player_cell(): true}
-    for record in world.wild_pokemon.values():
-        occupied[record.get("cell", Vector2i.ZERO)] = true
-        var sprite := record.get("sprite") as Sprite2D
-        if is_instance_valid(sprite):
-            var current := Vector2i(floori(sprite.position.x / 16.0), floori(sprite.position.y / 16.0))
-            occupied[current] = true
+    for id in world.wild_pokemon:
+        occupied[world.wild_pokemon[id].get("cell", Vector2i.ZERO)] = true
+        var drawn: Vector2 = world.wild_population.visual_position(id)
+        occupied[Vector2i(floori(drawn.x / 16.0), floori(drawn.y / 16.0))] = true
     occupied.merge(reserved)
     # Reservoir sampling avoids allocating another whole-world tile array.
     var choice: Variant = null
