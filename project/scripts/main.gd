@@ -23,10 +23,10 @@ var edge_sky: Node2D
 signal progression_confirmed
 signal progression_choice_made(value: int)
 
-const SETUP_SAVE_PATH := "user://m3_setup.cfg"
 const DataPaths = preload("res://scripts/game_data_paths.gd")
 const WorldSaves = preload("res://scripts/world_saves.gd")
 var saves := WorldSaves.new("user://saves")
+var setup_screen := preload("res://scripts/setup_screen.gd").new(self)
 var appearance := preload("res://scripts/player_appearance.gd").new(self)
 ## The screens open over the field (screen_stack.gd); the *_open flags are views of it.
 var screens := preload("res://scripts/screen_stack.gd").new()
@@ -444,7 +444,6 @@ var evolution_cancel_requested := false
 var evolution_greyscale_material: ShaderMaterial
 var player_color_index := 0
 var player_model_index := 0
-var custom_player_name := ""
 var current_species := ""
 var current_level := 1
 var caught_species = []
@@ -705,7 +704,6 @@ const MENU_ROW_SIZE := 2
 const MENU_ROW_WORLD_NAME := 3
 const MENU_ROW_PLAYER_NAME := 4
 const MENU_ROW_COLOR := 5
-const MENU_ROW_GO := 6
 
 const WORLD_SIZE_NAMES := ["S", "M", "L", "XL", "XXL"]
 const BUILD_COST_READY_COLOR := Color(0.0, 0.0, 0.0, 1.0)
@@ -740,7 +738,7 @@ func _ready() -> void:
     GameOptions.apply_audio()
     shared_save_folder.start_exports.call_deferred(self)
     _setup_options.call_deferred()
-    _setup_generation_clouds()
+    setup_screen.setup_generation_clouds()
     _build_source_ui()
     minimap.build_dig_minimap_ui()
     world.visible = false
@@ -781,9 +779,9 @@ func _ready() -> void:
     battle_animation_manifest_thread.start(_load_battle_animation_manifest)
 
     world_edit.text = "PokeWilds"
-    _load_setup()
+    setup_screen.load_setup()
     saves.start_cache_cleanup()
-    _update_classic_menu_labels()
+    setup_screen.update_classic_menu_labels()
 
     # WORLD NAME uses the source-style 24-character entry buffer. Keep the
     # LineEdit itself out of keyboard/controller focus so its native caret
@@ -804,14 +802,14 @@ func _ready() -> void:
     $UI/SetupPanel/ModelUp.pressed.connect(appearance.next_model)
     $UI/SetupPanel/ModelDown.pressed.connect(appearance.previous_model)
 
-    world_edit.gui_input.connect(_display_field_gui_input.bind("world"))
+    world_edit.gui_input.connect(setup_screen.display_field_gui_input.bind("world"))
     world_edit.max_length = 24
     player_model_name.mouse_filter = Control.MOUSE_FILTER_STOP
-    player_model_name.gui_input.connect(_display_field_gui_input.bind("player"))
+    player_model_name.gui_input.connect(setup_screen.display_field_gui_input.bind("player"))
     player_model_name.size.x = 210
-    _fit_player_name()
+    setup_screen.fit_player_name()
 
-    world.generation_progress.connect(_on_generation_progress)
+    world.generation_progress.connect(setup_screen.on_generation_progress)
     world.encounter_requested.connect(_on_encounter_requested)
     if world.has_signal("battle_requested"):
         world.connect("battle_requested", Callable(self, "_on_battle_requested"))
@@ -922,12 +920,12 @@ func _ready() -> void:
     back_label.mouse_filter=Control.MOUSE_FILTER_STOP
     back_label.gui_input.connect(func(event):
         if event is InputEventMouseButton and event.pressed and event.button_index==MOUSE_BUTTON_LEFT and not started and not generating:
-            menu_row=MENU_ROW_LOCAL;menu_col=0;_update_menu_cursor();coop_game.cancel_join();coop_menu.open())
-    _setup_menu_navigation()
+            menu_row=MENU_ROW_LOCAL;menu_col=0;setup_screen.update_menu_cursor();coop_game.cancel_join();coop_menu.open())
+    setup_screen.setup_menu_navigation()
     _create_egg_pickup_ui()
     _create_wild_pokemon_prompt_ui()
-    _update_classic_menu_labels()
-    _update_menu_cursor()
+    setup_screen.update_classic_menu_labels()
+    setup_screen.update_menu_cursor()
     $UI.set_script(preload("res://scripts/proportional_ui_layout.gd"))
     $UI._ready()
     touch_ui = preload("res://scripts/touch_ui.gd").new()
@@ -2531,7 +2529,7 @@ func _input(event: InputEvent) -> void:
 
 
     if touch_config.visible:
-        _handle_swipe_menu(event)
+        setup_screen.handle_swipe_menu(event)
         if not event is InputEventMouse and not event is InputEventScreenTouch and not event is InputEventScreenDrag:
             get_viewport().set_input_as_handled()
         return
@@ -2584,17 +2582,17 @@ func _input(event: InputEvent) -> void:
             if text_key.keycode == KEY_BACKSPACE:
                 if not text_entry_buffer.is_empty():
                     text_entry_buffer = text_entry_buffer.left(text_entry_buffer.length() - 1)
-                    _refresh_text_entry_display()
+                    setup_screen.refresh_text_entry_display()
                 get_viewport().set_input_as_handled()
                 return
             if text_key.unicode >= 32 and text_key.unicode != 127:
                 if text_entry_buffer.length() < 24:
                     text_entry_buffer += String.chr(text_key.unicode)
-                    _refresh_text_entry_display()
+                    setup_screen.refresh_text_entry_display()
                 get_viewport().set_input_as_handled()
                 return
     if setup_load_open:
-        _handle_setup_load_input(event)
+        setup_screen.handle_setup_load_input(event)
         return
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -2637,7 +2635,7 @@ func _unhandled_input(event: InputEvent) -> void:
         return
 
     if setup_load_open:
-        _handle_setup_load_input(event)
+        setup_screen.handle_setup_load_input(event)
         return
 
     if pokemon_stats_open:
@@ -2813,40 +2811,40 @@ func _unhandled_input(event: InputEvent) -> void:
     # through the menu in the same input press.
     if text_entry_target != "":
         if event.is_action_pressed("move_up"):
-            _finish_text_entry(true)
-            _move_menu_vertical(-1)
+            setup_screen.finish_text_entry(true)
+            setup_screen.move_menu_vertical(-1)
             menu_nav_cooldown = MENU_NAV_DELAY
             get_viewport().set_input_as_handled()
             return
 
         if event.is_action_pressed("move_down"):
-            _finish_text_entry(true)
-            _move_menu_vertical(1)
+            setup_screen.finish_text_entry(true)
+            setup_screen.move_menu_vertical(1)
             menu_nav_cooldown = MENU_NAV_DELAY
             get_viewport().set_input_as_handled()
             return
 
         if event.is_action_pressed("move_left"):
-            _finish_text_entry(true)
-            _menu_left_right(-1)
+            setup_screen.finish_text_entry(true)
+            setup_screen.menu_left_right(-1)
             menu_nav_cooldown = MENU_NAV_DELAY
             get_viewport().set_input_as_handled()
             return
 
         if event.is_action_pressed("move_right"):
-            _finish_text_entry(true)
-            _menu_left_right(1)
+            setup_screen.finish_text_entry(true)
+            setup_screen.menu_left_right(1)
             menu_nav_cooldown = MENU_NAV_DELAY
             get_viewport().set_input_as_handled()
             return
 
         if event.is_action_pressed("confirm") or event.is_action_pressed("start"):
-            _finish_text_entry(true)
+            setup_screen.finish_text_entry(true)
             get_viewport().set_input_as_handled()
             return
 
         if event.is_action_pressed("cancel"):
-            _finish_text_entry(true)
+            setup_screen.finish_text_entry(true)
             get_viewport().set_input_as_handled()
             return
 
@@ -2857,14 +2855,14 @@ func _unhandled_input(event: InputEvent) -> void:
                 if key.keycode == KEY_BACKSPACE:
                     if text_entry_buffer.length() > 0:
                         text_entry_buffer = text_entry_buffer.left(text_entry_buffer.length() - 1)
-                        _refresh_text_entry_display()
+                        setup_screen.refresh_text_entry_display()
                     get_viewport().set_input_as_handled()
                     return
 
                 if key.unicode >= 32 and key.unicode != 127:
                     if text_entry_buffer.length() < 24:
                         text_entry_buffer += String.chr(key.unicode)
-                        _refresh_text_entry_display()
+                        setup_screen.refresh_text_entry_display()
                     get_viewport().set_input_as_handled()
                     return
 
@@ -2876,7 +2874,7 @@ func _unhandled_input(event: InputEvent) -> void:
             if menu_row == MENU_ROW_COLOR and menu_col > 0:
                 appearance.change_player_selector(1)
             else:
-                _move_menu_vertical(-1)
+                setup_screen.move_menu_vertical(-1)
             menu_nav_cooldown = MENU_NAV_DELAY
         get_viewport().set_input_as_handled()
         return
@@ -2886,27 +2884,27 @@ func _unhandled_input(event: InputEvent) -> void:
             if menu_row == MENU_ROW_COLOR and menu_col > 0:
                 appearance.change_player_selector(-1)
             else:
-                _move_menu_vertical(1)
+                setup_screen.move_menu_vertical(1)
             menu_nav_cooldown = MENU_NAV_DELAY
         get_viewport().set_input_as_handled()
         return
 
     if event.is_action_pressed("move_left"):
         if menu_nav_cooldown <= 0.0:
-            _menu_left_right(-1)
+            setup_screen.menu_left_right(-1)
             menu_nav_cooldown = MENU_NAV_DELAY
         get_viewport().set_input_as_handled()
         return
 
     if event.is_action_pressed("move_right"):
         if menu_nav_cooldown <= 0.0:
-            _menu_left_right(1)
+            setup_screen.menu_left_right(1)
             menu_nav_cooldown = MENU_NAV_DELAY
         get_viewport().set_input_as_handled()
         return
 
     if event.is_action_pressed("confirm"):
-        _activate_menu_item()
+        setup_screen.activate_menu_item()
         get_viewport().set_input_as_handled()
         return
 
@@ -2916,7 +2914,7 @@ func _unhandled_input(event: InputEvent) -> void:
         # color/model selection.
         if menu_row == MENU_ROW_COLOR and menu_col > 0:
             menu_col = 0
-            _update_menu_cursor()
+            setup_screen.update_menu_cursor()
             get_viewport().set_input_as_handled()
         elif not started and not generating:
             # Back to the SOLO / CO-OP choice.
@@ -3013,285 +3011,18 @@ func _is_android_touch_runtime() -> bool:
         and bool(touch_controls.get("android_runtime"))
     )
 
-func _setup_menu_navigation() -> void:
-    menu_row = MENU_ROW_LOCAL
-    menu_col = 0
-    _update_classic_menu_labels()
-    _update_menu_cursor()
-
-## Joining someone else's world: the world is theirs, so only the player's look
-## is offered. The world rows are hidden and skipped, not just locked.
-var join_layout := false
-const JOIN_HIDDEN_ROWS := [MENU_ROW_MODE, MENU_ROW_SIZE, MENU_ROW_WORLD_NAME, MENU_ROW_PLAYER_NAME]
-const JOIN_HIDDEN_NODES := ["ModeSelectionTick", "ModeLabel", "WorldSizeLabel", "WorldLabel", "WorldEdit", "NameLabel"]
-## The PLAYER row is 168 px wide from x=14; this centres it on the 320 px screen.
-const JOIN_ROW_SHIFT := 62.0
-const JOIN_ROW_NODES := ["AppearanceLabel", "ColorUp", "ColorDown", "PlayerColorSwatch", "ModelUp", "ModelDown", "PlayerPreview"]
-
-var join_info: Label
-var join_note: Label
-
-func _set_join_layout(joining: bool) -> void:
-    join_layout = joining
-    for node_name in JOIN_HIDDEN_NODES:
-        (setup_panel.get_node(node_name) as CanvasItem).visible = not joining
-    # Where the world rows were: which world this is, then the chosen player's
-    # name, then the PLAYER row, all centred.
-    if join_info == null:
-        join_info = _source_ui_label(setup_panel, "JoinInfo", Vector2(8, 38), Vector2(304, 40), 12, "")
-        join_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    if join_note == null:
-        join_note = _source_ui_label(setup_panel, "JoinNote", Vector2(8, 21), Vector2(304, 12), 8,
-            "PRIVATE STORAGE FOLLOWS YOU INTO ANY WORLD")
-        join_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    join_note.visible = joining
-    join_info.visible = joining
-    if joining:
-        var lobby: Dictionary = coop_game.join_lobby
-        join_info.text = "JOINING\n%s" % String(lobby.get("name", "WORLD")).to_upper().left(24)
-    for node_name in JOIN_ROW_NODES:
-        var piece = setup_panel.get_node(node_name) # Controls and one Sprite2D
-        if not piece.has_meta("solo_x"):
-            piece.set_meta("solo_x", piece.position.x)
-        piece.position.x = float(piece.get_meta("solo_x")) + (JOIN_ROW_SHIFT if joining else 0.0)
-    if not player_model_name.has_meta("solo_rect"):
-        player_model_name.set_meta("solo_rect", Rect2(player_model_name.position, player_model_name.size))
-        player_model_name.set_meta("solo_align", player_model_name.horizontal_alignment)
-    var name_home: Rect2 = player_model_name.get_meta("solo_rect")
-    if joining:
-        player_model_name.position = Vector2(8, 84)
-        player_model_name.size = Vector2(304, name_home.size.y)
-        player_model_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-        player_model_name.scale.x = 1.0
-    else:
-        player_model_name.position = name_home.position
-        player_model_name.size = name_home.size
-        player_model_name.horizontal_alignment = player_model_name.get_meta("solo_align")
-        _fit_player_name()
-    if joining and menu_row in JOIN_HIDDEN_ROWS:
-        menu_row = MENU_ROW_COLOR
-        menu_col = 0
-    _update_menu_cursor()
-
-func _move_menu_vertical(direction: int) -> void:
-    menu_row = wrapi(menu_row + direction, MENU_ROW_LOCAL, MENU_ROW_GO + 1)
-    while join_layout and menu_row in JOIN_HIDDEN_ROWS:
-        menu_row = wrapi(menu_row + direction, MENU_ROW_LOCAL, MENU_ROW_GO + 1)
-
-    # Clamp/restore the horizontal choice for each row.
-    if menu_row == MENU_ROW_MODE:
-        menu_col = 0 if selected_mode == "NEW" else 1
-    elif menu_row == MENU_ROW_SIZE:
-        menu_col = selected_world_size
-    elif menu_row == MENU_ROW_COLOR:
-        # Enter the row itself first. Right/Confirm enters its selectors;
-        # Left/Cancel returns here, after which Up/Down can leave the row.
-        menu_col = 0
-    else:
-        menu_col = 0
-
-    _update_menu_cursor()
-    _update_persistent_selection_ticks()
-
-func _menu_left_right(direction: int) -> void:
-    if not coop_game.join_setup_code.is_empty() and menu_row in [MENU_ROW_SIZE,MENU_ROW_MODE]:return
-    if menu_row == MENU_ROW_LOCAL:
-        return
-    if menu_row == MENU_ROW_MODE:
-        menu_col = wrapi(menu_col + direction, 0, 2)
-        selected_mode = "NEW" if menu_col == 0 else "LOAD"
-        _update_classic_menu_labels()
-        _update_menu_cursor()
-        return
-
-    if menu_row == MENU_ROW_SIZE:
-        menu_col = wrapi(menu_col + direction, 0, WORLD_SIZE_NAMES.size())
-        selected_world_size = menu_col
-        _update_classic_menu_labels()
-        _update_menu_cursor()
-        return
-
-    if menu_row == MENU_ROW_COLOR:
-        menu_col = clampi(menu_col + direction, 0, 2)
-        _update_menu_cursor()
-        return
-
-    if menu_row == MENU_ROW_WORLD_NAME:
-        _begin_text_entry("world")
-    elif menu_row == MENU_ROW_PLAYER_NAME:
-        _begin_text_entry("player")
-
-func _activate_menu_item() -> void:
-    match menu_row:
-        MENU_ROW_LOCAL:
-            coop_game.cancel_join();coop_menu.open()
-        MENU_ROW_MODE:
-            if selected_mode == "LOAD":
-                menu_status.text = "LOAD READY" if not saves.find(world_edit.text.strip_edges()).is_empty() else "NO SAVE FILE"
-            else:
-                menu_status.text = "NEW WORLD"
-        MENU_ROW_SIZE:
-            menu_status.text = "WORLD SIZE: %s" % WORLD_SIZE_NAMES[selected_world_size]
-        MENU_ROW_WORLD_NAME:
-            _begin_text_entry("world")
-        MENU_ROW_PLAYER_NAME:
-            _begin_text_entry("player")
-        MENU_ROW_COLOR:
-            if menu_col == 0:
-                menu_col = 1
-            elif menu_col == 1:
-                appearance.next_color()
-            elif menu_col == 2:
-                appearance.next_model()
-        MENU_ROW_GO:
-            _start_game()
-
-    _update_menu_cursor()
-
-func _update_classic_menu_labels() -> void:
-    var mode_label := $UI/SetupPanel/ModeLabel as Label
-    var size_label := $UI/SetupPanel/WorldSizeLabel as Label
-
-    mode_label.text = "NEW        LOAD"
-    size_label.text = "WORLD   S   M   L   XL   XXL"
-
-    _update_persistent_selection_ticks()
-
-func _update_persistent_selection_ticks() -> void:
-    var mode_tick := $UI/SetupPanel/ModeSelectionTick as Label
-    var mode_label := $UI/SetupPanel/ModeLabel as Label
-
-    # Use the same native-pixel alignment on navigation and confirmation.
-    var mode_font := mode_label.get_theme_font_size("font_size")
-    var load_x := mode_label.position.x + JOHTO_FONT.get_string_size(
-        "NEW        ", HORIZONTAL_ALIGNMENT_LEFT, -1, mode_font).x - 10.0
-    mode_tick.visible = menu_row == MENU_ROW_MODE
-    mode_tick.position.x = 0.0 if selected_mode == "NEW" else roundf(load_x)
-    _align_menu_tick(mode_tick, mode_label)
+## setup_screen.gd under its old names, for the scripts and tests that call them on main.
+func _set_join_layout(joining: bool) -> void: setup_screen.set_join_layout(joining)
+func _update_classic_menu_labels() -> void: setup_screen.update_classic_menu_labels()
+func _update_menu_cursor() -> void: setup_screen.update_menu_cursor()
+func _open_setup_load_selector() -> void: setup_screen.open_setup_load_selector()
+func _refresh_setup_load_selector() -> void: setup_screen.refresh_setup_load_selector()
+func _begin_text_entry(target: String) -> void: setup_screen.begin_text_entry(target)
+func _finish_text_entry(accept: bool) -> void: setup_screen.finish_text_entry(accept)
+func _paste_text_entry() -> void: setup_screen.paste_text_entry()
+func _copy_text_entry() -> void: setup_screen.copy_text_entry()
 
 
-func _update_menu_cursor() -> void:
-    var cursor := $UI/SetupPanel/MenuCursor as Label
-    var selecting_color := menu_row == MENU_ROW_COLOR and menu_col == 1
-    var selecting_model := menu_row == MENU_ROW_COLOR and menu_col == 2
-    $UI/SetupPanel/ColorUp.visible = selecting_color
-    $UI/SetupPanel/ColorDown.visible = selecting_color
-    $UI/SetupPanel/ModelUp.visible = selecting_model
-    $UI/SetupPanel/ModelDown.visible = selecting_model
-    # On the PLAYER row, the active arrow pair replaces the normal cursor.
-    # This prevents an extra triangle appearing between the selectors.
-    cursor.visible = menu_row not in [MENU_ROW_GO, MENU_ROW_MODE] and not (
-        menu_row == MENU_ROW_COLOR and menu_col > 0
-    )
-    if setup_go_cursor != null:
-        setup_go_cursor.visible = menu_row == MENU_ROW_GO
-        var font_size := start_button.get_theme_font_size("font_size")
-        var font_height := JOHTO_FONT.get_height(font_size)
-        var text_width := JOHTO_FONT.get_string_size(start_button.text,
-            HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
-        var text_top := start_button.position.y + (start_button.size.y - font_height) / 2.0
-        # Align the arrow with the visible GO! glyphs, not the font line box.
-        setup_go_cursor.position = Vector2(
-            roundf(start_button.position.x + (start_button.size.x - text_width) / 2.0 -
-                setup_go_cursor.size.x - 2.0),
-            roundf(text_top))
-
-    var pos := Vector2(2, 2)
-
-    match menu_row:
-        MENU_ROW_LOCAL:
-            # Leave the LOCAL text untouched; add one small source-pixel gap.
-            pos = Vector2(roundf(online_label.position.x-10.0),3) if menu_col==1 and is_instance_valid(online_label) else Vector2(0,3)
-        MENU_ROW_MODE:
-            var mode_label := $UI/SetupPanel/ModeLabel as Label
-            var mode_font := mode_label.get_theme_font_size("font_size")
-            var load_x := mode_label.position.x + JOHTO_FONT.get_string_size(
-                "NEW        ", HORIZONTAL_ALIGNMENT_LEFT, -1, mode_font).x - 10.0
-            pos = Vector2(0, 28) if menu_col == 0 else Vector2(roundf(load_x), 26)
-        MENU_ROW_SIZE:
-            var size_label := $UI/SetupPanel/WorldSizeLabel as Label
-            var size_font := size_label.get_theme_font_size("font_size")
-            # _update_classic_menu_labels() supplies three-space separators at
-            # runtime.  Measure those exact prefixes so M/XL/XXL never overlap
-            # their selection triangle.
-            var prefixes := [
-                "WORLD   ",
-                "WORLD   S   ",
-                "WORLD   S   M   ",
-                "WORLD   S   M   L   ",
-                "WORLD   S   M   L   XL   "
-            ]
-            var option_x := size_label.position.x + JOHTO_FONT.get_string_size(
-                prefixes[menu_col], HORIZONTAL_ALIGNMENT_LEFT, -1, size_font).x
-            pos = Vector2(roundf(option_x - 10.0), 47)
-        MENU_ROW_WORLD_NAME:
-            pos = Vector2(2, 70)
-        MENU_ROW_PLAYER_NAME:
-            pos = Vector2(2, 95)
-        MENU_ROW_COLOR:
-            pos = Vector2(2.0 + (JOIN_ROW_SHIFT if join_layout else 0.0), 118)
-        MENU_ROW_GO:
-            pos = Vector2(2, 144)
-
-    cursor.position = pos
-    var labels := ["LocalLabel", "ModeLabel", "WorldSizeLabel", "WorldLabel", "NameLabel", "AppearanceLabel"]
-    if menu_row >= 0 and menu_row < labels.size():
-        _align_menu_tick(cursor, online_label if menu_row==MENU_ROW_LOCAL and menu_col==1 and is_instance_valid(online_label) else setup_panel.get_node(labels[menu_row]))
-    _update_persistent_selection_ticks()
-
-func _open_setup_load_selector() -> void:
-    setup_load_entries = saves.entries()
-    if setup_load_entries.is_empty():
-        menu_status.text = "NO SAVE FILE"
-        return
-    setup_load_index = 0
-    setup_load_open = true
-    setup_panel.visible = false
-    setup_load_panel.visible = true
-    _refresh_setup_load_selector()
-
-func _refresh_setup_load_selector() -> void:
-    if setup_load_entries.is_empty():
-        setup_load_name.text = "NO SAVE"
-        return
-    setup_load_index = wrapi(setup_load_index, 0, setup_load_entries.size())
-    var data := setup_load_entries[setup_load_index].data as Dictionary
-    var world_name := String(data.get("world_name", "default")).strip_edges()
-    if world_name.is_empty():
-        world_name = "default"
-    setup_load_name.text = "%s.sav" % world_name
-    setup_load_name.tooltip_text = setup_load_name.text
-    # The autosave follows its world's save in the list (see WorldSaves.entries).
-    var entry := setup_load_entries[setup_load_index]
-    var saved := Time.get_datetime_string_from_unix_time(WorldSaves.saved_time(String(entry.path))).replace("T", "  ").left(17)
-    (setup_load_name.get_parent().get_node("SaveInfo") as Label).text = \
-        ("AUTOSAVE   " + saved) if entry.get("autosave", false) else saved
-
-func _handle_setup_load_input(event: InputEvent) -> void:
-    if event.is_action_pressed("move_left") or event.is_action_pressed("move_up"):
-        setup_load_index = wrapi(setup_load_index - 1, 0, setup_load_entries.size())
-        _refresh_setup_load_selector()
-    elif event.is_action_pressed("move_right") or event.is_action_pressed("move_down"):
-        setup_load_index = wrapi(setup_load_index + 1, 0, setup_load_entries.size())
-        _refresh_setup_load_selector()
-    elif event.is_action_pressed("confirm") or event.is_action_pressed("start"):
-        var entry := setup_load_entries[setup_load_index]
-        var data := entry.data as Dictionary
-        setup_load_path = String(entry.path)
-        world_edit.text = String(data.get("world_name", world_edit.text))
-        selected_world_size = clampi(int(data.get("world_size", selected_world_size)),
-            0, WORLD_SIZE_NAMES.size() - 1)
-        setup_load_open = false
-        setup_load_panel.visible = false
-        setup_load_committed = true
-        _start_game()
-    elif event.is_action_pressed("cancel"):
-        setup_load_open = false
-        setup_load_panel.visible = false
-        setup_panel.visible = true
-    else:
-        return
-    get_viewport().set_input_as_handled()
 
 func _start_game() -> void:
     if started or generating:
@@ -3309,13 +3040,13 @@ func _start_game() -> void:
         return
 
     if selected_mode == "LOAD" and not setup_load_committed and not coop_game.active:
-        _open_setup_load_selector()
+        setup_screen.open_setup_load_selector()
         return
 
     generating = true
     setup_load_committed = false
-    _save_setup()
-    _hide_virtual_keyboard()
+    setup_screen.save_setup()
+    setup_screen.hide_virtual_keyboard()
 
     setup_panel.visible = false
     generation_panel.visible = true
@@ -3434,48 +3165,6 @@ func _start_game() -> void:
     dialogs.show_message("Welcome, %s!" % player_model_name.text.strip_edges() if overflow_recovery_notice.is_empty() else overflow_recovery_notice)
     overflow_recovery_notice = ""
 
-func _save_setup() -> void:
-    var cfg := ConfigFile.new()
-    cfg.set_value("setup", "player_name", player_model_name.text.strip_edges())
-    cfg.set_value("setup", "player_name_custom", not custom_player_name.is_empty())
-    cfg.set_value("setup", "world_name", world_edit.text.strip_edges())
-    cfg.set_value("setup", "player_color", player_color_index)
-    cfg.set_value("setup", "player_model", player_model_index)
-    cfg.set_value("setup", "mode", selected_mode)
-    cfg.set_value("setup", "world_size", selected_world_size)
-    cfg.save(SETUP_SAVE_PATH)
-
-func _load_setup() -> void:
-    var cfg := ConfigFile.new()
-    if cfg.load(SETUP_SAVE_PATH) == OK:
-        world_edit.text = str(cfg.get_value("setup", "world_name", "PokeWilds"))
-        player_color_index = clampi(int(cfg.get_value("setup", "player_color", 0)), 0, PLAYER_TEXTURES.size() - 1)
-        player_model_index = clampi(
-            int(cfg.get_value("setup", "player_model", 0)),
-            0,
-            appearance.player_model_count() - 1
-        )
-        custom_player_name = str(cfg.get_value("setup","player_name","")).strip_edges().left(24) if bool(cfg.get_value("setup","player_name_custom",false)) else ""
-        selected_mode = str(cfg.get_value("setup", "mode", "NEW"))
-        selected_world_size = clampi(int(cfg.get_value("setup", "world_size", 1)), 0, WORLD_SIZE_NAMES.size() - 1)
-
-    var newest := saves.find_newest()
-    if not newest.is_empty():
-        world_edit.text = String(newest.data.get("world_name", world_edit.text))
-
-    _update_classic_menu_labels()
-
-func _on_generation_progress(value: float, message: String) -> void:
-    if edge_travel_busy:
-        return # Travel presentation is independent of the NEW/LOAD setup choice.
-    var _unused_progress := value
-    var _unused_message := message
-    generation_status.text = (
-        "LOADING...\nPLEASE WAIT..."
-        if selected_mode == "LOAD"
-        else "Generating...\nPlease wait..."
-    )
-
 func _make_starter_machop() -> Dictionary:
     return BattleEngine.make_pokemon("machop", 5, battle_rng, {
         "original_trainer": player_model_name.text.strip_edges(),
@@ -3503,96 +3192,6 @@ func _previous_model() -> void: appearance.previous_model()
 func _next_model() -> void: appearance.next_model()
 func _player_sitting_texture(frame: int = 0) -> Texture2D: return appearance.player_sitting_texture(frame)
 func _recolor_texture(base: Texture2D, source_color: Color, target_color: Color, cache_key: String) -> Texture2D: return appearance.recolor_texture(base, source_color, target_color, cache_key)
-
-func _display_field_gui_input(event: InputEvent, target: String) -> void:
-    # On touch the touch setup screen's own name fields take the taps: this
-    # classic field stays under it (only transparent), and tapping SOLO opened
-    # the setup under the finger, whose touch then landed here (iPhone keyboard).
-    if is_instance_valid(touch_ui) and touch_ui.enabled: return
-    # Touching/clicking the field opens Android keyboard WITHOUT focusing LineEdit.
-    if event is InputEventScreenTouch:
-        var touch := event as InputEventScreenTouch
-        if touch.pressed:
-            _begin_text_entry(target)
-            get_viewport().set_input_as_handled()
-    elif event is InputEventMouseButton:
-        var mouse := event as InputEventMouseButton
-        if mouse.pressed:
-            _begin_text_entry(target)
-            get_viewport().set_input_as_handled()
-
-func _begin_text_entry(target: String) -> void:
-    if target=="world" and not coop_game.join_setup_code.is_empty():return
-    if target not in ["world", "player"]:
-        return
-    text_entry_target = target
-    text_entry_buffer = world_edit.text if target == "world" else player_model_name.text
-    menu_row = MENU_ROW_WORLD_NAME if target == "world" else MENU_ROW_PLAYER_NAME
-
-    _refresh_text_entry_display()
-    _show_virtual_keyboard_custom()
-
-func _finish_text_entry(accept: bool) -> void:
-    if text_entry_target == "":
-        return
-
-    if text_entry_target == "player":
-        if accept:
-            var entered := text_entry_buffer.strip_edges().left(24)
-            custom_player_name = "" if entered.to_upper() == PLAYER_MODEL_NAMES[player_model_index].to_upper() else entered
-        player_model_name.text = custom_player_name if not custom_player_name.is_empty() else PLAYER_MODEL_NAMES[player_model_index].to_upper()
-        _fit_player_name()
-    elif accept:
-        world_edit.text = text_entry_buffer
-
-    text_entry_target = ""
-    text_entry_buffer = ""
-    _hide_virtual_keyboard()
-    menu_nav_cooldown = MENU_NAV_DELAY
-    _update_menu_cursor()
-
-func _fit_player_name() -> void:
-    if join_layout:
-        player_model_name.scale.x = 1.0
-        return
-    var width := player_model_name.get_theme_font("font").get_string_size(player_model_name.text,HORIZONTAL_ALIGNMENT_LEFT,-1,player_model_name.get_theme_font_size("font_size")).x
-    player_model_name.scale.x = minf(1.0,210.0/maxf(1.0,width))
-
-func _refresh_text_entry_display() -> void:
-    if text_entry_target == "world":
-        world_edit.text = text_entry_buffer
-    elif text_entry_target == "player":
-        player_model_name.text = text_entry_buffer
-        _fit_player_name()
-
-## COPY / PASTE while typing a name (the touch setup screen's buttons): the
-## names are not system text fields, so iOS offers no paste of its own.
-func _paste_text_entry() -> void:
-    if text_entry_target == "": return
-    var clip := DisplayServer.clipboard_get().replace("\n", " ").strip_edges()
-    text_entry_buffer = (text_entry_buffer + clip).left(24)
-    _refresh_text_entry_display()
-    _show_virtual_keyboard_custom()  # the phone keyboard keeps its own copy of the text
-
-func _copy_text_entry() -> void:
-    if text_entry_target != "": DisplayServer.clipboard_set(text_entry_buffer)
-
-func _show_virtual_keyboard_custom() -> void:
-    if not OS.has_feature("mobile"):
-        return
-
-    DisplayServer.virtual_keyboard_show(
-        text_entry_buffer,
-        Rect2i(),
-        DisplayServer.KEYBOARD_TYPE_DEFAULT,
-        24,
-        text_entry_buffer.length(),
-        text_entry_buffer.length()
-    )
-
-func _hide_virtual_keyboard() -> void:
-    if OS.has_feature("mobile"):
-        DisplayServer.virtual_keyboard_hide()
 
 func _current_battle_terrain() -> String:
     var player_node := world.get_node_or_null("Player") as Node2D
@@ -7122,7 +6721,7 @@ func _apply_touch_config_theme() -> void:
     scroll_bar.add_theme_stylebox_override("scroll",rail)
     for state in ["grabber","grabber_highlight","grabber_pressed"]:scroll_bar.add_theme_stylebox_override(state,thumb)
     _layout_touch_config()
-    _prepare_swipe_cursor()
+    setup_screen.prepare_swipe_cursor()
 
 var touch_config_scroll: ScrollContainer
 
@@ -7219,7 +6818,7 @@ func _open_touch_config(from_options: bool = false) -> void:
         move_wheel.close_field_move_wheel(false)
     touch_config.visible = true
     swipe_stick_held = false
-    _position_swipe_cursor.call_deferred()
+    setup_screen.position_swipe_cursor.call_deferred()
     touch_controls.set_game_active(false)
     show_touch.button_pressed = touch_controls.touch_enabled
     auto_hide.button_pressed = touch_controls.auto_hide_controller
@@ -7255,28 +6854,6 @@ func _close_touch_config() -> void:
     )
     world.set_gameplay_enabled(gameplay_should_resume)
     touch_controls.set_game_active(true)
-
-func _setup_generation_clouds() -> void:
-    var background := $UI/GenerationPanel/Background as TextureRect
-    background.texture = preload("res://assets/environment/cloud5.png")
-    background.stretch_mode = TextureRect.STRETCH_SCALE
-    var shader := Shader.new()
-    shader.code = """
-shader_type canvas_item;
-render_mode unshaded;
-void fragment() {
-    // Game.render: four one-pixel steps per 65 source ticks.
-    // Rotate the loading artwork 180 degrees and scroll right-to-left.
-    float tick = floor(TIME * 60.0);
-    float offset = floor(tick / 65.0) * 4.0 + floor(mod(tick, 65.0) / 16.0);
-    vec2 pixel = floor(UV * vec2(320.0, 180.0));
-    COLOR = texture(TEXTURE, (vec2(191.0) - mod(pixel + vec2(offset, 0.0), vec2(192.0)) + 0.5) / 192.0);
-}
-"""
-    var material_value := ShaderMaterial.new()
-    material_value.shader = shader
-    background.material = material_value
-
 
 var mod_menu_panel: Control
 
@@ -7587,57 +7164,5 @@ func _warm_world_shaders() -> void:
     RenderingServer.frame_pre_draw.disconnect(on_pre)
     RenderingServer.frame_post_draw.disconnect(on_post)
 
-var swipe_rows: Array[Control] = []
-var swipe_selection := 0
 var swipe_stick_held := false
-var swipe_cursor: TextureRect
 
-func _prepare_swipe_cursor() -> void:
-    if is_instance_valid(swipe_cursor): return
-    var contents := touch_config.find_child("VBox",true,false)
-    for child in contents.get_children():
-        if child is BaseButton or child is Slider:
-            swipe_rows.append(child)
-            var index := swipe_rows.size()-1
-            child.mouse_entered.connect(func(): _select_swipe_row(index))
-    swipe_cursor = TextureRect.new()
-    swipe_cursor.texture = source_command_cursor.texture
-    swipe_cursor.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-    swipe_cursor.size = Vector2(5,7)
-    swipe_cursor.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    swipe_cursor.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-    touch_config.add_child(swipe_cursor)
-    touch_config_scroll.get_v_scroll_bar().value_changed.connect(func(_value): _position_swipe_cursor())
-    _select_swipe_row(0)
-
-func _select_swipe_row(index: int) -> void:
-    swipe_selection = wrapi(index,0,swipe_rows.size())
-    touch_config_scroll.ensure_control_visible(swipe_rows[swipe_selection])
-    _position_swipe_cursor.call_deferred()
-
-func _position_swipe_cursor() -> void:
-    if not is_instance_valid(swipe_cursor): return
-    var row := swipe_rows[swipe_selection]
-    if row == touch_opacity_slider:row=touch_opacity_label
-    elif row == touch_size_slider:row=touch_size_label
-    swipe_cursor.global_position.x = roundf(row.global_position.x+2)
-    _align_control_tick(swipe_cursor,row)
-    swipe_cursor.visible = touch_config_scroll.get_global_rect().encloses(swipe_cursor.get_global_rect())
-
-func _handle_swipe_menu(event: InputEvent) -> void:
-    if event.is_echo(): return
-    if event.is_action_pressed("cancel") or event.is_action_pressed("start"):
-        _close_touch_config();return
-    var direction := 0
-    var change := 0
-    if event.is_action_pressed("move_down"): direction=1
-    elif event.is_action_pressed("move_up"): direction=-1
-    elif event.is_action_pressed("move_right"): change=1
-    elif event.is_action_pressed("move_left"): change=-1
-    if direction!=0: _select_swipe_row(swipe_selection+direction);return
-    var row := swipe_rows[swipe_selection]
-    if row is Slider:
-        if change!=0: row.value += change*5
-    elif event.is_action_pressed("confirm") or change!=0:
-        if row is CheckButton:row.button_pressed=not row.button_pressed
-        elif event.is_action_pressed("confirm"):row.pressed.emit()

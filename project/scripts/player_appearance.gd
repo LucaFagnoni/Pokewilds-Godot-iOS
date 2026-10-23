@@ -60,8 +60,8 @@ func apply_player_appearance() -> void:
     main.player_model_index = clampi(
         main.player_model_index, 0, player_model_count() - 1
     )
-    main.player_model_name.text = main.custom_player_name if not main.custom_player_name.is_empty() else PlayerLooks.PLAYER_MODEL_NAMES[main.player_model_index].to_upper()
-    main._fit_player_name()
+    main.player_model_name.text = main.setup_screen.custom_player_name if not main.setup_screen.custom_player_name.is_empty() else PlayerLooks.PLAYER_MODEL_NAMES[main.player_model_index].to_upper()
+    main.setup_screen.fit_player_name()
     main.player_preview.texture = player_appearance_texture(false)
     main.player_preview.hframes = 8
     main.player_preview.frame = 0

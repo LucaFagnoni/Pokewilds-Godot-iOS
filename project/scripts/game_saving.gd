@@ -28,7 +28,7 @@ func capture_game_save(version: int = 2, personal_only: bool = false) -> Diction
         "world_size": int(main.world.get("map_size_index")),
         "world_name": world_name,
         "player_name": main.player_model_name.text,
-        "player_name_custom": not main.custom_player_name.is_empty(),
+        "player_name_custom": not main.setup_screen.custom_player_name.is_empty(),
         "player_color": main.player_color_index,
         "player_model": main.player_model_index,
         "player_x": player.position.x,
@@ -133,7 +133,7 @@ func _finish_single_player_save(data: Dictionary, save_path: String, error: Erro
     _write_shared_storage()
     main.saves.write_index(String(data.world_name), save_path)
     main.world_edit.text = String(data.world_name)
-    main._save_setup()
+    main.setup_screen.save_setup()
     return OK
 
 ## iOS may end a suspended app without warning: autosave when it goes to the
@@ -195,7 +195,7 @@ func restore_game_save(data) -> void:
     )
     var saved_player_name := String(data.get("player_name", "")).strip_edges().left(24)
     var was_custom := bool(data.get("player_name_custom", not saved_player_name.is_empty() and saved_player_name.to_upper() != main.PLAYER_MODEL_NAMES[main.player_model_index].to_upper()))
-    main.custom_player_name = saved_player_name if was_custom else ""
+    main.setup_screen.custom_player_name = saved_player_name if was_custom else ""
     main.appearance.apply_player_appearance()
     main.appearance.apply_world_player_textures()
     main.egg_step_timer = clampi(
