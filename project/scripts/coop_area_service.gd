@@ -47,7 +47,7 @@ func publish(actor:String,area:String,epoch:int,bytes:PackedByteArray)->Dictiona
     var previous:Dictionary=state.records.get("area/"+area,{})
     if previous.get("seed")!=decoded.seed or previous.get("size")!=decoded["size"]:return {"ok":false,"reason":"wrong_area"}
     var metadata={"seed":decoded.seed,"size":decoded["size"],"snapshot":saved.snapshot,"sha256":saved.sha256}
-    if register_objects.is_valid() and not register_objects.call(area,decoded.shared):return {"ok":false,"reason":"registry_save_failed"}
+    if register_objects.is_valid() and not await register_objects.call(area,decoded.shared):return {"ok":false,"reason":"registry_save_failed"}
     # Its metadata from now on has no "population_pending": its Pokemon are in.
     spawners.erase(area)
     return state.transact(actor,"publish/"+preload("res://scripts/coop_random.gd").hex(16),[state.change("area/"+area,metadata)])
@@ -134,7 +134,7 @@ func generated(actor:String,area:String,token:String,metadata:Dictionary,bytes:P
     if not result.get("ok",false):_fail(actor,result.get("reason","save_failed"));return result
     if register_objects.is_valid():
         var decoded=preload("res://scripts/coop_world_snapshot.gd").decode(bytes)
-        if decoded.is_empty() or not register_objects.call(area,decoded.shared):return {"ok":false,"reason":"registry_save_failed"}
+        if decoded.is_empty() or not await register_objects.call(area,decoded.shared):return {"ok":false,"reason":"registry_save_failed"}
     await _deliver(actor,area,result.metadata,bytes)
     var queued:Array=_waiters.get(area,[])
     _waiters.erase(area)

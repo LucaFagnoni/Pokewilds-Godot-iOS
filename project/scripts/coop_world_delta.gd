@@ -268,15 +268,22 @@ func records(area:String)->Dictionary:
         if String(key).begins_with(prefix):result[String(key).trim_prefix(prefix)]=state.records[key]
     return result
 
-func seed(actor:String,area:String,shared:Dictionary)->bool:
+## A new area's records, written in batches; `breathe` (awaited after each
+## batch and group) lets the host's frame go on between them.
+func seed(actor:String,area:String,shared:Dictionary,breathe:Callable=Callable())->bool:
     if not preload("res://scripts/coop_areas.gd").valid_area(area):return false
     if state.records.get("world_ready/"+area,false):return true
-    var flat=flatten(shared);var batch:Array=[]
-    for key in flat:
-        batch.append(state.change("world/"+area+"/"+key,flat[key]))
-        if batch.size()==MAX_PATCHES:
-            if not state.transact(actor,"worldseed/"+preload("res://scripts/coop_random.gd").hex(16),batch).get("ok",false):return false
-            batch=[]
+    var batch:Array=[]
+    for group in CELLS+["wild_pokemon"]+SETS+MAPS+SCALARS:
+        if not shared.has(group):continue
+        var flat=flatten({group:shared[group]})
+        for key in flat:
+            batch.append(state.change("world/"+area+"/"+key,flat[key]))
+            if batch.size()==MAX_PATCHES:
+                if not state.transact(actor,"worldseed/"+preload("res://scripts/coop_random.gd").hex(16),batch).get("ok",false):return false
+                batch=[]
+                if breathe.is_valid():await breathe.call()
+        if breathe.is_valid():await breathe.call()
     batch.append(state.change("world_ready/"+area,true))
     return bool(state.transact(actor,"worldseed/"+preload("res://scripts/coop_random.gd").hex(16),batch).get("ok",false))
 

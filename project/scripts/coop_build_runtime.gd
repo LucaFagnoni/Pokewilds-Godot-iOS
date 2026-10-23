@@ -48,10 +48,13 @@ func model():
     value.can_publish=game.service.areas.can_publish
     return value
 
+## An area's records from its snapshot, a few milliseconds a frame: a whole
+## new area written in one frame stalled a server for 30 to 55 ms.
 func seed(area:String,shared:Dictionary)->bool:
+    _slice_started=Time.get_ticks_usec()
     var delta=model()
-    if not game.state.records.get("world_ready/"+area,false):return delta.seed(game.session.actor,area,shared)
-    if game.state.records.get("area/"+area,{}).get("population_pending",false) and not seed_population(area,shared):return false
+    if not game.state.records.get("world_ready/"+area,false):return await delta.seed(game.session.actor,area,shared,_breathe)
+    if game.state.records.get("area/"+area,{}).get("population_pending",false) and not await seed_population(area,shared):return false
     # Full snapshots can spend time in flight. Only reconcile entries which
     # still match the sender's baseline; never overwrite a newer accepted build.
     if not shared.get("_coop_build_base") is Dictionary:return true
@@ -74,7 +77,16 @@ func seed(area:String,shared:Dictionary)->bool:
         var result=game.state.transact(game.session.actor,"buildsync/"+game._id(),prepared.changes)
         if not result.get("ok",false):return false
         game._committed(result)
+        await _breathe()
     return true
+
+const SLICE_USEC:=4000
+var _slice_started:=0
+## The frame goes on once this one has had SLICE_USEC of seeding.
+func _breathe()->void:
+    if Time.get_ticks_usec()-_slice_started<SLICE_USEC:return
+    await get_tree().process_frame
+    _slice_started=Time.get_ticks_usec()
 
 ## The Pokemon of an area made without them (server_area_maker.gd), as the
 ## player who placed them sent the area back: written into its records, once,
@@ -92,6 +104,7 @@ func seed_population(area:String,shared:Dictionary)->bool:
             var made=game.state.transact(game.session.actor,"population/"+game._id(),batch)
             if not made.get("ok",false):return false
             game._committed(made);batch=[]
+            await _breathe()
     if batch.is_empty():return true
     var result=game.state.transact(game.session.actor,"population/"+game._id(),batch)
     if result.get("ok",false):game._committed(result)

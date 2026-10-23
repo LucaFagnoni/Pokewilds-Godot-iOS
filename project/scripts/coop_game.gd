@@ -1331,7 +1331,7 @@ func publish_current(own_population:bool=false)->bool:
     var metadata={"seed":seed_value,"size":size_index,"snapshot":saved.snapshot,"sha256":saved.sha256}
     var result=state.transact(session.actor,"snapshot/"+preload("res://scripts/coop_random.gd").hex(16),[state.change("area/"+_area(),metadata)])
     _publishing=false
-    var registered:bool=bool(result.get("ok",false)) and storage.register_objects(_area(),parts.shared)
+    var registered:bool=bool(result.get("ok",false)) and await storage.register_objects(_area(),parts.shared)
     return registered
 
 ## Runs `work` on a worker thread and waits for it a frame at a time.

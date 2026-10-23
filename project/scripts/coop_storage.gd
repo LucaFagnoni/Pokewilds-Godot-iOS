@@ -87,7 +87,7 @@ func broadcast_profile_storage(result:Dictionary)->void:
 func configure(coordinator:Node)->void:game=coordinator
 
 func register_objects(area:String,shared:Dictionary)->bool:
-    if is_instance_valid(game.building) and not game.building.seed(area,shared):return false
+    if is_instance_valid(game.building) and not await game.building.seed(area,shared):return false
     # Registration follows the accepted journal, including edits committed while
     # this full-area snapshot was travelling from another player. Only the
     # structures are read below, so only they are overlaid: packing and
