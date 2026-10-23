@@ -1773,6 +1773,7 @@ func _refresh_dig_farms(changed_cell: Vector2i) -> void:
         var data: Dictionary = world.deployed_pokemon[farm_cell]
         world.deployed_pokemon[farm_cell] = world._refresh_record_habitat(
             data, farm_cell, ecology_name_cache)
+        world.habitat_population.mark(farm_cell)
     # Habitat data is stored back into deployed_pokemon above; no party-ecology
     # signal is emitted because that signal carries a specific Pokemon record.
 

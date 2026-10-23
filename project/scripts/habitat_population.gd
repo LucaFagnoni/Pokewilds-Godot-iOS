@@ -6,6 +6,10 @@ extends RefCounted
 ## tick() is their frame: each walks about its habitat when its timer runs out,
 ## pairs and lays eggs, drawing on the RNG in the order of the records
 ## dictionary, as the world's loop did.
+##
+## The eggs lying in the world are another (World.egg_population, group
+## "wild_eggs"): records by cell, the cells changed for co-op, and the save,
+## without a tick.
 
 const PokemonEcology = preload("res://scripts/pokemon_ecology.gd")
 const RADIUS := PokemonEcology.HABITAT_RADIUS
@@ -15,16 +19,22 @@ const DIRECTIONS := [Vector2i.ZERO, Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, 
 ## and move records through here.
 var records: Dictionary = {}
 ## Changed since take_dirty(): cell -> true (a record placed, taken, moved or
-## marked there).
+## marked there). Kept once someone takes them (co-op), so a game alone never
+## collects them.
 var dirty: Dictionary = {}
+var tracking := false
 ## cell -> how many records stand within RADIUS of it.
 var _cover: Dictionary = {}
 ## How many records _cover was counted for.
 var _covered := 0
 var world: Node
+## Which of the save's lists these records are: "deployed_pokemon" (the
+## habitat Pokemon) or "wild_eggs".
+var group: String
 
-func _init(owner: Node = null) -> void:
+func _init(owner: Node = null, kind := "deployed_pokemon") -> void:
     world = owner
+    group = kind
 
 func size() -> int:
     return records.size()
@@ -37,7 +47,7 @@ func place(cell: Vector2i, record: Dictionary) -> void:
         _cover_add(cell, 1)
         _covered += 1
     records[cell] = record
-    dirty[cell] = true
+    mark(cell)
 
 ## Takes the record off `cell` ({} if none).
 func take(cell: Vector2i) -> Dictionary:
@@ -48,7 +58,7 @@ func take(cell: Vector2i) -> Dictionary:
     records.erase(cell)
     _cover_add(cell, -1)
     _covered -= 1
-    dirty[cell] = true
+    mark(cell)
     return record
 
 ## The record on `from` steps to `to` (it goes last in the order, as an erase
@@ -66,13 +76,42 @@ func clear() -> void:
 
 ## Something about the record on `cell` others should be told changed.
 func mark(cell: Vector2i) -> void:
-    dirty[cell] = true
+    if tracking:
+        dirty[cell] = true
 
-## The cells changed since the last call.
+## The cells changed since the last call. The first call starts the tracking.
 func take_dirty() -> Array:
+    tracking = true
     var result := dirty.keys()
     dirty.clear()
     return result
+
+## What a save holds of the record on `cell` (with its x and y), or {}.
+func record_for_save(cell: Vector2i) -> Dictionary:
+    if not records.has(cell):
+        return {}
+    if group == "wild_eggs":
+        return world._serializable_egg_record(records[cell], cell)
+    return world._serializable_ecology_record(records[cell], cell)
+
+## Every record as a save holds it: an Array of dictionaries, in order.
+func to_save() -> Array:
+    var result := []
+    for raw_cell in records:
+        result.append(record_for_save(raw_cell))
+    return result
+
+## The saved records back in the world (the same entries to_save() gave).
+func from_save(saved: Array) -> void:
+    for raw in saved:
+        if typeof(raw) != TYPE_DICTIONARY:
+            continue
+        var entry: Dictionary = raw
+        var cell := Vector2i(int(entry.get("x", -1)), int(entry.get("y", -1)))
+        if group == "wild_eggs":
+            world._add_wild_egg(String(entry.get("species", "pidgey")), cell, entry)
+        else:
+            world._restore_deployed_pokemon(entry, cell)
 
 ## A record stands within RADIUS (a square) of `cell`.
 func near(cell: Vector2i) -> bool:
@@ -126,6 +165,7 @@ func tick(delta: float, rng: RandomNumberGenerator) -> void:
         if not String(data.get("held_item", "")).is_empty():
             data["anim_phase"] = 1 - int(data.get("anim_phase", 0))
             world._habitat_pose(data, Vector2i.DOWN)
+            mark(old_cell)
             continue
         var direction: Vector2i = DIRECTIONS[rng.randi_range(0, DIRECTIONS.size() - 1)]
         var friend_id := String(data.get("friend_id", ""))

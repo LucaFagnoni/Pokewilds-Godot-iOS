@@ -9,7 +9,9 @@
 # game saves it (wild Pokemon, habitat Pokemon, eggs, Megas) with the cells,
 # the RNG state and the counters, and one hash per phase, so a rewrite of the
 # population can be checked for "no change in behaviour": run it before and
-# after, the hashes must match.
+# after, the hashes must match. After the hash it checks the populations' API
+# for co-op (dirty ids, encode_motion, to_save/from_save) and prints
+# "POPULATION SIM API OK" (exit 1 and a FAIL line when one does not hold).
 # Run: godot --headless --fixed-fps 60 --path project -s ../server/population_sim_hash.gd [-- --seed=N --expect=HASH --no-sprites --trace]
 #      (headless needs project/override.cfg: [physics] 2d/physics_engine="Dummy")
 # --no-sprites runs it (after the start) as the dedicated server does: no sprites
@@ -405,4 +407,91 @@ func _initialize() -> void:
         printerr("POPULATION SIM FAIL: expected ", expect)
         quit(1)
         return
+    var failure: String = await _check_api()
+    if not failure.is_empty():
+        printerr("POPULATION SIM FAIL: ", failure)
+        quit(1)
+        return
+    print("POPULATION SIM API OK")
     quit(0)
+
+## What co-op is told of a habitat Pokemon or egg, but its running timers.
+func _without_timers(population, cell: Vector2i) -> String:
+    var saved: Dictionary = population.record_for_save(cell)
+    for field in ["move_timer", "lay_egg_seconds", "friend_seconds", "harvest_progress"]: saved.erase(field)
+    return JSON.stringify(saved, "", true, true)
+
+## The populations' API for co-op beside their frame, checked after the hash
+## (it changes the world): every wild Pokemon that moved, came or went, and
+## every habitat Pokemon or egg that changed other than its timers, is among
+## the dirty ids; encode_motion() gives back the wild ones' cells; to_save()
+## and from_save() round-trip. "" when all hold.
+func _check_api() -> String:
+    var wild = world.get("wild_population")
+    var others: Array = [world.get("habitat_population"), world.get("egg_population")]
+    await _teleport(_densest())
+    var cells := {}
+    for raw_id in wild.records: cells[raw_id] = wild.records[raw_id].cell
+    var serials: Array = []
+    for population in others:
+        population.take_dirty()
+        var serial := {}
+        for raw_cell in population.records: serial[raw_cell] = _without_timers(population, raw_cell)
+        serials.append(serial)
+    wild.take_dirty()
+    for step in [["move_left", 180], ["move_up", 180]]:
+        await _walk(step[0], step[1])
+    var dirty: PackedInt64Array = wild.take_dirty()
+    var marked := {}
+    for id in dirty: marked[id] = true
+    var changed := 0
+    for raw_id in cells:
+        if not wild.has(raw_id) or wild.records[raw_id].cell != cells[raw_id]:
+            changed += 1
+            if not marked.has(raw_id): return "wild %d moved or went but is not dirty" % raw_id
+    for raw_id in wild.records:
+        if not cells.has(raw_id) and not marked.has(raw_id): return "wild %d came but is not dirty" % raw_id
+    if changed == 0: return "no wild Pokemon moved in 360 frames (gameplay %s, processing %s, area %s, player %s, %d wild within 24, time %.1f)" % [
+        world.get("gameplay_enabled"), world.is_processing(), world.get("active_area_id"), world.call("_player_cell"),
+        wild.ids_near(world.call("_player_cell"), 24).size(), float(world.get("world_elapsed_seconds"))]
+    for index in others.size():
+        var population = others[index]
+        var touched := {}
+        for cell in population.take_dirty(): touched[cell] = true
+        var before: Dictionary = serials[index]
+        var now := {}
+        for raw_cell in population.records: now[raw_cell] = _without_timers(population, raw_cell)
+        for raw_cell in before.keys() + now.keys():
+            if before.get(raw_cell) != now.get(raw_cell) and not touched.has(raw_cell):
+                return "%s on %s changed but is not dirty" % [population.group, raw_cell]
+    var probe := dirty.duplicate()
+    probe.append((1 << 40) + 7)
+    var decoded: Array = wild.decode_motion(wild.encode_motion(probe))
+    if decoded.size() != probe.size(): return "decode_motion gave %d of %d" % [decoded.size(), probe.size()]
+    for index in probe.size():
+        var entry: Dictionary = decoded[index]
+        var id := probe[index]
+        if int(entry.id) != id: return "decode_motion id %d for %d" % [int(entry.id), id]
+        if not wild.has(id):
+            if not int(entry.flags) & 8: return "wild %d gone but not flagged removed" % id
+        elif Vector2i(int(entry.x), int(entry.y)) != wild.records[id].cell:
+            return "wild %d encoded at %d,%d but is at %s" % [id, int(entry.x), int(entry.y), wild.records[id].cell]
+    for population in [wild] + others:
+        var saved: Array = JSON.parse_string(JSON.stringify(population.to_save()))
+        # Sprites are left behind: the run ends here.
+        if population == wild: world.call("_clear_wild_pokemon")
+        else: population.clear()
+        population.from_save(saved.duplicate(true))
+        var again: Array = JSON.parse_string(JSON.stringify(population.to_save()))
+        # A load starts the walk phase and the burrow's clocks again
+        # (World._create_wild_pokemon).
+        for record in saved + again:
+            for field in ["anim_phase", "burrow_active", "burrow_tick", "burrow_time", "burrow_whirl_tick"]:
+                if record is Dictionary: record.erase(field)
+        for index in maxi(saved.size(), again.size()):
+            var before := JSON.stringify(saved[index] if index < saved.size() else null, "", true)
+            var after := JSON.stringify(again[index] if index < again.size() else null, "", true)
+            if before != after:
+                return "%s: to_save() after from_save() differs at %d of %d (%d now):\n%s\n%s" % [
+                    "wild" if population == wild else population.group, index, saved.size(), again.size(), before, after]
+    return ""

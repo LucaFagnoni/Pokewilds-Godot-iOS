@@ -72,8 +72,11 @@ const TIMERS=["move_timer","lay_egg_seconds","friend_seconds","harvest_progress"
 const TIMER_SEND_MS:=30000
 var _timers_sent:Dictionary={}
 var _scopes:Dictionary={}
-const EGGS_PER_BEAT:=12
-var _egg_cursor:=0
+## When each record (by key) was last looked at: one nothing marked is looked
+## at again after TIMER_SEND_MS (its timers run; a change nobody marked).
+var _checked:Dictionary={}
+## The tiles of a beat that did not get through, looked at again next beat.
+var _retry:Dictionary={}
 var _bare:Dictionary={}
 
 ## A stored record with its timers taken out, worked out once per record.
@@ -88,75 +91,80 @@ func _without_timers(key:String,held:String)->String:
         _bare[key]=known
     return known[1]
 
-static func _timers_only(before:String,after:String)->bool:
-    var old=Delta.decode(before);var next=Delta.decode(after)
-    if not old is Dictionary or not next is Dictionary:return false
-    for field in TIMERS:old.erase(field);next.erase(field)
-    return Delta.encode(old)==Delta.encode(next)
+static func _record_key(group:String,cell:Vector2i)->String:
+    return group+"/"+("%d,%d"%[cell.x,cell.y]).uri_encode()
 
+static func _key_cell(key:String)->Vector2i:
+    var coords=key.get_slice("/",1).uri_decode().split(",")
+    return Vector2i(int(coords[0]),int(coords[1])) if coords.size()==2 else Vector2i(-2147483648,-2147483648)
+
+## The habitat Pokemon and eggs this game simulates, sent to the shared records
+## (population_motion). Only the tiles that may have changed are encoded: those
+## the world marked since the last beat (habitat_population and egg_population:
+## placed, taken, moved, changed), those not looked at for TIMER_SEND_MS (their
+## timers run, or a change nobody marked), and those recorded but empty here
+## (gone). Encoding every record of the area every beat was this beat's cost:
+## a stall of 28 ms three times every two seconds on the host with eggs about.
 func publish_motion()->void:
     var records:Dictionary=game.state.records if game.hosting else game.shared_records
     var before:Dictionary={};var after:Dictionary={};var prefix="world/"+game._area()+"/"
     var now:=Time.get_ticks_msec()
     if _timers_sent.size()>512:_timers_sent.clear()
     if _scopes.size()>2048:_scopes.clear()
+    if _checked.size()>4096:_checked.clear()
     var nothing:String=Delta.encode(null)
-    # Eggs do not move; only their timers run. Checking every egg on every
-    # beat was most of a 28 ms stall three times every two seconds on the
-    # host. A dozen take their turn each beat, so each egg is looked at every
-    # few seconds; habitat Pokemon, which walk about, are still checked on
-    # every beat. An egg that is gone here but still recorded is always
-    # included, so a hatched or collected egg is cleared on the next beat.
-    var egg_keys:Dictionary={};var egg_turn:Dictionary={}
-    var egg_cells:Array=game.main.world.wild_eggs.keys()
-    for cell in egg_cells:egg_keys["wild_eggs/"+("%d,%d"%[cell.x,cell.y]).uri_encode()]=true
-    for _turn in range(mini(EGGS_PER_BEAT,egg_cells.size())):
-        _egg_cursor=(_egg_cursor+1)%egg_cells.size()
-        var turn_cell:Vector2i=egg_cells[_egg_cursor]
-        egg_turn["wild_eggs/"+("%d,%d"%[turn_cell.x,turn_cell.y]).uri_encode()]=true
-    for group in GROUPS:
-        for key in game.record_keys(prefix+group+"/"):
-            var held=records.get(key)
-            # A tile a Pokemon has left keeps an empty record; most are these.
-            if held==null or held==nothing:continue
-            if group=="wild_eggs":
-                var egg_key:=String(key).trim_prefix(prefix)
-                if egg_keys.has(egg_key) and not egg_turn.has(egg_key):continue
-            # Decoding every stored record on every beat was a regular small
-            # stall; a record's scope only changes when the record does.
-            var known:Array=_scopes.get(key,[])
-            if known.is_empty() or known[0]!=held:
-                var record=Delta.decode(held)
-                known=[held,Records.record_scope(record) if record is Dictionary else ""]
-                _scopes[key]=known
-            if known[1]!="" and authority(known[1]):before[String(key).trim_prefix(prefix)]=held
+    var world=game.main.world
     # A Pokemon saved on two tiles at once is one Pokemon: keep the first and
     # take the others away, here and (as the tiles empty) in the saved world.
     var standing:Dictionary={}
-    for cell in game.main.world.deployed_pokemon.keys():
-        var identity=String(game.main.world.deployed_pokemon[cell].get("ecology_id",""))
+    for cell in world.deployed_pokemon.keys():
+        var identity=String(world.deployed_pokemon[cell].get("ecology_id",""))
         if identity.is_empty():continue
-        if standing.has(identity) and authority(Records.record_scope(game.main.world.deployed_pokemon[cell])):
+        if standing.has(identity) and authority(Records.record_scope(world.deployed_pokemon[cell])):
             remove("deployed_pokemon",cell)
         else:standing[identity]=cell
+    var check:Dictionary=_retry;_retry={}
     for group in GROUPS:
-        for cell in game.main.world.get(group):
-            var data:Dictionary=game.main.world.get(group)[cell]
-            if not authority(Records.record_scope(data)):continue
-            var key:String=group+"/"+("%d,%d"%[cell.x,cell.y]).uri_encode()
-            if group=="wild_eggs" and not egg_turn.has(key):continue
-            var serial:Dictionary=game.main.world._serializable_ecology_record(data,cell)
-            var next:String=Delta.encode(serial)
-            # A Pokemon standing still only has its timers running. Those are
-            # sent now and then, not on every beat.
-            var quiet:=false
-            if before.has(key) and next!=before[key] and now-int(_timers_sent.get(key,0))<TIMER_SEND_MS:
-                var bare:Dictionary=serial.duplicate()
-                for field in TIMERS:bare.erase(field)
-                quiet=Delta.encode(bare)==_without_timers(key,before[key])
-            if quiet:next=before[key]
-            elif not before.has(key) or next!=before[key]:_timers_sent[key]=now
-            after[key]=next
+        var population=world.habitat_population if group=="deployed_pokemon" else world.egg_population
+        for cell in population.take_dirty():check[_record_key(group,cell)]=[group,cell]
+        var shown:Dictionary=world.get(group)
+        for cell in shown:
+            var key:=_record_key(group,cell)
+            if now-int(_checked.get(key,-TIMER_SEND_MS))>=TIMER_SEND_MS:check[key]=[group,cell]
+        for full_key in game.record_keys(prefix+group+"/"):
+            var held=records.get(full_key)
+            # A tile a Pokemon has left keeps an empty record; most are these.
+            if held==null or held==nothing:continue
+            var key:=String(full_key).trim_prefix(prefix)
+            if check.has(key):continue
+            var cell:=_key_cell(key)
+            if not shown.has(cell):check[key]=[group,cell]
+    for key in check:
+        var group:String=check[key][0];var cell:Vector2i=check[key][1]
+        var held=records.get(prefix+key)
+        if held!=null and held!=nothing:
+            # A record's scope only changes when the record does.
+            var known:Array=_scopes.get(prefix+key,[])
+            if known.is_empty() or known[0]!=held:
+                var record=Delta.decode(held)
+                known=[held,Records.record_scope(record) if record is Dictionary else ""]
+                _scopes[prefix+key]=known
+            if known[1]!="" and authority(known[1]):before[key]=held
+        var data=world.get(group).get(cell)
+        if data==null or not authority(Records.record_scope(data)):continue
+        _checked[key]=now
+        var serial:Dictionary=world._serializable_ecology_record(data,cell)
+        var next:String=Delta.encode(serial)
+        # A Pokemon standing still only has its timers running. Those are
+        # sent now and then, not on every beat.
+        var quiet:=false
+        if before.has(key) and next!=before[key] and now-int(_timers_sent.get(key,0))<TIMER_SEND_MS:
+            var bare:Dictionary=serial.duplicate()
+            for field in TIMERS:bare.erase(field)
+            quiet=Delta.encode(bare)==_without_timers(key,before[key])
+        if quiet:next=before[key]
+        elif not before.has(key) or next!=before[key]:_timers_sent[key]=now
+        after[key]=next
     var patches=Delta.diff(before,after)
     if patches.is_empty():return
     var batches=Records.batches(patches,before)
@@ -168,7 +176,10 @@ func publish_motion()->void:
         if not result.get("ok",false):break
     motion_busy=false
     if result.get("reason")=="save_failed":game.end_session("POKEMON HABITAT COULD NOT BE SAVED.")
-    elif not result.get("ok",false) and result.get("reason")!="busy":synchronize()
+    elif not result.get("ok",false):
+        if result.get("reason")!="busy":synchronize()
+        # Busy: the same tiles next beat.
+        else:_retry.merge(check)
 
 func synchronize()->void:
     var records:Dictionary=game.state.records if game.hosting else game.shared_records
@@ -210,8 +221,7 @@ func remove(group:String,cell:Vector2i)->void:
     if is_instance_valid(sprite):sprite.queue_free()
     var tween=record.get("ball_move_tween")
     if tween is Tween and tween.is_valid():tween.kill()
-    if group=="deployed_pokemon":game.main.world.habitat_population.take(cell)
-    else:values.erase(cell)
+    (game.main.world.habitat_population if group=="deployed_pokemon" else game.main.world.egg_population).take(cell)
 func apply(group:String,cell:Vector2i,record:Variant)->void:
     remove(group,cell)
     if not record is Dictionary:return

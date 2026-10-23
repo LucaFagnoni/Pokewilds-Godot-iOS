@@ -306,6 +306,12 @@ var wild_pokemon: Dictionary = wild_population.records
 const PopulationView = preload("res://scripts/population_view.gd")
 ## The wild Pokemon's pooled sprites (the WildPokemonLayer): only those in view.
 var population_view: PopulationView
+## The eggs lying in the world (a HabitatPopulation of their own, for the
+## tiles changed since co-op last sent them).
+var egg_population := HabitatPopulation.new(self, "wild_eggs")
+## Its records by cell (the same dictionary): place and take them through
+## egg_population.
+var wild_eggs: Dictionary = egg_population.records
 
 ## The sprite showing a wild Pokemon's, habitat Pokemon's or egg's record now:
 ## null when it has none (a wild one out of view, or on a dedicated server).
@@ -314,7 +320,6 @@ func _sprite_of(data: Dictionary) -> Sprite2D:
     if is_same(wild_pokemon.get(wild_id), data):
         return population_view.sprite_of(wild_id) if is_instance_valid(population_view) else null
     return data.get("sprite") as Sprite2D
-var wild_eggs: Dictionary = {}
 var next_wild_id := 1
 var next_deployed_id := 1
 var ecology_accumulator := 0.0
@@ -560,7 +565,7 @@ func generate_world(
     sand_trap_ids.clear()
     sand_trap_clocks.clear()
     sand_trap_clock_of.clear()
-    wild_eggs.clear()
+    egg_population.clear()
     next_wild_id = 1
     next_deployed_id = 1
     ecology_accumulator = 0.0
@@ -2054,6 +2059,7 @@ func feed_pokemon_in_front(item_name: String) -> bool:
         var deployed: Dictionary = deployed_pokemon[target]
         _feed_ecology_record(deployed, happiness_gain)
         deployed_pokemon[target] = deployed
+        habitat_population.mark(target)
         _show_ecology_emote(deployed.get("sprite") as Sprite2D, "heart")
         world_message.emit("%s enjoyed the %s." % [
             PokemonData.battle_display_name(String(deployed.get("species", "POKEMON"))), item_name
@@ -3029,6 +3035,7 @@ func _interact_deployed_pokemon(cell:Vector2i)->void:
         data["held_item"] = ""
         data["harvest_progress"] = 0.0
         deployed_pokemon[cell] = data
+        habitat_population.mark(cell)
         _show_ecology_emote(data.get("sprite") as Sprite2D,
             "uncomfortable" if not bool(data.get("in_habitat", false)) else (
             "heart" if not String(data.get("mate_id", "")).is_empty() else "happy"))
@@ -3202,6 +3209,10 @@ func _update_ecology(delta:float)->void:
         return
     _run_ecology_step(delta)
 
+## The fields of a habitat Pokemon the ecology pass sets, other than its clocks.
+const ECOLOGY_FIELDS: Array[String] = ["mate_id", "friend_id", "can_lay_egg", "mate_nearby", "nearby_pokemon",
+    "in_habitat", "in_shelter", "missing_habitats", "held_item"]
+
 ## The ecology pass every HABITAT_CHECK_SECONDS. `simulated` (a record ->
 ## bool) picks the habitat Pokemon this peer moves on (all when invalid);
 ## with_wild false leaves the wild ones to the area's authority.
@@ -3213,6 +3224,12 @@ func _run_ecology_step(delta: float, simulated: Callable = Callable(), with_wild
     ecology_accumulator = fmod(
         ecology_accumulator, PokemonEcology.HABITAT_CHECK_SECONDS
     )
+    # What the pass sets of each habitat Pokemon besides its clocks, as it was:
+    # one whose changes is marked for co-op (habitat_population.dirty).
+    var before := {}
+    for raw_cell in deployed_pokemon:
+        var record: Dictionary = deployed_pokemon[raw_cell]
+        before[raw_cell] = ECOLOGY_FIELDS.map(func(field: String) -> Variant: return record.get(field))
     var active_wild := _refresh_ecology_relationships(simulated, with_wild)
     _release_old_eggs()
 
@@ -3236,6 +3253,8 @@ func _run_ecology_step(delta: float, simulated: Callable = Callable(), with_wild
                     data["held_item"] = choices[rng.randi_range(0, choices.size() - 1)]
         data = _advance_breeding_clock(data, ecology_delta)
         deployed_pokemon[cell] = data
+        if before.get(cell) != ECOLOGY_FIELDS.map(func(field: String) -> Variant: return data.get(field)):
+            habitat_population.mark(cell)
 
     # The wild Pokemon in play are the ones the relationship pass just took
     # (not burrowed, near the player or a habitat); nothing since has moved
@@ -3612,13 +3631,14 @@ func _release_old_eggs() -> void:
             continue
         if not egg.has("laid_at") or float(egg["laid_at"]) > world_elapsed_seconds:
             egg["laid_at"] = world_elapsed_seconds
+            egg_population.mark(raw_cell)
             continue
         if world_elapsed_seconds - float(egg["laid_at"]) < lifetime:
             continue
         var egg_sprite: Sprite2D = egg.get("sprite") as Sprite2D
         if is_instance_valid(egg_sprite):
             egg_sprite.queue_free()
-        wild_eggs.erase(raw_cell)
+        egg_population.take(raw_cell)
 
 func _couple_egg_count(first_id: String, second_id: String) -> int:
     if first_id.is_empty() or second_id.is_empty():
@@ -3841,30 +3861,9 @@ func get_crafting_save_state(include_population: bool = true) -> Dictionary:
         saved_structure["y"] = cell.y
         structures.append(saved_structure)
 
-    var farms: Array = []
-    for key in (deployed_pokemon.keys() if include_population else []):
-        var cell: Vector2i = key
-        var data: Dictionary = deployed_pokemon[cell]
-        farms.append(_serializable_ecology_record(data, cell))
-
-    var saved_wild_pokemon: Array = []
-    for raw_id in (wild_pokemon.keys() if include_population else []):
-        var data: Dictionary = wild_pokemon[raw_id]
-        var cell: Vector2i = data.get("cell", Vector2i.ZERO)
-        var saved_wild := _serializable_ecology_record(data, cell)
-        saved_wild["id"] = int(raw_id)
-        saved_wild_pokemon.append(saved_wild)
-
-    var saved_eggs: Array = []
-    for raw_cell in (wild_eggs.keys() if include_population else []):
-        var cell: Vector2i = raw_cell
-        var data: Dictionary = wild_eggs[cell]
-        var saved_egg := data.duplicate(true)
-        saved_egg.erase("sprite")
-        saved_egg.erase("cell")
-        saved_egg["x"] = cell.x
-        saved_egg["y"] = cell.y
-        saved_eggs.append(saved_egg)
+    var farms: Array = habitat_population.to_save() if include_population else []
+    var saved_wild_pokemon: Array = wild_population.to_save() if include_population else []
+    var saved_eggs: Array = egg_population.to_save() if include_population else []
 
     var saved_follower: Dictionary = {}
     if not follower_pokemon.is_empty():
@@ -3918,6 +3917,15 @@ func get_crafting_save_state(include_population: bool = true) -> Dictionary:
         "respawn_x": respawn_cell.x,
         "respawn_y": respawn_cell.y
     }
+
+## What is saved of an egg lying on `cell`.
+func _serializable_egg_record(data: Dictionary, cell: Vector2i) -> Dictionary:
+    var saved_egg := data.duplicate(true)
+    saved_egg.erase("sprite")
+    saved_egg.erase("cell")
+    saved_egg["x"] = cell.x
+    saved_egg["y"] = cell.y
+    return saved_egg
 
 func _serializable_ecology_record(data: Dictionary, cell: Vector2i) -> Dictionary:
     var saved := data.duplicate(true)
@@ -4256,7 +4264,7 @@ func _clear_wild_eggs() -> void:
         var sprite: Sprite2D = data.get("sprite") as Sprite2D
         if is_instance_valid(sprite):
             sprite.queue_free()
-    wild_eggs.clear()
+    egg_population.clear()
 
 func _restore_deployed_pokemon(entry: Dictionary, cell: Vector2i) -> void:
     var indoors := entry.has("house_door")
@@ -4691,7 +4699,7 @@ func _add_wild_egg(
         stored["hatch_cycles"] = int(egg_record["hatch_cycles"])
     if stored.has("house_door"):
         sprite.visible = _house_pokemon_visible(stored)
-    wild_eggs[cell] = stored
+    egg_population.place(cell, stored)
 
 func _add_wild_egg_record(
         egg_record: Dictionary, cell: Vector2i, ignored_wild_id: int = -1
@@ -4985,7 +4993,7 @@ func _collect_wild_egg(cell:Vector2i)->void:
     pending_egg_record = data.duplicate(true)
     pending_egg_record.erase("sprite")
     pending_egg_record.erase("cell")
-    wild_eggs.erase(cell)
+    egg_population.take(cell)
     if bool(data.get("dropped_party_egg", false)):
         egg_collected.emit(species)
         return
@@ -5522,7 +5530,7 @@ func complete_battle_event(result: Dictionary) -> void:
             var egg_sprite: Sprite2D = egg_data.get("sprite") as Sprite2D
             if is_instance_valid(egg_sprite):
                 egg_sprite.queue_free()
-            wild_eggs.erase(cell)
+            egg_population.take(cell)
             world_message.emit("The EGG was destroyed.")
         return
     if kind == "attack_deployed":

@@ -75,9 +75,13 @@ func remote_charm(data:Dictionary,target:Dictionary)->bool:
     var level=clampi(maxi(1,int(data.get("level",1))),maxi(2,reference-3),mini(100,reference+1))
     return int(target.get("field_level",1))>=level
 
+## The wild Pokemon that changed here, sent to the shared records (wild_motion):
+## those WildPopulation marked (moved, added, removed, a new target) and those
+## marked here, each once it differs from its record.
 func publish_motion()->void:
     var records:Dictionary=game.state.records if game.hosting else game.shared_records
     var world=game.main.world
+    for wild_id in world.wild_population.take_dirty():motion_dirty[wild_id]=true
     var patches:Array=[]
     var sent:Dictionary={}
     for wild_id in motion_dirty.keys():
@@ -329,6 +333,7 @@ func publish_spawn()->void:
 
 func request_sync()->void:
     motion_dirty.clear()
+    game.main.world.wild_population.dirty.clear()
     sync_pending=true
 
 func configure(coordinator:Node)->void:

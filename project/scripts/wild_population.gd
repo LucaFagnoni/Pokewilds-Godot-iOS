@@ -57,8 +57,10 @@ var buckets: Dictionary = {}
 var live := 0
 ## species -> how many.
 var _species: Dictionary = {}
-## Changed since take_dirty(): added, moved, removed, or marked.
+## Changed since take_dirty(): added, moved, removed, or marked. Kept once
+## someone takes them (co-op), so a game alone never collects them.
 var dirty: Dictionary = {}
+var tracking := false
 var _tick_dirty := PackedInt64Array()
 var _ticking := false
 
@@ -204,13 +206,15 @@ func set_timer(id: int, seconds: float) -> void:
 
 ## Something about the Pokemon others should be told changed.
 func mark(id: int) -> void:
-    dirty[id] = true
+    if tracking:
+        dirty[id] = true
     if _ticking:
         _tick_dirty.append(id)
 
 ## The ids changed since the last call (added, moved, removed or marked), in
-## the order they first changed.
+## the order they first changed. The first call starts the tracking.
 func take_dirty() -> PackedInt64Array:
+    tracking = true
     var result := PackedInt64Array(dirty.keys())
     dirty.clear()
     return result
