@@ -1,12 +1,19 @@
 extends Node
-## All players submit their existing placement result to the host's atomic journal.
-## Geometry and snapping still come from World.place_structure.
+## The co-op side of the built and dug ground. A player's field moves,
+## builds, paint and removals are commands the host decides (rules/,
+## coop_rules_runtime.gd), predicted here, several at a time; the host adds
+## what such a command changes outside its area (host_records). The host's
+## records of an area are laid on this World as they come (apply_records),
+## and an area's snapshot seeds them (seed).
 const Delta=preload("res://scripts/coop_world_delta.gd")
-const Transaction=preload("res://scripts/coop_build_transaction.gd")
+const Crafting=preload("res://scripts/crafting_data.gd")
 const GROUPS=["structures","built_house_floor_tiles","built_house_paintings",
     "built_house_decorations","built_house_origins","source_interior_mutations","source_plant_farms","removed_resources","terrain_changes"]
 var game:Node
-var busy:=false
+## This player's field commands in flight (coop_rules_runtime.gd predict).
+var in_flight:=0
+var busy:bool:
+    get:return in_flight>0
 
 func configure(coordinator:Node)->void:game=coordinator
 
@@ -121,176 +128,164 @@ static func overlay(area:String,shared:Dictionary,records:Dictionary)->Dictionar
     flat.merge(known(area,records),true)
     return Delta.inflate(flat,shared)
 
+## The field moves, builds, paint and removals are commands the host decides
+## (coop_rules_runtime.gd): predicted here, kept or undone by its answer.
+func _send(op:String,cmd:Dictionary,extra:Dictionary={})->Dictionary:
+    in_flight+=1
+    var answer:Dictionary=await game.rules.predict(op,cmd,extra)
+    in_flight-=1
+    return answer
+
 func build(recipe:String,cell:Vector2i)->void:
-    if busy or game._request_busy:return
-    busy=true
-    var area=game._area()
-    var before=Delta.flatten(capture())
-    var world=game.main.world
-    var target:Vector2i=world._snap_build_cell(recipe,cell)
-    world.area.begin()
-    if not world.place_structure(recipe,cell):world.area.rollback();busy=false;return
-    var patches=Delta.diff(before,Delta.flatten(capture()))
-    var result:Dictionary=await game.command("build",{"area":area,"recipe":recipe,
-        "x":target.x,"y":target.y,"patches":patches})
-    # The host returns the current records, not the loser's old preview.
-    # That keeps a simultaneous winner's construction intact on this client.
-    if result.get("ok",false):world.area.commit()
-    else:put_back(area,patches,result)
-    busy=false
+    if game._request_busy:return
+    await _send("build",{"recipe":recipe,"cell":game.main.world._snap_build_cell(recipe,cell)})
 
-## A refused action put back, whatever the reason it was refused: what it
-## changed on this World's ground is undone (its area's recording,
-## area_state.gd), and the records it touched are laid again as the host
-## holds them (its answer, else this game's copy of them). Nothing is put
-## back by hand and the session goes on.
-func put_back(area:String,patches:Array,result:Dictionary)->void:
-    var world=game.main.world
-    var cells:Array=world.area.rollback()
-    if not game.active:return
-    apply_records(area,result.get("authoritative",known_records(area,patches)))
-    if not cells.is_empty():world._refresh_exact_pickup_cells(cells)
-    if result.get("reason")!="conflict":game.main._show_message("FIELD ACTION COULD NOT BE SAVED.")
+func paint(picture:int,cell:Vector2i)->void:
+    if game._request_busy:return
+    await _send("paint",{"cell":cell,"picture":picture},{"species":String(game.main.world.active_field_species)})
 
-## The patches' records as this game holds them now, ready for apply_records.
-func known_records(area:String,patches:Array)->Array:
-    var records:Dictionary=game.state.records if game.hosting else game.shared_records
-    var result:Array=[]
-    for patch in patches:
-        if not patch is Dictionary or not patch.get("key") is String or not Delta.valid_key(patch.key):continue
-        result.append({"key":patch.key,"value":Delta.decode(records.get("world/"+area+"/"+String(patch.key),Delta.encode(null)))})
-    return result
+## A built piece cut or smashed; `wipe_public`: the host has agreed to empty
+## the world's storage with its last public box (field_actions.gd).
+func remove(cell:Vector2i,move:String,wipe_public:bool=false)->void:
+    if game._request_busy:return
+    var cmd:={"cell":cell,"move":move}
+    if wipe_public:cmd["wipe"]=true
+    var answer:Dictionary=await _send("remove_build",cmd)
+    if game.active and answer.get("reason")=="last_box":
+        game.main._show_message("Sorry, a guest cannot cut the last public box in a world." if not game.hosting else "The last STORAGE BOX in this world cannot be cut this way.")
 
-func execute(actor:String,id:String,args:Dictionary)->Dictionary:
-    var area=String(args.area)
-    var transaction=Transaction.new()
-    transaction.state=game.state;transaction.areas=game.service.areas;transaction.world_delta=model()
-    var result:Dictionary
-    if args.get("paint",false):
-        result=transaction.paint(actor,id,area,args.patches,String(args.profile_hash))
-    elif args.get("remove",false) and args.get("decoration",false):
-        result=transaction.remove_decoration(actor,id,area,args.patches,String(args.profile_hash))
-    elif args.get("remove",false):
-        # Only the host may cut the last public box and empty the world's storage.
-        result=transaction.remove(actor,id,area,Vector2i(int(args.x),int(args.y)),String(args.move),args.patches,String(args.profile_hash),
-            args.get("wipe_public",false)==true and actor==game.session.actor)
-    else:
-        result=transaction.commit(actor,id,String(game.state.authority.get(area,"")),area,
-            int(game.service.areas.epochs.get(area,0)),String(args.recipe),Vector2i(int(args.x),int(args.y)),
-            args.patches,String(args.profile_hash))
-    if not result.get("ok",false):
-        var authoritative:Array=[]
-        for patch in args.patches:
-            if not patch is Dictionary or not patch.get("key") is String:continue
-            if String(patch.key).get_slice("/",0) not in GROUPS or not Delta.valid_key(patch.key):continue
-            authoritative.append({"key":patch.key,"value":Delta.decode(game.state.records.get("world/"+area+"/"+patch.key,Delta.encode(null)))})
-        result["authoritative"]=authoritative
-    return result
+## Takes a window or clock off a house wall; the host refunds its materials.
+func remove_decoration(cell:Vector2i)->void:
+    if game._request_busy:return
+    await _send("remove_build",{"cell":cell,"move":"CUT","decoration":true})
 
-## The field moves are commands the host decides (coop_rules_runtime.gd):
-## predicted here, kept or undone by its answer.
+## A built piece changed for everyone (rules/interact.gd: a sign, a beacon's
+## name, a torch, a window, a plant's seed).
+func interact(cmd:Dictionary)->void:
+    if game._request_busy:return
+    await _send("interact",cmd)
+
 func cut(cell:Vector2i,move:String="CUT")->void:
-    if busy or game._request_busy:return
-    busy=true
-    await game.rules.predict("field_cut",{"move":move,"cell":cell,"target":"" if move=="CUT" else "resource"},{"species":String(game.main.world.active_field_species)})
-    busy=false
+    if game._request_busy:return
+    await _send("field_cut",{"move":move,"cell":cell,"target":"" if move=="CUT" else "resource"},{"species":String(game.main.world.active_field_species)})
 
 func plant(cell:Vector2i,item:String,animate:bool=true)->bool:
-    if busy or game._request_busy:return false
+    if game._request_busy:return false
     if int(game.main.inventory.get(item,0))<1:return false
     var world=game.main.world
     if world.exact_world==null:return false
     var tile=world.exact_world.tile_at(cell)
     if not world.plants().valid(tile,item):return false
-    busy=true
-    var answer:Dictionary=await game.rules.predict("field_dig",{"action":"plant","cell":cell,"item":item})
-    busy=false
+    var answer:Dictionary=await _send("field_dig",{"action":"plant","cell":cell,"item":item})
     if answer.get("ok",false) and animate and answer.has("planted"):await world.plants().animate_planted(cell,tile,String(answer.planted),false)
     return bool(answer.get("ok",false))
 
 func pick_berry(cell:Vector2i)->void:
-    if busy or game._request_busy:return
-    busy=true
-    await game.rules.predict("field_dig",{"action":"berry","cell":cell})
-    busy=false
+    if game._request_busy:return
+    await _send("field_dig",{"action":"berry","cell":cell})
 
 func collect_item(action:String,cell:Vector2i)->void:
-    if busy or game._request_busy:return
-    busy=true
-    await game.rules.predict("field_dig",{"action":"take","cell":cell,"item_action":action})
-    busy=false
+    if game._request_busy:return
+    await _send("field_dig",{"action":"take","cell":cell,"item_action":action})
 
 func dig(cell:Vector2i,choice:String="")->void:
-    if busy or game._request_busy:return
-    busy=true
-    var cmd:={"action":"dig","cell":cell} if choice.is_empty() else {"action":"fill","cell":cell,"choice":choice}
-    await game.rules.predict("field_dig",cmd)
-    busy=false
+    if game._request_busy:return
+    await _send("field_dig",{"action":"dig","cell":cell} if choice.is_empty() else {"action":"fill","cell":cell,"choice":choice})
 
-func paint(picture:int,cell:Vector2i)->void:
-    if busy or game._request_busy:return
-    busy=true
-    var area=game._area()
-    var before=Delta.flatten(capture())
-    game.main.world.area.begin()
-    if not game.main.world.apply_paint(picture,cell):game.main.world.area.rollback();busy=false;return
-    var patches=Delta.diff(before,Delta.flatten(capture()))
-    if patches.is_empty():game.main.world.area.commit();busy=false;return
-    var result:Dictionary=await game.command("paint",{"area":area,"patches":patches})
-    if result.get("ok",false):game.main.world.area.commit()
-    else:put_back(area,patches,result)
-    busy=false
+# --- The host ---------------------------------------------------------------------
 
-func remove(cell:Vector2i,move:String,wipe_public:bool=false)->void:
-    if busy or game._request_busy:return
+## Host: a pre-check of a build the host's copy of the area cannot make
+## itself: a Pokemon or egg on the cell of a solid piece, from the records
+## (an area held without a World has no Pokemon in it). "" when there is none.
+func occupied(area:String,op:String,cmd:Dictionary)->String:
+    if op!="build" or not bool(Crafting.build_recipe(String(cmd.recipe)).get("solid",false)):return ""
+    var spot:=("%d,%d"%[cmd.cell.x,cmd.cell.y]).uri_encode()
+    for group in ["deployed_pokemon","wild_eggs"]:
+        if Delta.decode(game.state.records.get("world/"+area+"/"+group+"/"+spot,Delta.encode(null))) is Dictionary:return "occupied"
+    return ""
+
+## Host: what a build or removal by `actor` changes outside its area, in the
+## same commit: a box or chest registered with its construction (a catch just
+## after must find it), a beacon; a box or beacon taken away with its piece.
+## The last public STORAGE BOX in the world goes only when the host itself
+## cuts it and empties the world's storage with it: {"reason": "last_box"}
+## otherwise. {"changes": [...]} for the commit.
+func host_records(actor:String,op:String,area:String,cmd:Dictionary,result:Dictionary,area_state)->Dictionary:
+    var state=game.state
+    var changes:Array=[]
+    if op=="build":
+        var cell:Vector2i=cmd.cell
+        var recipe:=String(cmd.recipe)
+        var placed:Dictionary=area_state.structures.get(cell,{})
+        var box:=area+"|%d,%d"%[cell.x,cell.y]
+        if recipe in ["STORAGE BOX","PRIVATE CHEST"] and placed.get("name")==recipe:
+            changes.append(state.change("chest/"+box,{"id":box,"area":area,"x":cell.x,"y":cell.y,"private":recipe=="PRIVATE CHEST","capacity":4096}))
+            if recipe=="STORAGE BOX" and not state.records.has("box/"+box):changes.append(state.change("box/"+box,[]))
+        elif recipe=="BEACON" and placed.get("name")=="BEACON" and not placed.has("house_door"):
+            changes.append(state.change("beacon/"+box,{"area":area,"x":cell.x,"y":cell.y,"name":"BEACON"}))
+        return {"changes":changes}
+    if op=="interact" and cmd.action=="beacon":
+        # Its name, as the BEACONS menu lists it (coop_beacons.gd).
+        var key:="beacon/"+area+"|%d,%d"%[cmd.cell.x,cmd.cell.y]
+        if state.records.get(key) is Dictionary:
+            var named:Dictionary=state.records[key].duplicate(true)
+            named["name"]=String(cmd.get("text","")).strip_edges().left(32)
+            if String(named.name).is_empty():named["name"]="BEACON"
+            changes.append(state.change(key,named))
+    if op!="remove_build":return {"changes":changes}
+    var going:Array=[]
+    var boxes_going:Array=[]
+    for event in result.events:
+        if event[0]!="unbuilt" or bool(event[2].get("generated_stair_pair",false)):continue
+        var gone:=area+"|%d,%d"%[event[1].x,event[1].y]
+        going.append(gone)
+        if event[2].get("name")=="STORAGE BOX":boxes_going.append(gone)
+    # A public box may be cut with Pokemon in it while another stands in this
+    # world; they stay reachable from the others.
+    var losing_last:=false
+    # Looked up only when a box is involved; it reads every built piece.
+    if not boxes_going.is_empty():
+        var standing:Array=_public_boxes()
+        losing_last=not standing.is_empty() and standing.all(func(box):return box in boxes_going)
+    if losing_last and not (cmd.get("wipe",false)==true and actor==game.session.actor):return {"reason":"last_box"}
+    for gone in going:
+        if state.records.has("chest/"+gone):
+            var chest:Dictionary=state.records["chest/"+gone].duplicate(true);chest["retired"]=true
+            changes.append(state.change("chest/"+gone,chest))
+        if state.records.has("beacon/"+gone):changes.append(state.change("beacon/"+gone,null))
+    if losing_last:
+        # The world goes back to having no storage: every public box is emptied.
+        for record_key in state.records.keys():
+            if String(record_key).begins_with("box/") and not (state.records[record_key] as Array).is_empty():
+                changes.append(state.change(String(record_key),[]))
+    return {"changes":changes}
+
+## Every public STORAGE BOX standing in this world, as "area|x,y". Counted
+## from the boxes that are actually built, in every area. The list of box
+## records is not a safe count: a box that has been cut stays in it, and it
+## let a guest cut the last box standing.
+func _public_boxes()->Array:
+    var result:Array=[]
+    for record_key in game.state.records:
+        var key:=String(record_key)
+        if not key.begins_with("world/"):continue
+        var parts:=key.split("/")
+        if parts.size()!=4 or parts[2]!="structures":continue
+        var built=Delta.decode(game.state.records[record_key])
+        if built is Dictionary and built.get("name")=="STORAGE BOX":result.append(parts[1]+"|"+parts[3].uri_decode())
+    return result
+
+## The inside of the house this player is in, drawn again from the World's data.
+func redraw_house()->void:
     var world=game.main.world
-    var piece:Dictionary=world.built_structures.get(cell,{})
-    if piece.is_empty():return
-    if piece.get("generated_stair_pair",false):
-        cell=Vector2i(int(piece.stair_primary_x),int(piece.stair_primary_y))
-        piece=world.built_structures.get(cell,{})
-        if piece.is_empty():return
-    var name=String(piece.get("name",""))
-    if (move=="CUT" and name in ["GRAVE","STATUE"]) or (move=="SMASH" and name not in ["GRAVE","STATUE"]):return
-    busy=true
-    var area=game._area();var before=Delta.flatten(capture())
-    world.area.begin()
-    world._remove_structure(cell,false)
-    var patches=Delta.diff(before,Delta.flatten(capture()))
-    var request:={"area":area,"remove":true,"move":move,"x":cell.x,"y":cell.y,"patches":patches}
-    if wipe_public:request["wipe_public"]=true
-    var result:Dictionary=await game.command("remove_build",request)
-    if result.get("ok",false):
-        world.area.commit()
-        game.main._on_build_refund_requested(result.get("refund",{}),false)
-        if name=="GRAVE" and world.rng.randi_range(0,8)==0:
-            var pool=["gastly","misdreavus","duskull","shuppet"]
-            var species=pool[world.rng.randi_range(0,3)]
-            world.world_message.emit("Something rose from the shattered GRAVE!")
-            world.encounter_requested.emit(species,22)
-    else:
-        if game.active and result.get("reason")=="last_box":
-            game.main._show_message("Sorry, a guest cannot cut the last public box in a world." if not game.hosting else "The last STORAGE BOX in this world cannot be cut this way.")
-        put_back(area,patches,result)
-    busy=false
-
-## Takes a window or clock off a house wall; the host refunds its materials.
-func remove_decoration(cell:Vector2i)->void:
-    if busy or game._request_busy:return
-    var world=game.main.world
-    if String(world.house_wall_decoration_at(cell)).is_empty():return
-    busy=true
-    var area=game._area();var before=Delta.flatten(capture())
-    world.area.begin()
-    world.remove_house_wall_decoration(cell,false)
-    var patches=Delta.diff(before,Delta.flatten(capture()))
-    var result:Dictionary=await game.command("remove_build",{"area":area,"remove":true,"decoration":true,"move":"CUT",
-        "x":cell.x,"y":cell.y,"patches":patches})
-    if result.get("ok",false):
-        world.area.commit()
-        game.main._on_build_refund_requested(result.get("refund",{}),false)
-    else:put_back(area,patches,result)
-    busy=false
+    if world.active_area_id!="HOUSE":return
+    var floor_index:int=world._built_house_floor_index_for_cell(world._player_cell())
+    var house:Dictionary=world._built_house_state(world.active_built_house_door)
+    if not house.get("ready",false):return
+    world._prepare_built_house_interior(world.active_built_house_door,house)
+    world._set_active_built_house_floor(maxi(0,floor_index))
+    var layer=world.get_node_or_null("BuiltHouseInterior")
+    if layer!=null:layer.visible=true
 
 func committed(changes:Array)->void:
     var area=game._area();var prefix="world/"+area+"/"
@@ -419,13 +414,6 @@ func apply_records(area:String,records:Array,arriving:bool=false)->void:
                 var hung=world.built_house_decoration_sprites.get(at)
                 if is_instance_valid(hung):hung.queue_free()
                 world.built_house_decoration_sprites.erase(at)
-    if house_changed and world.active_area_id=="HOUSE":
-        var floor_index:int=world._built_house_floor_index_for_cell(world._player_cell())
-        var house:Dictionary=world._built_house_state(world.active_built_house_door)
-        if house.get("ready",false):
-            world._prepare_built_house_interior(world.active_built_house_door,house)
-            world._set_active_built_house_floor(maxi(0,floor_index))
-            var layer=world.get_node_or_null("BuiltHouseInterior")
-            if layer!=null:layer.visible=true
+    if house_changed:redraw_house()
     world.map_art_revision+=1
     world.area.resume(was_recording)

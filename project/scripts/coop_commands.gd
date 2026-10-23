@@ -12,7 +12,6 @@ var presence:Dictionary={}
 var _budgets:Dictionary={}
 var _pending:Array=[]
 var _interaction_replies:Dictionary={}
-var build_action:Callable
 var rules_action:Callable
 var wild_action:Callable
 var population_action:Callable
@@ -90,7 +89,6 @@ func execute(actor:String,payload:Dictionary)->Dictionary:
     if payload.has("after"):
         var made=_saves.get(actor,{}).get(str(payload.after))
         if made==null:return {"ok":false,"reason":"save_failed"}
-        if args.has("profile_hash"):args["profile_hash"]=made
         if operation=="deploy":args["base"]=made
     # A battle's result may bring the player's record as edits to the one held
     # here (coop_game.gd _with_profile_edits). Rebuilt once per request, so a
@@ -165,23 +163,9 @@ func execute(actor:String,payload:Dictionary)->Dictionary:
                 if profile is Dictionary and profile.get("party") is Array and profile.party.size()<=6 and profile.get("inventory") is Dictionary and profile.inventory.size()<=1024 and profile.get("save") is Dictionary and _valid_wild_aftermath(args.get("aftermath",{})):result=wild_action.call(actor,id,operation,args)
         "wild_motion":
             if wild_action.is_valid() and _strings(args,["area"]) and _integers(args,["epoch"]) and args.get("patches") is Array:result=wild_action.call(actor,id,operation,args)
-        "field_dig","field_cut":
-            # The rules (rules/): the host runs the command and decides what it gives.
+        "field_dig","field_cut","build","paint","remove_build","interact":
+            # The rules (rules/): the host runs the command and decides what it gives and costs.
             if rules_action.is_valid() and _strings(args,["area"]) and args.get("cmd") is Dictionary:result=rules_action.call(actor,id,operation,args)
-        "paint":
-            if build_action.is_valid() and _strings(args,["area","profile_hash"]) and args.get("patches") is Array:
-                args["paint"]=true
-                result=build_action.call(actor,id,args)
-        "build":
-            if build_action.is_valid() and _strings(args,["area","recipe","profile_hash"]) and _integers(args,["x","y"]) and args.get("patches") is Array:
-                args.erase("remove")
-                args.erase("paint")
-                result=build_action.call(actor,id,args)
-        "remove_build":
-            if build_action.is_valid() and _strings(args,["area","move","profile_hash"]) and _integers(args,["x","y"]) and args.get("patches") is Array:
-                args["remove"]=true
-                args.erase("paint")
-                result=build_action.call(actor,id,args)
         "drop":
             if _strings(args,["item","area"]) and _integers(args,["amount","x","y"]):
                 result=items.drop(actor,id,args.item,int(args.amount),args.area,int(args.x),int(args.y),args.get("thrown",false)==true)

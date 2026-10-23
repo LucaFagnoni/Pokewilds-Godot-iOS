@@ -349,6 +349,25 @@ static func is_source_grass_name(asset_name: String) -> bool:
     # ledge_grass_* because those are structural ledges rather than grass tufts.
     return key.begins_with("grass") and not key.begins_with("ledge_grass")
 
+## Encounter grass (world.gd _is_tall_grass_cell): normal grass1, or a tile
+## flagged grass that the tide does not cover. Nothing is built on it.
+static func is_tall_grass(state, cell: Vector2i) -> bool:
+    if state.tiles == null: return false
+    # Same tests as below from the store's names and flags, without building a
+    # tile object (only a tidal tile needs its biome).
+    var store = state.tiles.tiles
+    var index: int = store.index_of(cell * TILE) if store is WorldTileStore else -1
+    if index >= 0 and store.flags[index] & WorldTileStore.TIDAL == 0:
+        if _asset_key(store.name_at(index)) == "grass1" or _asset_key(store.upper_at(index)) == "grass1": return true
+        return store.flags[index] & WorldTileStore.GRASS != 0
+    var tile: SourceTile = state.tile_at(cell)
+    if tile != null and tile.is_tidal and source_biome(tile) != "BEACH": return false
+    if tile != null and (_asset_key(tile.name) == "grass1" or _asset_key(tile.name_upper) == "grass1"): return true
+    return tile != null and tile.is_grass
+
+static func _asset_key(value: String) -> String:
+    return value.to_lower().strip_edges().trim_suffix(".png")
+
 static func is_cuttable_grass(state, cell: Vector2i) -> bool:
     var tile: SourceTile = state.tile_at(cell)
     if tile == null:

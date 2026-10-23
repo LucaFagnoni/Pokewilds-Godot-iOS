@@ -4,7 +4,12 @@
 # the same random numbers always the same; a replica that takes the
 # authority's changes (as records, as the binary frame) ends with the same
 # overlays and tiles; a prediction rolled back leaves the state exactly as it
-# was; commands from the wire checked.
+# was; commands from the wire checked. Building (rules/build.gd): what may
+# go where, what it costs, how pieces join, a house's inside worked out from
+# the data alone, furniture, pictures and clocks; taking pieces away
+# (remove.gd) and what comes back; several predictions in flight, the middle
+# one refused, undone with the one after it and that one played again;
+# what a player changes on a piece (interact.gd): a sign, a torch, a plant's seed.
 # Run: godot --headless --path project -s ../server/rules_test.gd
 extends SceneTree
 
@@ -15,6 +20,11 @@ const FieldDig = preload("res://scripts/rules/field_dig.gd")
 const FieldCut = preload("res://scripts/rules/field_cut.gd")
 const FieldMoveData = preload("res://scripts/field_move_data.gd")
 const TileRules = preload("res://scripts/rules/tile_rules.gd")
+const Build = preload("res://scripts/rules/build.gd")
+const Remove = preload("res://scripts/rules/remove.gd")
+const Paint = preload("res://scripts/rules/paint.gd")
+const Interact = preload("res://scripts/rules/interact.gd")
+const Delta = preload("res://scripts/coop_world_delta.gd")
 
 var failed := 0
 var checks := 0
@@ -218,5 +228,180 @@ func _initialize() -> void:
     check(Rules.from_wire("field_cut", {"move":"FLY", "cell":[1, 1]}) == null, "an unknown move: refused")
     check(Rules.from_wire("rare_candy", {"cell":[1, 1]}) == null, "an unknown op: refused")
     check(Rules.answered([["sound", "dig1"], ["material", "LOG", 1], ["encounter", "geodude", 9, {}, true, Vector2i(2, 3)]]) == [["material", "LOG", 1], ["encounter", "geodude", 9, {}, true, [2, 3]]], "the answer keeps what the player is told")
+    check(Rules.from_wire("build", {"recipe":"FENCE", "cell":[2, 3]}) == {"recipe":"FENCE", "cell":Vector2i(2, 3)}, "a build from the wire")
+    check(Rules.from_wire("build", {"recipe":"GOLDEN THRONE", "cell":[2, 3]}) == null, "an unknown recipe: refused")
+    check(Rules.from_wire("paint", {"picture":7.0, "cell":[2, 3]}) == {"picture":7, "cell":Vector2i(2, 3)}, "a picture from the wire")
+    check(Rules.from_wire("paint", {"picture":21, "cell":[2, 3]}) == null, "no picture 21")
+    check(Rules.from_wire("remove_build", {"move":"SMASH", "cell":[2, 3], "wipe":true}) == {"move":"SMASH", "cell":Vector2i(2, 3), "wipe":true}, "a removal from the wire")
+    check(Rules.from_wire("remove_build", {"move":"HEADBUTT", "cell":[2, 3]}) == null, "a piece is cut or smashed, nothing else")
+    check(Rules.from_wire("remove_build", {"move":"CUT", "cell":[2, 3], "decoration":"yes"}) == null, "flags are true or false")
+    check(Rules.from_wire("interact", {"action":"sign", "cell":[2, 3], "text":"HELLO"}) == {"action":"sign", "cell":Vector2i(2, 3), "text":"HELLO"}, "a sign written, from the wire")
+    check(Rules.from_wire("interact", {"action":"burn", "cell":[2, 3]}) == null and Rules.from_wire("interact", {"action":"sign", "cell":[2, 3], "text":"x".repeat(65)}) == null, "an unknown change or too many words: refused")
+    check(Rules.reads("build", {"recipe":"FENCE"}) == ["bag"] and Rules.reads("paint", {}) == ["bag"] and Rules.reads("remove_build", {}).is_empty(), "builds and pictures read the bag, a removal nothing")
+    _builds()
+    _house()
+    _in_flight()
+    _interactions()
     print("RULES TEST: %d failed (of %d checks)" % [failed, checks])
     quit(1 if failed else 0)
+
+static func said(result: Dictionary, text: String) -> bool:
+    return result.events.any(func(event): return event[0] == "message" and String(event[1]) == text)
+
+static func pieces(state: AreaState) -> Dictionary:
+    var result := {}
+    for cell in state.structures:
+        if not state.structures[cell].get("generated_stair_pair", false): result[cell] = AreaState.structure_record(cell, state.structures[cell])
+    return result
+
+## What may go where, what it costs and gives back, how pieces join.
+func _builds() -> void:
+    var state := area()
+    var outside := {"area_id":"OVERWORLD", "shared":true}
+    var made := Build.apply(state, outside, {"recipe":"FENCE", "cell":Vector2i(2, 3)}, rng(1))
+    check(made.ok and made.consume == {"LOG":1, "GRASS":1}, "a FENCE placed and paid: %s" % [made])
+    check(state.structures.get(Vector2i(2, 3), {}).get("name") == "FENCE" and state.blocked.has(Vector2i(2, 3)), "the FENCE stands and blocks its cell")
+    check(state.take_dirty().any(func(change): return change[0] == "structures" and change[1] == Vector2i(2, 3)), "the FENCE is a changed record")
+    var twice := Build.apply(state, outside, {"recipe":"FENCE", "cell":Vector2i(2, 3)}, rng(1))
+    check(not twice.ok and twice.reason == "occupied", "not twice on one cell: %s" % twice.reason)
+    var wet := Build.apply(state, outside, {"recipe":"FENCE", "cell":Vector2i(2, 5)}, rng(1))
+    check(not wet.ok and wet.reason == "water" and not state.structures.has(Vector2i(2, 5)), "no FENCE on the water: %s" % wet.reason)
+    var bridge := Build.apply(state, outside, {"recipe":"BRIDGE", "cell":Vector2i(3, 5)}, rng(1))
+    check(bridge.ok and state.structures[Vector2i(3, 5)].bridged_water and not state.blocked.has(Vector2i(3, 5)), "a BRIDGE over the water, walked on")
+    var grass := Build.apply(state, outside, {"recipe":"FENCE", "cell":Vector2i(1, 1)}, rng(1))
+    check(not grass.ok and grass.reason == "tall_grass", "nothing built in tall grass: %s" % grass.reason)
+    var broke := Build.apply(state, {"area_id":"OVERWORLD", "bag":{"LOG":1}}, {"recipe":"FENCE", "cell":Vector2i(6, 3)}, rng(1))
+    check(not broke.ok and broke.reason == "not_enough_materials" and said(broke, "Not enough materials for FENCE.") and not state.structures.has(Vector2i(6, 3)), "a FENCE the bag cannot pay for: refused, said why")
+    check(Build.apply(state, outside, {"recipe":"GOLDEN THRONE", "cell":Vector2i(6, 3)}, rng(1)).reason == "invalid_recipe", "an unknown recipe: refused")
+    var kiln := Build.apply(state, outside, {"recipe":"KILN", "cell":Vector2i(6, 3)}, rng(1))
+    check(not kiln.ok and said(kiln, "That must be built indoors."), "a KILN out in the open: refused, said why")
+    # A door between two fences is a gate: no wall, walked through.
+    Build.apply(state, outside, {"recipe":"DOOR", "cell":Vector2i(3, 3)}, rng(1))
+    check(not state.structures[Vector2i(3, 3)].get("gate", false) and state.blocked.has(Vector2i(3, 3)), "a door with one fence beside it is shut")
+    Build.apply(state, outside, {"recipe":"FENCE", "cell":Vector2i(4, 3)}, rng(1))
+    check(state.structures[Vector2i(3, 3)].get("gate", false) and not state.blocked.has(Vector2i(3, 3)), "between two fences it is a gate")
+    check(int(state.structures[Vector2i(2, 3)].get("connections", 0)) == 1 and int(state.structures[Vector2i(4, 3)].get("connections", 0)) == 1, "the fences join it sideways")
+    # Taken away: what it cost comes back; the gate is a door again.
+    var cut := Remove.apply(state, outside, {"cell":Vector2i(4, 3), "move":"CUT"}, rng(1))
+    check(cut.ok and cut.grant == {"LOG":1, "GRASS":1} and cut.events.any(func(event): return event[0] == "refund"), "a FENCE cut: its cost back")
+    check(not state.structures.has(Vector2i(4, 3)) and not state.blocked.has(Vector2i(4, 3)), "the FENCE is gone, its cell free")
+    check(not state.structures[Vector2i(3, 3)].get("gate", true) and state.blocked.has(Vector2i(3, 3)), "the gate is a shut door again")
+    check(Remove.apply(state, outside, {"cell":Vector2i(4, 3), "move":"CUT"}, rng(1)).reason == "already_removed", "nothing left to cut")
+    check(Remove.apply(state, outside, {"cell":Vector2i(2, 3), "move":"SMASH"}, rng(1)).reason == "wrong_field_move", "a FENCE is cut, not smashed")
+    # A GRAVE is smashed; sometimes a ghost rises (the authority's numbers).
+    Build.apply(state, outside, {"recipe":"GRAVE", "cell":Vector2i(8, 3)}, rng(1))
+    check(Remove.apply(state, outside, {"cell":Vector2i(8, 3), "move":"CUT"}, rng(1)).reason == "wrong_field_move", "a GRAVE is not cut")
+    var risen := 0
+    for seed_value in 40:
+        var graves := area()
+        Build.apply(graves, outside, {"recipe":"GRAVE", "cell":Vector2i(8, 3)}, rng(1))
+        var smashed := Remove.apply(graves, outside, {"cell":Vector2i(8, 3), "move":"SMASH"}, rng(seed_value))
+        if smashed.events.any(func(event): return event[0] == "encounter" and event[1] in Remove.GHOSTS and event[2] == 22): risen += 1
+        if seed_value == 7:
+            var again := area()
+            Build.apply(again, outside, {"recipe":"GRAVE", "cell":Vector2i(8, 3)}, rng(1))
+            check(Remove.apply(again, outside, {"cell":Vector2i(8, 3), "move":"SMASH"}, rng(7)).events == smashed.events, "the same numbers, the same ghost or none")
+    check(risen > 0 and risen < 40, "a ghost rises from some GRAVEs (%d of 40)" % risen)
+    # An area held without a World takes a structure record with what it blocks.
+    var sim = AreaSim.new()
+    sim.state = area()
+    sim.apply_record("structures", "5,8", Delta.encode(AreaState.structure_record(Vector2i(5, 8), {"name":"WALL", "recipe_name":"WALL", "house_style":"DEFAULT"})))
+    check(sim.state.blocked.has(Vector2i(5, 8)) and sim.state.structures[Vector2i(5, 8)].get("solid", false), "a WALL record blocks its cell in an AreaSim")
+    sim.apply_record("structures", "5,8", Delta.encode(null))
+    check(not sim.state.blocked.has(Vector2i(5, 8)), "and frees it when it goes")
+
+## A house built, its inside worked out from the data alone, furnished,
+## painted, and a piece of its outside cut with what stands behind it.
+func _house() -> void:
+    var state := area()
+    var outside := {"area_id":"OVERWORLD", "shared":true}
+    for x in [8, 9, 10]: Build.apply(state, outside, {"recipe":"ROOF", "cell":Vector2i(x, 6)}, rng(1))
+    for piece in [["WALL", 8], ["DOOR", 9], ["WALL", 10]]: Build.apply(state, outside, {"recipe":piece[0], "cell":Vector2i(piece[1], 7)}, rng(1))
+    var door := Vector2i(9, 7)
+    check(Build.house_state(state, door).ready, "roof over wall, door, wall: a house")
+    var inside := {"area_id":"HOUSE", "house_door":door, "species":"smeargle"}
+    var wall := Build.apply(state, inside, {"recipe":"WALL", "cell":Vector2i(0, 0)}, rng(1))
+    check(not wall.ok and said(wall, "WALL can only be built outside."), "no outside WALL in a house, said why")
+    var ctx: Dictionary = inside.house
+    var origin := Vector2i(state.bounds.size.x + 9, 5)
+    check(ctx.origin == origin and ctx.size == Vector2i(3, 2) and int(state.built_house_origins.get("9,7", -1)) == 5, "its room lies off the map, its origin recorded: %s" % [ctx.origin])
+    check(ctx.interior.has(origin) and ctx.interior.has(origin + Vector2i(2, 1)) and ctx.walls.has(origin + Vector2i(1, -1)), "its floor and rear wall")
+    check(ctx.exits.has(origin + Vector2i(1, 2)), "its door is a way out below the room")
+    var bed := Build.apply(state, inside, {"recipe":"BED", "cell":origin + Vector2i(0, 1)}, rng(1))
+    check(bed.ok and state.structures.get(origin + Vector2i(0, 1), {}).get("name") == "BED", "a BED in the room: %s" % bed.reason)
+    check(not Build.apply(state, inside, {"recipe":"STOOL", "cell":origin}, rng(1)).ok, "nothing on a bed's head")
+    var clock := Build.apply(state, inside, {"recipe":"CLOCK", "cell":origin + Vector2i(2, -1)}, rng(1))
+    check(clock.ok and state.built_house_decorations.get("9,7|2,-1", {}).get("name") == "CLOCK", "a CLOCK on the rear wall: %s" % clock.reason)
+    var painted := Paint.apply(state, inside, {"cell":origin + Vector2i(1, -1), "picture":7}, rng(1))
+    check(painted.ok and int(state.built_house_paintings.get("9,7|1,-1", 0)) == 7 and painted.consume == {"THIN PAPER":1}, "SMEARGLE paints PICTURE 7 for a THIN PAPER")
+    var machop := Paint.apply(state, {"area_id":"HOUSE", "house_door":door, "species":"machop"}, {"cell":origin + Vector2i(1, -1), "picture":3}, rng(1))
+    check(not machop.ok and said(machop, "PAINT can only be used by SMEARGLE on an inside house wall."), "only SMEARGLE paints")
+    var floor := Paint.apply(state, {"area_id":"HOUSE", "house_door":door, "species":"smeargle"}, {"cell":origin, "picture":3}, rng(1))
+    check(not floor.ok and said(floor, "Face an inside house wall to PAINT it."), "the floor is not painted")
+    var paperless := Paint.apply(state, {"area_id":"HOUSE", "house_door":door, "species":"smeargle", "bag":{}}, {"cell":origin + Vector2i(1, -1), "picture":3}, rng(1))
+    check(not paperless.ok and paperless.reason == "not_enough_materials", "no THIN PAPER, no picture")
+    var unhung := Remove.apply(state, {"area_id":"HOUSE", "house_door":door}, {"cell":origin + Vector2i(2, -1), "move":"CUT", "decoration":true}, rng(1))
+    check(unhung.ok and unhung.grant == Build.CraftingData.build_recipe("CLOCK").cost and not state.built_house_decorations.has("9,7|2,-1"), "the CLOCK taken down, its cost back")
+    # The outside's corner cut: the tile of the room behind it goes with what stands there.
+    var corner := Remove.apply(state, outside, {"cell":Vector2i(8, 7), "move":"CUT"}, rng(1))
+    var back: Dictionary = {}
+    for item in Build.CraftingData.build_recipe("WALL").cost: back[item] = int(back.get(item, 0)) + int(Build.CraftingData.build_recipe("WALL").cost[item])
+    for item in Build.CraftingData.build_recipe("BED").cost: back[item] = int(back.get(item, 0)) + int(Build.CraftingData.build_recipe("BED").cost[item])
+    check(corner.ok and not state.structures.has(origin + Vector2i(0, 1)) and corner.grant == back, "the BED behind the cut WALL goes with it, both paid back: %s" % [corner.grant])
+
+## Three predictions in flight on a player's copy, the middle one refused by
+## the authority: it is undone with the one after it, which is played again
+## on what is left. The copy ends as the authority's, which never had it.
+func _in_flight() -> void:
+    var outside := {"area_id":"OVERWORLD", "shared":true}
+    var cells := [Vector2i(2, 8), Vector2i(3, 8), Vector2i(4, 8)]
+    var authority := area()
+    for cell in [cells[0], cells[2]]: Build.apply(authority, outside, {"recipe":"FENCE", "cell":cell}, rng(1))
+    FieldDig.apply(authority, outside, {"action":"dig", "cell":Vector2i(6, 8)}, rng(2))
+    for confirmed_first in [false, true]:
+        var copy := area()
+        copy.begin("a")
+        Build.apply(copy, outside, {"recipe":"FENCE", "cell":cells[0]}, rng(1))
+        copy.begin("b")
+        Build.apply(copy, outside, {"recipe":"FENCE", "cell":cells[1]}, rng(1))
+        copy.begin("c")
+        Build.apply(copy, outside, {"recipe":"FENCE", "cell":cells[2]}, rng(1))
+        FieldDig.apply(copy, outside, {"action":"dig", "cell":Vector2i(6, 8)}, rng(2))
+        check(int(copy.structures[cells[0]].get("connections", 0)) == 1, "in flight: the fences join")
+        copy.commit("a")
+        # The answer for "c" may come first (it is kept until "b" is settled).
+        if confirmed_first: copy.commit("c")
+        copy.rollback("b")
+        check(copy.undone == ["c"], "the refusal undoes the one after it too: %s" % [copy.undone])
+        check(not copy.structures.has(cells[1]) and not copy.structures.has(cells[2]) and copy.structures.has(cells[0]), "the first stays, the others are undone")
+        check(not copy.tile_at(Vector2i(6, 8)).name_upper.begins_with("hole1"), "the undone one's hole is filled again")
+        copy.begin("c")
+        Build.apply(copy, outside, {"recipe":"FENCE", "cell":cells[2]}, rng(1))
+        FieldDig.apply(copy, outside, {"action":"dig", "cell":Vector2i(6, 8)}, rng(2))
+        copy.commit("c")
+        check(not copy.recording(), "nothing left recording")
+        check(pieces(copy) == pieces(authority) and copy.blocked == authority.blocked, "%s: the copy's pieces are the authority's" % ("c answered first" if confirmed_first else "in order"))
+        check(store_bytes(copy) == store_bytes(authority), "%s: the copy's tiles are the authority's" % ("c answered first" if confirmed_first else "in order"))
+
+## A built piece changed for everyone: a sign written, a torch put out, a
+## plant's seed once a day by the authority's clock, a window's glass.
+func _interactions() -> void:
+    var state := area()
+    var outside := {"area_id":"OVERWORLD", "now":1000.0}
+    for piece in [["SIGN", Vector2i(2, 3)], ["TORCH", Vector2i(4, 3)], ["PLANT", Vector2i(6, 3)], ["WALL", Vector2i(8, 3)]]:
+        Build.apply(state, outside, {"recipe":piece[0], "cell":piece[1]}, rng(1))
+    var sign := Interact.apply(state, outside, {"cell":Vector2i(2, 3), "action":"sign", "text":"  WELCOME HOME  "}, rng(1))
+    check(sign.ok and state.structures[Vector2i(2, 3)].text == "WELCOME HOME" and said(sign, "The SIGN now reads: WELCOME HOME"), "a SIGN written")
+    check(not Interact.apply(state, outside, {"cell":Vector2i(4, 3), "action":"sign", "text":"X"}, rng(1)).ok, "a TORCH is no sign")
+    var torch := Interact.apply(state, outside, {"cell":Vector2i(4, 3), "action":"torch"}, rng(1))
+    check(torch.ok and state.structures[Vector2i(4, 3)].lit == false and said(torch, "The TORCH is now out."), "a TORCH put out")
+    var seed := Interact.apply(state, outside, {"cell":Vector2i(6, 3), "action":"plant"}, rng(1))
+    check(seed.ok and seed.grant == {"MIRACLE SEED":1} and said(seed, "The PLANT yielded a MIRACLE SEED."), "a PLANT gives its seed")
+    var again := Interact.apply(state, outside, {"cell":Vector2i(6, 3), "action":"plant"}, rng(1))
+    check(not again.ok and again.grant.is_empty() and said(again, "The PLANT needs another day to grow."), "once a day")
+    var tomorrow := Interact.apply(state, {"area_id":"OVERWORLD", "now":1000.0 + Interact.DAY_SECONDS}, {"cell":Vector2i(6, 3), "action":"plant"}, rng(1))
+    check(tomorrow.ok and tomorrow.grant == {"MIRACLE SEED":1}, "and again the next day")
+    check(not Interact.apply(state, outside, {"cell":Vector2i(8, 3), "action":"glass"}, rng(1)).ok, "a bare WALL has no glass")
+    Build.apply(state, outside, {"recipe":"INDOOR WINDOW 1", "cell":Vector2i(8, 3)}, rng(1))
+    var glass := Interact.apply(state, outside, {"cell":Vector2i(8, 3), "action":"glass"}, rng(1))
+    check(glass.ok and int(state.structures[Vector2i(8, 3)].window_variant) == 1, "an indoor window in a wall: its glass changed")
