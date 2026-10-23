@@ -1,4 +1,5 @@
 extends Node
+class_name GameMain
 const TexturePixels = preload("res://scripts/texture_pixels.gd")
 
 @onready var input_router: InputRouter = get_node("/root/InputRouterSingleton")
@@ -22,10 +23,26 @@ var edge_sky: Node2D
 signal progression_confirmed
 signal progression_choice_made(value: int)
 
-const SETUP_SAVE_PATH := "user://m3_setup.cfg"
 const DataPaths = preload("res://scripts/game_data_paths.gd")
 const WorldSaves = preload("res://scripts/world_saves.gd")
 var saves := WorldSaves.new("user://saves")
+var field_actions := preload("res://scripts/field_actions.gd").new(self)
+var progression := preload("res://scripts/progression_screens.gd").new(self)
+var edge_travel := preload("res://scripts/world_edge_travel.gd").new(self)
+var touch_config_panel := preload("res://scripts/touch_config_panel.gd").new(self)
+var setup_screen := preload("res://scripts/setup_screen.gd").new(self)
+var appearance := preload("res://scripts/player_appearance.gd").new(self)
+## The screens open over the field (screen_stack.gd); the *_open flags are views of it.
+var screens := preload("res://scripts/screen_stack.gd").new()
+var saving := preload("res://scripts/game_saving.gd").new(self)
+var dialogs := preload("res://scripts/dialogs.gd").new(self)
+var start_menu := preload("res://scripts/game_menu.gd").new(self)
+var bag_menu := preload("res://scripts/bag_menu.gd").new(self)
+var party_menu := preload("res://scripts/party_menu.gd").new(self)
+var storage := preload("res://scripts/storage_menu.gd").new(self)
+var crafting_menu := preload("res://scripts/crafting_menu.gd").new(self)
+var move_wheel := preload("res://scripts/field_move_wheel.gd").new(self)
+var minimap := preload("res://scripts/minimap.gd").new(self)
 const CraftingData = preload("res://scripts/crafting_data.gd")
 const ItemData = preload("res://scripts/item_data.gd")
 const FieldMoveData = preload("res://scripts/field_move_data.gd")
@@ -39,546 +56,19 @@ const FieldMoveRadial = preload("res://scripts/field_move_radial.gd")
 const SOURCE_MALE_SYMBOL = preload("res://assets/source_exact/global/male_symbol1.png")
 const SOURCE_FEMALE_SYMBOL = preload("res://assets/source_exact/global/female_symbol1.png")
 
-const FIELD_MOVE_WHEEL_ORDER := [
-    "BUILD", "CUT", "FLY", "SURF", "DIG",
-    "RIDE", "SMASH", "TELEPORT", "FLASH", "CHARM",
-    "POWER", "REPEL", "ATTACK", "HEADBUTT", "PAINT"
-]
-const FIELD_MOVE_REPRESENTATIVES := {
-    "BUILD":"machop", "CUT":"chikorita", "FLY":"fearow",
-    "SURF":"blastoise", "DIG":"diglett", "RIDE":"tauros",
-    "SMASH":"geodude", "TELEPORT":"abra", "FLASH":"charmander",
-    "CHARM":"clefairy", "POWER":"pikachu", "REPEL":"grimer",
-    "ATTACK":"poochyena", "HEADBUTT":"squirtle", "PAINT":"smeargle"
-}
-
-const PLAYER_TEXTURES := [
-    "res://assets/player_green.png",
-    "res://assets/player_blue.png",
-    "res://assets/player_red.png",
-    "res://assets/player_gold.png",
-    "res://assets/player_orange.png",
-    "res://assets/player_indigo.png",
-    "res://assets/player_cyan.png",
-    "res://assets/player_lime.png",
-    "res://assets/player_magenta.png",
-    "res://assets/player_wine.png",
-    "res://assets/player_yellow.png",
-    "res://assets/player_brown.png",
-    "res://assets/player_olive.png",
-    "res://assets/player_teal.png",
-    "res://assets/player_bright_red.png",
-    "res://assets/player_purple.png",
-    "res://assets/player_pink.png"
-]
-const PLAYER_RUN_TEXTURES := [
-    "res://assets/player_run_green.png",
-    "res://assets/player_run_blue.png",
-    "res://assets/player_run_red.png",
-    "res://assets/player_run_gold.png",
-    "res://assets/player_run_orange.png",
-    "res://assets/player_run_indigo.png",
-    "res://assets/player_run_cyan.png",
-    "res://assets/player_run_lime.png",
-    "res://assets/player_run_magenta.png",
-    "res://assets/player_run_wine.png",
-    "res://assets/player_run_yellow.png",
-    "res://assets/player_run_brown.png",
-    "res://assets/player_run_olive.png",
-    "res://assets/player_run_teal.png",
-    "res://assets/player_run_bright_red.png",
-    "res://assets/player_run_purple.png",
-    "res://assets/player_run_pink.png"
-]
-const PLAYER_COLOR_NAMES := [
-    "GREEN", "BLUE", "RED", "GOLD", "ORANGE", "INDIGO", "CYAN",
-    "LIME", "MAGENTA", "WINE", "YELLOW", "BROWN", "OLIVE", "TEAL",
-    "BRIGHT RED", "PURPLE", "PINK"
-]
-const PLAYER_COLOR_VALUES := [
-    Color(0.184314, 0.356863, 0.258824, 1.0),
-    Color(0.188235, 0.309804, 0.545098, 1.0),
-    Color(0.517647, 0.215686, 0.215686, 1.0),
-    Color(0.501961, 0.360784, 0.133333, 1.0),
-    Color(0.941176, 0.313725, 0.188235, 1.0),
-    Color(0.313725, 0.282353, 0.972549, 1.0),
-    Color(0.0, 1.0, 1.0, 1.0),
-    Color(0.219608, 0.721569, 0.094118, 1.0),
-    Color(1.0, 0.0, 1.0, 1.0),
-    Color(0.690196, 0.188235, 0.376471, 1.0),
-    Color(1.0, 1.0, 0.0, 1.0),
-    Color(0.470588, 0.313725, 0.094118, 1.0),
-    Color(0.419608, 0.556863, 0.137255, 1.0),
-    Color(0.0, 0.498039, 0.498039, 1.0),
-    Color(1.0, 0.0, 0.0, 1.0),
-    Color(0.627451, 0.125490, 0.941176, 1.0),
-    Color(1.0, 0.450980, 0.784314, 1.0)
-]
-const PLAYER_MODEL_NAMES := [
-    "red", "leaf", "gold", "kris", "brendan", "may", "hilbert",
-    "hilda", "rosa", "calem", "serena", "chase", "elaine",
-    "gloria", "mark", "mint", "lunick", "summer", "kellyn",
-    "agatha",
-    "blaine1",
-    "blaine2",
-    "blue",
-    "brock",
-    "bruno",
-    "bugsy",
-    "chuck",
-    "clair",
-    "erika",
-    "falkner",
-    "giovanni1",
-    "giovanni2",
-    "janine",
-    "jasmine",
-    "karen1",
-    "karen2",
-    "koga",
-    "lance",
-    "lorelei",
-    "lt. surge",
-    "misty1",
-    "misty2",
-    "morty",
-    "pryce1",
-    "pryce2",
-    "sabrina1",
-    "sabrina2",
-    "whitney",
-    "will1",
-    "will2",
-    "ash",
-    "wes",
-    "rocket_M",
-    "rocket_F",
-    "gardenia",
-    "plushbanshee",
-    "sapphire",
-    "starbutterfarts"
-]
-const PLAYER_MODEL_WALK_TEXTURES := [
-    "res://assets/source_exact/player/red/walking.png",
-    "res://assets/source_exact/player/leaf-walking.png",
-    "res://assets/source_exact/player/gold-walking.png",
-    "res://assets/source_exact/player/kris-walking.png",
-    "res://assets/source_exact/player/brendan-walking.png",
-    "res://assets/source_exact/player/may-walking.png",
-    "res://assets/source_exact/player/hilbert-walking.png",
-    "res://assets/source_exact/player/hilda-walking.png",
-    "res://assets/source_exact/player/rosa-walking.png",
-    "res://assets/source_exact/player/calem-walking.png",
-    "res://assets/source_exact/player/serena-walking.png",
-    "res://assets/source_exact/player/chase-walking.png",
-    "res://assets/source_exact/player/elaine-walking.png",
-    "res://assets/source_exact/player/gloria-walking.png",
-    "res://assets/source_exact/player/mark-walking.png",
-    "res://assets/source_exact/player/mint-walking.png",
-    "res://assets/source_exact/player/lunick-walking.png",
-    "res://assets/source_exact/player/summer-walking.png",
-    "res://assets/source_exact/player/kellyn-walking.png",
-    "res://assets/source_exact/player/agatha-walking.png",
-    "res://assets/source_exact/player/blaine1-walking.png",
-    "res://assets/source_exact/player/blaine2-walking.png",
-    "res://assets/source_exact/player/blue-walking.png",
-    "res://assets/source_exact/player/brock-walking.png",
-    "res://assets/source_exact/player/bruno-walking.png",
-    "res://assets/source_exact/player/bugsy-walking.png",
-    "res://assets/source_exact/player/chuck-walking.png",
-    "res://assets/source_exact/player/clair-walking.png",
-    "res://assets/source_exact/player/erika-walking.png",
-    "res://assets/source_exact/player/falkner-walking.png",
-    "res://assets/source_exact/player/giovanni1-walking.png",
-    "res://assets/source_exact/player/giovanni2-walking.png",
-    "res://assets/source_exact/player/janine-walking.png",
-    "res://assets/source_exact/player/jasmine-walking.png",
-    "res://assets/source_exact/player/karen1-walking.png",
-    "res://assets/source_exact/player/karen2-walking.png",
-    "res://assets/source_exact/player/koga-walking.png",
-    "res://assets/source_exact/player/lance-walking.png",
-    "res://assets/source_exact/player/lorelei-walking.png",
-    "res://assets/source_exact/player/lt. surge-walking.png",
-    "res://assets/source_exact/player/misty1-walking.png",
-    "res://assets/source_exact/player/misty2-walking.png",
-    "res://assets/source_exact/player/morty-walking.png",
-    "res://assets/source_exact/player/pryce1-walking.png",
-    "res://assets/source_exact/player/pryce2-walking.png",
-    "res://assets/source_exact/player/sabrina1-walking.png",
-    "res://assets/source_exact/player/sabrina2-walking.png",
-    "res://assets/source_exact/player/whitney-walking.png",
-    "res://assets/source_exact/player/will1-walking.png",
-    "res://assets/source_exact/player/will2-walking.png",
-    "res://assets/source_exact/player/ash-walking.png",
-    "res://assets/source_exact/player/wes-walking.png",
-    "res://assets/source_exact/player/rocket_M-walking.png",
-    "res://assets/source_exact/player/rocket_F-walking.png",
-    "res://assets/source_exact/player/gardenia-walking.png",
-    "res://assets/source_exact/player/plushbanshee-walking.png",
-    "res://assets/source_exact/player/sapphire-walking.png",
-    "res://assets/source_exact/player/starbutterfarts-walking.png"
-]
-const PLAYER_MODEL_RUN_TEXTURES := [
-    "res://assets/source_exact/player/red/running.png",
-    "res://assets/source_exact/player/leaf-running.png",
-    "res://assets/source_exact/player/gold-running.png",
-    "res://assets/source_exact/player/kris-running.png",
-    "res://assets/source_exact/player/brendan-running.png",
-    "res://assets/source_exact/player/may-running.png",
-    "res://assets/source_exact/player/hilbert-running.png",
-    "res://assets/source_exact/player/hilda-running.png",
-    "res://assets/source_exact/player/rosa-running.png",
-    "res://assets/source_exact/player/calem-running.png",
-    "res://assets/source_exact/player/serena-running.png",
-    "res://assets/source_exact/player/chase-running.png",
-    "res://assets/source_exact/player/elaine-running.png",
-    "res://assets/source_exact/player/gloria-running.png",
-    "res://assets/source_exact/player/mark-running.png",
-    "res://assets/source_exact/player/mint-running.png",
-    "res://assets/source_exact/player/lunick-running.png",
-    "res://assets/source_exact/player/summer-running.png",
-    "res://assets/source_exact/player/kellyn-running.png",
-    "res://assets/source_exact/player/agatha-running.png",
-    "res://assets/source_exact/player/blaine1-running.png",
-    "res://assets/source_exact/player/blaine2-running.png",
-    "res://assets/source_exact/player/blue-running.png",
-    "res://assets/source_exact/player/brock-running.png",
-    "res://assets/source_exact/player/bruno-running.png",
-    "res://assets/source_exact/player/bugsy-running.png",
-    "res://assets/source_exact/player/chuck-running.png",
-    "res://assets/source_exact/player/clair-running.png",
-    "res://assets/source_exact/player/erika-running.png",
-    "res://assets/source_exact/player/falkner-running.png",
-    "res://assets/source_exact/player/giovanni1-running.png",
-    "res://assets/source_exact/player/giovanni2-running.png",
-    "res://assets/source_exact/player/janine-running.png",
-    "res://assets/source_exact/player/jasmine-running.png",
-    "res://assets/source_exact/player/karen1-running.png",
-    "res://assets/source_exact/player/karen2-running.png",
-    "res://assets/source_exact/player/koga-running.png",
-    "res://assets/source_exact/player/lance-running.png",
-    "res://assets/source_exact/player/lorelei-running.png",
-    "res://assets/source_exact/player/lt. surge-running.png",
-    "res://assets/source_exact/player/misty1-running.png",
-    "res://assets/source_exact/player/misty2-running.png",
-    "res://assets/source_exact/player/morty-running.png",
-    "res://assets/source_exact/player/pryce1-running.png",
-    "res://assets/source_exact/player/pryce2-running.png",
-    "res://assets/source_exact/player/sabrina1-running.png",
-    "res://assets/source_exact/player/sabrina2-running.png",
-    "res://assets/source_exact/player/whitney-running.png",
-    "res://assets/source_exact/player/will1-running.png",
-    "res://assets/source_exact/player/will2-running.png",
-    "res://assets/source_exact/player/ash-running.png",
-    "res://assets/source_exact/player/wes-running.png",
-    "res://assets/source_exact/player/rocket_M-running.png",
-    "res://assets/source_exact/player/rocket_F-running.png",
-    "res://assets/source_exact/player/gardenia-running.png",
-    "res://assets/source_exact/player/plushbanshee-running.png",
-    "res://assets/source_exact/player/sapphire-running.png",
-    "res://assets/source_exact/player/starbutterfarts-running.png"
-]
-const PLAYER_MODEL_SLEEP_TEXTURES := [
-    "res://assets/source_exact/player/red/sleepingbag.png",
-    "res://assets/source_exact/player/leaf-sleepingbag.png",
-    "res://assets/source_exact/player/gold-sleepingbag.png",
-    "res://assets/source_exact/player/kris-sleepingbag.png",
-    "res://assets/source_exact/player/brendan-sleepingbag.png",
-    "res://assets/source_exact/player/may-sleepingbag.png",
-    "res://assets/source_exact/player/hilbert-sleepingbag.png",
-    "res://assets/source_exact/player/hilda-sleepingbag.png",
-    "res://assets/source_exact/player/rosa-sleepingbag.png",
-    "res://assets/source_exact/player/calem-sleepingbag.png",
-    "res://assets/source_exact/player/serena-sleepingbag.png",
-    "res://assets/source_exact/player/chase-sleepingbag.png",
-    "res://assets/source_exact/player/elaine-sleepingbag.png",
-    "res://assets/source_exact/player/gloria-sleepingbag.png",
-    "res://assets/source_exact/player/mark-sleepingbag.png",
-    "res://assets/source_exact/player/mint-sleepingbag.png",
-    "res://assets/source_exact/player/lunick-sleepingbag.png",
-    "res://assets/source_exact/player/summer-sleepingbag.png",
-    "res://assets/source_exact/player/kellyn-sleepingbag.png",
-    "res://assets/source_exact/player/agatha-sleepingbag.png",
-    "res://assets/source_exact/player/blaine1-sleepingbag.png",
-    "res://assets/source_exact/player/blaine2-sleepingbag.png",
-    "res://assets/source_exact/player/blue-sleepingbag.png",
-    "res://assets/source_exact/player/brock-sleepingbag.png",
-    "res://assets/source_exact/player/bruno-sleepingbag.png",
-    "res://assets/source_exact/player/bugsy-sleepingbag.png",
-    "res://assets/source_exact/player/chuck-sleepingbag.png",
-    "res://assets/source_exact/player/clair-sleepingbag.png",
-    "res://assets/source_exact/player/erika-sleepingbag.png",
-    "res://assets/source_exact/player/falkner-sleepingbag.png",
-    "res://assets/source_exact/player/giovanni1-sleepingbag.png",
-    "res://assets/source_exact/player/giovanni2-sleepingbag.png",
-    "res://assets/source_exact/player/janine-sleepingbag.png",
-    "res://assets/source_exact/player/jasmine-sleepingbag.png",
-    "res://assets/source_exact/player/karen1-sleepingbag.png",
-    "res://assets/source_exact/player/karen2-sleepingbag.png",
-    "res://assets/source_exact/player/koga-sleepingbag.png",
-    "res://assets/source_exact/player/lance-sleepingbag.png",
-    "res://assets/source_exact/player/lorelei-sleepingbag.png",
-    "res://assets/source_exact/player/lt. surge-sleepingbag.png",
-    "res://assets/source_exact/player/misty1-sleepingbag.png",
-    "res://assets/source_exact/player/misty2-sleepingbag.png",
-    "res://assets/source_exact/player/morty-sleepingbag.png",
-    "res://assets/source_exact/player/pryce1-sleepingbag.png",
-    "res://assets/source_exact/player/pryce2-sleepingbag.png",
-    "res://assets/source_exact/player/sabrina1-sleepingbag.png",
-    "res://assets/source_exact/player/sabrina2-sleepingbag.png",
-    "res://assets/source_exact/player/whitney-sleepingbag.png",
-    "res://assets/source_exact/player/will1-sleepingbag.png",
-    "res://assets/source_exact/player/will2-sleepingbag.png",
-    "res://assets/source_exact/player/ash-sleepingbag.png",
-    "res://assets/source_exact/player/wes-sleepingbag.png",
-    "res://assets/source_exact/player/rocket_M-sleepingbag.png",
-    "res://assets/source_exact/player/rocket_F-sleepingbag.png",
-    "res://assets/source_exact/player/gardenia-sleepingbag.png",
-    "res://assets/source_exact/player/plushbanshee-sleepingbag.png",
-    "res://assets/source_exact/player/sapphire-sleepingbag.png",
-    "res://assets/source_exact/player/starbutterfarts-sleepingbag.png"
-]
-const PLAYER_MODEL_SITTING_TEXTURES := [
-    "res://assets/source_exact/player/red/sitting.png",
-    "res://assets/source_exact/player/leaf-sitting.png",
-    "res://assets/source_exact/player/gold-sitting.png",
-    "res://assets/source_exact/player/kris-sitting.png",
-    "res://assets/source_exact/player/brendan-sitting.png",
-    "res://assets/source_exact/player/may-sitting.png",
-    "res://assets/source_exact/player/hilbert-sitting.png",
-    "res://assets/source_exact/player/hilda-sitting.png",
-    "res://assets/source_exact/player/rosa-sitting.png",
-    "res://assets/source_exact/player/calem-sitting.png",
-    "res://assets/source_exact/player/serena-sitting.png",
-    "res://assets/source_exact/player/chase-sitting.png",
-    "res://assets/source_exact/player/elaine-sitting.png",
-    "res://assets/source_exact/player/gloria-sitting.png",
-    "res://assets/source_exact/player/mark-sitting.png",
-    "res://assets/source_exact/player/mint-sitting.png",
-    "res://assets/source_exact/player/lunick-sitting.png",
-    "res://assets/source_exact/player/summer-sitting.png",
-    "res://assets/source_exact/player/kellyn-sitting.png",
-    "res://assets/source_exact/player/agatha-sitting.png",
-    "res://assets/source_exact/player/blaine1-sitting.png",
-    "res://assets/source_exact/player/blaine2-sitting.png",
-    "res://assets/source_exact/player/blue-sitting.png",
-    "res://assets/source_exact/player/brock-sitting.png",
-    "res://assets/source_exact/player/bruno-sitting.png",
-    "res://assets/source_exact/player/bugsy-sitting.png",
-    "res://assets/source_exact/player/chuck-sitting.png",
-    "res://assets/source_exact/player/clair-sitting.png",
-    "res://assets/source_exact/player/erika-sitting.png",
-    "res://assets/source_exact/player/falkner-sitting.png",
-    "res://assets/source_exact/player/giovanni1-sitting.png",
-    "res://assets/source_exact/player/giovanni2-sitting.png",
-    "res://assets/source_exact/player/janine-sitting.png",
-    "res://assets/source_exact/player/jasmine-sitting.png",
-    "res://assets/source_exact/player/karen1-sitting.png",
-    "res://assets/source_exact/player/karen2-sitting.png",
-    "res://assets/source_exact/player/koga-sitting.png",
-    "res://assets/source_exact/player/lance-sitting.png",
-    "res://assets/source_exact/player/lorelei-sitting.png",
-    "res://assets/source_exact/player/lt. surge-sitting.png",
-    "res://assets/source_exact/player/misty1-sitting.png",
-    "res://assets/source_exact/player/misty2-sitting.png",
-    "res://assets/source_exact/player/morty-sitting.png",
-    "res://assets/source_exact/player/pryce1-sitting.png",
-    "res://assets/source_exact/player/pryce2-sitting.png",
-    "res://assets/source_exact/player/sabrina1-sitting.png",
-    "res://assets/source_exact/player/sabrina2-sitting.png",
-    "res://assets/source_exact/player/whitney-sitting.png",
-    "res://assets/source_exact/player/will1-sitting.png",
-    "res://assets/source_exact/player/will2-sitting.png",
-    "res://assets/source_exact/player/ash-sitting.png",
-    "res://assets/source_exact/player/wes-sitting.png",
-    "res://assets/source_exact/player/rocket_M-sitting.png",
-    "res://assets/source_exact/player/rocket_F-sitting.png",
-    "res://assets/source_exact/player/gardenia-sitting.png",
-    "res://assets/source_exact/player/plushbanshee-sitting.png",
-    "res://assets/source_exact/player/sapphire-sitting.png",
-    "res://assets/source_exact/player/starbutterfarts-sitting.png"
-]
-const PLAYER_MODEL_BATTLE_BACK_TEXTURES := [
-    "res://assets/source_exact/player/red/back.png",
-    "res://assets/source_exact/player/leaf-back.png",
-    "res://assets/source_exact/player/gold-back.png",
-    "res://assets/source_exact/player/kris-back.png",
-    "res://assets/source_exact/player/brendan-back.png",
-    "res://assets/source_exact/player/may-back.png",
-    "res://assets/source_exact/player/hilbert-back.png",
-    "res://assets/source_exact/player/hilda-back.png",
-    "res://assets/source_exact/player/rosa-back.png",
-    "res://assets/source_exact/player/calem-back.png",
-    "res://assets/source_exact/player/serena-back.png",
-    "res://assets/source_exact/player/chase-back.png",
-    "res://assets/source_exact/player/elaine-back.png",
-    "res://assets/source_exact/player/gloria-back.png",
-    "res://assets/source_exact/player/mark-back.png",
-    "res://assets/source_exact/player/mint-back.png",
-    "res://assets/source_exact/player/lunick-back.png",
-    "res://assets/source_exact/player/summer-back.png",
-    "res://assets/source_exact/player/kellyn-back.png",
-    "res://assets/source_exact/player/agatha-back.png",
-    "res://assets/source_exact/player/blaine1-back.png",
-    "res://assets/source_exact/player/blaine2-back.png",
-    "res://assets/source_exact/player/blue-back.png",
-    "res://assets/source_exact/player/brock-back.png",
-    "res://assets/source_exact/player/bruno-back.png",
-    "res://assets/source_exact/player/bugsy-back.png",
-    "res://assets/source_exact/player/chuck-back.png",
-    "res://assets/source_exact/player/clair-back.png",
-    "res://assets/source_exact/player/erika-back.png",
-    "res://assets/source_exact/player/falkner-back.png",
-    "res://assets/source_exact/player/giovanni1-back.png",
-    "res://assets/source_exact/player/giovanni2-back.png",
-    "res://assets/source_exact/player/janine-back.png",
-    "res://assets/source_exact/player/jasmine-back.png",
-    "res://assets/source_exact/player/karen1-back.png",
-    "res://assets/source_exact/player/karen2-back.png",
-    "res://assets/source_exact/player/koga-back.png",
-    "res://assets/source_exact/player/lance-back.png",
-    "res://assets/source_exact/player/lorelei-back.png",
-    "res://assets/source_exact/player/lt. surge-back.png",
-    "res://assets/source_exact/player/misty1-back.png",
-    "res://assets/source_exact/player/misty2-back.png",
-    "res://assets/source_exact/player/morty-back.png",
-    "res://assets/source_exact/player/pryce1-back.png",
-    "res://assets/source_exact/player/pryce2-back.png",
-    "res://assets/source_exact/player/sabrina1-back.png",
-    "res://assets/source_exact/player/sabrina2-back.png",
-    "res://assets/source_exact/player/whitney-back.png",
-    "res://assets/source_exact/player/will1-back.png",
-    "res://assets/source_exact/player/will2-back.png",
-    "res://assets/source_exact/player/ash-back.png",
-    "res://assets/source_exact/player/wes-back.png",
-    "res://assets/source_exact/player/rocket_M-back.png",
-    "res://assets/source_exact/player/rocket_F-back.png",
-    "res://assets/source_exact/player/gardenia-back.png",
-    "res://assets/source_exact/player/plushbanshee-back.png",
-    "res://assets/source_exact/player/sapphire-back.png",
-    "res://assets/source_exact/player/starbutterfarts-back.png"
-]
-const PLAYER_MODEL_REPLACE_COLORS := [
-    Color(0.972549, 0.219608, 0.031373, 1.0), # red mod
-    Color(0.313725, 0.282353, 0.972549, 1.0), # leaf
-    Color(0.972549, 0.219608, 0.031373, 1.0), # gold
-    Color(0.313725, 0.282353, 0.972549, 1.0), # kris
-    Color(0.972549, 0.219608, 0.031373, 1.0), # brendan
-    Color(0.313725, 0.282353, 0.972549, 1.0), # may
-    Color(0.972549, 0.219608, 0.031373, 1.0), # hilbert
-    Color(0.313725, 0.282353, 0.972549, 1.0), # hilda
-    Color(0.313725, 0.282353, 0.972549, 1.0), # rosa
-    Color(0.313725, 0.282353, 0.972549, 1.0), # calem
-    Color(0.972549, 0.219608, 0.031373, 1.0), # serena
-    Color(0.972549, 0.219608, 0.031373, 1.0), # chase
-    Color(0.313725, 0.282353, 0.972549, 1.0), # elaine
-    Color(0.972549, 0.219608, 0.031373, 1.0), # gloria
-    Color(0.972549, 0.219608, 0.031373, 1.0), # mark
-    Color(0.313725, 0.282353, 0.972549, 1.0), # mint
-    Color(0.349020, 0.282353, 1.0, 1.0), # lunick
-    Color(0.972549, 0.219608, 0.031373, 1.0), # summer
-    Color(0.964706, 0.031373, 0.003922, 1.0),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(56,56,112),
-    Color8(248,56,8),
-    Color8(248,56,8),
-    Color8(216,136,48),
-    Color8(150,105,25),
-    Color8(121,129,42),
-    Color8(249,230,130)
-]
-const PLAYER_MODEL_BATTLE_REPLACE_COLORS := [
-    Color8(176, 72, 40, 255), # red
-    Color8(56, 40, 248, 255), # leaf
-    Color8(176, 72, 40, 255), # gold
-    Color8(56, 40, 248, 255), # kris
-    Color8(176, 72, 40, 255), # brendan
-    Color8(176, 72, 40, 255), # may
-    Color8(88, 96, 184, 255), # hilbert
-    Color8(155, 58, 48, 255), # hilda
-    Color8(80, 72, 64, 255), # rosa
-    Color8(54, 83, 197, 255), # calem
-    Color8(222, 42, 42, 255), # serena
-    Color8(176, 72, 40, 255), # chase
-    Color8(56, 40, 248, 255), # elaine
-    Color8(55, 134, 110, 255), # gloria
-    Color8(232, 79, 79, 255), # mark
-    Color8(41, 107, 210, 255), # mint
-    Color8(198, 57, 74, 255), # lunick
-    Color8(232, 79, 79, 255), # summer
-    Color8(232, 79, 79, 255),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(56,56,112),
-    Color8(176,72,40),
-    Color8(176,72,40),
-    Color8(216,136,48),
-    Color8(150,105,25),
-    Color8(121,129,42),
-    Color8(249,230,130)
-]
-const GENERATION_TIP_SECONDS := 5.0
+const PlayerLooks = preload("res://scripts/player_looks.gd")
+const PLAYER_TEXTURES = PlayerLooks.PLAYER_TEXTURES
+const PLAYER_RUN_TEXTURES = PlayerLooks.PLAYER_RUN_TEXTURES
+const PLAYER_COLOR_NAMES = PlayerLooks.PLAYER_COLOR_NAMES
+const PLAYER_COLOR_VALUES = PlayerLooks.PLAYER_COLOR_VALUES
+const PLAYER_MODEL_NAMES = PlayerLooks.PLAYER_MODEL_NAMES
+const PLAYER_MODEL_WALK_TEXTURES = PlayerLooks.PLAYER_MODEL_WALK_TEXTURES
+const PLAYER_MODEL_RUN_TEXTURES = PlayerLooks.PLAYER_MODEL_RUN_TEXTURES
+const PLAYER_MODEL_SLEEP_TEXTURES = PlayerLooks.PLAYER_MODEL_SLEEP_TEXTURES
+const PLAYER_MODEL_SITTING_TEXTURES = PlayerLooks.PLAYER_MODEL_SITTING_TEXTURES
+const PLAYER_MODEL_BATTLE_BACK_TEXTURES = PlayerLooks.PLAYER_MODEL_BATTLE_BACK_TEXTURES
+const PLAYER_MODEL_REPLACE_COLORS = PlayerLooks.PLAYER_MODEL_REPLACE_COLORS
+const PLAYER_MODEL_BATTLE_REPLACE_COLORS = PlayerLooks.PLAYER_MODEL_BATTLE_REPLACE_COLORS
 const POKEMON_EGG_TEXTURE := preload("res://assets/pokemon_egg.png")
 const GHOST_BATTLE_SHEET := preload("res://assets/events/ghost_battle_front.png")
 const ITEM_BAG_POCKET_TEXTURE := preload("res://assets/item_bag_pockets.png")
@@ -591,22 +81,12 @@ const SOURCE_POKEBALL_WIGGLE_TEXTURE := preload(
     "res://assets/source_exact/global/pokeball_wiggleSheet1_color.png")
 const SOURCE_EVOLUTION_BACKGROUND := preload(
     "res://assets/source_exact/battle/battle_bg3.png")
-const SOURCE_HATCH_BACKGROUND := preload(
-    "res://assets/source_exact/battle/intro_frame6.png")
 const SOURCE_LEVEL_STATS_BACKGROUND := preload(
     "res://assets/source_exact/battle/gsc/levelup_stats_screen1.png")
 const SOURCE_ATTACK_MENU_BACKGROUND := preload(
     "res://assets/source_exact/menu/attack_screen1.png")
 const SOURCE_PARTY_BACKGROUND := preload(
     "res://assets/source_exact/menu/gsc/background1.png")
-const SOURCE_PARTY_HEALTH_ROW := preload(
-    "res://assets/source_exact/menu/gsc/health_bar1.png")
-const SOURCE_STATS_BACKGROUNDS := [
-    preload("res://assets/source_exact/menu/stats_screen1.png"),
-    preload("res://assets/source_exact/menu/stats_screen2.png"),
-    preload("res://assets/source_exact/menu/stats_screen3.png")
-]
-const UNOWN_FONT := preload("res://assets/source_exact/global/unown_font.fnt")
 const JOHTO_FONT := preload("res://assets/source_text_font.fnt")
 const SYMBOL_FONT := preload("res://assets/fonts.ttf")
 const DIALOGUE_BORDER := preload("res://assets/pokewilds_dialogue_border.png")
@@ -615,10 +95,6 @@ const EXP_GAIN_AUDIO_PATH := SOURCE_SOUND_ROOT + "xp-gain1.ogg"
 const LEVEL_UP_AUDIO_PATH := SOURCE_SOUND_ROOT + "xp-levelup1.ogg"
 const SOURCE_FRAME_TIME := 1.0 / 60.0
 const BATTLE_ENTRY_SLIDE_PX_PER_FRAME: float = 4.0
-const SOURCE_EXP_UNITS := 68
-const SOURCE_LEVEL_STATS_MIN_FRAMES := 82
-const SOURCE_EVOLUTION_CANCEL_END_FRAME := 464
-const SOURCE_HATCH_COMPLETE_FRAME := 588
 const BATTLE_TEXT_CHAR_DELAY := 0.05
 const MESSAGE_HOLD_SECONDS := 1.2
 const ITEM_MENU_VISIBLE_ROWS := 5
@@ -812,7 +288,9 @@ var started := false
 var generating := false
 var generation_tip_timer := 0.0
 var generation_tip_index := -1
-var battle_active := false
+var battle_active: bool:
+    get: return screens.is_open(&"battle")
+    set(value): screens.set_open(&"battle", value)
 var battle_turn_busy := false
 var battle_player: Dictionary = {}
 var battle_enemy: Dictionary = {}
@@ -886,74 +364,52 @@ var battle_capture_ball: TextureRect = null
 var battle_text_full := ""
 var battle_text_busy := false
 var battle_text_accumulator := 0.0
-var mansion_switch_open := false
+var mansion_switch_open: bool:
+    get: return screens.is_open(&"mansion_switch")
+    set(value): screens.set_open(&"mansion_switch", value)
 var mansion_switch_stage := 0
 var mansion_switch_index := 0
-var battle_entry_pending := false
-var progression_move_frame: Panel
-var progression_type_frame: Panel
+var battle_entry_pending: bool:
+    get: return screens.is_open(&"battle_entry")
+    set(value): screens.set_open(&"battle_entry", value)
 var progression_choice_frame: Panel
 var progression_move_rows: Array[Label] = []
 var progression_type_label: Label
-var progression_pp_label: Label
-var progression_menu_cursor: Label
-var progression_yes_no_cursor: Label
 var overworld_evolution_item := ""
 var overworld_evolution_running := false
 var capture_experience_presenting := false
-var progression_active := false
+var progression_active: bool:
+    get: return screens.is_open(&"progression")
+    set(value): screens.set_open(&"progression", value)
 var progression_mode := ""
-var hatch_skip_requested := false
-const HATCH_PLAYBACK_SPEED := 1.2
 var progression_waiting_input := false
 var progression_choice_index := 0
-# The move last shown on the forget screen, kept across its YES/NO questions.
-var progression_move_index := 0
-var progression_pending_move := ""
-var progression_pokemon: Dictionary = {}
 var progression_level_dialogue: Panel
 var progression_level_message: Label
 var setup_load_panel: Control
 var setup_load_name: Label
 var setup_load_index := 0
 var setup_load_entries: Array[Dictionary] = []
-var setup_load_open := false
+var setup_load_open: bool:
+    get: return screens.is_open(&"setup_load")
+    set(value): screens.set_open(&"setup_load", value)
 var setup_load_committed := false
 var setup_load_path := ""
-var pokemon_action_panel: Panel
-var pokemon_action_cursor: TextureRect
 var pokemon_action_list: Label
-var pokemon_menu_gender: TextureRect
 var pokemon_action_open := false
 var pokemon_action_index := 0
-var pokemon_action_entries: Array[String] = []
 var pokemon_switch_selecting := false
 var pokemon_switch_source_index := -1
 var setup_go_cursor: TextureRect
 var pokemon_party_rows: Array[Dictionary] = []
-var party_sprite_animation_elapsed := 0.0
-var party_sprite_animation_frame := 0
-var pokemon_stats_pages: Array[Control] = []
-var pokemon_stats_tabs: Array[ColorRect] = []
-var pokemon_stats_tab_ticks: Array[Label] = []
-var pokemon_stats_fields: Dictionary = {}
-var pokemon_stats_exp_fill: ColorRect
 var progression_stats_frame: Panel
 var progression_stats_fields: Array[Label] = []
 var pokemon_stats_overlay: Control
-var pokemon_stats_background: TextureRect
-var pokemon_stats_sprite: TextureRect
-var pokemon_stats_header_left: Label
-var pokemon_stats_header_right: Label
-var pokemon_stats_shiny: TextureRect
-var pokemon_stats_gender: TextureRect
 var pokemon_stats_body_left: Label
 var pokemon_stats_body_right: Label
-var pokemon_stats_hp_fill: ColorRect
-var pokemon_stats_open := false
-var pokemon_stats_page := 0
-var pokemon_stats_pokemon: Dictionary = {}
-var pokemon_stats_return_context := ""
+var pokemon_stats_open: bool:
+    get: return screens.is_open(&"pokemon_stats")
+    set(value): screens.set_open(&"pokemon_stats", value)
 var battle_party_view: Control
 var battle_party_cursor: Label
 var battle_party_sprite: TextureRect
@@ -972,11 +428,8 @@ var battle_party_action_entries: Array[String] = []
 var battle_party_rows: Array[Dictionary] = []
 var battle_clean_command_cursor: TextureRect
 var evolution_cancel_requested := false
-var evolution_greyscale_material: ShaderMaterial
 var player_color_index := 0
 var player_model_index := 0
-var custom_player_name := ""
-var player_appearance_texture_cache: Dictionary = {}
 var current_species := ""
 var current_level := 1
 var caught_species = []
@@ -998,117 +451,69 @@ var shared_storage_serial := 0
 var shared_storage_error := OK
 ## Writes the world save in the background (see _write_single_player_save).
 var save_thread: Thread
-var storage_menu: Control
 var storage_rows: Array[Dictionary] = []
-var storage_actions: Panel
 var storage_action_labels: Array[Label] = []
-var storage_footer_arrow: TextureRect
-var storage_choice_panel: Panel
-var storage_choice_arrow: TextureRect
 var storage_choice_label: Label
 var storage_no_label: Label
-var storage_dialog: Panel
-var storage_dialog_text: Label
 var storage_nickname: LineEdit
 var storage_mode := "LIST"
 var storage_action_index := 0
 var storage_yes := true
 var storage_pending := ""
 var storage_switch_from := -1
-var storage_cursor: TextureRect
-var storage_prompt: Label
 const POKEMON_STORAGE_CAPACITY := 0 # 0 retains the source unlimited chest.
 var overflow_recovery_notice := ""
 var storage_pooled := false
-var storage_menu_open := false
+var storage_menu_open: bool:
+    get: return screens.is_open(&"storage")
+    set(value): screens.set_open(&"storage", value)
 var storage_box_key := ""
 var preferred_storage_box := ""
 var storage_column := 0
 var storage_index := 0
 var storage_box_window_start := 0
-var trainer_tip_open := false
-var trainer_tip_pages: Array[String] = []
-var trainer_tip_page_index := 0
+var trainer_tip_open: bool:
+    get: return screens.is_open(&"trainer_tip")
+    set(value): screens.set_open(&"trainer_tip", value)
 var trainer_tip_continue: Label
 var item_menu_names: Array[String] = []
 var item_menu_index := 0
-var item_menu_active := false
 var item_pocket_context := ""
 var bag_action_ui: Control
 var safari_ui: Control
 ## The full map's picture, kept up to date while playing (source_map_raster.gd).
 var map_raster = preload("res://scripts/source_map_raster.gd").new(self)
 var planting_bag_target: Variant = null
-var field_item_busy := false
+var field_item_busy: bool:
+    get: return screens.is_open(&"field_item")
+    set(value): screens.set_open(&"field_item", value)
 var sleeping_bag_heal_accumulator := 0.0
-var craft_menu_open := false
-var craft_station := ""
-var craft_index := 0
-var build_menu_open := false
+var craft_menu_open: bool:
+    get: return screens.is_open(&"crafting")
+    set(value): screens.set_open(&"crafting", value)
+var build_menu_open: bool:
+    get: return screens.is_open(&"build_menu")
+    set(value): screens.set_open(&"build_menu", value)
 var build_menu_index := 0
 var resource_popup_timer := 0.0
 var resource_popup_name := ""
 var resource_popup_amount := 0
 const SOURCE_MAP_TILE_PIXELS := 4
 const DEFAULT_MAP_ZOOM := 3.0 / SOURCE_MAP_TILE_PIXELS
-const MAP_MARKER_DISPLAY_SIZE := Vector2(13.0, 9.0)
-const MAP_SLEEPING_BAG_DISPLAY_SIZE := Vector2(12.0, 8.0)
-const MAP_SLEEPING_BAG_TEXTURE := preload("res://assets/source_ui/sleeping_bag1.png")
 const MINIMAP_SIZE := Vector2(64.0, 64.0)
-const MINIMAP_MAP_SIZE := Vector2i(64, 64)
-const MINIMAP_MAP_OFFSET := Vector2.ZERO
 const MINIMAP_MAP_RADIUS := 26.4
-const MINIMAP_WINDOW_CELLS := Vector2(24.0, 24.0)
-# Idle refresh period. (At 0.0 the 20 Hz moving throttle below never applied
-# and the minimap was re-rasterised every frame.)
-const MINIMAP_REFRESH_SECONDS := 0.25
-## Size, in tiles, of the picture the minimap samples from. The view plus the 3
-## tiles tall art reaches in from every side is 30 or 31 tiles; the rest is slack
-## the view can move in before the picture has to follow it.
-const MINIMAP_REGION_CELLS := Vector2i(35, 35)
 const MAP_VIEWPORT_CENTER := Vector2(160.0, 78.0)
 const MAP_VIEWPORT_SIZE := Vector2(320.0, 156.0)
 var map_zoom := DEFAULT_MAP_ZOOM
 var map_pan := Vector2.ZERO
 var map_view_node: TextureRect
-var map_marker_node: TextureRect
-var map_sleeping_bag_node: TextureRect
-var dig_panel: Panel
-var dig_right_panel: Panel
-var dig_left_label: Label
-var dig_right_label: Label
-var dig_reward_panel: Panel
 var dig_reward_label: Label
 var dig_reward_seconds := 0.0
-var minimap_angle := 0.0
 var minimap_north: Control
 var minimap_root: Control
 var minimap_map: TextureRect
-var minimap_player: TextureRect
-var minimap_respawn: TextureRect
-var minimap_last_player_cell := Vector2i(-2147483648, -2147483648)
-var minimap_last_player_position := Vector2(-2147483648.0, -2147483648.0)
-var minimap_last_bounds := Rect2i()
-var minimap_last_respawn := Vector2i(-2147483648, -2147483648)
-var minimap_refresh_accumulator := MINIMAP_REFRESH_SECONDS
-var minimap_draw_size := Vector2i.ZERO
-var minimap_draw_offset := Vector2i.ZERO
-var minimap_texture_images := {}
-var minimap_tile_previews := {}
-var minimap_source_cache := {}
-var minimap_cache_world_id := 0
-var minimap_cache_discovered := -1
-var minimap_cache_until := 0
-## What the source picture was drawn from (tile edits, map art, structures),
-## and a number bumped whenever the picture itself changes.
-var minimap_cache_revision: Array = []
-var minimap_source_serial := 0
-var minimap_raster_key: Array = []
-var minimap_recipes: Dictionary = {}
 var teleport_map_mode := false
 var teleport_destinations: Array = []
-var teleport_destination_index := 0
-var teleport_name_label: Label
 var ball_mechanics: Node2D
 var field_move_wheel: FieldMoveRadial
 var field_move_wheel_open := false
@@ -1116,11 +521,11 @@ var field_move_wheel_index := -1
 var build_wheel_mode := false
 var build_wheel_page := 0
 var field_wheel_wait_for_release := false
-var field_quick_tap_at := -1
-var field_quick_tap_move := -1
 const BUILD_WHEEL_PAGE_SIZE := 12
 var last_android_back_msec := -10000
-var game_menu_open := false
+var game_menu_open: bool:
+    get: return screens.is_open(&"game_menu")
+    set(value): screens.set_open(&"game_menu", value)
 var game_menu_detail_open := false
 var game_menu_index := 0
 var guide_menu_open := false
@@ -1128,16 +533,18 @@ var guide_topic_open := false
 var guide_menu_index := 0
 var pokemon_menu_open := false
 var pokemon_menu_index := 0
-var pokemon_move_index := 0
 var egg_step_timer := 0
 var friendship_step_timer := 0
 var next_party_ecology_id := 1
 var save_confirm_open := false
 var save_confirm_index := 0
-var quit_prompt_open := false
-var quit_prompt_stage := 0 # 0 = quit?, 1 = save before quit?
+var quit_prompt_open: bool:
+    get: return screens.is_open(&"quit_prompt")
+    set(value): screens.set_open(&"quit_prompt", value)
 var quit_prompt_index := 0 # 0 = YES, 1 = NO
-var egg_pickup_open := false
+var egg_pickup_open: bool:
+    get: return screens.is_open(&"egg_prompt")
+    set(value): screens.set_open(&"egg_prompt", value)
 var egg_pickup_stage := 0 # 0 = discovery text, 1 = YES/NO
 var egg_pickup_index := 0 # 0 = YES, 1 = NO
 var egg_pickup_cell := Vector2i(-2147483648, -2147483648)
@@ -1146,7 +553,9 @@ var egg_dialogue_label: Label
 var egg_dialogue_arrow: Label
 var egg_choice_panel: Panel
 var egg_choice_cursor: Label
-var wild_pokemon_prompt_open := false
+var wild_pokemon_prompt_open: bool:
+    get: return screens.is_open(&"wild_prompt")
+    set(value): screens.set_open(&"wild_prompt", value)
 var wild_pokemon_prompt_stage := 0
 var wild_pokemon_prompt_index := 0
 var wild_pokemon_prompt_id := -1
@@ -1168,8 +577,6 @@ const GAME_MENU_OPTIONS := ["POKEDEX", "POKEMON", "ITEM", "STORAGE", "MAP", "GUI
 const GameOptions = preload("res://scripts/game_options.gd")
 var options_menu: Control
 var game_files_menu: Control
-var message_reveal_elapsed := 0.0
-var message_reveal_text := ""
 const GUIDE_TOPICS := [
     {
         "name": "FIELD MOVES",
@@ -1283,7 +690,6 @@ const MENU_ROW_SIZE := 2
 const MENU_ROW_WORLD_NAME := 3
 const MENU_ROW_PLAYER_NAME := 4
 const MENU_ROW_COLOR := 5
-const MENU_ROW_GO := 6
 
 const WORLD_SIZE_NAMES := ["S", "M", "L", "XL", "XXL"]
 const BUILD_COST_READY_COLOR := Color(0.0, 0.0, 0.0, 1.0)
@@ -1299,6 +705,7 @@ var shared_save_folder: Node
 var dark_mode_ui: Node
 
 func _ready() -> void:
+    _watch_screens()
     # Keep initialization and Android folder synchronization offscreen.
     $UI.hide()
     world.hide()
@@ -1317,9 +724,9 @@ func _ready() -> void:
     GameOptions.apply_audio()
     shared_save_folder.start_exports.call_deferred(self)
     _setup_options.call_deferred()
-    _setup_generation_clouds()
+    setup_screen.setup_generation_clouds()
     _build_source_ui()
-    _build_dig_minimap_ui()
+    minimap.build_dig_minimap_ui()
     world.visible = false
     setup_panel.visible = false
     generation_panel.visible = false
@@ -1331,7 +738,7 @@ func _ready() -> void:
     pokemon_stats_overlay.visible = false
     battle_party_view.visible = false
     progression_animation.texture = null
-    _create_evolution_greyscale_material()
+    progression.create_evolution_greyscale_material()
     battle_move_type_box.visible = false
     battle_move_box.visible = false
     battle_message_arrow.visible = false
@@ -1358,9 +765,9 @@ func _ready() -> void:
     battle_animation_manifest_thread.start(_load_battle_animation_manifest)
 
     world_edit.text = "PokeWilds"
-    _load_setup()
+    setup_screen.load_setup()
     saves.start_cache_cleanup()
-    _update_classic_menu_labels()
+    setup_screen.update_classic_menu_labels()
 
     # WORLD NAME uses the source-style 24-character entry buffer. Keep the
     # LineEdit itself out of keyboard/controller focus so its native caret
@@ -1373,56 +780,56 @@ func _ready() -> void:
 
     player_preview.hframes = 8
     player_preview.frame = 0
-    _apply_player_appearance()
+    appearance.apply_player_appearance()
 
     start_button.pressed.connect(_start_game)
-    $UI/SetupPanel/ColorUp.pressed.connect(_next_color)
-    $UI/SetupPanel/ColorDown.pressed.connect(_previous_color)
-    $UI/SetupPanel/ModelUp.pressed.connect(_next_model)
-    $UI/SetupPanel/ModelDown.pressed.connect(_previous_model)
+    $UI/SetupPanel/ColorUp.pressed.connect(appearance.next_color)
+    $UI/SetupPanel/ColorDown.pressed.connect(appearance.previous_color)
+    $UI/SetupPanel/ModelUp.pressed.connect(appearance.next_model)
+    $UI/SetupPanel/ModelDown.pressed.connect(appearance.previous_model)
 
-    world_edit.gui_input.connect(_display_field_gui_input.bind("world"))
+    world_edit.gui_input.connect(setup_screen.display_field_gui_input.bind("world"))
     world_edit.max_length = 24
     player_model_name.mouse_filter = Control.MOUSE_FILTER_STOP
-    player_model_name.gui_input.connect(_display_field_gui_input.bind("player"))
+    player_model_name.gui_input.connect(setup_screen.display_field_gui_input.bind("player"))
     player_model_name.size.x = 210
-    _fit_player_name()
+    setup_screen.fit_player_name()
 
-    world.generation_progress.connect(_on_generation_progress)
+    world.generation_progress.connect(setup_screen.on_generation_progress)
     world.encounter_requested.connect(_on_encounter_requested)
     if world.has_signal("battle_requested"):
         world.connect("battle_requested", Callable(self, "_on_battle_requested"))
-    world.world_message.connect(_show_message)
-    world.unown_message.connect(_show_unown_message)
+    world.world_message.connect(dialogs.show_message)
+    world.unown_message.connect(dialogs.show_unown_message)
     if world.has_signal("trainer_tip_message"):
-        world.connect("trainer_tip_message", Callable(self,
-            "_show_trainer_tip_message"))
+        world.connect("trainer_tip_message", Callable(dialogs,
+            "show_trainer_tip_message"))
     if world.has_signal("item_collected"):
-        world.connect("item_collected", Callable(self, "_on_item_collected"))
-    world.crafting_station_requested.connect(_open_crafting_menu)
-    world.material_collected.connect(_on_material_collected)
-    world.connect("dig_reward_collected", Callable(self, "_on_dig_reward_collected"))
+        world.connect("item_collected", Callable(field_actions, "on_item_collected"))
+    world.crafting_station_requested.connect(crafting_menu.open_crafting_menu)
+    world.material_collected.connect(field_actions.on_material_collected)
+    world.connect("dig_reward_collected", Callable(field_actions, "on_dig_reward_collected"))
     if world.has_signal("material_bundle_collected"):
-        world.connect("material_bundle_collected", Callable(self, "_on_material_bundle_collected"))
+        world.connect("material_bundle_collected", Callable(field_actions, "on_material_bundle_collected"))
     if world.has_signal("paint_requested"):
-        world.connect("paint_requested", Callable(self, "_on_paint_requested"))
+        world.connect("paint_requested", Callable(field_actions, "on_paint_requested"))
     if world.has_signal("teleport_map_requested"):
-        world.connect("teleport_map_requested", Callable(self, "_open_teleport_map"))
-    world.build_requested.connect(_on_build_requested)
+        world.connect("teleport_map_requested", Callable(minimap, "open_teleport_map"))
+    world.build_requested.connect(field_actions.on_build_requested)
     if world.has_signal("build_selection_changed"):
         world.connect(
             "build_selection_changed",
-            Callable(self, "_on_world_build_selection_changed")
+            Callable(crafting_menu, "on_world_build_selection_changed")
         )
     if world.has_signal("dig_requested"):
-        world.connect("dig_requested", Callable(self, "_on_dig_requested"))
-    world.build_refund_requested.connect(_on_build_refund_requested)
+        world.connect("dig_requested", Callable(field_actions, "on_dig_requested"))
+    world.build_refund_requested.connect(field_actions.on_build_refund_requested)
     if world.has_signal("structure_removal_requested"):
-        world.connect("structure_removal_requested", Callable(self, "_on_structure_removal_requested"))
+        world.connect("structure_removal_requested", Callable(field_actions, "on_structure_removal_requested"))
     world.pokemon_recalled.connect(_on_pokemon_recalled)
     world.deployed_recall_requested.connect(_on_deployed_recall_requested)
-    world.structure_action.connect(_on_structure_action)
-    _create_sign_editor()
+    world.structure_action.connect(field_actions.on_structure_action)
+    dialogs.create_sign_editor()
     if world.has_signal("egg_collected"):
         world.connect("egg_collected", Callable(self, "_on_egg_collected"))
     if world.has_signal("egg_pickup_prompt_requested"):
@@ -1453,18 +860,18 @@ func _ready() -> void:
     auto_hide.button_pressed = touch_controls.auto_hide_controller
     touch_opacity_slider.value = touch_controls.control_opacity * 100.0
     touch_size_slider.value = touch_controls.control_scale * 100.0
-    show_touch.toggled.connect(_show_touch_changed)
-    auto_hide.toggled.connect(_auto_hide_changed)
-    touch_opacity_slider.value_changed.connect(_touch_opacity_changed)
-    touch_size_slider.value_changed.connect(_touch_size_changed)
-    touch_theme_button.pressed.connect(_cycle_touch_theme)
-    touch_controls.control_theme_changed.connect(_on_touch_theme_changed)
+    show_touch.toggled.connect(touch_config_panel.show_touch_changed)
+    auto_hide.toggled.connect(touch_config_panel.auto_hide_changed)
+    touch_opacity_slider.value_changed.connect(touch_config_panel.touch_opacity_changed)
+    touch_size_slider.value_changed.connect(touch_config_panel.touch_size_changed)
+    touch_theme_button.pressed.connect(touch_config_panel.cycle_touch_theme)
+    touch_controls.control_theme_changed.connect(touch_config_panel.on_touch_theme_changed)
     touch_controls.touch_config_requested.connect(
-        _open_touch_config
+        touch_config_panel.open_touch_config
     )
-    $UI/TouchConfig/VBox/MoveControls.pressed.connect(_move_controls)
-    $UI/TouchConfig/VBox/ResetLayout.pressed.connect(_reset_layout)
-    $UI/TouchConfig/VBox/Close.pressed.connect(_close_touch_config)
+    $UI/TouchConfig/VBox/MoveControls.pressed.connect(touch_config_panel.move_controls)
+    $UI/TouchConfig/VBox/ResetLayout.pressed.connect(touch_config_panel.reset_layout)
+    $UI/TouchConfig/VBox/Close.pressed.connect(touch_config_panel.close_touch_config)
     var files_button := Button.new()
     files_button.name="GameFiles";files_button.text="GAME FILES"
     $UI/TouchConfig/VBox.add_child(files_button)
@@ -1477,8 +884,8 @@ func _ready() -> void:
     $UI/TouchConfig/VBox.add_child(mods_button)
     $UI/TouchConfig/VBox.move_child(mods_button,files_button.get_index()+1)
     mods_button.pressed.connect(_open_modding_menu)
-    _refresh_touch_config_labels()
-    _apply_touch_config_theme()
+    touch_config_panel.refresh_touch_config_labels()
+    touch_config_panel.apply_touch_config_theme()
 
     coop_game = preload("res://scripts/coop_game.gd").new()
     add_child(coop_game)
@@ -1499,12 +906,12 @@ func _ready() -> void:
     back_label.mouse_filter=Control.MOUSE_FILTER_STOP
     back_label.gui_input.connect(func(event):
         if event is InputEventMouseButton and event.pressed and event.button_index==MOUSE_BUTTON_LEFT and not started and not generating:
-            menu_row=MENU_ROW_LOCAL;menu_col=0;_update_menu_cursor();coop_game.cancel_join();coop_menu.open())
-    _setup_menu_navigation()
+            menu_row=MENU_ROW_LOCAL;menu_col=0;setup_screen.update_menu_cursor();coop_game.cancel_join();coop_menu.open())
+    setup_screen.setup_menu_navigation()
     _create_egg_pickup_ui()
     _create_wild_pokemon_prompt_ui()
-    _update_classic_menu_labels()
-    _update_menu_cursor()
+    setup_screen.update_classic_menu_labels()
+    setup_screen.update_menu_cursor()
     $UI.set_script(preload("res://scripts/proportional_ui_layout.gd"))
     $UI._ready()
     touch_ui = preload("res://scripts/touch_ui.gd").new()
@@ -1628,704 +1035,16 @@ func _create_wild_pokemon_prompt_ui() -> void:
     wild_yes.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
     wild_no.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 
-func _build_dig_minimap_ui() -> void:
-    # DIG uses the same two-box source UI geometry as BUILD/CRAFTING.
-    dig_panel = Panel.new()
-    dig_panel.name = "DigPanel"
-    dig_panel.position = Vector2(2.0, 2.0)
-    dig_panel.size = Vector2(140.0, 48.0)
-    dig_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    dig_panel.add_theme_stylebox_override("panel", _classic_dialogue_style())
-    dig_panel.visible = false
-    $UI.add_child(dig_panel)
+## minimap.gd under its old names, for the scripts and tests that call them on main.
+func _minimap_paint(changed: Rect2i, bounds: Rect2i, exact_world) -> void: minimap.minimap_paint(changed, bounds, exact_world)
+func _minimap_render(region: Rect2i, bounds: Rect2i, exact_world) -> Image: return minimap.minimap_render(region, bounds, exact_world)
+func _show_map_menu() -> void: minimap.show_map_menu()
+func _update_map_transform() -> void: minimap.update_map_transform()
+func _set_map_zoom(value: float) -> void: minimap.set_map_zoom(value)
 
-    dig_right_panel = Panel.new()
-    dig_right_panel.name = "DigGetPanel"
-    dig_right_panel.position = Vector2(176.0, 0.0)
-    dig_right_panel.size = dig_panel.size
-    dig_right_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    dig_right_panel.add_theme_stylebox_override("panel", _classic_dialogue_style())
-    dig_panel.add_child(dig_right_panel)
-
-    dig_left_label = _source_ui_label(
-        dig_panel, "DigSoil", Vector2(14.0, 8.0), Vector2(114.0, 34.0), 8, "DIG")
-    dig_left_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    dig_right_label = _source_ui_label(
-        dig_right_panel, "DigResult", Vector2(14.0, 8.0), Vector2(114.0, 34.0), 8, "GET")
-    dig_right_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    dig_reward_panel = Panel.new()
-    dig_reward_panel.name = "DigRewardPanel"
-    dig_reward_panel.position = dig_right_panel.position
-    dig_reward_panel.size = dig_right_panel.size
-    dig_reward_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    dig_reward_panel.add_theme_stylebox_override("panel", _classic_dialogue_style())
-    dig_reward_panel.hide()
-    dig_panel.add_child(dig_reward_panel)
-    dig_reward_label = _source_ui_label(dig_reward_panel, "Reward",
-        dig_right_label.position, dig_right_label.size, 8)
-    dig_reward_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-
-    # Independent static compass/minimap. It never reuses/reparents the full map.
-    minimap_root = Control.new()
-    minimap_root.name = "WorldMiniMap"
-    minimap_root.position = Vector2(2.0, 2.0)
-    minimap_root.size = MINIMAP_SIZE
-    minimap_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    minimap_root.z_index = 80
-    minimap_root.visible = false
-    $UI.add_child(minimap_root)
-
-    minimap_map = _source_texture_rect(
-        minimap_root, "Map", MINIMAP_MAP_OFFSET,
-        Vector2(MINIMAP_MAP_SIZE), null)
-    minimap_map.stretch_mode = TextureRect.STRETCH_SCALE
-    minimap_map.z_index = 1
-
-    # The HUD's ring (hud_style.gd) around the map, with the north marker on it.
-    var ring := Control.new()
-    ring.name = "Ring"
-    ring.size = MINIMAP_SIZE
-    ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    ring.z_index = 5
-    ring.draw.connect(func():
-        var centre := MINIMAP_SIZE * 0.5
-        var outer := MINIMAP_SIZE.x * 0.5 - HudStyle.STROKE * 0.5
-        ring.draw_arc(centre, (outer + MINIMAP_MAP_RADIUS) * 0.5, 0.0, TAU, 64, HudStyle.fill(false, true), outer - MINIMAP_MAP_RADIUS + 0.5, true)
-        ring.draw_arc(centre, outer, 0.0, TAU, 64, HudStyle.INK, HudStyle.STROKE, true))
-    minimap_root.add_child(ring)
-    minimap_north = preload("res://scripts/minimap_north.gd").new()
-    minimap_north.name="North"
-    minimap_root.add_child(minimap_north)
-    minimap_player = _source_texture_rect(
-        minimap_root, "Player", Vector2.ZERO, Vector2(7.0, 5.0), null)
-    var appearance_texture: Texture2D = _player_appearance_texture(false)
-    if appearance_texture != null and (not minimap_player.texture is AtlasTexture or (minimap_player.texture as AtlasTexture).atlas != appearance_texture):
-        var marker_frame: AtlasTexture = AtlasTexture.new()
-        marker_frame.atlas = appearance_texture
-        marker_frame.region = Rect2(0.0, 0.0, 16.0, 11.0)
-        minimap_player.texture = marker_frame
-    minimap_player.z_index = 4
-
-    minimap_respawn = _source_texture_rect(
-        minimap_root, "Respawn", Vector2.ZERO, Vector2(6.0, 4.0), MAP_SLEEPING_BAG_TEXTURE)
-    minimap_respawn.z_index = 3
-    minimap_respawn.visible = false
-
-func _minimap_top_box_visible(ignore_dig: bool = false) -> bool:
-    if not started or generating or battle_active or progression_active:
-        return true
-    if setup_panel.visible or touch_config.visible or game_menu_open or quit_prompt_open:
-        return true
-    if craft_menu_open or build_menu_open or resource_popup.visible:
-        return true
-    if not ignore_dig and dig_panel != null and dig_panel.visible:
-        return true
-    # Dynamically-created storage/sign/etc. top panels should also hide it. Keep
-    # the explicitly approved bottom egg/wild dialogue and normal message boxes.
-    for raw_child in $UI.get_children():
-        if not (raw_child is Control):
-            continue
-        var child: Control = raw_child as Control
-        if not child.visible or child == minimap_root or (ignore_dig and child == dig_panel):
-            continue
-        if child == message_panel or child == egg_dialogue_panel or child == egg_choice_panel or child == wild_dialogue_panel or child == wild_choice_panel:
-            continue
-        if child.name in ["TouchControls", "WorldMiniMap"]:
-            continue
-        if child is Panel and child.position.y < 86.0 and child.size.y > 12.0:
-            return true
-    return false
-
-func _update_dig_hud_and_minimap(delta: float) -> void:
-    if dig_panel == null or minimap_root == null:
-        return
-    var dig_selected := String(world.get("active_field_move")) == "DIG"
-    var dig_active: bool = started and world.visible and dig_selected and not _minimap_top_box_visible(true)
-    dig_active = dig_active and not storage_menu_open and not storage_menu.visible and not trainer_tip_open and not field_move_wheel_open and not sign_dialog.visible
-    if not dig_selected:
-        dig_reward_seconds = 0.0
-    elif dig_active:
-        dig_reward_seconds = maxf(0.0, dig_reward_seconds - delta)
-    dig_reward_panel.visible = dig_reward_seconds > 0.0
-    dig_right_panel.visible = not dig_reward_panel.visible
-    dig_panel.visible = dig_active
-    if dig_active and world.has_method("get_dig_hud_state"):
-        var state: Dictionary = world.call("get_dig_hud_state")
-        dig_left_label.text = String(state.get("left", "DIG"))
-        dig_right_label.text = String(state.get("right", ""))
-        _fit_compact_dig_label(dig_right_label)
-        dig_left_label.modulate = Color.WHITE if bool(state.get("diggable", false)) else Color(0.55, 0.55, 0.55, 1.0)
-    var top_free: bool = started and world.visible and not _minimap_top_box_visible()
-    var minimap_should_show: bool = GameOptions.enabled("minimap") and top_free
-    minimap_root.visible = minimap_should_show
-    status_hud.refresh(delta, top_free)
-    if not minimap_should_show:
-        return
-    var player_node: Node2D = world.get_node_or_null("Player") as Node2D
-    if player_node == null:
-        return
-    var player_position: Vector2 = player_node.position
-    var player_cell: Vector2i = Vector2i(
-        int(floor(player_position.x / 16.0)), int(floor(player_position.y / 16.0)))
-    var bounds: Rect2i = Rect2i(Vector2i.ZERO, Vector2i(int(world.get("map_w")), int(world.get("map_h"))))
-    if world.has_method("get_map_bounds"):
-        bounds = world.call("get_map_bounds")
-    var respawn_cell: Vector2i = world.get("respawn_cell")
-    var bounds_changed: bool = bounds != minimap_last_bounds
-    var respawn_changed: bool = respawn_cell != minimap_last_respawn
-    var player_position_changed: bool = player_position != minimap_last_player_position
-    minimap_refresh_accumulator += delta
-    if (
-            bounds_changed
-            or respawn_changed
-            # While moving, 20 times a second is as smooth as the minimap's
-            # few pixels can show; every frame cost about 4 ms.
-            or (player_position_changed and minimap_refresh_accumulator >= 0.05)
-            or minimap_map.texture == null
-            or minimap_refresh_accumulator >= MINIMAP_REFRESH_SECONDS
-        ):
-        # Keep the remainder: zeroing it made 20 Hz into 15 Hz at 30 FPS.
-        minimap_refresh_accumulator = fmod(minimap_refresh_accumulator, 0.05)
-        minimap_last_bounds = bounds
-        minimap_last_respawn = respawn_cell
-        minimap_last_player_position = player_position
-        _refresh_minimap(bounds, player_position)
-        # Frame, north marker and waypoints only move with a refresh.
-        _apply_minimap_rotation(delta)
-    minimap_last_player_cell = player_cell
-
-func _apply_minimap_rotation(delta: float = 1.0) -> void:
-    minimap_angle = 0.0
-    var angle:=minimap_angle
-    minimap_map.pivot_offset = minimap_map.size * 0.5
-    minimap_map.rotation = angle
-    # On the ring, inside its outer edge.
-    minimap_north.position = (MINIMAP_SIZE * 0.5 + Vector2(0,-27).rotated(angle) - minimap_north.size * 0.5).round()
-    if minimap_respawn.visible:
-        var center := MINIMAP_MAP_OFFSET + Vector2(MINIMAP_MAP_SIZE) * 0.5
-        var unrotated: Vector2 = minimap_respawn.get_meta("unrotated_position", minimap_respawn.position)
-        minimap_respawn.position = center + (unrotated + minimap_respawn.size * 0.5 - center).rotated(angle) - minimap_respawn.size * 0.5
-    if is_instance_valid(waypoint_ui):waypoint_ui.update_minimap(angle)
-
-func _refresh_minimap(bounds: Rect2i, player_position: Vector2) -> void:
-    if bounds.size.x <= 0 or bounds.size.y <= 0:
-        return
-    var appearance_texture: Texture2D = _player_appearance_texture(false)
-    var current_marker := minimap_player.texture as AtlasTexture
-    if appearance_texture != null and (current_marker == null or current_marker.atlas != appearance_texture):
-        var marker_frame: AtlasTexture = AtlasTexture.new()
-        marker_frame.atlas = appearance_texture
-        marker_frame.region = Rect2(0.0, 0.0, 16.0, 11.0)
-        minimap_player.texture = marker_frame
-    var canvas_size: Vector2i = MINIMAP_MAP_SIZE
-    var map_center: Vector2 = Vector2(float(canvas_size.x) * 0.5, float(canvas_size.y) * 0.5)
-    var map_diameter: float = MINIMAP_MAP_RADIUS * 2.0
-    var map_left: float = map_center.x - MINIMAP_MAP_RADIUS
-    var map_top: float = map_center.y - MINIMAP_MAP_RADIUS
-    var player_cell_position: Vector2 = player_position / 16.0
-    var interior_image: Image = world.interior_map_image(bounds)
-    var indoor := interior_image != null
-    # Fit the floor's diagonal in the circular view, preserving centered-player
-    # panning and uniform scale. Outdoors retain the approved 24-cell window.
-    var centered := indoor
-    var window_cells := MINIMAP_WINDOW_CELLS
-    if indoor:
-        window_cells = Vector2.ONE * maxf(24.0, Vector2(bounds.size).length() + 2.0)
-    var half_window: Vector2 = window_cells * 0.5
-    var view_origin: Vector2 = player_cell_position - half_window
-    var min_origin_x: float = float(bounds.position.x)
-    var min_origin_y: float = float(bounds.position.y)
-    var max_origin_x: float = float(bounds.position.x + bounds.size.x) - window_cells.x
-    var max_origin_y: float = float(bounds.position.y + bounds.size.y) - window_cells.y
-    if max_origin_x < min_origin_x:
-        max_origin_x = min_origin_x
-    if max_origin_y < min_origin_y:
-        max_origin_y = min_origin_y
-    view_origin.x = clampf(view_origin.x, min_origin_x, max_origin_x)
-    view_origin.y = clampf(view_origin.y, min_origin_y, max_origin_y)
-    # A shift of one map pixel must move every terrain sample by the same
-    # pixel. Fractional origins resample cell edges independently each frame.
-    var cells_per_pixel: Vector2 = window_cells / map_diameter
-    view_origin.x = clampf(roundf(view_origin.x / cells_per_pixel.x) * cells_per_pixel.x,
-        min_origin_x, max_origin_x)
-    view_origin.y = clampf(roundf(view_origin.y / cells_per_pixel.y) * cells_per_pixel.y,
-        min_origin_y, max_origin_y)
-    if centered:
-        view_origin = player_cell_position - half_window
-        view_origin = (view_origin / cells_per_pixel).round() * cells_per_pixel
-    var exact = world.get("exact_world")
-    minimap_map.set_meta("view_origin",view_origin)
-    minimap_map.set_meta("window_cells",window_cells)
-    # The picture is redrawn only when what it samples changed: the view, the
-    # source picture (rebuilt on tile edits, patched on discovery) or, without
-    # one, the tiles themselves. It used to be redrawn every 2 s regardless.
-    var source_region: Dictionary = _minimap_source_region(bounds, view_origin)
-    var source_image: Image = source_region.get("image")
-    var raster_key: Array = [bounds, view_origin, window_cells, indoor, centered,
-        0 if exact == null else exact.get_instance_id(),
-        world.discovered_cells.size() if Time.get_ticks_msec() - minimap_cache_built >= 400 else minimap_cache_discovered,
-        0 if source_image == null else source_image.get_instance_id(), minimap_source_serial,
-        _minimap_world_revision() if source_image == null else []]
-    if raster_key == minimap_raster_key and minimap_map.texture != null:
-        _position_minimap_markers(bounds, player_position, view_origin, window_cells)
-        return
-    minimap_raster_key = raster_key
-    var image := Image.create(canvas_size.x, canvas_size.y, false, Image.FORMAT_RGBA8)
-    image.fill(Color(0, 0, 0, 0))
-    var source_origin: Vector2i = source_region.get("origin", Vector2i.ZERO)
-    if source_image != null:
-        # Sampling is separable: calculate X/Y indices once, rather than
-        # querying world discovery and doing vector/string work per pixel.
-        # These are exactly the previous nearest-neighbour sample equations.
-        var sample_columns := PackedInt32Array()
-        for px in range(canvas_size.x):
-            var u := clampf((float(px) + 0.5 - map_left) / map_diameter, 0.0, 1.0)
-            var sample_x := view_origin.x + u * window_cells.x
-            if centered and (sample_x < bounds.position.x or sample_x >= bounds.end.x):
-                sample_columns.append(-1)
-                continue
-            sample_columns.append(clampi(floori(clampf(sample_x,
-                float(bounds.position.x), float(bounds.end.x) - 0.0001) * SOURCE_MAP_TILE_PIXELS)
-                - source_origin.x * SOURCE_MAP_TILE_PIXELS, 0, source_image.get_width() - 1))
-        for py in range(canvas_size.y):
-            var v := clampf((float(py) + 0.5 - map_top) / map_diameter, 0.0, 1.0)
-            var sample_y := view_origin.y + v * window_cells.y
-            var source_y := clampi(floori(clampf(sample_y,
-                float(bounds.position.y), float(bounds.end.y) - 0.0001) * SOURCE_MAP_TILE_PIXELS)
-                - source_origin.y * SOURCE_MAP_TILE_PIXELS, 0, source_image.get_height() - 1)
-            var dy := float(py) + 0.5 - map_center.y
-            for px in range(canvas_size.x):
-                var dx := float(px) + 0.5 - map_center.x
-                if dx * dx + dy * dy <= MINIMAP_MAP_RADIUS * MINIMAP_MAP_RADIUS:
-                    if centered and (sample_columns[px] < 0 or sample_y < bounds.position.y or sample_y >= bounds.end.y):
-                        image.set_pixel(px, py, Color(0.025, 0.035, 0.03, 1.0))
-                    else:
-                        image.set_pixel(px, py, source_image.get_pixel(sample_columns[px], source_y))
-    else:
-        for py in range(canvas_size.y):
-            for px in range(canvas_size.x):
-                var pixel_center: Vector2 = Vector2(float(px) + 0.5, float(py) + 0.5)
-                var distance: float = pixel_center.distance_to(map_center)
-                if distance > MINIMAP_MAP_RADIUS:
-                    continue
-                var sample_u: float = clampf((float(px) + 0.5 - map_left) / map_diameter, 0.0, 1.0)
-                var sample_v: float = clampf((float(py) + 0.5 - map_top) / map_diameter, 0.0, 1.0)
-                var sample_x: float = view_origin.x + sample_u * window_cells.x
-                var sample_y: float = view_origin.y + sample_v * window_cells.y
-                var clamped_x: int = clampi(int(floor(sample_x)), bounds.position.x, bounds.position.x + bounds.size.x - 1)
-                var clamped_y: int = clampi(int(floor(sample_y)), bounds.position.y, bounds.position.y + bounds.size.y - 1)
-                var cell: Vector2i = Vector2i(clamped_x, clamped_y)
-                var discovered: bool = bool(world.call("is_cell_discovered", cell))
-                var color: Color = Color(0.025, 0.035, 0.03, 1.0)
-                if source_image != null:
-                    var source_x: int = clampi(floori(clampf(sample_x,
-                        float(bounds.position.x), float(bounds.end.x) - 0.0001) * SOURCE_MAP_TILE_PIXELS)
-                        - source_origin.x * SOURCE_MAP_TILE_PIXELS, 0, source_image.get_width() - 1)
-                    var source_y: int = clampi(floori(clampf(sample_y,
-                        float(bounds.position.y), float(bounds.end.y) - 0.0001) * SOURCE_MAP_TILE_PIXELS)
-                        - source_origin.y * SOURCE_MAP_TILE_PIXELS, 0, source_image.get_height() - 1)
-                    color = source_image.get_pixel(source_x, source_y)
-                elif discovered:
-                    color = world.call("map_color_for_cell", cell)
-                elif (px + py) % 2 != 0:
-                    color = Color(0.045, 0.055, 0.05, 1.0)
-                image.set_pixel(px, py, color)
-    if minimap_map.texture is ImageTexture and minimap_map.texture.get_size() == Vector2(canvas_size):
-        (minimap_map.texture as ImageTexture).update(image)
-    else:
-        minimap_map.texture = ImageTexture.create_from_image(image)
-    minimap_draw_size = canvas_size
-    minimap_draw_offset = Vector2i.ZERO
-    _position_minimap_markers(bounds, player_position, view_origin, window_cells)
-
-## Changes whenever anything the minimap draws from changed: a tile edit
-## (tide, digging, building, pickups...), the map art, or the structures.
-func _minimap_world_revision() -> Array:
-    var exact = world.get("exact_world")
-    var store = null if exact == null else exact.get("tiles")
-    return [store.edit_count if store is WorldTileStore else 0,
-        int(world.get("map_art_revision")), (world.get("built_structures") as Dictionary).size()]
-
-func _minimap_source_region(bounds: Rect2i, view_origin: Vector2) -> Dictionary:
-    var interior: Image = world.interior_map_image(bounds)
-    if interior != null:
-        return {"image": interior, "origin": bounds.position, "bounds": bounds, "region": bounds}
-    var exact_world = world.get("exact_world")
-    if exact_world == null:
-        return {}
-    # Use the full MAP screen's source tile recipes in a small window around
-    # the player. The margin preserves tall art crossing the window edge.
-    var origin := Vector2i(floori(view_origin.x), floori(view_origin.y)) - Vector2i(3, 3)
-    var end := Vector2i(ceili(view_origin.x + MINIMAP_WINDOW_CELLS.x),
-        ceili(view_origin.y + MINIMAP_WINDOW_CELLS.y)) + Vector2i(3, 3)
-    var needed := Rect2i(origin, end - origin)
-    var world_id: int = exact_world.get_instance_id()
-    var discovered_count: int = world.discovered_cells.size()
-    var now: int = Time.get_ticks_msec()
-    if world_id != minimap_cache_world_id:
-        minimap_texture_images.clear()
-        minimap_tile_previews.clear()
-        minimap_recipes.clear()
-    # The picture covers a little more than the view and is kept while the view
-    # stays inside it. When the view runs out of it the picture slides along
-    # (the part it still has is moved and only the new cells are drawn), and
-    # newly discovered ground is painted in at once, but only the patch that
-    # changed. Other changes (tide, digs, builds) rebuild it, at most every
-    # 2 s, as the 2 s refresh it replaces did.
-    var revision := _minimap_world_revision()
-    var cache := minimap_source_cache
-    var cache_ok: bool = not cache.is_empty() and \
-            world_id == minimap_cache_world_id and \
-            (revision == minimap_cache_revision or now < minimap_cache_until) and \
-            cache["bounds"] == bounds
-    if cache_ok and not (cache["region"] as Rect2i).encloses(needed):
-        cache_ok = _minimap_slide(needed, bounds, exact_world)
-    if cache_ok:
-        cache_ok = _minimap_paint_discovered(discovered_count, bounds, exact_world)
-    if cache_ok:
-        return cache
-    var region := Rect2i(needed.position - (MINIMAP_REGION_CELLS - needed.size) / 2, MINIMAP_REGION_CELLS)
-    var image := _minimap_render(region, bounds, exact_world)
-    minimap_cache_discovered = discovered_count
-    minimap_cache_added = world.discovered_added
-    world.discovered_dirty = Rect2i()
-    minimap_cache_world_id = world_id
-    minimap_cache_until = now + 2000
-    minimap_cache_revision = revision
-    minimap_source_serial += 1
-    minimap_source_cache = {
-        "image": image, "origin": region.position, "region": region, "bounds": bounds, "spare": null
-    }
-    return minimap_source_cache
-
-## Moves the picture's region along so that it holds `needed` again, keeping
-## what is drawn of the part both regions cover. The cells that came into it
-## are drawn fresh (with the 3 tiles inside the old edge that tall art from
-## those cells reaches). False if the move is too far to be worth it.
-func _minimap_slide(needed: Rect2i, bounds: Rect2i, exact_world) -> bool:
-    var cache := minimap_source_cache
-    var old_region: Rect2i = cache["region"]
-    var target := old_region.position
-    # Leave the slack ahead of the view, and one tile behind it.
-    if needed.position.x < old_region.position.x: target.x = needed.end.x + 1 - old_region.size.x
-    elif needed.end.x > old_region.end.x: target.x = needed.position.x - 1
-    if needed.position.y < old_region.position.y: target.y = needed.end.y + 1 - old_region.size.y
-    elif needed.end.y > old_region.end.y: target.y = needed.position.y - 1
-    var region := Rect2i(target, old_region.size)
-    var kept := old_region.intersection(region)
-    if not region.encloses(needed) or kept.size.x * 2 < region.size.x or kept.size.y * 2 < region.size.y:
-        return false
-    var image: Image = cache["image"]
-    var moved: Image = cache.get("spare")
-    if moved == null or moved.get_size() != image.get_size():
-        moved = Image.create(image.get_width(), image.get_height(), false, Image.FORMAT_RGBA8)
-    moved.blit_rect(image, Rect2i((kept.position - old_region.position) * SOURCE_MAP_TILE_PIXELS,
-        kept.size * SOURCE_MAP_TILE_PIXELS), (kept.position - region.position) * SOURCE_MAP_TILE_PIXELS)
-    cache["spare"] = image
-    cache["image"] = moved
-    cache["region"] = region
-    cache["origin"] = region.position
-    if region.position.x < old_region.position.x:
-        _minimap_paint(Rect2i(region.position, Vector2i(old_region.position.x - region.position.x, region.size.y)), bounds, exact_world)
-    elif region.end.x > old_region.end.x:
-        _minimap_paint(Rect2i(Vector2i(old_region.end.x, region.position.y), Vector2i(region.end.x - old_region.end.x, region.size.y)), bounds, exact_world)
-    if region.position.y < old_region.position.y:
-        _minimap_paint(Rect2i(region.position, Vector2i(region.size.x, old_region.position.y - region.position.y)), bounds, exact_world)
-    elif region.end.y > old_region.end.y:
-        _minimap_paint(Rect2i(Vector2i(region.position.x, old_region.end.y), Vector2i(region.size.x, region.end.y - old_region.end.y)), bounds, exact_world)
-    return true
-
-## Paints in the ground discovered since the picture was last up to date. The
-## world records a box around the cells it added; if its count of them does not
-## explain the change in discovered_cells, or the box is most of the picture,
-## this returns false and the picture is redrawn whole.
-func _minimap_paint_discovered(discovered_count: int, bounds: Rect2i, exact_world) -> bool:
-    var added: int = world.discovered_added
-    if discovered_count == minimap_cache_discovered and added == minimap_cache_added:
-        return true
-    var known := discovered_count - minimap_cache_discovered == added - minimap_cache_added
-    var dirty: Rect2i = world.discovered_dirty
-    minimap_cache_discovered = discovered_count
-    minimap_cache_added = added
-    world.discovered_dirty = Rect2i()
-    if not known:
-        return false
-    var kept: Rect2i = minimap_source_cache["region"]
-    var changed := dirty.intersection(kept)
-    if changed.size.x <= 0 or changed.size.y <= 0:
-        return true
-    if changed.grow(3).intersection(kept).get_area() * 2 >= kept.get_area():
-        return false
-    _minimap_paint(changed, bounds, exact_world)
-    return true
-
-## Redraws the part of the picture that the tiles in `changed` can touch: art
-## reaches up to 3 tiles past its own tile, so `changed` and 3 tiles around it
-## are replaced, from a drawing that has 3 more tiles around that for the art
-## reaching in from outside.
-func _minimap_paint(changed: Rect2i, bounds: Rect2i, exact_world) -> void:
-    var cache := minimap_source_cache
-    var kept: Rect2i = cache["region"]
-    var patch := changed.grow(3).intersection(kept)
-    if patch.size.x <= 0 or patch.size.y <= 0:
-        return
-    var drawn := patch.grow(3).intersection(kept)
-    var fresh := _minimap_render(drawn, bounds, exact_world)
-    (cache["image"] as Image).blit_rect(fresh,
-        Rect2i((patch.position - drawn.position) * SOURCE_MAP_TILE_PIXELS, patch.size * SOURCE_MAP_TILE_PIXELS),
-        (patch.position - kept.position) * SOURCE_MAP_TILE_PIXELS)
-    minimap_source_serial += 1
-
-## What to draw for a tile, found by its name, upper name and colour: the
-## lower and the upper drawing, each [image, rect, offset x, offset y] or null
-## if the tile draws nothing there. `sig` is the key it is kept under.
-func _minimap_recipe_pair(sig: Variant, base_name: String, upper_name: String, color: bool) -> Array:
-    var known: Variant = minimap_recipes.get(sig)
-    if known != null:
-        return known
-    if minimap_recipes.size() >= 4096:
-        minimap_recipes.clear()
-    var tile := {"base": base_name, "upper": upper_name, "color": color}
-    var pair: Array = []
-    for upper_pass in [false, true]:
-        var spec: Dictionary = SourceWorldData.render_spec(tile, upper_pass)
-        var recipe: Variant = null
-        var texture := spec.get("texture") as Texture2D
-        if texture != null:
-            var source: Image = TexturePixels.of(texture)
-            var rect: Rect2 = spec.get("region", Rect2(0,0,16,16))
-            var preview := source.get_region(Rect2i(rect))
-            preview.resize(maxi(1,roundi(rect.size.x / 4.0)), maxi(1,roundi(rect.size.y / 4.0)), Image.INTERPOLATE_NEAREST)
-            var offset := Vector2i((Vector2(spec.get("offset",Vector2.ZERO)) / 4.0).round())
-            recipe = [preview, Rect2i(Vector2i.ZERO, preview.get_size()), offset.x, offset.y]
-        pair.append(recipe)
-    minimap_recipes[sig] = pair
-    return pair
-
-## Draws the minimap's source picture for `region` (in tiles): every
-## discovered tile, the buildings on them, and the checker over the rest.
-func _minimap_render(region: Rect2i, bounds: Rect2i, exact_world) -> Image:
-    var image := Image.create(region.size.x * SOURCE_MAP_TILE_PIXELS,
-        region.size.y * SOURCE_MAP_TILE_PIXELS, false, Image.FORMAT_RGBA8)
-    image.fill(Color(0.025, 0.035, 0.03, 1.0))
-    # Tiles are read straight from the store's arrays, not one SourceTile
-    # object per cell, and discovery is looked up in the world's bitset.
-    var store = exact_world.tiles
-    var packed: bool = store is WorldTileStore
-    var flags := PackedInt32Array()
-    var name_ids := PackedInt32Array()
-    var upper_ids := PackedInt32Array()
-    var strings := PackedStringArray()
-    var store_origin := Vector2i.ZERO
-    var store_width := 0
-    var store_height := 0
-    var store_extra := false
-    if packed:
-        flags = store.flags
-        name_ids = store.name_ids
-        upper_ids = store.upper_ids
-        strings = store.strings
-        store_origin = store.origin
-        store_width = store.width
-        store_height = store.height
-        store_extra = not (store.extra as Dictionary).is_empty()
-    var discovered = world.discovered_cells
-    var overworld: bool = String(world.active_area_id) == "OVERWORLD"
-    var draw_x := PackedInt32Array()
-    var draw_y := PackedInt32Array()
-    var lower: Array = []
-    var upper: Array = []
-    var hidden_x := PackedInt32Array()
-    var hidden_y := PackedInt32Array()
-    var bounds_left := bounds.position.x
-    var bounds_right := bounds.end.x
-    for y in range(region.size.y):
-        var cy := region.position.y + y
-        var row_inside := cy >= bounds.position.y and cy < bounds.end.y
-        for x in range(region.size.x):
-            var cx := region.position.x + x
-            if not row_inside or cx < bounds_left or cx >= bounds_right \
-                    or not (discovered.has(Vector2i(cx, cy)) if overworld else world.is_cell_discovered(Vector2i(cx, cy))):
-                hidden_x.append(x)
-                hidden_y.append(y)
-                continue
-            var pair: Variant = null
-            var in_store := false
-            if packed:
-                var at_x := cx - store_origin.x
-                var at_y := cy - store_origin.y
-                if at_x >= 0 and at_y >= 0 and at_x < store_width and at_y < store_height:
-                    var index := at_y * store_width + at_x
-                    var bits := flags[index]
-                    if bits & WorldTileStore.PRESENT != 0:
-                        in_store = true
-                        var name_id := name_ids[index]
-                        var upper_id := upper_ids[index]
-                        var sig := name_id | (upper_id << 24) | ((bits & WorldTileStore.COLOR) << 47)
-                        pair = minimap_recipes.get(sig)
-                        if pair == null:
-                            pair = _minimap_recipe_pair(sig, strings[name_id], strings[upper_id],
-                                bits & WorldTileStore.COLOR != 0)
-            if not in_store and (store_extra or not packed):
-                var tile: SourceTile = exact_world.tile_at(Vector2i(cx, cy))
-                if tile != null:
-                    pair = _minimap_recipe_pair("%s|%s|%s" % [tile.name, tile.name_upper, tile.color],
-                        tile.name, tile.name_upper, tile.color)
-            if pair != null:
-                draw_x.append(x)
-                draw_y.append(y)
-                lower.append(pair[0])
-                upper.append(pair[1])
-    for recipes in [lower, upper]:
-        for index in range(draw_x.size()):
-            var recipe: Variant = recipes[index]
-            if recipe != null:
-                image.blend_rect(recipe[0], recipe[1], Vector2i(
-                    draw_x[index] * SOURCE_MAP_TILE_PIXELS + recipe[2],
-                    draw_y[index] * SOURCE_MAP_TILE_PIXELS + recipe[3]))
-    _paint_built_structures_on_map(image, region.position)
-    # Mask after both passes, preserving tall-art overlap and checker positions.
-    var dark := Color(0.025, 0.035, 0.03, 1.0)
-    var light := Color(0.045, 0.055, 0.05, 1.0)
-    for index in range(hidden_x.size()):
-        var cell := region.position + Vector2i(hidden_x[index], hidden_y[index]) - bounds.position
-        image.fill_rect(Rect2i(hidden_x[index] * SOURCE_MAP_TILE_PIXELS, hidden_y[index] * SOURCE_MAP_TILE_PIXELS,
-            SOURCE_MAP_TILE_PIXELS, SOURCE_MAP_TILE_PIXELS), light if (cell.x + cell.y) % 2 != 0 else dark)
-    return image
-
-var built_map_art_cache: Dictionary = {}
-var minimap_cache_built := 0
-## world.discovered_added when the source picture was last up to date.
-var minimap_cache_added := 0
-
-func _paint_built_structures_on_map(image: Image, origin: Vector2i) -> void:
-    var structures: Dictionary = world.get("built_structures")
-    var visible_rect := Rect2i(origin, image.get_size() / SOURCE_MAP_TILE_PIXELS)
-    var ordered: Array = structures.keys()
-    ordered.sort_custom(func(a, b): return a.y < b.y if a.y != b.y else a.x < b.x)
-    var near := visible_rect.grow(4)
-    for cell in ordered:
-        if not near.has_point(cell): continue
-        var actor := structures[cell].get("sprite") as Sprite2D
-        if not is_instance_valid(actor) or actor.texture == null: continue
-        var cache_key := str([actor.texture.get_instance_id(), actor.region_enabled, actor.region_rect, actor.hframes, actor.vframes, actor.frame])
-        if not built_map_art_cache.has(cache_key):
-            if built_map_art_cache.size() >= 512: built_map_art_cache.clear()
-            var pixels := TexturePixels.of(actor.texture)
-            if actor.region_enabled: pixels = pixels.get_region(Rect2i(actor.region_rect))
-            elif actor.hframes > 1 or actor.vframes > 1:
-                var frame_size := pixels.get_size() / Vector2i(actor.hframes, actor.vframes)
-                pixels = pixels.get_region(Rect2i(actor.frame_coords * frame_size, frame_size))
-            var full_size := pixels.get_size()
-            pixels.resize(maxi(1, roundi(full_size.x / 4.0)), maxi(1, roundi(full_size.y / 4.0)), Image.INTERPOLATE_NEAREST)
-            built_map_art_cache[cache_key] = {"image":pixels,"size":full_size}
-        var recipe: Dictionary = built_map_art_cache[cache_key]
-        var pixels: Image = recipe.image
-        var at := actor.position + actor.offset
-        if actor.centered: at -= Vector2(recipe.size) * 0.5
-        image.blend_rect(pixels, Rect2i(Vector2i.ZERO, pixels.get_size()), Vector2i((at / 4.0).round()) - origin * SOURCE_MAP_TILE_PIXELS)
-
-func _position_minimap_markers(
-        bounds: Rect2i, player_position: Vector2, view_origin: Vector2,
-        window_cells: Vector2 = MINIMAP_WINDOW_CELLS) -> void:
-    if bounds.size.x <= 0 or bounds.size.y <= 0:
-        return
-    var canvas_size: Vector2 = Vector2(MINIMAP_MAP_SIZE)
-    var map_center: Vector2 = MINIMAP_MAP_OFFSET + canvas_size * 0.5
-    var map_diameter: float = MINIMAP_MAP_RADIUS * 2.0
-    var map_left: float = map_center.x - MINIMAP_MAP_RADIUS
-    var map_top: float = map_center.y - MINIMAP_MAP_RADIUS
-    minimap_player.position = map_center - minimap_player.size * 0.5
-    var respawn: Vector2i = world.get("respawn_cell")
-    minimap_respawn.visible = false
-    if respawn.x > -2147483648 and bounds.has_point(respawn):
-        var respawn_center: Vector2 = Vector2(
-            map_left + ((float(respawn.x) + 0.5 - view_origin.x) / window_cells.x) * map_diameter,
-            map_top + ((float(respawn.y) + 0.5 - view_origin.y) / window_cells.y) * map_diameter)
-        var inside_circle: bool = respawn_center.distance_to(map_center) <= MINIMAP_MAP_RADIUS
-        minimap_respawn.visible = inside_circle
-        if minimap_respawn.visible:
-            minimap_respawn.position = respawn_center - minimap_respawn.size * 0.5
-            minimap_respawn.set_meta("unrotated_position", minimap_respawn.position)
-    _position_minimap_other_players(map_left, map_top, map_diameter, map_center, view_origin, window_cells)
 
 ## Other players in this area, drawn like the local player's own marker.
 var minimap_others: Dictionary = {}
-var map_other_markers: Array = []
-
-func _coop_players_here() -> Dictionary:
-    var result := {}
-    if not is_instance_valid(coop_game) or not coop_game.active or not coop_game.session.trusted:
-        return result
-    var packets: Dictionary = coop_game.visuals.last_packets
-    for actor in packets:
-        var packet: Dictionary = packets[actor]
-        if actor == coop_game.session.actor or packet.get("area") != coop_game._area():
-            continue
-        if not packet.get("visual") is Dictionary:
-            continue
-        result[actor] = packet
-    return result
-
-func _coop_marker_texture(visual: Dictionary) -> AtlasTexture:
-    var model := clampi(int(visual.get("model", 0)), 0, PLAYER_MODEL_WALK_TEXTURES.size() - 1)
-    var color := clampi(int(visual.get("color", 0)), 0, PLAYER_COLOR_VALUES.size() - 1)
-    var marker_frame := AtlasTexture.new()
-    marker_frame.atlas = _recolor_texture(lazy_texture(PLAYER_MODEL_WALK_TEXTURES[model]),
-        PLAYER_MODEL_REPLACE_COLORS[model], PLAYER_COLOR_VALUES[color],
-        "coop:%d:%d:%s:%s" % [model, color, false, "walk"])
-    marker_frame.region = Rect2(0.0, 0.0, 16.0, 11.0)
-    marker_frame.set_meta("look", "%d:%d" % [model, color])
-    return marker_frame
-
-func _position_minimap_other_players(map_left: float, map_top: float, map_diameter: float,
-        map_center: Vector2, view_origin: Vector2, window_cells: Vector2) -> void:
-    var here := _coop_players_here()
-    for actor in here:
-        var packet: Dictionary = here[actor]
-        var marker: TextureRect = minimap_others.get(actor)
-        if not is_instance_valid(marker):
-            marker = _source_texture_rect(minimap_root, "OtherPlayer", Vector2.ZERO, Vector2(7.0, 5.0), null)
-            marker.z_index = 4
-            minimap_others[actor] = marker
-        var visual: Dictionary = packet.visual
-        var look := "%d:%d" % [int(visual.get("model", 0)), int(visual.get("color", 0))]
-        if marker.texture == null or marker.texture.get_meta("look", "") != look:
-            marker.texture = _coop_marker_texture(visual)
-        var cell: Vector2 = world.outdoor_map_position(Vector2(float(packet.get("body_x", 0.0)), float(packet.get("body_y", 0.0))) / 16.0)
-        var center := Vector2(
-            map_left + ((cell.x - view_origin.x) / window_cells.x) * map_diameter,
-            map_top + ((cell.y - view_origin.y) / window_cells.y) * map_diameter)
-        marker.visible = center.distance_to(map_center) <= MINIMAP_MAP_RADIUS
-        marker.position = center - marker.size * 0.5
-    for actor in minimap_others.keys():
-        if not here.has(actor):
-            if is_instance_valid(minimap_others[actor]):
-                minimap_others[actor].queue_free()
-            minimap_others.erase(actor)
-
-func _add_map_other_players(map_view: Control, bounds: Rect2i, image_size: Vector2i, marker_size: Vector2) -> void:
-    map_other_markers.clear()
-    var here := _coop_players_here()
-    for actor in here:
-        var packet: Dictionary = here[actor]
-        var other := TextureRect.new()
-        other.mouse_filter = Control.MOUSE_FILTER_IGNORE
-        other.texture = _coop_marker_texture(packet.visual)
-        other.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-        other.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-        other.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-        other.z_index = 19
-        var cell: Vector2i = Vector2i(world.outdoor_map_position(Vector2(floorf(float(packet.get("body_x", 0.0)) / 16.0), floorf(float(packet.get("body_y", 0.0)) / 16.0))).floor())
-        var center := Vector2(float(cell.x - bounds.position.x) * SOURCE_MAP_TILE_PIXELS,
-            float(cell.y - bounds.position.y) * SOURCE_MAP_TILE_PIXELS)
-        other.position = Vector2(
-            clampf(center.x - marker_size.x * 0.5, 0.0, maxf(0.0, float(image_size.x) - marker_size.x)),
-            clampf(center.y - marker_size.y * 0.5, 0.0, maxf(0.0, float(image_size.y) - marker_size.y)))
-        other.size = marker_size
-        other.pivot_offset = marker_size * 0.5
-        map_view.add_child(other)
-        map_other_markers.append(other)
 
 func _setup_options() -> void:
     options_menu = preload("res://scripts/options_menu.gd").new()
@@ -2342,7 +1061,7 @@ func _setup_options() -> void:
     for index in range(GAME_MENU_OPTIONS.size()):
         _source_ui_label(game_menu_box,"Option%d" % index,Vector2(28,11+index*17),Vector2(68,17),11,GAME_MENU_OPTIONS[index])
     _apply_game_options()
-    _update_game_menu_cursor()
+    start_menu.update_game_menu_cursor()
     _route_existing_audio(self)
 
 func _route_existing_audio(node: Node) -> void:
@@ -2359,7 +1078,7 @@ func _apply_game_options() -> void:
     input_router.set_button_layout(int(GameOptions.values.button_layout))
     input_router.diagonal_enabled = GameOptions.enabled("diagonal")
     input_router.auto_run_enabled = GameOptions.enabled("auto_run")
-    if not GameOptions.enabled("radial") and field_move_wheel_open: _close_field_move_wheel(false)
+    if not GameOptions.enabled("radial") and field_move_wheel_open: move_wheel.close_field_move_wheel(false)
     if not GameOptions.enabled("zoom"):
         world.camera_zoom_level = 1.0
         world.player.camera.zoom = Vector2.ONE
@@ -2438,70 +1157,11 @@ func _source_texture_rect(parent: Node, node_name: String, at: Vector2,
     parent.add_child(rect)
     return rect
 
-func _configure_clean_item_pocket_layout() -> void:
-    # Draw this menu at the native 320x180 viewport size.  The old 160x144
-    # plate was scaled 2x horizontally and 1.25x vertically, which distorted
-    # both the Johto glyphs and the selection arrow.
-    item_pocket_menu.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    item_pocket_menu.scale = Vector2.ONE
-    item_pocket_menu.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-    item_pocket_menu.get_node("Background").visible = false
-
-    var backdrop := ColorRect.new()
-    backdrop.name = "CleanBackdrop"
-    backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    backdrop.color = Color.WHITE
-    backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    item_pocket_menu.add_child(backdrop)
-    item_pocket_menu.move_child(backdrop, 0)
-
-    var pocket_frame := Panel.new()
-    pocket_frame.name = "PocketFrame"
-    pocket_frame.position = Vector2(4, 2)
-    pocket_frame.size = Vector2(82, 123)
-    pocket_frame.add_theme_stylebox_override("panel", _classic_dialogue_style())
-    pocket_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    item_pocket_menu.add_child(pocket_frame)
-    item_pocket_menu.move_child(pocket_frame, 2)
-
-    var list_frame := Panel.new()
-    list_frame.name = "ListFrame"
-    list_frame.position = Vector2(84, 2)
-    list_frame.size = Vector2(232, 123)
-    list_frame.add_theme_stylebox_override("panel", _classic_dialogue_style())
-    list_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    item_pocket_menu.add_child(list_frame)
-    item_pocket_menu.move_child(list_frame, 3)
-
-    var description_frame := Panel.new()
-    description_frame.name = "DescriptionFrame"
-    description_frame.position = Vector2(4, 123)
-    description_frame.size = Vector2(312, 55)
-    description_frame.add_theme_stylebox_override("panel", _classic_dialogue_style())
-    description_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    item_pocket_menu.add_child(description_frame)
-    item_pocket_menu.move_child(description_frame, 4)
-
-    item_pocket_label.position = Vector2(24, 14)
-    item_pocket_label.size = Vector2(41, 24)
-    item_pocket_label.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-    item_pocket_bag.position = Vector2(24, 57)
-    item_pocket_bag.size = Vector2(41, 26)
-    item_pocket_bag.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-    item_pocket_cursor.position = Vector2(94, 13)
-    item_pocket_cursor.size = Vector2(4, 7)
-    item_pocket_list.position = Vector2(105, 9)
-    item_pocket_list.size = Vector2(154, 88)
-    item_pocket_list.add_theme_font_size_override("font_size", 9)
-    item_pocket_list.add_theme_constant_override("line_spacing", 6)
-    item_pocket_quantities.position = Vector2(260, 9)
-    item_pocket_quantities.size = Vector2(46, 88)
-    item_pocket_quantities.add_theme_font_size_override("font_size", 9)
-    item_pocket_quantities.add_theme_constant_override("line_spacing", 6)
-    item_pocket_description.position = Vector2(16, 134)
-    item_pocket_description.size = Vector2(288, 34)
-    item_pocket_description.add_theme_font_size_override("font_size", 9)
-    item_pocket_description.add_theme_constant_override("line_spacing", 2)
+## bag_menu.gd under its old names, for the scripts and tests that call them on main.
+func _use_overworld_item(item: String) -> void: bag_menu.use_overworld_item(item)
+func _refresh_evolution_item_target() -> void: bag_menu.refresh_evolution_item_target()
+func _consume_inventory_item(item: String) -> void: bag_menu.consume_inventory_item(item)
+func _sleeping_bag_active() -> bool: return bag_menu.sleeping_bag_active()
 
 func _configure_wide_single_battle_layout() -> void:
     # Keep every source HUD element uniformly scaled, then move the enemy
@@ -2526,242 +1186,13 @@ func _configure_wide_single_battle_layout() -> void:
     battle_clean_command_cursor.z_index = 3
     battle_command_cursor.visible = false
 
-func _create_party_list_row(parent: Control, row_index: int) -> Dictionary:
-    # M74.3.9.11: reproduce the ORIGINAL PokeWilds party-row composition
-    # from picture 2 instead of spreading every source X-coordinate across the
-    # 16:9 viewport.  The 160x144 source menu has 16px rows; 1.25x vertical
-    # mapping to the unchanged y=138 border gives a 19px row pitch in the existing 320x180 UI.  The left
-    # cluster (cursor/sprite/name/gender/level/HP plate) keeps that same 1.25x
-    # source spacing and native aspect.  ONLY the straight HP meter and its
-    # right-aligned number consume the extra widescreen width.  This preserves
-    # the source look without letterboxing or warping sprites/text.
-    const PARTY_ROW_PITCH := 19.0
-    const PARTY_RIGHT := 318.0
-    const HP_TRACK_X := 130.0
-    const HP_TRACK_Y := 20.0
-    const HP_TRACK_H := 7.0
-    const HP_RIGHT_CAP_W := 5.0
-    const HP_FILL_Y := 2.0
-    const HP_FILL_H := 2.0
-
-    var row := Control.new()
-    row.name = "PartyRow%d" % row_index
-    row.position = Vector2(0, row_index * PARTY_ROW_PITCH)
-    row.size = Vector2(320, PARTY_ROW_PITCH)
-    row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    parent.add_child(row)
-
-    # Source anchors from the actual PokeWilds 160px row, scaled by 1.25:
-    # cursor x0, sprite x7, name x24, gender x25, level x67,
-    # HP plate x88 and meter x104.  These are deliberately COMPACT.
-    var cursor := _source_texture_rect(row, "Cursor", Vector2(1, 9),
-        Vector2(6, 8), source_command_cursor.texture)
-    cursor.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-
-    var sprite := _source_texture_rect(row, "PokemonSprite", Vector2(9, 6),
-        Vector2(19, 19))
-    sprite.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-    var held_icon := _source_texture_rect(row, "HeldItem", Vector2(9, 17), Vector2(8, 8), preload("res://assets/landmark_pokeball.png"))
-    held_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-    held_icon.visible = false
-    var shiny_icon := _source_texture_rect(row, "ShinyIcon", Vector2(20, 17), Vector2(8, 8), preload("res://scripts/menu_symbol_palette.gd").shiny())
-    shiny_icon.visible = false
-
-    # First line: source-like name cluster on the left; HP number remains
-    # flush-right above the extended meter, exactly as the source does above
-    # its shorter meter.
-    var name_label := _source_ui_label(row, "Name", Vector2(30, 9),
-        Vector2(124, 11), 11)
-    name_label.clip_text = true
-    name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-    var hp_value := _source_ui_label(row, "HPValue", Vector2(220, 10),
-        Vector2(98, 11), 11)
-    hp_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-
-    # Second line exactly follows picture 2: gender immediately below the
-    # name, then :L##, the authored gold HP: plate, and the meter on ONE line.
-    var status_label := _source_ui_label(row, "Status", Vector2(30, 18),
-        Vector2(27, 9), 8)
-    status_label.clip_text = true
-    var gender := _source_texture_rect(row, "Gender", Vector2(58, 18),
-        Vector2(10, 10), SOURCE_MALE_SYMBOL)
-    gender.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-    var level := _source_ui_label(row, "Level", Vector2(84, 20),
-        Vector2(46, 10), 10)
-    var hp_badge := _source_texture_rect(row, "HPBadge", Vector2(113, 20),
-        Vector2(17, 7), _source_texture_region(
-            SOURCE_PARTY_HEALTH_ROW, Rect2(88, 9, 16, 6)))
-    hp_badge.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-
-    # Recreate the source bar geometry instead of drawing a boxed rectangle.
-    # Original source pixels: white trough, green/orange/red fill, one black
-    # bottom rule and a four-pixel black end cap.  Widescreen merely extends
-    # the straight trough; nothing with recognizable artwork is stretched.
-    var hp_track := Control.new()
-    hp_track.name = "HPTrack"
-    hp_track.position = Vector2(HP_TRACK_X, HP_TRACK_Y)
-    hp_track.size = Vector2(PARTY_RIGHT - HP_TRACK_X, HP_TRACK_H)
-    hp_track.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    row.add_child(hp_track)
-
-    var hp_bottom := ColorRect.new()
-    hp_bottom.name = "BottomRule"
-    hp_bottom.position = Vector2(0, HP_TRACK_H - 1)
-    hp_bottom.size = Vector2(hp_track.size.x, 1)
-    hp_bottom.color = Color.BLACK
-    hp_bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    hp_track.add_child(hp_bottom)
-
-    var hp_end_cap := ColorRect.new()
-    hp_end_cap.name = "EndCap"
-    hp_end_cap.position = Vector2(hp_track.size.x - HP_RIGHT_CAP_W, 0)
-    hp_end_cap.size = Vector2(HP_RIGHT_CAP_W, HP_TRACK_H)
-    hp_end_cap.color = Color.BLACK
-    hp_end_cap.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    hp_track.add_child(hp_end_cap)
-
-    var hp_fill := ColorRect.new()
-    hp_fill.name = "Fill"
-    hp_fill.position = Vector2(0, HP_FILL_Y)
-    hp_fill.size = Vector2(hp_track.size.x - HP_RIGHT_CAP_W, HP_FILL_H)
-    hp_fill.color = Color8(0, 184, 0)
-    hp_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    hp_track.add_child(hp_fill)
-
-    return {
-        "root":row, "cursor":cursor, "sprite":sprite, "shiny_icon":shiny_icon, "held_icon":held_icon,
-        "name":name_label, "gender":gender, "status":status_label, "level":level,
-        "hp_value":hp_value, "hp_fill":hp_fill,
-        "hp_capacity":hp_track.size.x - HP_RIGHT_CAP_W,
-        "row_index":row_index, "species":"", "is_egg":false
-    }
-
-func _hide_legacy_party_card() -> void:
-    pokemon_menu_cursor.visible = false
-    pokemon_menu_sprite.visible = false
-    pokemon_menu_name.visible = false
-    pokemon_menu_level.visible = false
-    pokemon_menu_hp_value.visible = false
-    pokemon_menu_hp_fill.get_parent().visible = false
-    if pokemon_menu_gender != null:
-        pokemon_menu_gender.visible = false
-
-func _party_status_abbreviation(status: String) -> String:
-    match status.to_upper():
-        "BURN":
-            return "BRN"
-        "POISON":
-            return "PSN"
-        "PARALYSIS":
-            return "PAR"
-        "SLEEP":
-            return "SLP"
-        "FREEZE":
-            return "FRZ"
-    return ""
-
-func _set_party_list_row(row_data: Dictionary, pokemon: Dictionary,
-        selected: bool) -> void:
-    var root := row_data["root"] as Control
-    root.visible = not pokemon.is_empty()
-    if pokemon.is_empty():
-        row_data["species"] = ""
-        row_data["is_egg"] = false
-        return
-    (row_data["cursor"] as TextureRect).visible = selected
-    var sprite := row_data["sprite"] as TextureRect
-    var name_label := row_data["name"] as Label
-    var gender := row_data["gender"] as TextureRect
-    var status_label := row_data["status"] as Label
-    var level := row_data["level"] as Label
-    var hp_value := row_data["hp_value"] as Label
-    var hp_fill := row_data["hp_fill"] as ColorRect
-    (row_data["shiny_icon"] as TextureRect).visible = PokemonData.is_shiny(pokemon) and not bool(pokemon.get("is_egg", false))
-    (row_data["held_icon"] as TextureRect).visible = not bool(pokemon.get("is_egg", false)) and not String(pokemon.get("held_item", "")).is_empty()
-    if bool(pokemon.get("is_egg", false)):
-        row_data["species"] = ""
-        row_data["is_egg"] = true
-        sprite.texture = POKEMON_EGG_TEXTURE
-        sprite.visible = true
-        name_label.text = "EGG"
-        name_label.scale.x = 1.0
-        gender.visible = false
-        status_label.text = ""
-        level.text = ""
-        hp_value.text = "--/--"
-        hp_fill.size.x = 0.0
-        return
-    var record := BattleEngine.ensure_pokemon(pokemon)
-    var species := String(record.get("species", "machop")).to_lower()
-    row_data["species"] = species
-    row_data["shiny"] = PokemonData.is_shiny(record)
-    row_data["form"] = String(record.get("form", ""))
-    row_data["is_egg"] = false
-    sprite.texture = _party_record_frame(row_data)
-    sprite.visible = sprite.texture != null
-    _set_fitting_pokemon_name(name_label, record)
-    status_label.text = _party_status_abbreviation(String(record.get("status", "")))
-    level.text = ":L%d" % int(record.get("level", 1))
-    # The bitmap font advances eight pixels even at this label's font size.
-    # Fit the complete level before the shifted badge, including level 100.
-    var level_width := level.get_theme_font("font").get_string_size(
-        level.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 10).x
-    level.scale.x = minf(1.0, 28.0 / maxf(1.0, level_width))
-    _set_source_gender(gender, record)
-    var hp := int(record.get("hp", 0))
-    var max_hp := maxi(1, int(record.get("max_hp", 1)))
-    var ratio := clampf(float(hp) / float(max_hp), 0.0, 1.0)
-    hp_value.text = "%d/%d" % [hp, max_hp]
-    var hp_capacity := float(row_data.get("hp_capacity", 100.0))
-    hp_fill.size.x = _battle_hp_width(ratio, hp_capacity)
-    hp_fill.color = _battle_hp_color(ratio)
-
-func _refresh_party_list_rows(rows: Array[Dictionary], party: Array,
-        selected_index: int) -> void:
-    for row_index in range(rows.size()):
-        var pokemon: Dictionary = {}
-        if row_index < mini(6, party.size()) and \
-                typeof(party[row_index]) == TYPE_DICTIONARY:
-            pokemon = party[row_index] as Dictionary
-        _set_party_list_row(rows[row_index], pokemon, row_index == selected_index)
-
-func _refresh_party_sprite_frames(rows: Array[Dictionary]) -> void:
-    for row_data in rows:
-        var species := String(row_data.get("species", ""))
-        if species.is_empty():
-            continue
-        var sprite := row_data.get("sprite") as TextureRect
-        if sprite == null or not sprite.visible:
-            continue
-        sprite.texture = _party_record_frame(row_data)
-
-func _update_party_sprite_animation(delta: float) -> void:
-    var overworld_party_visible := (
-        pokemon_menu_open and pokemon_menu != null and pokemon_menu.visible)
-    var battle_party_visible := (
-        battle_party_view != null and battle_party_view.visible)
-    # The touch start menu's party strip: its sprites walk and its HP bars follow
-    # healing (a sleeping bag, a bed, a co-op campfire) while it stays open.
-    var start_strip_visible: bool = is_instance_valid(touch_ui) and touch_ui.enabled         and is_instance_valid(touch_ui.surfaces.start_menu) and touch_ui.surfaces.start_menu.visible
-    if not overworld_party_visible and not battle_party_visible and not storage_menu_open and not start_strip_visible:
-        party_sprite_animation_elapsed = 0.0
-        return
-    party_sprite_animation_elapsed += delta
-    if party_sprite_animation_elapsed < 0.30:
-        return
-    party_sprite_animation_elapsed = fmod(party_sprite_animation_elapsed, 0.30)
-    party_sprite_animation_frame = (party_sprite_animation_frame + 1) & 1
-    if overworld_party_visible:
-        _refresh_party_sprite_frames(pokemon_party_rows)
-    if battle_party_visible:
-        _refresh_party_sprite_frames(battle_party_rows)
-    if storage_menu_open:
-        _refresh_party_sprite_frames(storage_rows)
-    if start_strip_visible:
-        touch_ui.surfaces._refresh_start_details()
+## party_menu.gd under its old names, for the scripts and tests that call them on main.
+func _refresh_pokemon_category_menu() -> void: party_menu.refresh_pokemon_category_menu()
+func _finish_pokemon_switch() -> void: party_menu.finish_pokemon_switch()
+func _party_record_frame(row_data: Dictionary) -> Texture2D: return party_menu.party_record_frame(row_data)
 
 func _build_source_ui() -> void:
-    _configure_clean_item_pocket_layout()
+    bag_menu.configure_clean_item_pocket_layout()
     _configure_wide_single_battle_layout()
     setup_go_cursor = _source_texture_rect(setup_panel, "GoCursor",
         Vector2.ZERO, Vector2(6, 8), source_command_cursor.texture)
@@ -2808,141 +1239,12 @@ func _build_source_ui() -> void:
     _align_menu_tick(load_frame.get_node("Next"), setup_load_name)
     (load_frame.get_node("Previous/PixelTick") as TextureRect).flip_h = true
 
-    # Source-style Pokémon storage screen.  It is deliberately created here
-    # rather than replacing the existing party menu, so opening a chest cannot
-    # perturb unrelated menu geometry.
-    storage_menu = Control.new()
-    storage_menu.name = "PokemonStorageMenu"
-    storage_menu.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    storage_menu.z_index = 345
-    storage_menu.visible = false
-    $UI.add_child(storage_menu)
-    var storage_backdrop = ColorRect.new()
-    storage_backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    storage_backdrop.color = Color.WHITE
-    storage_backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
-    storage_menu.add_child(storage_backdrop)
-    var storage_footer = Panel.new()
-    storage_footer.position = Vector2(0, 144)
-    storage_footer.size = Vector2(320, 36)
-    storage_footer.add_theme_stylebox_override("panel", _classic_dialogue_style())
-    storage_menu.add_child(storage_footer)
-    for index in range(6):
-        var row := _create_party_list_row(storage_menu, index)
-        var skills := _source_ui_label(row.root,"FieldMoves",Vector2(30,19),Vector2(132,9),8)
-        row["field_moves"] = skills
-        row.gender.position.x = 166
-        row.level.position.x = 179
-        row.root.get_node("HPBadge").position.x = 211
-        var track: Control = row.root.get_node("HPTrack")
-        track.position.x = 228
-        track.size.x = 90
-        track.get_node("BottomRule").size.x = 90
-        track.get_node("EndCap").position.x = 85
-        row.hp_capacity = 85.0
-        storage_rows.append(row)
-    storage_prompt = _source_ui_label(storage_menu, "Footer",
-        Vector2(16, 151), Vector2(288, 18), 11)
-    storage_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    storage_actions = Panel.new()
-    storage_actions.position = Vector2(96, 48)
-    storage_actions.size = Vector2(224, 132)
-    storage_actions.add_theme_stylebox_override("panel", _classic_dialogue_style())
-    storage_menu.add_child(storage_actions)
-    for index in range(7):
-        storage_action_labels.append(_source_ui_label(storage_actions, "Action%d" % index,
-            Vector2(24, 9 + index * 20), Vector2(126, 18), 11))
-    storage_footer_arrow = _source_texture_rect(storage_menu, "PageArrow",
-        Vector2(292, 153), Vector2(5, 7), source_command_cursor.texture)
-    storage_cursor = _source_texture_rect(storage_actions, "Cursor",
-        Vector2(10, 9), Vector2(5, 7), source_command_cursor.texture)
-    storage_dialog = Panel.new()
-    storage_dialog.position = Vector2(0, 126)
-    storage_dialog.size = Vector2(320, 54)
-    storage_dialog.add_theme_stylebox_override("panel", _classic_dialogue_style())
-    storage_menu.add_child(storage_dialog)
-    storage_dialog_text = _source_ui_label(storage_dialog, "Text",
-        Vector2(10, 6), Vector2(300, 44), 10)
-    storage_dialog_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    storage_choice_panel = Panel.new()
-    storage_choice_panel.position = Vector2(240, 74)
-    storage_choice_panel.size = Vector2(80, 52)
-    storage_choice_panel.add_theme_stylebox_override("panel", _classic_dialogue_style())
-    storage_menu.add_child(storage_choice_panel)
-    storage_choice_arrow = _source_texture_rect(storage_choice_panel, "ChoiceArrow",
-        Vector2(10, 12), Vector2(5, 7), source_command_cursor.texture)
-    storage_choice_label = _source_ui_label(storage_choice_panel, "Choices",
-        Vector2(24, 8), Vector2(48, 16), 10, "YES")
-    storage_no_label = _source_ui_label(storage_choice_panel, "NoChoice",
-        Vector2(24, 30), Vector2(48, 16), 10, "NO")
-    storage_nickname = LineEdit.new()
-    storage_nickname.position = Vector2(10, 23)
-    storage_nickname.size = Vector2(290, 24)
-    storage_nickname.max_length = 10
-    storage_nickname.add_theme_font_override("font", JOHTO_FONT)
-    storage_nickname.add_theme_font_size_override("font_size", 10)
-    storage_dialog.add_child(storage_nickname)
-    storage_nickname.text_changed.connect(func(value: String):
-        var filtered := ""
-        for character in value:
-            if character in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .?!":
-                filtered += character
-        if filtered != value:
-            var caret := storage_nickname.caret_column
-            storage_nickname.text = filtered
-            storage_nickname.caret_column = mini(caret, filtered.length()))
-    storage_nickname.text_submitted.connect(func(_text: String):
-        storage_nickname.release_focus()
-        storage_mode = "CONFIRM"
-        storage_pending = "NICKNAME"
-        storage_yes = true
-        _refresh_storage_menu())
+    storage.build_storage_menu_ui()
 
     # Keep the MessagePanel's existing down arrow; no extra right-side arrow.
     trainer_tip_continue = null
 
-    # Use the full viewport for both party selectors.  Keeping controls at
-    # native scale makes the text readable and prevents the right-hand HP
-    # values and popup entries from being clipped on Android.
-    pokemon_menu_cursor.position = Vector2(4, 10)
-    pokemon_menu_cursor.size = Vector2(10, 16)
-    pokemon_menu_sprite.position = Vector2(20, 6)
-    pokemon_menu_sprite.size = Vector2(32, 32)
-    pokemon_menu_sprite.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-    pokemon_menu_name.position = Vector2(58, 10)
-    pokemon_menu_name.size = Vector2(130, 18)
-    pokemon_menu_level.position = Vector2(150, 26)
-    pokemon_menu_level.size = Vector2(44, 16)
-    pokemon_menu_hp_value.position = Vector2(230, 9)
-    pokemon_menu_hp_value.size = Vector2(72, 18)
-    var pokemon_hp_bar = pokemon_menu_hp_fill.get_parent() as ColorRect
-    pokemon_hp_bar.position = Vector2(208, 34)
-    pokemon_hp_bar.size = Vector2(94, 10)
-    pokemon_menu_hp_fill.position = Vector2(3, 3)
-    pokemon_menu_hp_fill.size = Vector2(88, 4)
-    var prompt_box = pokemon_menu_prompt.get_parent() as Panel
-    prompt_box.position = Vector2(4, 138)
-    prompt_box.size = Vector2(312, 40)
-    pokemon_menu_prompt.position = Vector2(14, 10)
-    pokemon_menu_prompt.size = Vector2(280, 18)
-    pokemon_menu_gender = _source_texture_rect(pokemon_menu, "Gender",
-        Vector2(62, 29), Vector2(10, 10), SOURCE_MALE_SYMBOL)
-    _hide_legacy_party_card()
-    for row_index in range(6):
-        pokemon_party_rows.append(_create_party_list_row(pokemon_menu, row_index))
-    pokemon_action_panel = Panel.new()
-    pokemon_action_panel.name = "PokemonActionMenu"
-    pokemon_action_panel.position = Vector2(166, 40)
-    pokemon_action_panel.size = Vector2(150, 138)
-    pokemon_action_panel.add_theme_stylebox_override("panel", _classic_dialogue_style())
-    pokemon_menu.add_child(pokemon_action_panel)
-    pokemon_action_cursor = _source_texture_rect(pokemon_action_panel, "Cursor",
-        Vector2(12, 10), Vector2(5, 7), source_command_cursor.texture)
-    pokemon_action_cursor.stretch_mode = TextureRect.STRETCH_SCALE
-    pokemon_action_list = _source_ui_label(pokemon_action_panel, "List",
-        Vector2(28, 10), Vector2(110, 116), 10)
-    pokemon_action_list.add_theme_constant_override("line_spacing", 6)
-    pokemon_action_panel.visible = false
+    party_menu.build_party_menu_ui()
 
     # Battle PKMN selection uses the same source party row and dialogue border.
     battle_party_view = Control.new()
@@ -3013,75 +1315,12 @@ func _build_source_ui() -> void:
     battle_party_hp_value.visible = false
     battle_hp_bar.visible = false
     for row_index in range(6):
-        battle_party_rows.append(_create_party_list_row(
+        battle_party_rows.append(party_menu.create_party_list_row(
             battle_party_view, row_index))
     battle_prompt_panel.move_to_front()
     battle_party_action_panel.move_to_front()
 
-    # Three exact source stat-page plates with selected-Pokemon data layered
-    # over their intended blank fields.
-    pokemon_stats_overlay = Control.new()
-    pokemon_stats_overlay.name = "PokemonStatsOverlay"
-    pokemon_stats_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    pokemon_stats_overlay.z_index = 360
-    $UI.add_child(pokemon_stats_overlay)
-    var stats_backdrop = ColorRect.new()
-    stats_backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    stats_backdrop.color = Color.WHITE
-    stats_backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
-    pokemon_stats_overlay.add_child(stats_backdrop)
-    var stats_source = Control.new()
-    stats_source.name = "SourceCanvas"
-    stats_source.position = Vector2.ZERO
-    stats_source.size = Vector2(320, 180)
-    stats_source.scale = Vector2.ONE
-    pokemon_stats_overlay.add_child(stats_source)
-    pokemon_stats_background = _source_texture_rect(stats_source, "Background",
-        Vector2.ZERO, Vector2(320, 180), SOURCE_STATS_BACKGROUNDS[0])
-    pokemon_stats_background.stretch_mode = TextureRect.STRETCH_SCALE
-    pokemon_stats_background.visible = false
-    pokemon_stats_sprite = _source_texture_rect(stats_source, "PokemonSprite",
-        Vector2(14, 8), Vector2(64, 64))
-    var header_line = ColorRect.new()
-    header_line.name = "HeaderDivider"
-    header_line.position = Vector2(0, 76)
-    header_line.size = Vector2(320, 4)
-    header_line.color = Color.WHITE
-    stats_source.add_child(header_line)
-    pokemon_stats_header_left = _source_ui_label(stats_source, "HeaderLeft",
-        Vector2(112, 4), Vector2(72, 14), 9)
-    pokemon_stats_header_right = _source_ui_label(stats_source, "HeaderRight",
-        Vector2(228, 4), Vector2(48, 14), 10)
-    pokemon_stats_header_right.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-    pokemon_stats_gender = _source_texture_rect(stats_source, "Gender",
-        Vector2(286, 4), Vector2(10, 10), SOURCE_MALE_SYMBOL)
-    pokemon_stats_shiny = _source_texture_rect(stats_source, "Shiny",
-        Vector2(70, 64), Vector2(8, 8), preload("res://scripts/menu_symbol_palette.gd").shiny())
-    pokemon_stats_shiny.visible = false
-    _pokemon_stat_field(stats_source, "Name", Vector2(112, 25), Vector2(180, 18), 12)
-    _source_ui_label(stats_source, "Slash", Vector2(142, 48),
-        Vector2(12, 12), 9, "/")
-    var tab_colors = [Color8(248, 152, 248), Color8(176, 248, 104),
-        Color8(136, 240, 240)]
-    for tab_index in range(3):
-        var tab_border = ColorRect.new()
-        tab_border.name = "Tab%dBorder" % tab_index
-        tab_border.position = Vector2(204 + tab_index * 36, 47)
-        tab_border.size = Vector2(24, 24)
-        tab_border.color = Color.BLACK
-        stats_source.add_child(tab_border)
-        var tab = ColorRect.new()
-        tab.name = "Tab%d" % tab_index
-        tab.position = Vector2(3, 3)
-        tab.size = Vector2(18, 18)
-        tab.color = tab_colors[tab_index]
-        tab_border.add_child(tab)
-        pokemon_stats_tabs.append(tab)
-        var tick = _source_ui_label(tab_border, "Tick", Vector2(5, 3),
-            Vector2(14, 14), 9, "▼", true)
-        tick.add_theme_color_override("font_color", Color.WHITE)
-        pokemon_stats_tab_ticks.append(tick)
-    _build_pokemon_stats_pages(stats_source)
+    party_menu.build_pokemon_stats_ui()
     progression_level_dialogue = Panel.new()
     progression_level_dialogue.name = "LevelUpDialogueBorder"
     progression_level_dialogue.position = Vector2(4, 121)
@@ -3117,7 +1356,16 @@ func _build_source_ui() -> void:
     progression_list.z_index = 2
     progression_values.z_index = 2
     progression_sprite_top.z_index = 2
-    _create_progression_menu_frames()
+    progression.create_progression_menu_frames()
+
+## storage_menu.gd under its old names, for the scripts and tests that call them on main.
+func _storage_pool_locations() -> Array: return storage.storage_pool_locations()
+func _storage_deposit_key() -> String: return storage.storage_deposit_key()
+func _storage_entries() -> Array: return storage.storage_entries()
+func _refresh_storage_menu() -> void: storage.refresh_storage_menu()
+func _storage_notice(text: String) -> void: storage.storage_notice(text)
+func _storage_is_active(pokemon: Dictionary) -> bool: return storage.storage_is_active(pokemon)
+func _built_storage_keys() -> Array[String]: return storage.built_storage_keys()
 
 ## The top row: minimap, clock, FPS counter, battery (status_hud.gd).
 var status_hud = preload("res://scripts/status_hud.gd").new(self)
@@ -3162,12 +1410,12 @@ func _process(delta: float) -> void:
         if edge_sky.visible and not flying_overworld:
             world._configure_camera()
         edge_sky.visible = flying_overworld
-    _update_field_move_wheel_input()
-    _update_dig_hud_and_minimap(delta)
-    _update_party_sprite_animation(delta)
+    move_wheel.update_field_move_wheel_input()
+    minimap.update_dig_hud_and_minimap(delta)
+    party_menu.update_party_sprite_animation(delta)
     _update_battle_sprite_animation(delta)
     _stop_fainted_active_field_move()
-    _update_sleeping_bag_rest(delta)
+    bag_menu.update_sleeping_bag_rest(delta)
 
     if build_menu_open:
         if String(world.get("active_field_move")) != "BUILD":
@@ -3177,12 +1425,12 @@ func _process(delta: float) -> void:
             var world_build_index := int(world.call("get_build_selection_index"))
             if world_build_index != build_menu_index:
                 build_menu_index = world_build_index
-                _apply_build_hud_selection()
+                crafting_menu.apply_build_hud_selection()
 
     if generating:
         generation_tip_timer -= delta
         if generation_tip_timer <= 0.0:
-            _show_generation_tip()
+            dialogs.show_generation_tip()
 
     if resource_popup_timer > 0.0:
         resource_popup_timer -= delta
@@ -3193,15 +1441,7 @@ func _process(delta: float) -> void:
         world.set_gameplay_enabled(false)
         if is_instance_valid(waypoint_ui):waypoint_ui.move_cursor(delta)
 
-    if message_label.text != message_reveal_text:
-        message_label.visible_characters = -1
-    if message_timer > 0.0:
-        if message_label.visible_characters >= 0:
-            message_reveal_elapsed += delta
-            message_label.visible_characters = mini(message_label.text.length(),int(message_reveal_elapsed * GameOptions.text_multiplier() / BATTLE_TEXT_CHAR_DELAY))
-        message_timer -= delta
-        if message_timer <= 0.0:
-            message_panel.visible = false
+    dialogs.update_message_box(delta)
 
     if menu_nav_cooldown > 0.0:
         menu_nav_cooldown = max(0.0, menu_nav_cooldown - delta)
@@ -3216,176 +1456,34 @@ func _process(delta: float) -> void:
             if battle_status.visible_characters >= battle_text_full.length():
                 _finish_battle_text()
 
-func _update_field_move_wheel_input() -> void:
-    if Input.is_action_pressed("ball_mechanics") or _field_move_wheel_stick().length()>=0.35:
-        field_quick_tap_at=-1
-    if not is_instance_valid(ball_mechanics):
-        ball_mechanics = preload("res://scripts/ball_mechanics.gd").new()
-        ball_mechanics.main = self
-        add_child(ball_mechanics)
-    if ball_mechanics.update_input(): return
-    var trigger_held := Input.is_action_pressed("field_move_wheel")
-    if field_wheel_wait_for_release:
-        if not trigger_held: field_wheel_wait_for_release = false
-        return
-    if not field_move_wheel_open:
-        if trigger_held and _can_open_field_move_wheel():
-            _open_field_move_wheel()
-        return
-    if _field_ui_blocks_gameplay(build_wheel_mode):
-        _close_field_move_wheel(false)
-        return
-    if trigger_held:
-        var stick := _field_move_wheel_stick()
-        if stick.length() >= 0.35:
-            var angle_from_top := fposmod(atan2(stick.y, stick.x) + PI * 0.5, TAU)
-            var count := field_move_wheel.entries.size()
-            if count == 0: return
-            var step := TAU / float(count)
-            field_move_wheel_index = posmod(
-                int(floor((angle_from_top + step * 0.5) / step)),
-                count
-            )
-            field_move_wheel.select(field_move_wheel_index)
-        return
-    _close_field_move_wheel(true)
+## dialogs.gd under its old names, for the scripts and tests that call them on main.
+func _show_message(message: String) -> void: dialogs.show_message(message)
+func _show_trainer_tip_message(message: String) -> void: dialogs.show_trainer_tip_message(message)
 
-func _can_open_field_move_wheel() -> bool:
-    return (
-        GameOptions.enabled("radial") and started and not generating and not battle_active and not field_item_busy
-        and not game_menu_open and not craft_menu_open
-        and not quit_prompt_open and not touch_config.visible
-        and not touch_controls.edit_mode
-        and not _field_ui_blocks_gameplay(world.active_field_move == "BUILD") and world.gameplay_enabled
-    )
+## field_move_wheel.gd under its old names, for the scripts and tests that call them on main.
+func _field_move_wheel_stick() -> Vector2: return move_wheel.field_move_wheel_stick()
+func _open_field_move_wheel() -> void: move_wheel.open_field_move_wheel()
+func _close_field_move_wheel(activate_selection: bool) -> void: move_wheel.close_field_move_wheel(activate_selection)
+func _field_move_wheel_icon(species: String, shiny: bool = false, form: String = "") -> Texture2D: return move_wheel.field_move_wheel_icon(species, shiny, form)
 
 func _field_ui_blocks_gameplay(ignore_build_hud: bool = false) -> bool:
     if is_instance_valid(coop_game) and coop_game.active and (coop_game.raids.active or coop_game.events.active or not coop_game.population_battles.claim.is_empty()):return true
     if is_instance_valid(coop_game) and coop_game.active and (coop_game.wild.encounter_pending or not coop_game.wild.encounter.is_empty()):return true
     if is_instance_valid(coop_game) and coop_game.active and not coop_game.session.trusted and started:return true
-    if is_instance_valid(coop_game) and is_instance_valid(coop_game.interaction_ui) and coop_game.interaction_ui.visible:return true
-    if is_instance_valid(coop_game) and is_instance_valid(coop_game.chat) and coop_game.chat.visible:return true
-    return ((is_instance_valid(pokedex_menu) and pokedex_menu.visible)
-        or battle_active or battle_entry_pending or progression_active
-        or mansion_switch_open or field_item_busy or game_menu_open
-        or craft_menu_open or (build_menu_open and not ignore_build_hud) or quit_prompt_open
-        or wild_pokemon_prompt_open or egg_pickup_open or storage_menu_open
-        or trainer_tip_open or setup_load_open or pokemon_stats_open
-        or touch_config.visible or touch_controls.edit_mode
-        or (is_instance_valid(game_files_menu) and game_files_menu.visible)
-        or (is_instance_valid(mod_menu_panel) and mod_menu_panel.visible)
-        # OPTIONS can be open without the game menu (back from MOVE BUTTONS):
-        # the field's ball icons and HUD stay away from it too.
-        or (is_instance_valid(options_menu) and options_menu.visible))
+    return screens.blocks_gameplay(&"build_menu" if ignore_build_hud else &"")
 
-func _field_move_wheel_stick() -> Vector2:
-    for device in Input.get_connected_joypads():
-        var stick := Vector2(
-            Input.get_joy_axis(device, JOY_AXIS_LEFT_X),
-            Input.get_joy_axis(device, JOY_AXIS_LEFT_Y)
-        )
-        if stick.length() >= 0.20:
-            return stick
-    return input_router.movement_vector()
-
-func _open_field_move_wheel() -> void:
-    field_quick_tap_at=-1
-    field_quick_tap_move=-1
-    if Input.is_action_pressed("field_move_wheel") and not Input.is_action_pressed("ball_mechanics") and _field_move_wheel_stick().length()<0.35 and world.active_field_move not in ["BUILD","SURF","RIDE","FLY"]:
-        field_quick_tap_at=Time.get_ticks_msec()
-        field_quick_tap_move=_quick_breakable_field_move()
-    field_move_wheel_open = true
-    field_move_wheel_index = -1
-    build_wheel_mode = world.active_field_move == "BUILD"
-    if build_wheel_mode:
-        build_wheel_page = int(world.get_build_selection_index()) / BUILD_WHEEL_PAGE_SIZE
-        _configure_build_wheel()
-        build_panel.visible = false
-    else:
-        field_move_wheel.configure(_field_move_wheel_entries(), -1)
-    field_move_wheel.visible = true
-    message_panel.visible = false
-    world.set_gameplay_enabled(false)
-
-func _close_field_move_wheel(activate_selection: bool) -> void:
-    if not field_move_wheel_open:
-        return
-    var selection := field_move_wheel_index
-    if activate_selection and not build_wheel_mode and selection<0 and field_quick_tap_at>=0:
-        var elapsed=Time.get_ticks_msec()-field_quick_tap_at
-        if elapsed>=0 and elapsed<250 and field_quick_tap_move==_quick_breakable_field_move():
-            selection=field_quick_tap_move
-    field_quick_tap_at=-1
-    field_move_wheel_open = false
-    field_move_wheel.visible = false
-    var can_resume := not _field_ui_blocks_gameplay(build_wheel_mode)
-    if build_wheel_mode and build_menu_open: build_panel.visible = true
-    world.set_gameplay_enabled(can_resume)
-    if can_resume and activate_selection and selection >= 0:
-        if build_wheel_mode:
-            world.set_build_selection_index(build_wheel_page * BUILD_WHEEL_PAGE_SIZE + selection)
-        else:
-            _activate_field_move_wheel_selection(selection)
-
-func _quick_breakable_field_move() -> int:
-    var cell:Vector2i=world._player_cell()+world._facing_cell()
-    if world.built_structures.has(cell):return -1
-    var anchor:Vector2i=world._exact_resource_anchor(cell)
-    var kind:String=world._exact_resource_kind(anchor)
-    if kind.is_empty():
-        anchor=world._resource_object_anchor(cell)
-        kind=String(world.resource_objects.get(anchor,{}).get("type",""))
-    var move_name=""
-    if world._is_cuttable_grass_cell(cell) or kind in ["tree","bush"]:
-        if _find_field_move_pokemon_index("CUT")>=0:move_name="CUT"
-        elif kind=="tree" and _find_field_move_pokemon_index("HEADBUTT")>=0:move_name="HEADBUTT"
-    elif kind=="rock" and _find_field_move_pokemon_index("SMASH")>=0:move_name="SMASH"
-    if move_name.is_empty() or move_name==world.active_field_move:return -1
-    return FIELD_MOVE_WHEEL_ORDER.find(move_name)
-
-func _configure_build_wheel() -> void:
-    var entries: Array[Dictionary] = []
-    var start := build_wheel_page * BUILD_WHEEL_PAGE_SIZE
-    for index in range(start, mini(start + BUILD_WHEEL_PAGE_SIZE, CraftingData.build_recipes().size())):
-        var item := String(CraftingData.build_recipes()[index].name)
-        entries.append({"move":CraftingData.build_display_name(item), "available":true,
-            "texture":world._structure_display_texture(item), "build_item":true,
-            "cost":CraftingData.build_recipes()[index].get("cost", {}).duplicate()})
-    field_move_wheel_index = -1
-    field_move_wheel.configure(entries, -1)
-    field_move_wheel.page_label = "%d / %d  L / R" % [build_wheel_page + 1, ceili(float(CraftingData.build_recipes().size()) / BUILD_WHEEL_PAGE_SIZE)]
-    field_move_wheel.queue_redraw()
-
-func _field_move_wheel_entries() -> Array[Dictionary]:
-    var entries: Array[Dictionary] = []
-    for move_name in FIELD_MOVE_WHEEL_ORDER:
-        var party_index := _find_field_move_pokemon_index(move_name)
-        var species := String(FIELD_MOVE_REPRESENTATIVES[move_name])
-        if party_index >= 0:
-            species = String((caught_pokemon[party_index] as Dictionary).get(
-                "species", species)).to_lower()
-        if move_name == "PAINT":
-            species = "smeargle"
-        entries.append({
-            "move": move_name,
-            "species": species,
-            "available": party_index >= 0,
-            "party_index": party_index,
-            "texture": _field_move_wheel_icon(species, party_index >= 0 and PokemonData.is_shiny(caught_pokemon[party_index]), String(caught_pokemon[party_index].get("form","")) if party_index>=0 else "")
-        })
-    return entries
-
-func _find_field_move_pokemon_index(move_name: String) -> int:
-    for index in range(caught_pokemon.size()):
-        if typeof(caught_pokemon[index]) != TYPE_DICTIONARY:
-            continue
-        var pokemon := caught_pokemon[index] as Dictionary
-        if bool(pokemon.get("is_egg", false)) or int(pokemon.get("hp", 1)) <= 0:
-            continue
-        if FieldMoveData.field_moves_for(String(pokemon.get("species", "")), String(pokemon.get("form", ""))).has(
-                move_name):
-            return index
-    return -1
+## The screens other scripts draw: open while their node is shown.
+func _watch_screens() -> void:
+    screens.watch(&"coop_interaction", func(): return is_instance_valid(coop_game) and is_instance_valid(coop_game.interaction_ui) and coop_game.interaction_ui.visible)
+    screens.watch(&"coop_chat", func(): return is_instance_valid(coop_game) and is_instance_valid(coop_game.chat) and coop_game.chat.visible)
+    screens.watch(&"pokedex", func(): return is_instance_valid(pokedex_menu) and pokedex_menu.visible)
+    screens.watch(&"touch_config", func(): return touch_config.visible)
+    screens.watch(&"touch_layout_edit", func(): return touch_controls.edit_mode)
+    screens.watch(&"game_files", func(): return is_instance_valid(game_files_menu) and game_files_menu.visible)
+    screens.watch(&"mods", func(): return is_instance_valid(mod_menu_panel) and mod_menu_panel.visible)
+    # OPTIONS can be open without the game menu (back from MOVE BUTTONS):
+    # the field's ball icons and HUD stay away from it too.
+    screens.watch(&"options", func(): return is_instance_valid(options_menu) and options_menu.visible)
 
 func _stop_fainted_active_field_move() -> void:
     if not started or battle_active:
@@ -3410,46 +1508,6 @@ func _stop_fainted_active_field_move() -> void:
             return
     world.call("clear_active_field_move", true)
 
-func _field_move_wheel_icon(species: String, shiny: bool = false, form: String = "") -> Texture2D:
-    var key := "mega_gengar" if species=="gengar" and form=="mega" else species
-    var menu := preload("res://scripts/divinakra_mega_art.gd").texture(key,"menu",shiny)
-    if menu != null: return _source_texture_region(menu,Rect2(64,0,16,16))
-    var texture := PokemonData.record_texture({"species":species,"shiny":shiny,"form":form}, "overworld")
-    if texture == null:
-        texture = PokemonData.texture(species, "front", shiny)
-    if texture == null:
-        return POKEMON_TEXTURES.get(species) as Texture2D
-    if texture.has_meta("mega_gengar_walk"):
-        var mega_frame := texture.get_width() / 6.0
-        return _source_texture_region(texture,Rect2(mega_frame * 4.0,0,mega_frame,texture.get_height()))
-    if texture.get_width() >= 16 and texture.get_height() >= 16:
-        var frame := AtlasTexture.new()
-        frame.atlas = texture
-        frame.region = Rect2(0, 0, 16, 16)
-        return frame
-    return texture
-
-func _activate_field_move_wheel_selection(selection: int) -> void:
-    if selection < 0 or selection >= FIELD_MOVE_WHEEL_ORDER.size():
-        return
-    var move_name := String(FIELD_MOVE_WHEEL_ORDER[clampi(
-        selection, 0, FIELD_MOVE_WHEEL_ORDER.size() - 1)])
-    var party_index := _find_field_move_pokemon_index(move_name)
-    if party_index < 0:
-        if move_name != "CUT":
-            _show_message("A POKEMON is required to use this FIELD MOVE.")
-        return
-    _ensure_party_ecology_id(party_index)
-    var pokemon := caught_pokemon[party_index] as Dictionary
-    if not bool(world.call("set_active_field_move", pokemon, move_name)):
-        return
-    world.call("present_field_move_pokemon")
-    if move_name == "BUILD":
-        _open_build_menu()
-    elif move_name not in ["CUT", "DIG"]:
-        _show_message("%s is using %s." % [
-            PokemonData.battle_display_name(String(pokemon.get("species", "POKEMON"))), move_name])
-
 func _start_battle_text(message: String) -> void:
     battle_text_full = message
     battle_status.text = message
@@ -3465,7 +1523,7 @@ func _type_battle_text(message: String) -> void:
     if overworld_evolution_running:
         progression_overlay.show()
         progression_level_dialogue.show()
-        _set_evolution_message(message)
+        progression.set_evolution_message(message)
     _start_battle_text(message)
     if battle_text_busy:
         await battle_text_finished
@@ -3479,128 +1537,12 @@ func _finish_battle_text() -> void:
     battle_text_accumulator = 0.0
     battle_text_finished.emit()
 
-func _create_evolution_greyscale_material() -> void:
-    var shader := Shader.new()
-    # This is the nonlinear 5-bit greyscale shader used by EvolutionAnim in
-    # the source JAR, translated directly to Godot's canvas shader syntax.
-    shader.code = (
-        "shader_type canvas_item;\n" +
-        "void fragment() {\n" +
-        "  vec4 c = texture(TEXTURE, UV) * COLOR;\n" +
-        "  float r = floor(c.r * 31.0);\n" +
-        "  float g = floor(c.g * 31.0);\n" +
-        "  float b = floor(c.b * 31.0);\n" +
-        "  float sum = r + g + b;\n" +
-        "  float grey = floor(sum * sum * sum / 25947.0) / 31.0;\n" +
-        "  COLOR = vec4(vec3(grey), c.a);\n" +
-        "}\n"
-    )
-    evolution_greyscale_material = ShaderMaterial.new()
-    evolution_greyscale_material.shader = shader
-
-func _handle_progression_input(event: InputEvent) -> void:
-    if progression_mode == "HATCH_ANIMATION":
-        if event.is_action_pressed("confirm") and not event.is_echo():
-            hatch_skip_requested = true
-        get_viewport().set_input_as_handled()
-        return
-    if progression_mode == "EVOLUTION":
-        if not overworld_evolution_running and event.is_action_pressed("cancel"):
-            evolution_cancel_requested = true
-            get_viewport().set_input_as_handled()
-        return
-    if progression_mode in ["STATS", "HATCH_DONE"]:
-        if progression_waiting_input and (event.is_action_pressed("confirm") or
-                event.is_action_pressed("start")):
-            progression_waiting_input = false
-            progression_confirmed.emit()
-            get_viewport().set_input_as_handled()
-        return
-    if progression_mode == "MOVE_SELECT":
-        var moves: Array = progression_pokemon.get("moves", [])
-        if moves.is_empty():
-            return
-        if event.is_action_pressed("move_up") or event.is_action_pressed("move_left"):
-            progression_choice_index = wrapi(
-                progression_choice_index - 1, 0, moves.size())
-            _refresh_progression_move_menu()
-        elif event.is_action_pressed("move_down") or event.is_action_pressed("move_right"):
-            progression_choice_index = wrapi(
-                progression_choice_index + 1, 0, moves.size())
-            _refresh_progression_move_menu()
-        elif event.is_action_pressed("confirm"):
-            progression_mode = ""
-            progression_choice_made.emit(progression_choice_index)
-        elif event.is_action_pressed("cancel"):
-            _show_progression_yes_no(
-                "Give up on learning %s?" % progression_pending_move.replace("_", " "),
-                "MOVE_GIVEUP")
-        else:
-            return
-        get_viewport().set_input_as_handled()
-        return
-    if progression_mode in ["MOVE_GIVEUP", "YES_NO"]:
-        if event.is_action_pressed("move_up") or event.is_action_pressed("move_down") or \
-                event.is_action_pressed("move_left") or event.is_action_pressed("move_right"):
-            progression_choice_index = 1 - progression_choice_index
-            _refresh_progression_yes_no()
-        elif event.is_action_pressed("confirm"):
-            if progression_mode == "MOVE_GIVEUP":
-                if progression_choice_index == 0:
-                    progression_mode = ""
-                    progression_choice_made.emit(-1)
-                else:
-                    _show_progression_move_menu(
-                        progression_pokemon, progression_pending_move)
-            else:
-                progression_mode = ""
-                progression_choice_made.emit(
-                    1 if progression_choice_index == 0 else 0)
-        elif event.is_action_pressed("cancel"):
-            if progression_mode == "MOVE_GIVEUP":
-                _show_progression_move_menu(
-                    progression_pokemon, progression_pending_move)
-            else:
-                progression_mode = ""
-                progression_choice_made.emit(0)
-        else:
-            return
-        get_viewport().set_input_as_handled()
-
-func _reset_progression_overlay() -> void:
-    progression_level_message.add_theme_font_size_override("font_size", 10)
-    progression_level_message.position = Vector2(12,10)
-    progression_level_message.size = Vector2(282,32)
-    for panel in [progression_move_frame, progression_type_frame, progression_choice_frame]:
-        if panel != null:
-            panel.hide()
-    progression_background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    progression_background.position = Vector2.ZERO
-    progression_animation.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    progression_animation.position = Vector2.ZERO
-    progression_background.texture = null
-    progression_animation.texture = null
-    progression_sprite_top.texture = null
-    progression_sprite_bottom.texture = null
-    progression_sprite_top.material = null
-    progression_sprite_bottom.material = null
-    progression_sprite_top.visible = false
-    progression_sprite_bottom.visible = false
-    progression_title.visible = false
-    progression_list.visible = false
-    progression_values.visible = false
-    progression_cursor.visible = false
-    progression_detail.visible = false
-    progression_hint.visible = false
-    progression_level_dialogue.visible = false
-    if progression_stats_frame != null:
-        progression_stats_frame.visible = false
-
-func _hide_progression_overlay() -> void:
-    progression_mode = ""
-    progression_waiting_input = false
-    progression_overlay.visible = capture_experience_presenting
-    _reset_progression_overlay()
+## progression_screens.gd under its old names, for the scripts and tests that call them on main.
+func _hide_progression_overlay() -> void: progression.hide_progression_overlay()
+func _refresh_progression_move_menu() -> void: progression.refresh_progression_move_menu()
+func _refresh_progression_yes_no() -> void: progression.refresh_progression_yes_no()
+func _choose_move_to_forget(pokemon: Dictionary, move_name: String) -> int: return await progression.choose_move_to_forget(pokemon, move_name)
+func _world_source_time_of_day() -> String: return progression.world_source_time_of_day()
 
 func _source_texture_region(texture: Texture2D, region: Rect2) -> Texture2D:
     if texture == null:
@@ -3667,420 +1609,12 @@ func _battle_directive(source_key: String, frame_number: int) -> Dictionary:
         battle_directive_cache[index] = directive
     return directive
 
-func _show_level_up_stats(pokemon: Dictionary) -> void:
-    _reset_progression_overlay()
-    progression_overlay.visible = true
-    progression_background.texture = null
-    var species := String(pokemon.get("species", "machop"))
-    var stats_texture := PokemonData.record_texture(pokemon, "back")
-    if stats_texture == null:
-        stats_texture = PokemonData.record_texture(pokemon, "front")
-    progression_sprite_top.texture = _battle_sprite_frame(stats_texture)
-    # Stands on the text box (top edge at 123), as it does during the battle.
-    progression_sprite_top.position = Vector2(14, 29)
-    progression_sprite_top.size = Vector2(116, 94)
-    progression_sprite_top.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-    progression_sprite_top.visible = progression_sprite_top.texture != null
-    var stats: Dictionary = pokemon.get("stats", {})
-    for index in range(5):
-        progression_stats_fields[index].text = str(int(stats.get(
-            ["attack", "defense", "sp_attack", "sp_defense", "speed"][index], 0)))
-    progression_stats_frame.visible = true
-    progression_level_message.text = "%s grew to LV.%d!" % [
-        PokemonState.display_name(pokemon).to_upper(),
-        int(pokemon.get("level", 1))
-    ]
-    progression_level_dialogue.visible = true
-    progression_mode = "STATS"
-    progression_waiting_input = false
-    await get_tree().create_timer(
-        SOURCE_LEVEL_STATS_MIN_FRAMES * SOURCE_FRAME_TIME).timeout
-    progression_waiting_input = true
-    progression_hint.text = ""
-    progression_hint.visible = false
-    await progression_confirmed
-    _hide_progression_overlay()
-
-func _progression_panel(label: String, rect: Rect2) -> Panel:
-    var panel := Panel.new()
-    panel.name = label
-    panel.position = rect.position
-    panel.size = rect.size
-    panel.z_index = 2
-    panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    panel.add_theme_stylebox_override("panel", _classic_dialogue_style())
-    progression_overlay.add_child(panel)
-    panel.hide()
-    return panel
-
-func _create_progression_menu_frames() -> void:
-    progression_type_frame = _progression_panel("MoveTypeBorder", Rect2(142, 2, 176, 117))
-    progression_move_frame = _progression_panel("MoveListBorder", Rect2(2, 2, 138, 117))
-    progression_choice_frame = _progression_panel("MoveChoiceBorder", Rect2(234, 51, 84, 70))
-    progression_type_label = _source_ui_label(progression_type_frame, "Type", Vector2(10, 10), Vector2(156, 95), 8)
-    progression_type_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    progression_pp_label = _source_ui_label(progression_type_frame, "PP", Vector2(12, 67), Vector2(94, 34), 10)
-    for index in range(4):
-        var row := _source_ui_label(progression_move_frame, "Move%d" % index,
-            Vector2(24, 10 + index * 25), Vector2(104, 20), 10)
-        row.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-        progression_move_rows.append(row)
-    progression_menu_cursor = _source_ui_label(progression_move_frame, "Tick", Vector2(8, 10), Vector2(14, 20), 10, "▶", true)
-    progression_menu_cursor.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-    progression_yes_no_cursor = _source_ui_label(progression_choice_frame, "Tick", Vector2(11, 8), Vector2(14, 20), 10, "▶", true)
-    progression_yes_no_cursor.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-    for index in range(2):
-        var row := _source_ui_label(progression_choice_frame, "Choice%d" % index,
-            Vector2(28, 10 + index * 28), Vector2(46, 22), 10, "YES" if index == 0 else "NO")
-        row.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-
-func _show_progression_move_menu(pokemon: Dictionary, move_name: String) -> void:
-    _reset_progression_overlay()
-    progression_overlay.show()
-    progression_pokemon = pokemon
-    progression_pending_move = move_name.to_upper().replace(" ", "_")
-    var moves: Array = pokemon.get("moves", [])
-    progression_choice_index = clampi(progression_move_index, 0, maxi(0, moves.size() - 1))
-    progression_level_message.text = "Which move should be forgotten?"
-    progression_level_dialogue.show()
-    progression_move_frame.show()
-    progression_type_frame.show()
-    progression_mode = "MOVE_SELECT"
-    _refresh_progression_move_menu()
-
-func _refresh_progression_move_menu() -> void:
-    progression_move_index = progression_choice_index
-    var moves: Array = progression_pokemon.get("moves", [])
-    for index in range(4):
-        var row := progression_move_rows[index]
-        row.text = String(moves[index]).replace("_", " ") if index < moves.size() else "-"
-        var font_size := 10
-        while font_size > 6 and row.get_theme_font("font").get_string_size(row.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x > row.size.x:
-            font_size -= 1
-        row.add_theme_font_size_override("font_size", font_size)
-    _align_menu_tick(progression_menu_cursor, progression_move_rows[progression_choice_index])
-    if moves.is_empty():
-        progression_type_label.text = "TYPE/\n---"
-        progression_pp_label.text = "PP\n0/0"
-        return
-    var selected := String(moves[progression_choice_index])
-    var move_data := PokemonData.move_info(selected)
-    var maximum_pp := int(move_data.get("pp", 0))
-    var current_pp := int((progression_pokemon.get("pp", {}) as Dictionary).get(selected, maximum_pp))
-    var details = preload("res://scripts/move_details.gd")
-    progression_pp_label.hide()
-    progression_type_label.text = "%s\nPP %d / %d\n\n%s" % [details.stats_text(selected).replace("  PP %d" % maximum_pp,""),current_pp,maximum_pp,details.effect_text(selected)]
-    progression_level_message.add_theme_font_size_override("font_size", 7)
-    progression_level_message.position = Vector2(12,7)
-    progression_level_message.size = Vector2(288,44)
-    progression_level_message.text = "NEW: %s  (%s)\n%s\n%s" % [progression_pending_move.replace("_"," "), PokemonState.display_name(progression_pokemon).to_upper(), details.stats_text(progression_pending_move).replace("\n","  "), details.effect_text(progression_pending_move)]
-
-func _show_progression_yes_no(prompt: String, mode: String = "YES_NO") -> void:
-    _reset_progression_overlay()
-    progression_overlay.show()
-    progression_level_message.text = prompt
-    progression_level_dialogue.show()
-    progression_choice_frame.show()
-    progression_choice_index = 0
-    progression_mode = mode
-    _refresh_progression_yes_no()
-
-func _refresh_progression_yes_no() -> void:
-    _align_menu_tick(progression_yes_no_cursor, progression_choice_frame.get_node("Choice%d" % progression_choice_index))
-
-func _ask_progression_yes_no(prompt: String) -> bool:
-    _show_progression_yes_no(prompt)
-    var result = await progression_choice_made
-    return int(result) == 1
-
-func _choose_move_to_forget(pokemon: Dictionary,
-        move_name: String) -> int:
-    progression_move_index = 0
-    while true:
-        _show_progression_move_menu(pokemon, move_name)
-        var choice = await progression_choice_made
-        var selected_index := int(choice)
-        if selected_index < 0:
-            _hide_progression_overlay()
-            return -1
-        var moves: Array = pokemon.get("moves", [])
-        if selected_index >= moves.size():
-            continue
-        var forgotten := String(moves[selected_index]).replace("_", " ")
-        if await _ask_progression_yes_no("Replace %s?" % forgotten):
-            _hide_progression_overlay()
-            return selected_index
-    return -1
-
 ## A battle's experience screens are main.gd's own: the choices made on them
 ## (a move to forget, an evolution let through or stopped) go in the battle's
 ## history so a replay of it makes the same ones.
 func _note_battle_choice(choice: Variant) -> void:
     if battle_active and battle_session != null and battle_session.running:
         battle_session.history.append(choice)
-
-func _learn_level_moves(pokemon: Dictionary, moves_to_learn: Array) -> void:
-    var display_name := PokemonState.display_name(pokemon).to_upper()
-    for raw_move in moves_to_learn:
-        var move_name := String(raw_move).to_upper().replace(" ", "_")
-        if (pokemon.get("moves", []) as Array).has(move_name):
-            continue
-        if (pokemon.get("moves", []) as Array).size() < 4:
-            if BattleEngine.learn_move(pokemon, move_name):
-                _play_source_battle_sound("fanfare1.ogg")
-                await _type_battle_text("%s learned %s!" % [
-                    display_name, move_name.replace("_", " ")])
-            continue
-        await _type_battle_text("%s is trying to learn %s." % [
-            display_name, move_name.replace("_", " ")])
-        await _type_battle_text("Which move should be forgotten?")
-        var replace_index := await _choose_move_to_forget(pokemon, move_name)
-        _note_battle_choice(replace_index)
-        if replace_index < 0:
-            await _type_battle_text("%s did not learn %s." % [
-                display_name, move_name.replace("_", " ")])
-            continue
-        var old_move := String((pokemon.get("moves", []) as Array)[replace_index])
-        await _type_battle_text("And one... two... three... POOF!")
-        await _type_battle_text("%s forgot %s and..." % [
-            display_name, old_move.replace("_", " ")])
-        if BattleEngine.learn_move(pokemon, move_name, replace_index):
-            _play_source_battle_sound("fanfare1.ogg")
-            await _type_battle_text("%s learned %s!" % [
-                display_name, move_name.replace("_", " ")])
-
-func _experience_bar_index(species: String, level: int,
-        experience: int) -> int:
-    if level >= 100:
-        return SOURCE_EXP_UNITS
-    var floor_exp := BattleEngine.exp_for_level(species, level)
-    var ceiling_exp := BattleEngine.exp_for_level(species, level + 1)
-    return clampi(int(floor(float(SOURCE_EXP_UNITS) *
-        float(experience - floor_exp) /
-        maxf(1.0, float(ceiling_exp - floor_exp)))), 0, SOURCE_EXP_UNITS)
-
-func _animate_experience_segment(pokemon: Dictionary, from_exp: int,
-        to_exp: int) -> void:
-    var species := String(pokemon.get("species", "machop"))
-    var level := int(pokemon.get("level", 1))
-    var start_index := _experience_bar_index(species, level, from_exp)
-    var target_index := _experience_bar_index(species, level, to_exp)
-    var segment_start := preload("res://scripts/game_clock.gd").ticks_usec()
-    for bar_index in range(start_index + 1, target_index + 1):
-        _set_player_exp_bar_ratio(
-            float(bar_index) / float(SOURCE_EXP_UNITS))
-        var deadline := segment_start + int((bar_index - start_index) * SOURCE_FRAME_TIME * 1000000.0)
-        while preload("res://scripts/game_clock.gd").ticks_usec() < deadline:
-            await get_tree().process_frame
-
-func _set_player_exp_bar_ratio(ratio: float) -> void:
-    var clamped := clampf(ratio, 0.0, 1.0)
-    var legacy_width := roundf(96.0 * clamped)
-    var source_width := roundf(66.0 * clamped)
-    # Both bars share a fixed right edge like the source GSC HUD.
-    player_exp_fill.position.x = 145.0 - legacy_width
-    player_exp_fill.size.x = legacy_width
-    source_player_exp_fill.position.x = 184.0 - source_width
-    source_player_exp_fill.size.x = source_width
-    player_exp_fill.color = Color8(47, 152, 233)
-    source_player_exp_fill.color = Color8(32, 136, 248)
-
-func _world_source_time_of_day() -> String:
-    if world.has_method("source_time_of_day"):
-        return String(world.call("source_time_of_day"))
-    return "day"
-
-func _run_experience_progression(pokemon: Dictionary, amount: int,
-        party_index: int, defer_evolution: bool = false) -> void:
-    progression_active = true
-    progression_mode = ""
-    _hide_progression_overlay()
-    var original_hud_pokemon := battle_player
-    var showing_other_pokemon := not is_same(pokemon, battle_player)
-    if showing_other_pokemon:
-        battle_player = pokemon
-        _update_battle_hud()
-
-    var current_exp := int(pokemon.get("exp", BattleEngine.exp_for_level(
-        String(pokemon.get("species", "machop")), int(pokemon.get("level", 1)))))
-    var target_exp := current_exp + maxi(0, amount)
-    var gained_level := false
-    if int(pokemon.get("level", 1)) < 100 and target_exp > current_exp:
-        _play_source_battle_sound("xp-gain1.ogg")
-        await get_tree().create_timer(9.0 * SOURCE_FRAME_TIME).timeout
-
-    while int(pokemon.get("level", 1)) < 100:
-        var next_level_exp := BattleEngine.exp_for_level(
-            String(pokemon.get("species", "machop")),
-            int(pokemon.get("level", 1)) + 1)
-        if target_exp < next_level_exp:
-            break
-        await _animate_experience_segment(pokemon, current_exp, next_level_exp)
-        pokemon["exp"] = next_level_exp
-        battle_audio.stop()
-        _play_level_up_sound()
-        _set_player_exp_bar_ratio(1.0)
-        # The source holds a completely filled bar before it rolls into the
-        # next level rather than clearing it on the same frame.
-        await get_tree().create_timer(9.0 * SOURCE_FRAME_TIME).timeout
-        var level_result := BattleEngine.gain_level(pokemon)
-        gained_level = true
-        current_exp = next_level_exp
-        if party_index >= 0 and party_index < caught_pokemon.size():
-            caught_pokemon[party_index] = pokemon
-        _update_battle_hud()
-        _play_source_battle_sound("fanfare1.ogg")
-        await _type_battle_text("%s grew to level %d!" % [
-            PokemonState.display_name(pokemon).to_upper(), int(pokemon.level)])
-        await _learn_level_moves(pokemon, level_result.get("moves", []))
-        if int(pokemon.get("level", 1)) < 100 and target_exp >= \
-                BattleEngine.exp_for_level(String(pokemon.species),
-                    int(pokemon.level) + 1):
-            _play_source_battle_sound("xp-gain1.ogg")
-
-    if int(pokemon.get("level", 1)) < 100 and target_exp > current_exp:
-        await _animate_experience_segment(pokemon, current_exp, target_exp)
-    pokemon["exp"] = target_exp
-    battle_audio.stop()
-    if party_index >= 0 and party_index < caught_pokemon.size():
-        caught_pokemon[party_index] = pokemon
-    _update_battle_hud()
-
-    if gained_level:
-        await _show_level_up_stats(pokemon)
-        if not defer_evolution:
-            await _check_reward_evolution(pokemon, party_index)
-
-    if showing_other_pokemon:
-        battle_player = original_hud_pokemon
-        _update_battle_hud()
-    _hide_progression_overlay()
-    progression_pokemon = {}
-    progression_pending_move = ""
-    progression_active = false
-
-func _set_progression_sprite_half(node: TextureRect, texture: Texture2D,
-        top_half: bool, greyscale: bool,
-        source_baseline_y: float = 72.0, bottom_height: int = -1,
-        horizontal_scale: float = 2.0, horizontal_offset: float = 0.0) -> void:
-    if texture == null:
-        node.texture = null
-        node.visible = false
-        return
-    var width := texture.get_width()
-    var height := texture.get_height()
-    var split := height - bottom_height if bottom_height >= 0 else int(height / 2.0)
-    var region_y := 0 if top_half else split
-    var region_height := split if top_half else height - split
-    node.texture = _source_texture_region(texture,
-        Rect2(0, region_y, width, region_height))
-    var source_left := 84.0 - float(width) / 2.0
-    var source_top := 144.0 - source_baseline_y - float(height)
-    node.position = Vector2(
-        horizontal_offset + source_left * horizontal_scale,
-        (source_top + float(region_y)) * 1.25)
-    node.size = Vector2(float(width) * horizontal_scale, float(region_height) * 1.25)
-    node.material = evolution_greyscale_material if greyscale else null
-    node.visible = true
-
-func _set_evolution_sprite_halves(old_texture: Texture2D,
-        new_texture: Texture2D, directive: Dictionary,
-        sprites_visible: bool) -> void:
-    if not sprites_visible:
-        progression_sprite_top.visible = false
-        progression_sprite_bottom.visible = false
-        return
-    var greyscale := bool(directive.get("sprite_greyscale", false))
-    var top_texture := new_texture if bool(directive.get(
-        "evo_top_sprite_changed", false)) else old_texture
-    var bottom_texture := new_texture if bool(directive.get(
-        "evo_bottom_sprite_changed", false)) else old_texture
-    _set_progression_sprite_half(
-        progression_sprite_top, top_texture, true, greyscale, 72.0,
-        int(old_texture.get_height() / 2.0), 1.25, 60.0)
-    _set_progression_sprite_half(
-        progression_sprite_bottom, bottom_texture, false, greyscale, 72.0,
-        int(old_texture.get_height() / 2.0), 1.25, 60.0)
-
-func _set_progression_full_sprite(texture: Texture2D,
-        source_baseline_y: float) -> void:
-    if texture == null:
-        progression_sprite_top.visible = false
-        progression_sprite_bottom.visible = false
-        return
-    progression_sprite_bottom.visible = false
-    progression_sprite_top.texture = texture
-    progression_sprite_top.material = null
-    progression_sprite_top.position = Vector2(
-        (84.0 - float(texture.get_width()) / 2.0) * 2.0,
-        (144.0 - source_baseline_y - float(texture.get_height())) * 1.25)
-    progression_sprite_top.size = Vector2(
-        float(texture.get_width()) * 2.0,
-        float(texture.get_height()) * 1.25)
-    progression_sprite_top.visible = true
-
-func _set_hatch_progression_canvas() -> void:
-    # The source hatch canvas is 160x144. Fit it to the 320x180 viewport with
-    # one uniform scale (1.25x) so the egg/Pokemon are never horizontally
-    # stretched; the remaining 60 px on each side are intentional pillarbox.
-    for node in [progression_background, progression_animation]:
-        node.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
-        node.position = Vector2(60.0, 0.0)
-        node.size = Vector2(200.0, 180.0)
-
-func _set_hatch_sprite_half(node: TextureRect, texture: Texture2D,
-        top_half: bool, source_baseline_y: float = 64.0) -> void:
-    if texture == null:
-        node.texture = null
-        node.visible = false
-        return
-    var width := texture.get_width()
-    var height := texture.get_height()
-    var split := int(height / 2.0)
-    var region_y := 0 if top_half else split
-    var region_height := split if top_half else height - split
-    node.texture = _source_texture_region(texture,
-        Rect2(0, region_y, width, region_height))
-    var scale := 1.25
-    var source_left := 84.0 - float(width) / 2.0
-    var source_top := 144.0 - source_baseline_y - float(height)
-    node.position = Vector2(
-        60.0 + source_left * scale,
-        (source_top + float(region_y)) * scale)
-    node.size = Vector2(float(width) * scale, float(region_height) * scale)
-    node.material = null
-    node.visible = true
-
-func _set_hatch_full_sprite(texture: Texture2D,
-        source_baseline_y: float = 64.0) -> void:
-    if texture == null:
-        progression_sprite_top.visible = false
-        progression_sprite_bottom.visible = false
-        return
-    var scale := 1.25
-    progression_sprite_bottom.visible = false
-    progression_sprite_top.texture = texture
-    progression_sprite_top.material = null
-    progression_sprite_top.position = Vector2(
-        60.0 + (84.0 - float(texture.get_width()) / 2.0) * scale,
-        (144.0 - source_baseline_y - float(texture.get_height())) * scale)
-    progression_sprite_top.size = Vector2(
-        float(texture.get_width()) * scale,
-        float(texture.get_height()) * scale)
-    progression_sprite_top.visible = true
-
-func _set_hatch_sprite_halves(texture: Texture2D,
-        show_bottom: bool, show_top: bool) -> void:
-    if show_top:
-        _set_hatch_sprite_half(
-            progression_sprite_top, texture, true, 64.0)
-    else:
-        progression_sprite_top.visible = false
-    if show_bottom:
-        _set_hatch_sprite_half(
-            progression_sprite_bottom, texture, false, 64.0)
-    else:
-        progression_sprite_bottom.visible = false
 
 func _play_battle_animation_sound(source_key: String) -> void:
     var audio_entries: Dictionary = battle_animation_manifest.get("audio", {})
@@ -4089,225 +1623,6 @@ func _play_battle_animation_sound(source_key: String) -> void:
         battle_audio.stream = load(audio_path) as AudioStream
         AudioBalance.apply(battle_audio)
         battle_audio.play()
-
-func _play_progression_cry(pokemon: Dictionary) -> void:
-    var cry_path := PokemonData.cry_path(String(pokemon.get("species", "")))
-    if cry_path.is_empty() or not ResourceLoader.exists(cry_path):
-        return
-    var cry_player := AudioStreamPlayer.new()
-    cry_player.stream = load(cry_path) as AudioStream
-    cry_player.finished.connect(func() -> void: cry_player.queue_free())
-    add_child(cry_player)
-    AudioBalance.apply(cry_player)
-    cry_player.play()
-
-func _run_egg_hatch_sequence(party_index: int, hatched: Dictionary) -> void:
-    progression_active = true
-    progression_mode = ""
-    field_item_busy = true
-    world.set_gameplay_enabled(false)
-    caught_pokemon[party_index] = hatched
-    pokedex_progress.mark(hatched, true)
-    var species := String(hatched.get("species", "pidgey")).to_lower()
-    if not caught_species.has(species):
-        caught_species.append(species)
-
-    # PlayerStanding waits 61 + 3 source frames before its random hatch cue.
-    await get_tree().create_timer(61.0 * SOURCE_FRAME_TIME).timeout
-    await get_tree().create_timer(3.0 * SOURCE_FRAME_TIME).timeout
-    message_timer = 0.0
-    message_label.text = ["Huh?", "Oh?"][battle_rng.randi_range(0, 1)]
-    message_panel.visible = true
-    await get_tree().create_timer(51.0 * SOURCE_FRAME_TIME).timeout
-    message_panel.visible = false
-
-    _reset_progression_overlay()
-    progression_overlay.visible = true
-    _set_hatch_progression_canvas()
-    progression_background.texture = _source_texture_region(
-        SOURCE_HATCH_BACKGROUND, Rect2(0, 0, 160, 144))
-    progression_mode = "HATCH_ANIMATION"
-    var skip_hint := _source_ui_label(progression_overlay, "HatchSkipHint", Vector2(190, 167), Vector2(124, 11), 7, "Press A to skip")
-    skip_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-    skip_hint.z_index = 10
-    hatch_skip_requested = false
-    var previous_pitch := battle_audio.pitch_scale
-    battle_audio.pitch_scale = HATCH_PLAYBACK_SPEED
-    _play_battle_animation_sound("egg_hatch_gsc")
-    var front_sheet := PokemonData.record_texture(hatched, "front")
-    var front_frame := _battle_sprite_frame(front_sheet)
-    var show_bottom := false
-    var show_top := false
-    # One elapsed-time clock advances both visuals and pitched source audio.
-    # Per-frame timers accumulated extra display frames on slower devices.
-    var hatch_start := preload("res://scripts/game_clock.gd").ticks_usec()
-    var last_frame := -1
-    while not hatch_skip_requested:
-        var frame_index := int(float(preload("res://scripts/game_clock.gd").ticks_usec() - hatch_start) / 1000000.0 * HATCH_PLAYBACK_SPEED / SOURCE_FRAME_TIME)
-        if frame_index >= SOURCE_HATCH_COMPLETE_FRAME:
-            break
-        progression_animation.texture = _source_animation_frame_texture(
-            "egg_hatch_gsc", frame_index)
-        for directive_frame in range(last_frame + 1, frame_index + 1):
-            var directive := _source_animation_directive("egg_hatch_gsc", directive_frame)
-            show_bottom = show_bottom or bool(directive.get("draw_hatch_bottom_sprite", false))
-            show_top = show_top or bool(directive.get("draw_hatch_top_sprite", false))
-        last_frame = frame_index
-        _set_hatch_sprite_halves(front_frame, show_bottom, show_top)
-        await get_tree().process_frame
-
-    battle_audio.stop()
-    battle_audio.pitch_scale = previous_pitch
-    skip_hint.queue_free()
-    progression_mode = "HATCH_REVEAL"
-    progression_animation.texture = null
-    var intro_frame_count := 1
-    if front_sheet != null and front_sheet.get_width() > 0:
-        intro_frame_count = maxi(1, roundi(
-            float(front_sheet.get_height()) / float(front_sheet.get_width())))
-    var cry_started := false
-    var reveal_start := preload("res://scripts/game_clock.gd").ticks_usec()
-    for intro_index in range(intro_frame_count):
-        var sprite_frame := front_frame
-        if front_sheet != null and front_sheet.get_height() > front_sheet.get_width():
-            var frame_height := mini(front_sheet.get_height(), front_sheet.get_width())
-            sprite_frame = _source_texture_region(front_sheet, Rect2(
-                0, intro_index * frame_height,
-                front_sheet.get_width(), frame_height))
-        _set_hatch_full_sprite(sprite_frame, 64.0)
-        var deadline := reveal_start + int((intro_index + 1) * SOURCE_FRAME_TIME * 1000000.0)
-        while preload("res://scripts/game_clock.gd").ticks_usec() < deadline:
-            await get_tree().process_frame
-        if intro_index == 3:
-            _play_progression_cry(hatched)
-            cry_started = true
-    if not cry_started:
-        _play_progression_cry(hatched)
-    await get_tree().create_timer(4.0 * SOURCE_FRAME_TIME).timeout
-
-    _hide_progression_overlay()
-    _play_source_battle_sound("fanfare2.ogg")
-    message_timer = 0.0
-    message_label.text = "%s came out of its EGG!" % \
-        PokemonState.display_name(hatched).to_upper()
-    message_panel.visible = true
-    progression_mode = "HATCH_DONE"
-    progression_waiting_input = true
-    await progression_confirmed
-    await get_tree().create_timer(13.0 * SOURCE_FRAME_TIME).timeout
-    battle_audio.stop()
-    message_panel.visible = false
-    progression_mode = ""
-    progression_waiting_input = false
-    progression_active = false
-    field_item_busy = false
-    world.set_gameplay_enabled(true)
-
-func _evolution_sprite_texture(species: String, shiny: bool) -> Texture2D:
-    return PokemonData.texture(species, "front", shiny)
-
-func _set_evolution_message(message: String) -> void:
-    var font := progression_level_message.get_theme_font("font")
-    var result := message
-    var chosen_size := 10
-    for size in range(10, 4, -1):
-        var lines: Array[String] = [""]
-        for word in message.split(" "):
-            var candidate := word if lines[-1].is_empty() else lines[-1] + " " + word
-            if font.get_string_size(candidate, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x > 282 and not lines[-1].is_empty():
-                lines.append(word)
-            else:
-                lines[-1] = candidate
-        if lines.size() <= 2:
-            result = "\n".join(lines)
-            chosen_size = size
-            break
-    progression_level_message.add_theme_font_size_override("font_size", chosen_size)
-    progression_level_message.text = result
-
-func _run_evolution_sequence(pokemon: Dictionary, new_species: String,
-        party_index: int) -> bool:
-    new_species = BattleEngine.resolved_evolution_species(pokemon, new_species)
-    var old_display_name := PokemonState.display_name(pokemon).to_upper()
-    var old_texture := _battle_sprite_frame(
-        _evolution_sprite_texture(String(pokemon.get("species", "")), PokemonData.is_shiny(pokemon)))
-    var new_texture := _battle_sprite_frame(
-        _evolution_sprite_texture(new_species, PokemonData.is_shiny(pokemon)))
-    await _type_battle_text("What? %s is evolving!" % old_display_name)
-    await get_tree().create_timer(51.0 * SOURCE_FRAME_TIME).timeout
-
-    _reset_progression_overlay()
-    progression_overlay.visible = true
-    # Keep the source animation in its native proportions above the approved
-    # dialogue panel; its baked-in vanilla border must not replace our UI.
-    progression_background.texture = null
-    progression_animation.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
-    progression_animation.position = Vector2(60.0, 0.0)
-    progression_animation.size = Vector2(200.0, 120.0)
-    progression_level_dialogue.visible = true
-    _set_evolution_message("What? %s is evolving!" % old_display_name)
-    progression_mode = "EVOLUTION"
-    evolution_cancel_requested = false
-    var evolution_music_states: Array[bool] = world.environment_system.pause_music_for_evolution()
-    _play_source_battle_sound("evolution1.ogg")
-    var animations: Dictionary = battle_animation_manifest.get("animations", {})
-    var animation: Dictionary = animations.get("evolve_gsc", {})
-    var frame_count := int(animation.get("frames", 502))
-    var fanfare_played := false
-    var evolution_started_usec := preload("res://scripts/game_clock.gd").ticks_usec()
-    for frame_index in range(frame_count):
-        if frame_index >= SOURCE_EVOLUTION_CANCEL_END_FRAME:
-            progression_mode = "EVOLUTION_FINISHING"
-        progression_animation.texture = _source_animation_frame_texture(
-            "evolve_gsc", frame_index, Rect2(0, 0, 160, 96))
-        var directive := _source_animation_directive("evolve_gsc", frame_index)
-        _set_evolution_sprite_halves(
-            old_texture, new_texture, directive, frame_index >= 33)
-        if bool(directive.get("play_evo_fanfare", false)) and not fanfare_played:
-            fanfare_played = true
-            _play_source_battle_sound("evolve_fanfare1.ogg")
-        # Absolute deadlines preserve the source's 60 Hz timeline. Creating a
-        # fresh one-frame timer per frame accumulated an extra render-frame wait.
-        var deadline := evolution_started_usec + int(
-            float(frame_index + 1) * SOURCE_FRAME_TIME * 1000000.0)
-        while preload("res://scripts/game_clock.gd").ticks_usec() < deadline:
-            await get_tree().process_frame
-        if evolution_cancel_requested:
-            break
-    battle_audio.stop()
-    world.environment_system.resume_music_after_evolution(evolution_music_states)
-    progression_mode = "EVOLUTION_DONE"
-    progression_animation.texture = null
-    _note_battle_choice(not evolution_cancel_requested)
-
-    if evolution_cancel_requested:
-        _set_evolution_sprite_halves(old_texture, old_texture, {}, true)
-        await get_tree().create_timer(30.0 * SOURCE_FRAME_TIME).timeout
-        _set_evolution_message("Huh? %s stopped evolving!" % old_display_name)
-        await _type_battle_text("Huh? %s stopped evolving!" % old_display_name)
-        _hide_progression_overlay()
-        return false
-
-    if not BattleEngine.apply_evolution(pokemon, new_species):
-        _hide_progression_overlay()
-        return false
-    pokedex_progress.mark(pokemon, true)
-    _set_evolution_sprite_halves(new_texture, new_texture, {}, true)
-    if party_index >= 0 and party_index < caught_pokemon.size():
-        caught_pokemon[party_index] = pokemon
-    _refresh_battle_sprites()
-    _update_battle_hud()
-    _play_pokemon_cry(pokemon)
-    await get_tree().create_timer(30.0 * SOURCE_FRAME_TIME).timeout
-    _play_source_battle_sound("fanfare2.ogg")
-    _set_evolution_message("Congratulations! Your %s evolved into %s!" % [
-        old_display_name, new_species.to_upper().replace("_", " ")])
-    await _type_battle_text("Congratulations! Your %s evolved into %s!" % [
-        old_display_name, new_species.to_upper().replace("_", " ")])
-    _hide_progression_overlay()
-    await _learn_level_moves(pokemon, BattleEngine.moves_learned_at_level(
-        new_species, int(pokemon.get("level", 1))))
-    return true
 
 func _notification(what: int) -> void:
     if not startup_complete: return
@@ -4323,13 +1638,13 @@ func _notification(what: int) -> void:
             touch_controls._release_all()
         return
     if what == NOTIFICATION_APPLICATION_PAUSED:
-        _save_on_pause()
+        saving.save_on_pause()
         return
     if what in [NOTIFICATION_APPLICATION_FOCUS_IN, NOTIFICATION_WM_WINDOW_FOCUS_IN]:
         if is_node_ready() and _is_android_touch_runtime():
             touch_controls.refresh_system_theme()
             if touch_config.visible:
-                _apply_touch_config_theme()
+                touch_config_panel.apply_touch_config_theme()
         return
 
     if what != NOTIFICATION_WM_GO_BACK_REQUEST:
@@ -4338,7 +1653,7 @@ func _notification(what: int) -> void:
     # Android system Back requests quit; controller Select has its own map action.
     if not _is_android_touch_runtime():
         if started and not quit_prompt_open:
-            _open_quit_prompt()
+            start_menu.open_quit_prompt()
         return
     _handle_android_back_request()
 
@@ -4364,13 +1679,13 @@ func _handle_android_back_request() -> void:
         mod_menu_panel.call("_close")
     elif touch_controls.edit_mode:
         touch_controls.end_edit()
-        _open_touch_config()
+        touch_config_panel.open_touch_config()
     elif touch_config.visible:
-        _close_touch_config()
+        touch_config_panel.close_touch_config()
     else:
         if is_instance_valid(pokedex_menu) and pokedex_menu.visible:
             pokedex_menu.close()
-        _open_quit_prompt()
+        start_menu.open_quit_prompt()
 
 func _poll_android_back_bridge() -> void:
     if not android_back_bridge_checked:
@@ -4390,11 +1705,11 @@ func _handle_android_controls_gesture() -> void:
     if is_instance_valid(pokedex_menu) and pokedex_menu.visible: pokedex_menu.close()
     if touch_controls.edit_mode:
         touch_controls.end_edit()
-        _open_touch_config()
+        touch_config_panel.open_touch_config()
     elif touch_config.visible:
-        _close_touch_config()
+        touch_config_panel.close_touch_config()
     else:
-        _open_touch_config()
+        touch_config_panel.open_touch_config()
 
 func _input(event: InputEvent) -> void:
     last_input_msec = Time.get_ticks_msec()
@@ -4420,7 +1735,7 @@ func _input(event: InputEvent) -> void:
         waypoint_ui.handle_input(event)
         return # Dispatch before focused controls consume controller buttons.
     if game_menu_open and game_menu_detail_open and game_menu_map_screen.visible:
-        _handle_game_menu_input(event)
+        start_menu.handle_game_menu_input(event)
         get_viewport().set_input_as_handled()
         return
     # Depending on the Android device/launcher, the hardware Back control can
@@ -4456,7 +1771,7 @@ func _input(event: InputEvent) -> void:
 
 
     if touch_config.visible:
-        _handle_swipe_menu(event)
+        setup_screen.handle_swipe_menu(event)
         if not event is InputEventMouse and not event is InputEventScreenTouch and not event is InputEventScreenDrag:
             get_viewport().set_input_as_handled()
         return
@@ -4475,12 +1790,12 @@ func _input(event: InputEvent) -> void:
         if build_wheel_mode and (event.is_action_pressed("shoulder_left") or event.is_action_pressed("shoulder_right")):
             var pages := ceili(float(CraftingData.build_recipes().size()) / BUILD_WHEEL_PAGE_SIZE)
             build_wheel_page = posmod(build_wheel_page + (1 if event.is_action_pressed("shoulder_right") else -1), pages)
-            _configure_build_wheel()
+            move_wheel.configure_build_wheel()
         elif event.is_action_pressed("cancel"):
-            _close_field_move_wheel(false)
+            move_wheel.close_field_move_wheel(false)
             field_wheel_wait_for_release = true
             if build_menu_open:
-                _close_build_menu()
+                crafting_menu.close_build_menu()
             elif not world.active_field_move.is_empty():
                 world.clear_active_field_move()
         get_viewport().set_input_as_handled()
@@ -4488,10 +1803,10 @@ func _input(event: InputEvent) -> void:
 
 
     if build_menu_open and not field_move_wheel_open and not battle_active and not battle_entry_pending and not quit_prompt_open and event.is_action_pressed("cancel"):
-        _close_build_menu()
+        crafting_menu.close_build_menu()
         get_viewport().set_input_as_handled()
         return
-    if started and event.is_action_pressed("cancel") and not world.active_field_move.is_empty() and not _field_ui_blocks_gameplay() and not _sleeping_bag_active() and not world.house_transition_active and not is_instance_valid(world.stool_seated_sprite):
+    if started and event.is_action_pressed("cancel") and not world.active_field_move.is_empty() and not _field_ui_blocks_gameplay() and not bag_menu.sleeping_bag_active() and not world.house_transition_active and not is_instance_valid(world.stool_seated_sprite):
         world.clear_active_field_move()
         get_viewport().set_input_as_handled()
         return
@@ -4509,17 +1824,17 @@ func _input(event: InputEvent) -> void:
             if text_key.keycode == KEY_BACKSPACE:
                 if not text_entry_buffer.is_empty():
                     text_entry_buffer = text_entry_buffer.left(text_entry_buffer.length() - 1)
-                    _refresh_text_entry_display()
+                    setup_screen.refresh_text_entry_display()
                 get_viewport().set_input_as_handled()
                 return
             if text_key.unicode >= 32 and text_key.unicode != 127:
                 if text_entry_buffer.length() < 24:
                     text_entry_buffer += String.chr(text_key.unicode)
-                    _refresh_text_entry_display()
+                    setup_screen.refresh_text_entry_display()
                 get_viewport().set_input_as_handled()
                 return
     if setup_load_open:
-        _handle_setup_load_input(event)
+        setup_screen.handle_setup_load_input(event)
         return
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -4550,23 +1865,23 @@ func _unhandled_input(event: InputEvent) -> void:
         _handle_egg_pickup_input(event)
         return
     if storage_menu_open:
-        _handle_storage_menu_input(event)
+        storage.handle_storage_menu_input(event)
         return
     if trainer_tip_open:
         if event.is_action_pressed("confirm") or event.is_action_pressed("start"):
-            _advance_trainer_tip()
+            dialogs.advance_trainer_tip()
             get_viewport().set_input_as_handled()
         elif event.is_action_pressed("cancel"):
-            _close_trainer_tip()
+            dialogs.close_trainer_tip()
             get_viewport().set_input_as_handled()
         return
 
     if setup_load_open:
-        _handle_setup_load_input(event)
+        setup_screen.handle_setup_load_input(event)
         return
 
     if pokemon_stats_open:
-        _handle_pokemon_stats_input(event)
+        party_menu.handle_pokemon_stats_input(event)
         return
 
     if event.is_action_pressed("touch_config"):
@@ -4574,41 +1889,41 @@ func _unhandled_input(event: InputEvent) -> void:
             return
         if touch_controls.edit_mode:
             touch_controls.end_edit()
-            _open_touch_config()
+            touch_config_panel.open_touch_config()
         elif touch_config.visible:
-            _close_touch_config()
+            touch_config_panel.close_touch_config()
         else:
-            _open_touch_config()
+            touch_config_panel.open_touch_config()
         get_viewport().set_input_as_handled()
         return
 
     if touch_config.visible:
         if event.is_action_pressed("cancel") or event.is_action_pressed("start"):
-            _close_touch_config()
+            touch_config_panel.close_touch_config()
             get_viewport().set_input_as_handled()
         return
 
     if touch_controls.edit_mode:
         if event.is_action_pressed("quit_menu") or event.is_action_pressed("cancel"):
             touch_controls.end_edit()
-            _open_touch_config()
+            touch_config_panel.open_touch_config()
             get_viewport().set_input_as_handled()
         return
 
     if progression_active:
-        _handle_progression_input(event)
+        progression.handle_progression_input(event)
         return
 
 
     if quit_prompt_open:
-        _handle_quit_prompt_input(event)
+        start_menu.handle_quit_prompt_input(event)
         return
 
     if battle_entry_pending:
         return
 
     if event.is_action_pressed("quit_menu"):
-        _open_quit_prompt()
+        start_menu.open_quit_prompt()
         get_viewport().set_input_as_handled()
         return
 
@@ -4675,32 +1990,32 @@ func _unhandled_input(event: InputEvent) -> void:
         return
 
     if build_menu_open:
-        _handle_build_menu_input(event)
+        crafting_menu.handle_build_menu_input(event)
         return
 
     if craft_menu_open:
-        _handle_crafting_input(event)
+        crafting_menu.handle_crafting_input(event)
         return
 
     if started:
         if event.is_action_pressed("map_open"):
             if game_menu_open and game_menu_detail_open and game_menu_map_screen.visible and not teleport_map_mode:
-                _close_game_menu()
-            elif not _field_ui_blocks_gameplay() and not field_move_wheel_open and not _sleeping_bag_active():
-                _open_game_menu()
-                _show_map_menu()
+                start_menu.close_game_menu()
+            elif not _field_ui_blocks_gameplay() and not field_move_wheel_open and not bag_menu.sleeping_bag_active():
+                start_menu.open_game_menu()
+                minimap.show_map_menu()
             get_viewport().set_input_as_handled()
             return
         if game_menu_open:
-            _handle_game_menu_input(event)
+            start_menu.handle_game_menu_input(event)
             return
 
-        if _sleeping_bag_active():
+        if bag_menu.sleeping_bag_active():
             if event.is_action_pressed("cancel"):
-                _end_sleeping_bag_rest()
+                bag_menu.end_sleeping_bag_rest()
                 get_viewport().set_input_as_handled()
             elif event.is_action_pressed("start"):
-                _queue_start_menu(event)
+                start_menu.queue_start_menu(event)
                 get_viewport().set_input_as_handled()
             # Confirm and movement do not dismiss the sleeping bag.
             return
@@ -4712,24 +2027,24 @@ func _unhandled_input(event: InputEvent) -> void:
             return
 
         if event.is_action_pressed("build_menu"):
-            _open_build_menu()
+            crafting_menu.open_build_menu()
             get_viewport().set_input_as_handled()
             return
 
         if GameOptions.enabled("zoom") and event.is_action_pressed("zoom_in"):
             var zoom_percent = int(world.call("adjust_camera_zoom", 1))
-            _show_message("ZOOM %d%%" % zoom_percent)
+            dialogs.show_message("ZOOM %d%%" % zoom_percent)
             get_viewport().set_input_as_handled()
             return
 
         if GameOptions.enabled("zoom") and event.is_action_pressed("zoom_out"):
             var zoom_percent = int(world.call("adjust_camera_zoom", -1))
-            _show_message("ZOOM %d%%" % zoom_percent)
+            dialogs.show_message("ZOOM %d%%" % zoom_percent)
             get_viewport().set_input_as_handled()
             return
 
         if event.is_action_pressed("start"):
-            _queue_start_menu(event)
+            start_menu.queue_start_menu(event)
             get_viewport().set_input_as_handled()
         return
 
@@ -4738,40 +2053,40 @@ func _unhandled_input(event: InputEvent) -> void:
     # through the menu in the same input press.
     if text_entry_target != "":
         if event.is_action_pressed("move_up"):
-            _finish_text_entry(true)
-            _move_menu_vertical(-1)
+            setup_screen.finish_text_entry(true)
+            setup_screen.move_menu_vertical(-1)
             menu_nav_cooldown = MENU_NAV_DELAY
             get_viewport().set_input_as_handled()
             return
 
         if event.is_action_pressed("move_down"):
-            _finish_text_entry(true)
-            _move_menu_vertical(1)
+            setup_screen.finish_text_entry(true)
+            setup_screen.move_menu_vertical(1)
             menu_nav_cooldown = MENU_NAV_DELAY
             get_viewport().set_input_as_handled()
             return
 
         if event.is_action_pressed("move_left"):
-            _finish_text_entry(true)
-            _menu_left_right(-1)
+            setup_screen.finish_text_entry(true)
+            setup_screen.menu_left_right(-1)
             menu_nav_cooldown = MENU_NAV_DELAY
             get_viewport().set_input_as_handled()
             return
 
         if event.is_action_pressed("move_right"):
-            _finish_text_entry(true)
-            _menu_left_right(1)
+            setup_screen.finish_text_entry(true)
+            setup_screen.menu_left_right(1)
             menu_nav_cooldown = MENU_NAV_DELAY
             get_viewport().set_input_as_handled()
             return
 
         if event.is_action_pressed("confirm") or event.is_action_pressed("start"):
-            _finish_text_entry(true)
+            setup_screen.finish_text_entry(true)
             get_viewport().set_input_as_handled()
             return
 
         if event.is_action_pressed("cancel"):
-            _finish_text_entry(true)
+            setup_screen.finish_text_entry(true)
             get_viewport().set_input_as_handled()
             return
 
@@ -4782,14 +2097,14 @@ func _unhandled_input(event: InputEvent) -> void:
                 if key.keycode == KEY_BACKSPACE:
                     if text_entry_buffer.length() > 0:
                         text_entry_buffer = text_entry_buffer.left(text_entry_buffer.length() - 1)
-                        _refresh_text_entry_display()
+                        setup_screen.refresh_text_entry_display()
                     get_viewport().set_input_as_handled()
                     return
 
                 if key.unicode >= 32 and key.unicode != 127:
                     if text_entry_buffer.length() < 24:
                         text_entry_buffer += String.chr(key.unicode)
-                        _refresh_text_entry_display()
+                        setup_screen.refresh_text_entry_display()
                     get_viewport().set_input_as_handled()
                     return
 
@@ -4799,9 +2114,9 @@ func _unhandled_input(event: InputEvent) -> void:
     if event.is_action_pressed("move_up"):
         if menu_nav_cooldown <= 0.0:
             if menu_row == MENU_ROW_COLOR and menu_col > 0:
-                _change_player_selector(1)
+                appearance.change_player_selector(1)
             else:
-                _move_menu_vertical(-1)
+                setup_screen.move_menu_vertical(-1)
             menu_nav_cooldown = MENU_NAV_DELAY
         get_viewport().set_input_as_handled()
         return
@@ -4809,29 +2124,29 @@ func _unhandled_input(event: InputEvent) -> void:
     if event.is_action_pressed("move_down"):
         if menu_nav_cooldown <= 0.0:
             if menu_row == MENU_ROW_COLOR and menu_col > 0:
-                _change_player_selector(-1)
+                appearance.change_player_selector(-1)
             else:
-                _move_menu_vertical(1)
+                setup_screen.move_menu_vertical(1)
             menu_nav_cooldown = MENU_NAV_DELAY
         get_viewport().set_input_as_handled()
         return
 
     if event.is_action_pressed("move_left"):
         if menu_nav_cooldown <= 0.0:
-            _menu_left_right(-1)
+            setup_screen.menu_left_right(-1)
             menu_nav_cooldown = MENU_NAV_DELAY
         get_viewport().set_input_as_handled()
         return
 
     if event.is_action_pressed("move_right"):
         if menu_nav_cooldown <= 0.0:
-            _menu_left_right(1)
+            setup_screen.menu_left_right(1)
             menu_nav_cooldown = MENU_NAV_DELAY
         get_viewport().set_input_as_handled()
         return
 
     if event.is_action_pressed("confirm"):
-        _activate_menu_item()
+        setup_screen.activate_menu_item()
         get_viewport().set_input_as_handled()
         return
 
@@ -4841,7 +2156,7 @@ func _unhandled_input(event: InputEvent) -> void:
         # color/model selection.
         if menu_row == MENU_ROW_COLOR and menu_col > 0:
             menu_col = 0
-            _update_menu_cursor()
+            setup_screen.update_menu_cursor()
             get_viewport().set_input_as_handled()
         elif not started and not generating:
             # Back to the SOLO / CO-OP choice.
@@ -4938,285 +2253,18 @@ func _is_android_touch_runtime() -> bool:
         and bool(touch_controls.get("android_runtime"))
     )
 
-func _setup_menu_navigation() -> void:
-    menu_row = MENU_ROW_LOCAL
-    menu_col = 0
-    _update_classic_menu_labels()
-    _update_menu_cursor()
-
-## Joining someone else's world: the world is theirs, so only the player's look
-## is offered. The world rows are hidden and skipped, not just locked.
-var join_layout := false
-const JOIN_HIDDEN_ROWS := [MENU_ROW_MODE, MENU_ROW_SIZE, MENU_ROW_WORLD_NAME, MENU_ROW_PLAYER_NAME]
-const JOIN_HIDDEN_NODES := ["ModeSelectionTick", "ModeLabel", "WorldSizeLabel", "WorldLabel", "WorldEdit", "NameLabel"]
-## The PLAYER row is 168 px wide from x=14; this centres it on the 320 px screen.
-const JOIN_ROW_SHIFT := 62.0
-const JOIN_ROW_NODES := ["AppearanceLabel", "ColorUp", "ColorDown", "PlayerColorSwatch", "ModelUp", "ModelDown", "PlayerPreview"]
-
-var join_info: Label
-var join_note: Label
-
-func _set_join_layout(joining: bool) -> void:
-    join_layout = joining
-    for node_name in JOIN_HIDDEN_NODES:
-        (setup_panel.get_node(node_name) as CanvasItem).visible = not joining
-    # Where the world rows were: which world this is, then the chosen player's
-    # name, then the PLAYER row, all centred.
-    if join_info == null:
-        join_info = _source_ui_label(setup_panel, "JoinInfo", Vector2(8, 38), Vector2(304, 40), 12, "")
-        join_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    if join_note == null:
-        join_note = _source_ui_label(setup_panel, "JoinNote", Vector2(8, 21), Vector2(304, 12), 8,
-            "PRIVATE STORAGE FOLLOWS YOU INTO ANY WORLD")
-        join_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    join_note.visible = joining
-    join_info.visible = joining
-    if joining:
-        var lobby: Dictionary = coop_game.join_lobby
-        join_info.text = "JOINING\n%s" % String(lobby.get("name", "WORLD")).to_upper().left(24)
-    for node_name in JOIN_ROW_NODES:
-        var piece = setup_panel.get_node(node_name) # Controls and one Sprite2D
-        if not piece.has_meta("solo_x"):
-            piece.set_meta("solo_x", piece.position.x)
-        piece.position.x = float(piece.get_meta("solo_x")) + (JOIN_ROW_SHIFT if joining else 0.0)
-    if not player_model_name.has_meta("solo_rect"):
-        player_model_name.set_meta("solo_rect", Rect2(player_model_name.position, player_model_name.size))
-        player_model_name.set_meta("solo_align", player_model_name.horizontal_alignment)
-    var name_home: Rect2 = player_model_name.get_meta("solo_rect")
-    if joining:
-        player_model_name.position = Vector2(8, 84)
-        player_model_name.size = Vector2(304, name_home.size.y)
-        player_model_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-        player_model_name.scale.x = 1.0
-    else:
-        player_model_name.position = name_home.position
-        player_model_name.size = name_home.size
-        player_model_name.horizontal_alignment = player_model_name.get_meta("solo_align")
-        _fit_player_name()
-    if joining and menu_row in JOIN_HIDDEN_ROWS:
-        menu_row = MENU_ROW_COLOR
-        menu_col = 0
-    _update_menu_cursor()
-
-func _move_menu_vertical(direction: int) -> void:
-    menu_row = wrapi(menu_row + direction, MENU_ROW_LOCAL, MENU_ROW_GO + 1)
-    while join_layout and menu_row in JOIN_HIDDEN_ROWS:
-        menu_row = wrapi(menu_row + direction, MENU_ROW_LOCAL, MENU_ROW_GO + 1)
-
-    # Clamp/restore the horizontal choice for each row.
-    if menu_row == MENU_ROW_MODE:
-        menu_col = 0 if selected_mode == "NEW" else 1
-    elif menu_row == MENU_ROW_SIZE:
-        menu_col = selected_world_size
-    elif menu_row == MENU_ROW_COLOR:
-        # Enter the row itself first. Right/Confirm enters its selectors;
-        # Left/Cancel returns here, after which Up/Down can leave the row.
-        menu_col = 0
-    else:
-        menu_col = 0
-
-    _update_menu_cursor()
-    _update_persistent_selection_ticks()
-
-func _menu_left_right(direction: int) -> void:
-    if not coop_game.join_setup_code.is_empty() and menu_row in [MENU_ROW_SIZE,MENU_ROW_MODE]:return
-    if menu_row == MENU_ROW_LOCAL:
-        return
-    if menu_row == MENU_ROW_MODE:
-        menu_col = wrapi(menu_col + direction, 0, 2)
-        selected_mode = "NEW" if menu_col == 0 else "LOAD"
-        _update_classic_menu_labels()
-        _update_menu_cursor()
-        return
-
-    if menu_row == MENU_ROW_SIZE:
-        menu_col = wrapi(menu_col + direction, 0, WORLD_SIZE_NAMES.size())
-        selected_world_size = menu_col
-        _update_classic_menu_labels()
-        _update_menu_cursor()
-        return
-
-    if menu_row == MENU_ROW_COLOR:
-        menu_col = clampi(menu_col + direction, 0, 2)
-        _update_menu_cursor()
-        return
-
-    if menu_row == MENU_ROW_WORLD_NAME:
-        _begin_text_entry("world")
-    elif menu_row == MENU_ROW_PLAYER_NAME:
-        _begin_text_entry("player")
-
-func _activate_menu_item() -> void:
-    match menu_row:
-        MENU_ROW_LOCAL:
-            coop_game.cancel_join();coop_menu.open()
-        MENU_ROW_MODE:
-            if selected_mode == "LOAD":
-                menu_status.text = "LOAD READY" if not saves.find(world_edit.text.strip_edges()).is_empty() else "NO SAVE FILE"
-            else:
-                menu_status.text = "NEW WORLD"
-        MENU_ROW_SIZE:
-            menu_status.text = "WORLD SIZE: %s" % WORLD_SIZE_NAMES[selected_world_size]
-        MENU_ROW_WORLD_NAME:
-            _begin_text_entry("world")
-        MENU_ROW_PLAYER_NAME:
-            _begin_text_entry("player")
-        MENU_ROW_COLOR:
-            if menu_col == 0:
-                menu_col = 1
-            elif menu_col == 1:
-                _next_color()
-            elif menu_col == 2:
-                _next_model()
-        MENU_ROW_GO:
-            _start_game()
-
-    _update_menu_cursor()
-
-func _update_classic_menu_labels() -> void:
-    var mode_label := $UI/SetupPanel/ModeLabel as Label
-    var size_label := $UI/SetupPanel/WorldSizeLabel as Label
-
-    mode_label.text = "NEW        LOAD"
-    size_label.text = "WORLD   S   M   L   XL   XXL"
-
-    _update_persistent_selection_ticks()
-
-func _update_persistent_selection_ticks() -> void:
-    var mode_tick := $UI/SetupPanel/ModeSelectionTick as Label
-    var mode_label := $UI/SetupPanel/ModeLabel as Label
-
-    # Use the same native-pixel alignment on navigation and confirmation.
-    var mode_font := mode_label.get_theme_font_size("font_size")
-    var load_x := mode_label.position.x + JOHTO_FONT.get_string_size(
-        "NEW        ", HORIZONTAL_ALIGNMENT_LEFT, -1, mode_font).x - 10.0
-    mode_tick.visible = menu_row == MENU_ROW_MODE
-    mode_tick.position.x = 0.0 if selected_mode == "NEW" else roundf(load_x)
-    _align_menu_tick(mode_tick, mode_label)
+## setup_screen.gd under its old names, for the scripts and tests that call them on main.
+func _set_join_layout(joining: bool) -> void: setup_screen.set_join_layout(joining)
+func _update_classic_menu_labels() -> void: setup_screen.update_classic_menu_labels()
+func _update_menu_cursor() -> void: setup_screen.update_menu_cursor()
+func _open_setup_load_selector() -> void: setup_screen.open_setup_load_selector()
+func _refresh_setup_load_selector() -> void: setup_screen.refresh_setup_load_selector()
+func _begin_text_entry(target: String) -> void: setup_screen.begin_text_entry(target)
+func _finish_text_entry(accept: bool) -> void: setup_screen.finish_text_entry(accept)
+func _paste_text_entry() -> void: setup_screen.paste_text_entry()
+func _copy_text_entry() -> void: setup_screen.copy_text_entry()
 
 
-func _update_menu_cursor() -> void:
-    var cursor := $UI/SetupPanel/MenuCursor as Label
-    var selecting_color := menu_row == MENU_ROW_COLOR and menu_col == 1
-    var selecting_model := menu_row == MENU_ROW_COLOR and menu_col == 2
-    $UI/SetupPanel/ColorUp.visible = selecting_color
-    $UI/SetupPanel/ColorDown.visible = selecting_color
-    $UI/SetupPanel/ModelUp.visible = selecting_model
-    $UI/SetupPanel/ModelDown.visible = selecting_model
-    # On the PLAYER row, the active arrow pair replaces the normal cursor.
-    # This prevents an extra triangle appearing between the selectors.
-    cursor.visible = menu_row not in [MENU_ROW_GO, MENU_ROW_MODE] and not (
-        menu_row == MENU_ROW_COLOR and menu_col > 0
-    )
-    if setup_go_cursor != null:
-        setup_go_cursor.visible = menu_row == MENU_ROW_GO
-        var font_size := start_button.get_theme_font_size("font_size")
-        var font_height := JOHTO_FONT.get_height(font_size)
-        var text_width := JOHTO_FONT.get_string_size(start_button.text,
-            HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
-        var text_top := start_button.position.y + (start_button.size.y - font_height) / 2.0
-        # Align the arrow with the visible GO! glyphs, not the font line box.
-        setup_go_cursor.position = Vector2(
-            roundf(start_button.position.x + (start_button.size.x - text_width) / 2.0 -
-                setup_go_cursor.size.x - 2.0),
-            roundf(text_top))
-
-    var pos := Vector2(2, 2)
-
-    match menu_row:
-        MENU_ROW_LOCAL:
-            # Leave the LOCAL text untouched; add one small source-pixel gap.
-            pos = Vector2(roundf(online_label.position.x-10.0),3) if menu_col==1 and is_instance_valid(online_label) else Vector2(0,3)
-        MENU_ROW_MODE:
-            var mode_label := $UI/SetupPanel/ModeLabel as Label
-            var mode_font := mode_label.get_theme_font_size("font_size")
-            var load_x := mode_label.position.x + JOHTO_FONT.get_string_size(
-                "NEW        ", HORIZONTAL_ALIGNMENT_LEFT, -1, mode_font).x - 10.0
-            pos = Vector2(0, 28) if menu_col == 0 else Vector2(roundf(load_x), 26)
-        MENU_ROW_SIZE:
-            var size_label := $UI/SetupPanel/WorldSizeLabel as Label
-            var size_font := size_label.get_theme_font_size("font_size")
-            # _update_classic_menu_labels() supplies three-space separators at
-            # runtime.  Measure those exact prefixes so M/XL/XXL never overlap
-            # their selection triangle.
-            var prefixes := [
-                "WORLD   ",
-                "WORLD   S   ",
-                "WORLD   S   M   ",
-                "WORLD   S   M   L   ",
-                "WORLD   S   M   L   XL   "
-            ]
-            var option_x := size_label.position.x + JOHTO_FONT.get_string_size(
-                prefixes[menu_col], HORIZONTAL_ALIGNMENT_LEFT, -1, size_font).x
-            pos = Vector2(roundf(option_x - 10.0), 47)
-        MENU_ROW_WORLD_NAME:
-            pos = Vector2(2, 70)
-        MENU_ROW_PLAYER_NAME:
-            pos = Vector2(2, 95)
-        MENU_ROW_COLOR:
-            pos = Vector2(2.0 + (JOIN_ROW_SHIFT if join_layout else 0.0), 118)
-        MENU_ROW_GO:
-            pos = Vector2(2, 144)
-
-    cursor.position = pos
-    var labels := ["LocalLabel", "ModeLabel", "WorldSizeLabel", "WorldLabel", "NameLabel", "AppearanceLabel"]
-    if menu_row >= 0 and menu_row < labels.size():
-        _align_menu_tick(cursor, online_label if menu_row==MENU_ROW_LOCAL and menu_col==1 and is_instance_valid(online_label) else setup_panel.get_node(labels[menu_row]))
-    _update_persistent_selection_ticks()
-
-func _open_setup_load_selector() -> void:
-    setup_load_entries = saves.entries()
-    if setup_load_entries.is_empty():
-        menu_status.text = "NO SAVE FILE"
-        return
-    setup_load_index = 0
-    setup_load_open = true
-    setup_panel.visible = false
-    setup_load_panel.visible = true
-    _refresh_setup_load_selector()
-
-func _refresh_setup_load_selector() -> void:
-    if setup_load_entries.is_empty():
-        setup_load_name.text = "NO SAVE"
-        return
-    setup_load_index = wrapi(setup_load_index, 0, setup_load_entries.size())
-    var data := setup_load_entries[setup_load_index].data as Dictionary
-    var world_name := String(data.get("world_name", "default")).strip_edges()
-    if world_name.is_empty():
-        world_name = "default"
-    setup_load_name.text = "%s.sav" % world_name
-    setup_load_name.tooltip_text = setup_load_name.text
-    # The autosave follows its world's save in the list (see WorldSaves.entries).
-    var entry := setup_load_entries[setup_load_index]
-    var saved := Time.get_datetime_string_from_unix_time(WorldSaves.saved_time(String(entry.path))).replace("T", "  ").left(17)
-    (setup_load_name.get_parent().get_node("SaveInfo") as Label).text = \
-        ("AUTOSAVE   " + saved) if entry.get("autosave", false) else saved
-
-func _handle_setup_load_input(event: InputEvent) -> void:
-    if event.is_action_pressed("move_left") or event.is_action_pressed("move_up"):
-        setup_load_index = wrapi(setup_load_index - 1, 0, setup_load_entries.size())
-        _refresh_setup_load_selector()
-    elif event.is_action_pressed("move_right") or event.is_action_pressed("move_down"):
-        setup_load_index = wrapi(setup_load_index + 1, 0, setup_load_entries.size())
-        _refresh_setup_load_selector()
-    elif event.is_action_pressed("confirm") or event.is_action_pressed("start"):
-        var entry := setup_load_entries[setup_load_index]
-        var data := entry.data as Dictionary
-        setup_load_path = String(entry.path)
-        world_edit.text = String(data.get("world_name", world_edit.text))
-        selected_world_size = clampi(int(data.get("world_size", selected_world_size)),
-            0, WORLD_SIZE_NAMES.size() - 1)
-        setup_load_open = false
-        setup_load_panel.visible = false
-        setup_load_committed = true
-        _start_game()
-    elif event.is_action_pressed("cancel"):
-        setup_load_open = false
-        setup_load_panel.visible = false
-        setup_panel.visible = true
-    else:
-        return
-    get_viewport().set_input_as_handled()
 
 func _start_game() -> void:
     if started or generating:
@@ -5234,13 +2282,13 @@ func _start_game() -> void:
         return
 
     if selected_mode == "LOAD" and not setup_load_committed and not coop_game.active:
-        _open_setup_load_selector()
+        setup_screen.open_setup_load_selector()
         return
 
     generating = true
     setup_load_committed = false
-    _save_setup()
-    _hide_virtual_keyboard()
+    setup_screen.save_setup()
+    setup_screen.hide_virtual_keyboard()
 
     setup_panel.visible = false
     generation_panel.visible = true
@@ -5251,7 +2299,7 @@ func _start_game() -> void:
     )
     generation_tip_index = -1
     generation_tip_timer = 0.0
-    _show_generation_tip()
+    dialogs.show_generation_tip()
 
     world.visible = true
 
@@ -5288,7 +2336,7 @@ func _start_game() -> void:
         load_data = coop_game.pending_game.duplicate(true) if coop_game.active else (
             saves.read(setup_load_path)
             if not setup_load_path.is_empty()
-            else _read_game_save(world_name)
+            else saving.read_game_save(world_name)
         )
         setup_load_path = ""
         if load_data.is_empty():
@@ -5320,13 +2368,13 @@ func _start_game() -> void:
         setup_panel.show()
         generating = false
         menu_status.text = "GENERATION FAILED"
-        _show_message(world.generation_error)
+        dialogs.show_message(world.generation_error)
         return
 
-    _apply_world_player_textures()
+    appearance.apply_world_player_textures()
 
     if selected_mode == "LOAD" and not load_data.is_empty():
-        await _restore_game_save(load_data)
+        await saving.restore_game_save(load_data)
     if not coop_game.active:
         var loading: bool = selected_mode == "LOAD" and not load_data.is_empty()
         var held = pokemon_storage.get(SHARED_STORAGE_KEY, [])
@@ -5341,7 +2389,7 @@ func _start_game() -> void:
 
     _ensure_machop_lead(false)
     world.call("clear_active_field_move", false)
-    await _warm_map_cache()
+    await minimap.warm_map_cache()
     await _draw_world_view()
 
     if coop_game.active and not await coop_game.game_started():
@@ -5356,101 +2404,8 @@ func _start_game() -> void:
     started = true
     generating = false
     touch_controls.set_game_active(true)
-    _show_message("Welcome, %s!" % player_model_name.text.strip_edges() if overflow_recovery_notice.is_empty() else overflow_recovery_notice)
+    dialogs.show_message("Welcome, %s!" % player_model_name.text.strip_edges() if overflow_recovery_notice.is_empty() else overflow_recovery_notice)
     overflow_recovery_notice = ""
-
-func _save_setup() -> void:
-    var cfg := ConfigFile.new()
-    cfg.set_value("setup", "player_name", player_model_name.text.strip_edges())
-    cfg.set_value("setup", "player_name_custom", not custom_player_name.is_empty())
-    cfg.set_value("setup", "world_name", world_edit.text.strip_edges())
-    cfg.set_value("setup", "player_color", player_color_index)
-    cfg.set_value("setup", "player_model", player_model_index)
-    cfg.set_value("setup", "mode", selected_mode)
-    cfg.set_value("setup", "world_size", selected_world_size)
-    cfg.save(SETUP_SAVE_PATH)
-
-func _load_setup() -> void:
-    var cfg := ConfigFile.new()
-    if cfg.load(SETUP_SAVE_PATH) == OK:
-        world_edit.text = str(cfg.get_value("setup", "world_name", "PokeWilds"))
-        player_color_index = clampi(int(cfg.get_value("setup", "player_color", 0)), 0, PLAYER_TEXTURES.size() - 1)
-        player_model_index = clampi(
-            int(cfg.get_value("setup", "player_model", 0)),
-            0,
-            _player_model_count() - 1
-        )
-        custom_player_name = str(cfg.get_value("setup","player_name","")).strip_edges().left(24) if bool(cfg.get_value("setup","player_name_custom",false)) else ""
-        selected_mode = str(cfg.get_value("setup", "mode", "NEW"))
-        selected_world_size = clampi(int(cfg.get_value("setup", "world_size", 1)), 0, WORLD_SIZE_NAMES.size() - 1)
-
-    var newest := saves.find_newest()
-    if not newest.is_empty():
-        world_edit.text = String(newest.data.get("world_name", world_edit.text))
-
-    _update_classic_menu_labels()
-
-func _on_generation_progress(value: float, message: String) -> void:
-    if edge_travel_busy:
-        return # Travel presentation is independent of the NEW/LOAD setup choice.
-    var _unused_progress := value
-    var _unused_message := message
-    generation_status.text = (
-        "LOADING...\nPLEASE WAIT..."
-        if selected_mode == "LOAD"
-        else "Generating...\nPlease wait..."
-    )
-
-func _show_generation_tip() -> void:
-    if SourceEventData.TRAINER_TIPS.is_empty():
-        return
-    var next_index := battle_rng.randi_range(0, SourceEventData.TRAINER_TIPS.size() - 1)
-    if SourceEventData.TRAINER_TIPS.size() > 1 and next_index == generation_tip_index:
-        next_index = (next_index + 1) % SourceEventData.TRAINER_TIPS.size()
-    generation_tip_index = next_index
-    generation_tip_title.text = "- Trainer Tips -"
-    generation_tip_text.text = _format_generation_tip(
-        String(SourceEventData.TRAINER_TIPS[generation_tip_index])
-    )
-    generation_tip_timer = GENERATION_TIP_SECONDS
-
-func _format_generation_tip(tip: String) -> String:
-    var words := tip.strip_edges().split(" ", false)
-    if words.size() < 2:
-        return tip
-    var line_count := 3 if tip.length() > 64 else 2
-    var lines: Array[String] = []
-    var start := 0
-    for line_index in range(line_count):
-        var words_left := words.size() - start
-        var lines_left := line_count - line_index
-        if lines_left <= 1:
-            var final_line := ""
-            for word_index in range(start, words.size()):
-                final_line += (
-                    " " if not final_line.is_empty() else ""
-                ) + String(words[word_index])
-            lines.append(final_line)
-            break
-        var remaining_length := 0
-        for word_index in range(start, words.size()):
-            remaining_length += String(words[word_index]).length()
-        remaining_length += maxi(0, words_left - 1)
-        var target_length := ceili(float(remaining_length) / float(lines_left))
-        var line := ""
-        while start < words.size() - (lines_left - 1):
-            var word := String(words[start])
-            var candidate := line + (" " if not line.is_empty() else "") + word
-            if not line.is_empty() and candidate.length() > target_length:
-                break
-            line = candidate
-            start += 1
-        lines.append(line)
-    return "\n".join(lines)
-
-func _two_line_generation_tip(tip: String) -> String:
-    # Compatibility helper for older QA entry points.
-    return _format_generation_tip(tip)
 
 func _make_starter_machop() -> Dictionary:
     return BattleEngine.make_pokemon("machop", 5, battle_rng, {
@@ -5472,230 +2427,13 @@ func _ensure_machop_lead(heal_after_whiteout: bool) -> void:
         pokemon["hp"] = int(int(pokemon.get("max_hp", 1)) / 2)
         caught_pokemon[index] = pokemon
 
-func _previous_color() -> void:
-    player_color_index = wrapi(player_color_index - 1, 0, PLAYER_TEXTURES.size())
-    _apply_player_appearance()
-
-func _next_color() -> void:
-    player_color_index = wrapi(player_color_index + 1, 0, PLAYER_TEXTURES.size())
-    _apply_player_appearance()
-
-func _player_model_count() -> int:
-    return PLAYER_MODEL_NAMES.size()
-
-func _previous_model() -> void:
-    player_model_index = wrapi(
-        player_model_index - 1, 0, _player_model_count()
-    )
-    _apply_player_appearance()
-
-func _next_model() -> void:
-    player_model_index = wrapi(
-        player_model_index + 1, 0, _player_model_count()
-    )
-    _apply_player_appearance()
-
-func _change_player_selector(direction: int) -> void:
-    if menu_col == 1:
-        if direction > 0:
-            _next_color()
-        else:
-            _previous_color()
-    elif menu_col == 2:
-        if direction > 0:
-            _next_model()
-        else:
-            _previous_model()
-
-func _apply_player_color(index: int) -> void:
-    player_color_index = clampi(index, 0, PLAYER_COLOR_VALUES.size() - 1)
-    _apply_player_appearance()
-
-func _apply_player_appearance() -> void:
-    player_color_index = clampi(
-        player_color_index, 0, PLAYER_COLOR_VALUES.size() - 1
-    )
-    player_model_index = clampi(
-        player_model_index, 0, _player_model_count() - 1
-    )
-    player_model_name.text = custom_player_name if not custom_player_name.is_empty() else PLAYER_MODEL_NAMES[player_model_index].to_upper()
-    _fit_player_name()
-    player_preview.texture = _player_appearance_texture(false)
-    player_preview.hframes = 8
-    player_preview.frame = 0
-    player_color_swatch.texture = _recolor_texture(
-        preload("res://assets/source_exact/global/select_color1.png"),
-        Color.WHITE,
-        PLAYER_COLOR_VALUES[player_color_index],
-        "swatch:%d" % player_color_index
-    )
-
-func _player_appearance_texture(running: bool) -> Texture2D:
-    var base: Texture2D = (
-        lazy_texture(PLAYER_MODEL_RUN_TEXTURES[player_model_index])
-        if running
-        else lazy_texture(PLAYER_MODEL_WALK_TEXTURES[player_model_index])
-    )
-    return _recolor_texture(
-        base,
-        PLAYER_MODEL_REPLACE_COLORS[player_model_index],
-        PLAYER_COLOR_VALUES[player_color_index],
-        "%s:%d:%d" % ["run" if running else "walk", player_model_index,
-            player_color_index]
-    )
-
-func _player_sitting_texture(frame: int = 0) -> Texture2D:
-    var texture := _recolor_texture(
-        lazy_texture(PLAYER_MODEL_SITTING_TEXTURES[player_model_index]),
-        PLAYER_MODEL_REPLACE_COLORS[player_model_index],
-        PLAYER_COLOR_VALUES[player_color_index],
-        "sitting:%d:%d" % [player_model_index, player_color_index])
-    # Java Player.Sitting: front pose for stools/couch1, side pose for couch2-5.
-    return _source_texture_region(texture, Rect2(clampi(frame, 0, 2) * 16, 0, 16, 16))
-
-func _player_sleeping_texture() -> Texture2D:
-    var recolored := _recolor_texture(
-        lazy_texture(PLAYER_MODEL_SLEEP_TEXTURES[player_model_index]),
-        PLAYER_MODEL_REPLACE_COLORS[player_model_index],
-        PLAYER_COLOR_VALUES[player_color_index],
-        "sleep:%d:%d" % [player_model_index, player_color_index]
-    )
-    # Summer's source image is 24 px high, while the Java renderer uses the
-    # same 24x16 sleeping region as every other character.
-    if recolored.get_height() <= 16:
-        return recolored
-    var source_region := AtlasTexture.new()
-    source_region.atlas = recolored
-    source_region.region = Rect2(0, 0, 24, 16)
-    return source_region
-
-func _recolor_texture(
-        base: Texture2D, source_color: Color, target_color: Color,
-        cache_key: String
-    ) -> Texture2D:
-    if player_appearance_texture_cache.has(cache_key):
-        return player_appearance_texture_cache[cache_key] as Texture2D
-    # Imported textures can share their decoded Image. Work on a copy so one
-    # chosen color never contaminates another model/color cache entry.
-    var image := Image.new()
-    image.copy_from(TexturePixels.of(base))
-    for y in range(image.get_height()):
-        for x in range(image.get_width()):
-            var pixel := image.get_pixel(x, y)
-            if (pixel.r8 == source_color.r8 and pixel.g8 == source_color.g8
-                    and pixel.b8 == source_color.b8 and pixel.a8 > 0):
-                image.set_pixel(
-                    x, y, Color(target_color.r, target_color.g,
-                        target_color.b, pixel.a)
-                )
-    var texture := ImageTexture.create_from_image(image)
-    player_appearance_texture_cache[cache_key] = texture
-    return texture
-
-func _apply_world_player_textures() -> void:
-    var player_node := world.get_node_or_null("Player")
-    if player_node != null and player_node.has_method("set_character_textures"):
-        player_node.call(
-            "set_character_textures",
-            _player_appearance_texture(false),
-            _player_appearance_texture(true)
-        )
-        return
-    var player_sprite := world.get_node_or_null("Player/Sprite2D") as Sprite2D
-    if player_sprite != null:
-        player_sprite.texture = _player_appearance_texture(false)
-        player_sprite.hframes = 8
-        player_sprite.frame = 0
-
-func _display_field_gui_input(event: InputEvent, target: String) -> void:
-    # On touch the touch setup screen's own name fields take the taps: this
-    # classic field stays under it (only transparent), and tapping SOLO opened
-    # the setup under the finger, whose touch then landed here (iPhone keyboard).
-    if is_instance_valid(touch_ui) and touch_ui.enabled: return
-    # Touching/clicking the field opens Android keyboard WITHOUT focusing LineEdit.
-    if event is InputEventScreenTouch:
-        var touch := event as InputEventScreenTouch
-        if touch.pressed:
-            _begin_text_entry(target)
-            get_viewport().set_input_as_handled()
-    elif event is InputEventMouseButton:
-        var mouse := event as InputEventMouseButton
-        if mouse.pressed:
-            _begin_text_entry(target)
-            get_viewport().set_input_as_handled()
-
-func _begin_text_entry(target: String) -> void:
-    if target=="world" and not coop_game.join_setup_code.is_empty():return
-    if target not in ["world", "player"]:
-        return
-    text_entry_target = target
-    text_entry_buffer = world_edit.text if target == "world" else player_model_name.text
-    menu_row = MENU_ROW_WORLD_NAME if target == "world" else MENU_ROW_PLAYER_NAME
-
-    _refresh_text_entry_display()
-    _show_virtual_keyboard_custom()
-
-func _finish_text_entry(accept: bool) -> void:
-    if text_entry_target == "":
-        return
-
-    if text_entry_target == "player":
-        if accept:
-            var entered := text_entry_buffer.strip_edges().left(24)
-            custom_player_name = "" if entered.to_upper() == PLAYER_MODEL_NAMES[player_model_index].to_upper() else entered
-        player_model_name.text = custom_player_name if not custom_player_name.is_empty() else PLAYER_MODEL_NAMES[player_model_index].to_upper()
-        _fit_player_name()
-    elif accept:
-        world_edit.text = text_entry_buffer
-
-    text_entry_target = ""
-    text_entry_buffer = ""
-    _hide_virtual_keyboard()
-    menu_nav_cooldown = MENU_NAV_DELAY
-    _update_menu_cursor()
-
-func _fit_player_name() -> void:
-    if join_layout:
-        player_model_name.scale.x = 1.0
-        return
-    var width := player_model_name.get_theme_font("font").get_string_size(player_model_name.text,HORIZONTAL_ALIGNMENT_LEFT,-1,player_model_name.get_theme_font_size("font_size")).x
-    player_model_name.scale.x = minf(1.0,210.0/maxf(1.0,width))
-
-func _refresh_text_entry_display() -> void:
-    if text_entry_target == "world":
-        world_edit.text = text_entry_buffer
-    elif text_entry_target == "player":
-        player_model_name.text = text_entry_buffer
-        _fit_player_name()
-
-## COPY / PASTE while typing a name (the touch setup screen's buttons): the
-## names are not system text fields, so iOS offers no paste of its own.
-func _paste_text_entry() -> void:
-    if text_entry_target == "": return
-    var clip := DisplayServer.clipboard_get().replace("\n", " ").strip_edges()
-    text_entry_buffer = (text_entry_buffer + clip).left(24)
-    _refresh_text_entry_display()
-    _show_virtual_keyboard_custom()  # the phone keyboard keeps its own copy of the text
-
-func _copy_text_entry() -> void:
-    if text_entry_target != "": DisplayServer.clipboard_set(text_entry_buffer)
-
-func _show_virtual_keyboard_custom() -> void:
-    if not OS.has_feature("mobile"):
-        return
-
-    DisplayServer.virtual_keyboard_show(
-        text_entry_buffer,
-        Rect2i(),
-        DisplayServer.KEYBOARD_TYPE_DEFAULT,
-        24,
-        text_entry_buffer.length(),
-        text_entry_buffer.length()
-    )
-
-func _hide_virtual_keyboard() -> void:
-    if OS.has_feature("mobile"):
-        DisplayServer.virtual_keyboard_hide()
+## player_appearance.gd under its old names, for the scripts and tests that call them on main.
+func _previous_color() -> void: appearance.previous_color()
+func _next_color() -> void: appearance.next_color()
+func _previous_model() -> void: appearance.previous_model()
+func _next_model() -> void: appearance.next_model()
+func _player_sitting_texture(frame: int = 0) -> Texture2D: return appearance.player_sitting_texture(frame)
+func _recolor_texture(base: Texture2D, source_color: Color, target_color: Color, cache_key: String) -> Texture2D: return appearance.recolor_texture(base, source_color, target_color, cache_key)
 
 func _current_battle_terrain() -> String:
     var player_node := world.get_node_or_null("Player") as Node2D
@@ -5744,12 +2482,12 @@ func _start_battle_context(context: Dictionary, source_alert: bool = false) -> v
     battle_session = null
     if caught_pokemon.is_empty():
         if coop_game.active and coop_game.raids.eligible(prepared_context):
-            _show_message("You need a Pokemon to fight in this raid.")
+            dialogs.show_message("You need a Pokemon to fight in this raid.")
             return
         if coop_game.active and coop_game.events.eligible(prepared_context):
             if not await coop_game.events.begin(prepared_context):return
         if build_menu_open:
-            _close_build_menu()
+            crafting_menu.close_build_menu()
         safari_ui = preload("res://scripts/source_safari_encounter.gd").new()
         $UI.add_child(safari_ui)
         await safari_ui.start(self, prepared_context, source_alert)
@@ -5765,8 +2503,8 @@ func _start_battle_context(context: Dictionary, source_alert: bool = false) -> v
             battle_entry_pending=false;world.set_gameplay_enabled(true);return
         raw_party=prepared_context.party
     if build_menu_open:
-        _close_build_menu()
-    _close_field_move_wheel(false)
+        crafting_menu.close_build_menu()
+    move_wheel.close_field_move_wheel(false)
     world.set_gameplay_enabled(false)
     while progression_active or mansion_switch_open:
         await get_tree().process_frame
@@ -5827,14 +2565,14 @@ func _start_battle_context(context: Dictionary, source_alert: bool = false) -> v
         var prelude_start := preload("res://scripts/game_clock.gd").ticks_usec()
         while preload("res://scripts/game_clock.gd").ticks_usec()-prelude_start < 333333:
             await get_tree().process_frame
-        _show_message("...")
+        dialogs.show_message("...")
         while preload("res://scripts/game_clock.gd").ticks_usec()-prelude_start < 2000000:
             await get_tree().process_frame
         message_panel.hide()
         message_timer=0.0
     if String(battle_context.get("source_boss", "")) == "regigigas":
         battle_turn_busy=true
-        _show_message("...")
+        dialogs.show_message("...")
         for music_player in world.environment_system.music_players:
             mewtwo_route_volumes.append(music_player.volume_db)
             if music_player.playing:
@@ -6080,7 +2818,7 @@ func _trainer_battle_texture() -> Texture2D:
     player_color_index = clampi(
         player_color_index, 0, PLAYER_COLOR_VALUES.size() - 1
     )
-    return _recolor_texture(
+    return appearance.recolor_texture(
         lazy_texture(PLAYER_MODEL_BATTLE_BACK_TEXTURES[player_model_index]),
         PLAYER_MODEL_BATTLE_REPLACE_COLORS[player_model_index],
         PLAYER_COLOR_VALUES[player_color_index],
@@ -6504,7 +3242,7 @@ func _play_battle_event(event: Dictionary) -> Variant:
         "caught":
             await _play_caught_event(event)
         "experience":
-            await _run_experience_progression(event.pokemon, int(event.amount),
+            await progression.run_experience_progression(event.pokemon, int(event.amount),
                 int(event.index), bool(event.defer_evolution))
         "evolution_check":
             await _check_reward_evolution(event.pokemon, int(event.index))
@@ -6975,13 +3713,13 @@ func _double_actor(side: String, slot: int) -> Dictionary:
 var battle_exp_participants: Array[int] = []
 
 func _check_reward_evolution(pokemon: Dictionary, party_index: int) -> void:
-    var target := BattleEngine.evolution_target(pokemon, caught_pokemon, _world_source_time_of_day())
+    var target := BattleEngine.evolution_target(pokemon, caught_pokemon, progression.world_source_time_of_day())
     if not target.is_empty():
         var was_active := progression_active
         var previous_actor := battle_player
         progression_active = true
         battle_player = pokemon
-        await _run_evolution_sequence(pokemon, target, party_index)
+        await progression.run_evolution_sequence(pokemon, target, party_index)
         battle_player = previous_actor
         progression_active = was_active
         progression_mode = ""
@@ -7034,7 +3772,7 @@ func _battle_throw_ball(ball: String) -> void:
     _show_battle_message_screen()
     # What a ball's odds read from the world, as it is thrown.
     await _battle_play(battle_session.submit({"kind":"ball", "ball":ball,
-        "night":_world_source_time_of_day() == "night",
+        "night":progression.world_source_time_of_day() == "night",
         "indoors":String(world.get("active_area_id")) != "OVERWORLD",
         "surfing":String(world.get("active_field_move")) == "SURF"}))
 
@@ -7073,7 +3811,7 @@ func _refresh_battle_item_pocket_menu() -> void:
     for raw_item_name in ItemData.items_for_pocket(battle_item_pocket_index):
         var item_name := String(raw_item_name)
         if planting_bag_target != null and item_pocket_context == "OVERWORLD":
-            if not _planting_bag_item_allowed(item_name): continue
+            if not bag_menu.planting_bag_item_allowed(item_name): continue
         if int(inventory.get(item_name, 0)) > 0:
             battle_item_menu_names.append(item_name)
 
@@ -7444,7 +4182,7 @@ func _refresh_battle_party_view() -> void:
     var visible_party: Array = []
     for entry in battle_submenu_entries:
         visible_party.append((entry as Dictionary).pokemon)
-    _refresh_party_list_rows(battle_party_rows, visible_party,
+    party_menu.refresh_party_list_rows(battle_party_rows, visible_party,
         battle_submenu_index)
     battle_party_prompt.text = {
         "ITEM_TARGET":"Use %s on which POKEMON?" % battle_pending_item,
@@ -7456,7 +4194,7 @@ func _refresh_battle_party_view() -> void:
 
 func _open_battle_party_action_menu() -> void:
     var pokemon := battle_submenu_entries[battle_submenu_index].pokemon as Dictionary
-    battle_party_action_entries = _pokemon_world_actions(
+    battle_party_action_entries = party_menu.pokemon_world_actions(
         String(pokemon.get("species", "")), pokemon)
     battle_party_action_index = 0
     battle_party_action_open = true
@@ -7466,7 +4204,7 @@ func _open_battle_party_action_menu() -> void:
 func _refresh_battle_party_action_menu() -> void:
     battle_party_action_index = wrapi(battle_party_action_index, 0,
         battle_party_action_entries.size())
-    _refresh_source_action_rows(battle_party_action_list, battle_party_action_cursor,
+    party_menu.refresh_source_action_rows(battle_party_action_list, battle_party_action_cursor,
         battle_party_action_entries, battle_party_action_index)
 
 func _activate_battle_party_action() -> void:
@@ -7479,7 +4217,7 @@ func _activate_battle_party_action() -> void:
     if action == "STATS":
         battle_party_action_open = false
         battle_party_action_panel.visible = false
-        _open_pokemon_stats(entry.pokemon as Dictionary, "BATTLE")
+        party_menu.open_pokemon_stats(entry.pokemon as Dictionary, "BATTLE")
         return
     if action == "SWITCH":
         await _switch_from_battle_party_action(int(entry.index))
@@ -7655,7 +4393,7 @@ func _end_battle(outcome: String = "") -> void:
         world.player.velocity=Vector2.ZERO
         world.player.camera.reset_smoothing()
         if coop_game.active:await coop_game.checkpoint_player()
-        _show_message("You are being returned to the last safe place!")
+        dialogs.show_message("You are being returned to the last safe place!")
     world.set_gameplay_enabled(true)
     if ended_wild_battle and world.has_method("begin_encounter_grace"):
         world.call("begin_encounter_grace")
@@ -8098,13 +4836,13 @@ func _update_battle_hud() -> void:
     ]
     player_level_label.text = ""
     player_gender_label.text = _gender_symbol(battle_player)
-    _set_fitting_pokemon_name(source_enemy_name, battle_enemy, enemy_display_name)
+    party_menu.set_fitting_pokemon_name(source_enemy_name, battle_enemy, enemy_display_name)
     _fit_source_battle_level(source_enemy_level, source_enemy_gender, "EnemyLevelChar", int(battle_enemy.level))
     source_enemy_status.text = _battle_status_abbreviation(battle_enemy)
     _size_battle_status_label(source_enemy_status, battle_enemy, 11.0)
     _set_source_gender(source_enemy_gender, battle_enemy)
     if bool(battle_enemy.get("is_ghost", false)): source_enemy_gender.visible = false
-    _set_fitting_pokemon_name(source_player_name, battle_player)
+    party_menu.set_fitting_pokemon_name(source_player_name, battle_player)
     _fit_source_battle_level(source_player_level, source_player_gender, "PlayerLevelChar", int(battle_player.level))
     source_player_status.text = _battle_status_abbreviation(battle_player)
     _size_battle_status_label(source_player_status, battle_player, 63.0)
@@ -8133,7 +4871,7 @@ func _update_battle_hud() -> void:
             String(battle_player.get("species", "machop")), player_level + 1)
         exp_ratio = clampf(float(int(battle_player.get("exp", exp_floor)) - exp_floor) /
             maxf(1.0, float(exp_ceiling - exp_floor)), 0.0, 1.0)
-    _set_player_exp_bar_ratio(exp_ratio)
+    progression.set_player_exp_bar_ratio(exp_ratio)
     if battle_is_double:
         var ally_text = "NO ALLY"
         var foe_text = "NO FOE"
@@ -8320,2022 +5058,26 @@ func _update_battle_field_visuals() -> void:
 var bag_notice := ""
 var bag_notice_item := ""
 
-func _show_message(message: String) -> void:
-    if trainer_tip_open:
-        _close_trainer_tip()
-    if game_menu_open and item_pocket_menu.visible and not battle_active:
-        bag_notice = message
-        bag_notice_item = battle_item_menu_names[battle_item_menu_index]             if battle_item_menu_index < battle_item_menu_names.size() else ""
-        item_pocket_description.text = message
-        return
-    # Active field moves must not paint control instructions across the bottom
-    # dialogue area. Keep actual results/errors, but suppress selection/control
-    # hints because the dedicated field/build UI already carries the state.
-    var active_move := String(world.get("active_field_move")).to_upper()
-    if not active_move.is_empty():
-        if message.begins_with("BUILD:") or message.begins_with("DIG:") or \
-                message.begins_with("PAINT:") or "L/R selects" in message or \
-                message.begins_with("FLY is active.") or \
-                message.begins_with("Fly to safe ground") or \
-                message.begins_with("SURF lets you cross water") or \
-                message.begins_with("RIDE increases speed"):
-            return
-    if build_menu_open and message.begins_with("BUILD:"):
-        return
-    message_label.add_theme_font_override("font", JOHTO_FONT)
-    message_label.add_theme_font_size_override("font_size", 10)
-    message_label.clip_text = true
-    message_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    message_label.max_lines_visible = 3
-    message_label.text = message
-    message_label.visible_characters = 0
-    message_reveal_elapsed = 0.0
-    message_reveal_text = message
-    message_panel.visible = true
-    message_timer = MESSAGE_HOLD_SECONDS + message.length() * BATTLE_TEXT_CHAR_DELAY / GameOptions.text_multiplier()
-
-
-func _show_unown_message(message: String) -> void:
-    if trainer_tip_open:
-        _close_trainer_tip()
-    message_label.add_theme_font_override("font", UNOWN_FONT)
-    message_label.add_theme_font_size_override("font_size", 9)
-    message_label.clip_text = true
-    message_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    message_label.max_lines_visible = 3
-    message_label.text = message
-    message_panel.visible = true
-    message_timer = 1.2
-
-func _trainer_tip_wrap_lines(message: String, max_chars: int = 39) -> Array[String]:
-    var result: Array[String] = []
-    for paragraph in message.split("\n"):
-        var current := ""
-        for raw_word in String(paragraph).split(" ", false):
-            var word := String(raw_word)
-            var candidate := word if current.is_empty() else current + " " + word
-            if candidate.length() <= max_chars:
-                current = candidate
-            else:
-                if not current.is_empty():
-                    result.append(current)
-                current = word
-        if not current.is_empty():
-            result.append(current)
-    if result.is_empty():
-        result.append("")
-    return result
-
-
-func _show_trainer_tip_message(message: String) -> void:
-    trainer_tip_pages.clear()
-    var lines := _trainer_tip_wrap_lines(message)
-    var index := 0
-    while index < lines.size():
-        var page_lines: Array[String] = []
-        page_lines.append(lines[index])
-        if index + 1 < lines.size():
-            page_lines.append(lines[index + 1])
-        trainer_tip_pages.append("\n".join(page_lines))
-        index += 2
-    trainer_tip_page_index = 0
-    trainer_tip_open = true
-    world.set_gameplay_enabled(false)
-    _show_trainer_tip_page()
-
-
-func _show_trainer_tip_page() -> void:
-    if trainer_tip_pages.is_empty():
-        _close_trainer_tip()
-        return
-    message_label.add_theme_font_override("font", JOHTO_FONT)
-    message_label.add_theme_font_size_override("font_size", 8)
-    message_label.clip_text = true
-    message_label.autowrap_mode = TextServer.AUTOWRAP_OFF
-    message_label.max_lines_visible = 2
-    message_label.text = trainer_tip_pages[trainer_tip_page_index]
-    message_panel.visible = true
-    message_timer = 0.0
-    if trainer_tip_continue != null:
-        trainer_tip_continue.visible = (
-            trainer_tip_page_index < trainer_tip_pages.size() - 1
-        )
-
-
-func _advance_trainer_tip() -> void:
-    if not trainer_tip_open:
-        return
-    if trainer_tip_page_index < trainer_tip_pages.size() - 1:
-        trainer_tip_page_index += 1
-        _show_trainer_tip_page()
-        return
-    _close_trainer_tip()
-
-
-func _close_trainer_tip() -> void:
-    trainer_tip_open = false
-    trainer_tip_pages.clear()
-    trainer_tip_page_index = 0
-    if trainer_tip_continue != null:
-        trainer_tip_continue.visible = false
-    message_panel.visible = false
-    message_timer = 0.0
-    if (
-            started
-            and not battle_active
-            and not game_menu_open
-            and not craft_menu_open
-            and not build_menu_open
-            and not storage_menu_open
-        ):
-        world.set_gameplay_enabled(true)
-
-func _open_game_menu() -> void:
-    if battle_active or generating or not started or \
-            (field_item_busy and not _sleeping_bag_active()):
-        return
-    game_menu_open = true
-    game_menu_detail_open = false
-    pokemon_menu_open = false
-    pokemon_action_open = false
-    pokemon_switch_selecting = false
-    pokemon_action_panel.visible = false
-    guide_menu_open = false
-    guide_topic_open = false
-    pokemon_menu_index = 0
-    save_confirm_open = false
-    save_confirm_index = 0
-    save_confirm.visible = false
-    game_menu_index = 0
-    game_menu.visible = true
-    game_menu_box.visible = true
-    game_menu_detail.visible = false
-    game_menu_map_screen.visible = false
-    item_pocket_menu.visible = false
-    item_pocket_context = ""
-    pokemon_menu.visible = false
-    guide_menu.visible = false
-    world.set_gameplay_enabled(false)
-    touch_controls.set_game_active(true)
-    message_panel.visible = false
-    _update_game_menu_cursor()
-
-func _close_game_menu() -> void:
-    planting_bag_target = null
-    bag_notice = ""
-    game_menu_open = false
-    game_menu_detail_open = false
-    pokemon_menu_open = false
-    pokemon_action_open = false
-    pokemon_switch_selecting = false
-    pokemon_switch_source_index = -1
-    pokemon_action_panel.visible = false
-    pokemon_stats_open = false
-    pokemon_stats_overlay.visible = false
-    guide_menu_open = false
-    guide_topic_open = false
-    save_confirm_open = false
-    save_confirm.visible = false
-    game_menu.visible = false
-    game_menu_detail.visible = false
-    item_menu_active = false
-    item_pocket_context = ""
-    battle_item_pocket_open = false
-    item_pocket_menu.visible = false
-    pokemon_menu.visible = false
-    guide_menu.visible = false
-    game_menu_map.visible = false
-    game_menu_map_screen.visible = false
-    _clear_map_canvas()
-    world.set_gameplay_enabled(not _sleeping_bag_active())
-    touch_controls.set_game_active(true)
-
-func _handle_game_menu_input(event: InputEvent) -> void:
-    if not overworld_evolution_item.is_empty():
-        _handle_evolution_item_input(event)
-        return
-    if item_pocket_context == "OVERWORLD" and battle_item_pocket_open:
-        _handle_overworld_item_pocket_input(event)
-        return
-
-    if guide_topic_open:
-        if event.is_action_pressed("confirm") or event.is_action_pressed("cancel") or event.is_action_pressed("start"):
-            guide_topic_open = false
-            game_menu_detail_open = false
-            game_menu_detail.visible = false
-            guide_menu.visible = true
-            get_viewport().set_input_as_handled()
-        return
-
-    if guide_menu_open:
-        if event.is_action_pressed("move_up"):
-            guide_menu_index = wrapi(guide_menu_index - 1, 0, GUIDE_TOPICS.size())
-            _refresh_guide_menu()
-            get_viewport().set_input_as_handled()
-        elif event.is_action_pressed("move_down"):
-            guide_menu_index = wrapi(guide_menu_index + 1, 0, GUIDE_TOPICS.size())
-            _refresh_guide_menu()
-            get_viewport().set_input_as_handled()
-        elif event.is_action_pressed("confirm"):
-            _show_selected_guide_topic()
-            get_viewport().set_input_as_handled()
-        elif event.is_action_pressed("cancel") or event.is_action_pressed("start"):
-            guide_menu_open = false
-            guide_menu.visible = false
-            game_menu_box.visible = true
-            get_viewport().set_input_as_handled()
-        return
-
-    if pokemon_menu_open:
-        if pokemon_action_open:
-            if event.is_action_pressed("move_up"):
-                pokemon_action_index = wrapi(pokemon_action_index - 1, 0,
-                    pokemon_action_entries.size())
-                _refresh_pokemon_action_menu()
-            elif event.is_action_pressed("move_down"):
-                pokemon_action_index = wrapi(pokemon_action_index + 1, 0,
-                    pokemon_action_entries.size())
-                _refresh_pokemon_action_menu()
-            elif event.is_action_pressed("confirm"):
-                _activate_pokemon_action()
-            elif event.is_action_pressed("cancel") or event.is_action_pressed("start"):
-                _close_pokemon_action_menu()
-            else:
-                return
-            get_viewport().set_input_as_handled()
-            return
-        if event.is_action_pressed("move_up"):
-            if not caught_pokemon.is_empty():
-                pokemon_menu_index = wrapi(pokemon_menu_index - 1, 0,
-                    mini(6, caught_pokemon.size()))
-                _refresh_pokemon_category_menu()
-            get_viewport().set_input_as_handled()
-        elif event.is_action_pressed("move_down"):
-            if not caught_pokemon.is_empty():
-                pokemon_menu_index = wrapi(pokemon_menu_index + 1, 0,
-                    mini(6, caught_pokemon.size()))
-                _refresh_pokemon_category_menu()
-            get_viewport().set_input_as_handled()
-        elif pokemon_switch_selecting and event.is_action_pressed("confirm"):
-            _finish_pokemon_switch()
-            get_viewport().set_input_as_handled()
-        elif event.is_action_pressed("cancel") or event.is_action_pressed("start"):
-            if pokemon_switch_selecting:
-                pokemon_switch_selecting = false
-                pokemon_switch_source_index = -1
-                pokemon_menu_prompt.text = "Choose a POKEMON."
-            else:
-                pokemon_menu_open = false
-                pokemon_menu.visible = false
-                game_menu_box.visible = true
-            get_viewport().set_input_as_handled()
-        elif event.is_action_pressed("confirm"):
-            _open_pokemon_action_menu()
-            get_viewport().set_input_as_handled()
-        return
-
-    if save_confirm_open:
-        if event.is_action_pressed("move_left") or event.is_action_pressed("move_right"):
-            save_confirm_index = 1 - save_confirm_index
-            _update_save_confirm_cursor()
-            get_viewport().set_input_as_handled()
-        elif event.is_action_pressed("confirm"):
-            if save_confirm_index == 0:
-                _save_current_game()
-            else:
-                _close_save_confirmation()
-            get_viewport().set_input_as_handled()
-        elif event.is_action_pressed("cancel") or event.is_action_pressed("start"):
-            _close_save_confirmation()
-            get_viewport().set_input_as_handled()
-        return
-
-    if event.is_action_pressed("start") or event.is_action_pressed("cancel"):
-        if game_menu_detail_open:
-            item_menu_active = false
-            game_menu_detail_open = false
-            game_menu_detail.visible = false
-            game_menu_box.visible = true
-            game_menu_map.visible = false
-            game_menu_map_screen.visible = false
-            teleport_map_mode = false
-            teleport_destinations.clear()
-            _clear_map_canvas()
-        else:
-            _close_game_menu()
-        get_viewport().set_input_as_handled()
-        return
-
-    if game_menu_detail_open:
-        if game_menu_map_screen.visible:
-            if teleport_map_mode:
-                if event.is_action_pressed("move_left") or event.is_action_pressed("move_up") or event.is_action_pressed("shoulder_left"):
-                    _cycle_teleport_destination(-1)
-                    get_viewport().set_input_as_handled()
-                elif event.is_action_pressed("move_right") or event.is_action_pressed("move_down") or event.is_action_pressed("shoulder_right"):
-                    _cycle_teleport_destination(1)
-                    get_viewport().set_input_as_handled()
-                elif event.is_action_pressed("confirm"):
-                    if world.has_method("teleport_to_destination"):
-                        world.call("teleport_to_destination", teleport_destination_index)
-                    teleport_map_mode = false
-                    _close_game_menu()
-                    get_viewport().set_input_as_handled()
-                return
-            if event.is_action_pressed("confirm") and is_instance_valid(waypoint_ui):
-                waypoint_ui.begin_name()
-                get_viewport().set_input_as_handled()
-                return
-            if GameOptions.enabled("zoom") and (event.is_action_pressed("zoom_in") or event.is_action_pressed("shoulder_right")):
-                _set_map_zoom(map_zoom * 1.25)
-                get_viewport().set_input_as_handled()
-            elif GameOptions.enabled("zoom") and (event.is_action_pressed("zoom_out") or event.is_action_pressed("shoulder_left")):
-                _set_map_zoom(map_zoom / 1.25)
-                get_viewport().set_input_as_handled()
-            return
-        if event.is_action_pressed("confirm"):
-            game_menu_detail_open = false
-            game_menu_detail.visible = false
-            game_menu_box.visible = true
-            game_menu_map.visible = false
-            game_menu_map_screen.visible = false
-            _clear_map_canvas()
-            get_viewport().set_input_as_handled()
-        return
-
-    if event.is_action_pressed("move_up"):
-        game_menu_index = wrapi(game_menu_index - 1, 0, GAME_MENU_OPTIONS.size())
-        _update_game_menu_cursor()
-        get_viewport().set_input_as_handled()
-    elif event.is_action_pressed("move_down"):
-        game_menu_index = wrapi(game_menu_index + 1, 0, GAME_MENU_OPTIONS.size())
-        _update_game_menu_cursor()
-        get_viewport().set_input_as_handled()
-    elif event.is_action_pressed("confirm"):
-        _activate_game_menu_option()
-        get_viewport().set_input_as_handled()
-
-func _update_game_menu_cursor() -> void:
-    var row := game_menu_box.get_node_or_null("Option%d" % game_menu_index) as Label
-    if row != null: _align_menu_tick(game_menu_cursor, row)
-
-func _activate_game_menu_option() -> void:
-    var option = String(GAME_MENU_OPTIONS[game_menu_index])
-    match option:
-        "STORAGE":
-            _open_pooled_storage_menu()
-        "POKEMON":
-            _show_pokemon_menu()
-        "ITEM":
-            _show_item_menu()
-        "MAP":
-            _show_map_menu()
-        "POKEDEX":
-            pokedex_menu.open(true)
-        "GUIDE":
-            _show_guide_menu()
-        "OPTIONS":
-            options_menu.open()
-        "SAVE":
-            _open_save_confirmation()
-        "EXIT":
-            _close_game_menu()
-            _open_quit_prompt()
-
-func _open_detail(title: String, body: String) -> void:
-    game_menu_detail_open = true
-    game_menu_box.visible = false
-    game_menu_detail.visible = true
-    game_menu_detail_title.text = title
-    game_menu_detail_body.text = body
-    game_menu_map.visible = false
-    game_menu_map_screen.visible = false
-
-func _show_pokemon_menu() -> void:
-    pokemon_menu_open = true
-    pokemon_menu_index = 0
-    pokemon_move_index = 0
-    pokemon_action_open = false
-    pokemon_switch_selecting = false
-    pokemon_action_panel.visible = false
-    game_menu_box.visible = false
-    game_menu_detail.visible = false
-    game_menu_map.visible = false
-    game_menu_map_screen.visible = false
-    pokemon_menu.visible = true
-    _refresh_pokemon_category_menu()
-
-func _refresh_pokemon_category_menu() -> void:
-    pokemon_menu_prompt.text = "Choose a POKEMON."
-
-    if caught_pokemon.is_empty():
-        _refresh_party_list_rows(pokemon_party_rows, [], -1)
-        pokemon_menu_prompt.text = "NO POKEMON." if touch_on() else "NO POKEMON.   B: BACK"
-        return
-
-    var visible_count := mini(6, caught_pokemon.size())
-    pokemon_menu_index = clampi(pokemon_menu_index, 0, visible_count - 1)
-    for index in range(visible_count):
-        if typeof(caught_pokemon[index]) == TYPE_DICTIONARY:
-            caught_pokemon[index] = BattleEngine.ensure_pokemon(
-                caught_pokemon[index] as Dictionary)
-    _refresh_party_list_rows(pokemon_party_rows, caught_pokemon,
-        pokemon_menu_index)
-    var entry := caught_pokemon[pokemon_menu_index] as Dictionary
-    if bool(entry.get("is_egg", false)):
-        pokemon_menu_prompt.text = ("%d STEPS TO HATCH" if touch_on() else "%d STEPS TO HATCH   B: BACK") % int(
-            entry.get("hatch_steps", EGG_HATCH_STEPS))
-        return
-    pokemon_menu_prompt.text = (
-        "Move to which position?" if pokemon_switch_selecting
-        else "Choose a POKEMON."
-    )
-
-func _pokemon_world_actions(species: String, pokemon: Dictionary = {}) -> Array[String]:
-    if bool(pokemon.get("is_egg", false)): return ["SWITCH", "DROP", "CANCEL"]
-    var result := FieldMoveData.field_moves_for(species, String(pokemon.get("form", "")))
-    if not result.has("FOLLOW"):
-        result.append("FOLLOW")
-    result.append("STATS")
-    result.append("SWITCH")
-    result.append("DROP")
-    result.append("CANCEL")
-    return result
-
-func _open_pokemon_action_menu() -> void:
-    if caught_pokemon.is_empty():
-        return
-    var entry := caught_pokemon[pokemon_menu_index] as Dictionary
-    pokemon_action_entries = _pokemon_world_actions(
-        String(entry.get("species", "")), entry)
-    pokemon_action_index = 0
-    pokemon_action_open = true
-    pokemon_action_panel.visible = true
-    _refresh_pokemon_action_menu()
-
-func _refresh_pokemon_action_menu() -> void:
-    if pokemon_action_entries.is_empty():
-        pokemon_action_entries = ["CANCEL"]
-    pokemon_action_index = wrapi(pokemon_action_index, 0, pokemon_action_entries.size())
-    _refresh_source_action_rows(pokemon_action_list, pokemon_action_cursor,
-        pokemon_action_entries, pokemon_action_index)
-
-func _close_pokemon_action_menu() -> void:
-    pokemon_action_open = false
-    pokemon_action_panel.visible = false
-
-func _activate_pokemon_action() -> void:
-    if pokemon_action_entries.is_empty():
-        return
-    var action := String(pokemon_action_entries[pokemon_action_index])
-    if action == "CANCEL":
-        _close_pokemon_action_menu()
-        return
-    if action == "STATS":
-        var selected := BattleEngine.ensure_pokemon(caught_pokemon[pokemon_menu_index])
-        caught_pokemon[pokemon_menu_index] = selected
-        _close_pokemon_action_menu()
-        _open_pokemon_stats(selected, "OVERWORLD")
-        return
-    if action == "SWITCH":
-        _close_pokemon_action_menu()
-        pokemon_switch_selecting = true
-        pokemon_switch_source_index = pokemon_menu_index
-        pokemon_menu_prompt.text = "Move to which position?"
-        return
-    if action == "DROP":
-        _close_pokemon_action_menu()
-        _deploy_selected_pokemon()
-        return
-    pokemon_move_index = pokemon_action_entries.find(action)
-    _close_pokemon_action_menu()
-    _activate_selected_field_move()
-
-func _finish_pokemon_switch() -> void:
-    if caught_pokemon.is_empty():
-        return
-    var destination := pokemon_menu_index
-    var source_index := clampi(pokemon_switch_source_index, 0,
-        caught_pokemon.size() - 1)
-    if source_index != destination:
-        var source_pokemon = caught_pokemon[source_index]
-        caught_pokemon[source_index] = caught_pokemon[destination]
-        caught_pokemon[destination] = source_pokemon
-    pokemon_switch_selecting = false
-    pokemon_switch_source_index = -1
-    pokemon_menu_index = destination
-    _refresh_pokemon_category_menu()
-
-func _open_pokemon_stats(pokemon: Dictionary, return_context: String) -> void:
-    pokemon_stats_pokemon = BattleEngine.ensure_pokemon(pokemon)
-    pokemon_stats_return_context = return_context
-    pokemon_stats_page = 0
-    pokemon_stats_open = true
-    pokemon_stats_overlay.visible = true
-    _refresh_pokemon_stats()
-
-func _refresh_pokemon_stats() -> void:
-    if pokemon_stats_pokemon.is_empty():
-        return
-    var pokemon = pokemon_stats_pokemon
-    var species = String(pokemon.get("species", "machop")).to_lower()
-    var info = PokemonData.info(species)
-    var stats = pokemon.get("stats", {}) as Dictionary
-    var level = int(pokemon.get("level", 1))
-    pokemon_stats_background.texture = SOURCE_STATS_BACKGROUNDS[pokemon_stats_page]
-    pokemon_stats_sprite.texture = _battle_sprite_frame(PokemonData.record_texture(pokemon, "front"))
-    pokemon_stats_header_left.text = "No.%03d" % int(info.get("dex", 0))
-    pokemon_stats_header_right.text = ":L%d" % level
-    var level_width := pokemon_stats_header_right.get_theme_font("font").get_string_size(pokemon_stats_header_right.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 10).x
-    pokemon_stats_header_right.size.x = maxf(48.0, level_width)
-    pokemon_stats_header_right.position.x = 276.0 - pokemon_stats_header_right.size.x
-    pokemon_stats_shiny.visible = PokemonData.is_shiny(pokemon)
-    _set_fitting_pokemon_name(pokemon_stats_fields.Name as Label, pokemon)
-    _set_source_gender(pokemon_stats_gender, pokemon)
-    for index in range(3):
-        pokemon_stats_pages[index].visible = index == pokemon_stats_page
-        pokemon_stats_tab_ticks[index].visible = index == pokemon_stats_page
-        pokemon_stats_tabs[index].color = [Color8(248, 152, 248),
-            Color8(176, 248, 104), Color8(136, 240, 240)][index]
-    var hp = int(pokemon.get("hp", 0))
-    var max_hp = maxi(1, int(pokemon.get("max_hp", 1)))
-    (pokemon_stats_fields.HP as Label).text = "%d/%d" % [hp, max_hp]
-    var status = String(pokemon.get("status", ""))
-    (pokemon_stats_fields.Status as Label).text = "OK" if status.is_empty() else status
-    (pokemon_stats_fields.Types as Label).text = "\n".join(info.get("types", ["NORMAL"]))
-    var current_exp = int(pokemon.get("exp", BattleEngine.exp_for_level(species, level)))
-    var next_exp = BattleEngine.exp_for_level(species, mini(100, level + 1))
-    (pokemon_stats_fields.Exp as Label).text = str(current_exp)
-    (pokemon_stats_fields.NextExp as Label).text = str(maxi(0, next_exp - current_exp))
-    (pokemon_stats_fields.NextLevel as Label).text = "TO :L%d" % mini(100, level + 1)
-    var exp_floor = BattleEngine.exp_for_level(species, level)
-    var exp_ratio = 1.0 if level >= 100 else clampf(
-        float(current_exp - exp_floor) / maxf(1.0, float(next_exp - exp_floor)), 0.0, 1.0)
-    if pokemon_stats_exp_fill != null:
-        pokemon_stats_exp_fill.size.x = floorf(126.0 * exp_ratio)
-    var held = String(pokemon.get("held_item", ""))
-    (pokemon_stats_fields.Item as Label).text = "---" if held.is_empty() else held
-    var moves: Array = pokemon.get("moves", [])
-    for index in range(4):
-        (pokemon_stats_fields["Move%d" % index] as Label).text = (
-            String(moves[index]).replace("_", " ") if index < moves.size() else "-")
-    (pokemon_stats_fields.TrainerId as Label).text = "%05d" % int(pokemon.get("trainer_id", 0))
-    (pokemon_stats_fields.OriginalTrainer as Label).text = String(
-        pokemon.get("original_trainer", player_model_name.text)).to_upper().left(9)
-    for key in ["attack", "defense", "sp_attack", "sp_defense", "speed"]:
-        (pokemon_stats_fields[key] as Label).text = str(int(stats.get(key, 0)))
-
-func _handle_pokemon_stats_input(event: InputEvent) -> void:
-    if event.is_action_pressed("move_left") or event.is_action_pressed("move_up"):
-        pokemon_stats_page = wrapi(pokemon_stats_page - 1, 0, 3)
-        _refresh_pokemon_stats()
-    elif event.is_action_pressed("move_right") or event.is_action_pressed("move_down") or \
-            event.is_action_pressed("confirm"):
-        pokemon_stats_page = wrapi(pokemon_stats_page + 1, 0, 3)
-        _refresh_pokemon_stats()
-    elif event.is_action_pressed("cancel") or event.is_action_pressed("start"):
-        _close_pokemon_stats()
-    else:
-        return
-    get_viewport().set_input_as_handled()
-
-func _close_pokemon_stats() -> void:
-    pokemon_stats_open = false
-    pokemon_stats_overlay.visible = false
-    if pokemon_stats_return_context == "OVERWORLD" and pokemon_menu_open:
-        pokemon_action_open = true
-        pokemon_action_panel.visible = true
-    elif pokemon_stats_return_context == "BATTLE" and battle_active and \
-            battle_submenu_mode == "PARTY":
-        battle_party_action_open = true
-        battle_party_action_panel.visible = true
-    pokemon_stats_return_context = ""
-    pokemon_stats_pokemon = {}
-
-func _cycle_selected_field_move(direction: int) -> void:
-    if caught_pokemon.is_empty():
-        return
-    var entry = caught_pokemon[clampi(pokemon_menu_index, 0, caught_pokemon.size() - 1)]
-    if typeof(entry) != TYPE_DICTIONARY:
-        return
-    if bool((entry as Dictionary).get("is_egg", false)):
-        return
-    var moves := _pokemon_world_actions(String(entry.get("species", "")), entry)
-    pokemon_move_index = wrapi(pokemon_move_index + direction, 0, moves.size())
-    _refresh_pokemon_category_menu()
-
-func _activate_selected_field_move() -> void:
-    if caught_pokemon.is_empty():
-        return
-    pokemon_menu_index = clampi(pokemon_menu_index, 0, caught_pokemon.size() - 1)
-    _ensure_party_ecology_id(pokemon_menu_index)
-    var entry = caught_pokemon[pokemon_menu_index]
-    if typeof(entry) != TYPE_DICTIONARY:
-        return
-    if bool((entry as Dictionary).get("is_egg", false)):
-        _show_message("An EGG has no field move.")
-        return
-    if int((entry as Dictionary).get("hp", 1)) <= 0:
-        _show_message("A fainted POKEMON cannot use a FIELD MOVE.")
-        return
-    var species := String(entry.get("species", "")).to_lower()
-    var moves := _pokemon_world_actions(species, entry)
-    pokemon_move_index = clampi(pokemon_move_index, 0, moves.size() - 1)
-    var move := String(moves[pokemon_move_index])
-    if move == "STATS":
-        var pokemon := BattleEngine.ensure_pokemon(entry)
-        caught_pokemon[pokemon_menu_index] = pokemon
-        _open_pokemon_stats(pokemon, "OVERWORLD")
-        return
-    if move == "DROP":
-        _deploy_selected_pokemon()
-        return
-    if move in ["SWITCH", "CANCEL"]:
-        return
-    if move == "TAKE ITEM":
-        var held_item := String(entry.get("held_item", ""))
-        if not held_item.is_empty():
-            inventory[held_item] = int(inventory.get(held_item, 0)) + 1
-            entry["held_item"] = ""
-            caught_pokemon[pokemon_menu_index] = entry
-            _show_message("Took %s from %s." % [held_item, PokemonData.battle_display_name(species)])
-            pokemon_move_index = 0
-            _refresh_pokemon_category_menu()
-        return
-    if move.begins_with("HOLD:"):
-        var item_name := move.trim_prefix("HOLD:")
-        if int(inventory.get(item_name, 0)) <= 0:
-            _show_message("There is no %s left." % item_name)
-            return
-        var old_item := String(entry.get("held_item", ""))
-        if not old_item.is_empty():
-            inventory[old_item] = int(inventory.get(old_item, 0)) + 1
-        inventory[item_name] = int(inventory.get(item_name, 0)) - 1
-        entry["held_item"] = item_name
-        caught_pokemon[pokemon_menu_index] = entry
-        _show_message("%s is now holding %s." % [PokemonData.battle_display_name(species), item_name])
-        pokemon_move_index = 0
-        _refresh_pokemon_category_menu()
-        return
-    if _sleeping_bag_active():
-        _show_message("Get up before using a Field Move.")
-        return
-    var activated := bool(world.set_active_field_move(entry, move))
-    if not activated:
-        # Gyarados and other fish follow only while their trainer is in water.
-        if move == "FOLLOW" and bool(PokemonData.info(species).get("overworld_behavior", {}).get("swim_only", false)):
-            _show_message("%s can only follow while swimming." % PokemonData.battle_display_name(species))
-        else:
-            _show_message("%s cannot follow here." % PokemonData.battle_display_name(species))
-        return
-    if move == "FLY":
-        _play_pokemon_cry(entry)
-    pokemon_menu_open = false
-    pokemon_menu.visible = false
-    game_menu_open = false
-    game_menu.visible = false
-    world.set_gameplay_enabled(true)
-    touch_controls.set_game_active(true)
-    if move == "BUILD":
-        _open_build_menu()
-    elif move == "FOLLOW":
-        _show_message("%s is following you." % PokemonData.battle_display_name(species))
-    else:
-        if move not in ["CUT", "DIG"]:
-            _show_message("%s is using %s." % [PokemonData.battle_display_name(species), move])
-
-func _deploy_selected_pokemon() -> void:
-    if caught_pokemon.is_empty():
-        _show_message("There is no Pokemon to leave here.")
-        return
-    pokemon_menu_index = clampi(pokemon_menu_index, 0, caught_pokemon.size() - 1)
-    var entry = caught_pokemon[pokemon_menu_index]
-    if typeof(entry) != TYPE_DICTIONARY:
-        return
-    var keep_surf: bool = world.active_field_move == "SURF" and world.terrain_kind_at(world._player_cell()) == 0
-    if keep_surf and _ensure_party_ecology_id(pokemon_menu_index) == String(world.active_field_pokemon.get("party_ecology_id","")):
-        _show_message("Reach dry land before leaving your surfing POKEMON.")
-        return
-    if coop_game.active:
-        coop_game.population.deploy(pokemon_menu_index,keep_surf)
-        return
-    if world.deploy_pokemon(entry):
-        if not keep_surf: world.clear_active_field_move(false)
-        var species := PokemonData.battle_display_name(String(entry.get("species", "POKEMON")))
-        caught_pokemon.remove_at(pokemon_menu_index)
-        pokemon_menu_open = false
-        pokemon_menu.visible = false
-        game_menu_open = false
-        game_menu.visible = false
-        world.set_gameplay_enabled(true)
-        touch_controls.set_game_active(true)
-        _show_message("The EGG was placed here." if bool(entry.get("is_egg", false)) else "%s was left in the habitat." % species)
-
-func _show_item_menu() -> void:
-    if item_pocket_menu.get_parent() != game_menu:
-        item_pocket_menu.reparent(game_menu, false)
-    item_pocket_menu.z_index = 100
-    item_pocket_context = "OVERWORLD"
-    battle_item_pocket_open = true
-    battle_item_pocket_index = ItemData.POCKET_ITEMS
-    battle_item_menu_index = 0
-    item_menu_active = false
-    game_menu_box.visible = false
-    game_menu_detail.visible = false
-    item_pocket_menu.visible = true
-    _refresh_battle_item_pocket_menu()
-
-func _handle_overworld_item_pocket_input(event: InputEvent) -> void:
-    if planting_bag_target != null and field_item_busy:
-        get_viewport().set_input_as_handled()
-        return
-    if event.is_action_pressed("cancel") or event.is_action_pressed("start"):
-        _close_overworld_item_pocket_menu()
-    elif (event.is_action_pressed("move_left") or
-            event.is_action_pressed("shoulder_left")):
-        _switch_battle_item_pocket(-1)
-    elif (event.is_action_pressed("move_right") or
-            event.is_action_pressed("shoulder_right")):
-        _switch_battle_item_pocket(1)
-    elif event.is_action_pressed("move_up"):
-        battle_item_menu_index = wrapi(battle_item_menu_index - 1, 0,
-            battle_item_menu_names.size() + 1)
-        _refresh_battle_item_pocket_menu()
-    elif event.is_action_pressed("move_down"):
-        battle_item_menu_index = wrapi(battle_item_menu_index + 1, 0,
-            battle_item_menu_names.size() + 1)
-        _refresh_battle_item_pocket_menu()
-    elif event.is_action_pressed("confirm"):
-        _confirm_overworld_item_pocket()
-    else:
-        return
-    get_viewport().set_input_as_handled()
-
-func _close_overworld_item_pocket_menu() -> void:
-    if planting_bag_target != null:
-        planting_bag_target = null
-        _close_game_menu()
-        return
-    battle_item_pocket_open = false
-    item_pocket_context = ""
-    item_pocket_menu.visible = false
-    game_menu_box.visible = true
-
-func _confirm_overworld_item_pocket() -> void:
-    if battle_item_menu_index >= battle_item_menu_names.size():
-        _close_overworld_item_pocket_menu()
-        return
-    var selected_item := ItemData.normalize_name(battle_item_menu_names[battle_item_menu_index])
-    if planting_bag_target != null:
-        if not world.is_empty_planting_hole(planting_bag_target) or not _planting_bag_item_allowed(selected_item):
-            item_pocket_description.text = "That plant cannot grow here."
-            return
-        if int(inventory.get(selected_item, 0)) <= 0:
-            _refresh_battle_item_pocket_menu()
-            return
-        field_item_busy = true
-        game_menu.hide()
-        var planted: bool = await world.plants().plant(planting_bag_target, selected_item)
-        field_item_busy = false
-        if planted:
-            if not coop_game.active:_consume_inventory_item(selected_item)
-            planting_bag_target = null
-            world.planting_item = selected_item if int(inventory.get(selected_item,0)) > 0 else ""
-            _close_game_menu()
-        else:
-            game_menu.show()
-            world.set_gameplay_enabled(false)
-        return
-    bag_action_ui = preload("res://scripts/bag_item_actions.gd").new()
-    $UI.add_child(bag_action_ui)
-    bag_action_ui.open(self, selected_item)
-
-func _use_overworld_item(item: String) -> void:
-    if int(inventory.get(item, 0)) <= 0:
-        _refresh_battle_item_pocket_menu()
-        return
-    if ItemData.is_evolution_item(item):
-        overworld_evolution_item = item
-        battle_item_pocket_open = false
-        item_pocket_menu.hide()
-        _show_pokemon_menu()
-        _refresh_evolution_item_target()
-        return
-    if (preload("res://scripts/source_plant_farming.gd").plantable(item) or item == "SLEEPING BAG") and world.active_field_move == "SURF" and world.terrain_kind_at(world._player_cell()) == 0:
-        _show_message("Reach dry land first.")
-        return
-    if preload("res://scripts/source_plant_farming.gd").plantable(item):
-        world.clear_active_field_move(false)
-        world.planting_item = item
-        _leave_game_menu_for_field_action(true)
-        _show_message("Face the soil and press A to plant." if item != "MANURE" else "Face a sapling or small tree and press A to fertilize.")
-        return
-    if item == "SLEEPING BAG":
-        if not String(world.get("active_field_move")).is_empty():
-            world.call("clear_active_field_move", false)
-        if not bool(world.call("begin_sleeping_bag", _player_sleeping_texture())):
-            return
-        for party_index in range(caught_pokemon.size()):
-            if typeof(caught_pokemon[party_index]) != TYPE_DICTIONARY or bool(
-                    (caught_pokemon[party_index] as Dictionary).get("is_egg", false)):
-                continue
-            var resting_pokemon: Dictionary = BattleEngine.ensure_pokemon(caught_pokemon[party_index])
-            BattleEngine.refill_pp(resting_pokemon)
-            caught_pokemon[party_index] = resting_pokemon
-        field_item_busy = true
-        sleeping_bag_heal_accumulator = 0.0
-        _leave_game_menu_for_field_action(false)
-        return
-    if item == "ESCAPE ROPE":
-        if bool(world.call("use_escape_rope")):
-            _leave_game_menu_for_field_action(true)
-        return
-    if item == "RARE CANDY":
-        if caught_pokemon.is_empty():
-            item_pocket_description.text = "There is no POKEMON to use it on."
-            return
-        var pokemon = BattleEngine.ensure_pokemon(caught_pokemon[0])
-        if int(pokemon.get("level", 1)) >= 100:
-            item_pocket_description.text = "It won't have any effect."
-            return
-        pokemon["level"] = int(pokemon.get("level", 1)) + 1
-        PokemonState.apply_stats(pokemon, true)
-        BattleEngine.refill_pp(pokemon)
-        caught_pokemon[0] = pokemon
-        _consume_inventory_item(item)
-        _play_level_up_sound()
-        _show_message("%s grew to level %d." % [
-            PokemonState.display_name(pokemon), int(pokemon.get("level", 1))])
-        _refresh_battle_item_pocket_menu()
-        return
-    if item in ["REPEL", "MAX REPEL"]:
-        world.repel_until_elapsed = world.world_elapsed_seconds + (
-            240.0 if item == "MAX REPEL" else 120.0)
-        _consume_inventory_item(item)
-        _leave_game_menu_for_field_action(true)
-        _show_message("Used %s." % item)
-        return
-    if item in ["OLD ROD", "GOOD ROD", "SUPER ROD"]:
-        _leave_game_menu_for_field_action(true)
-        world.request_fishing_encounter(item)
-        return
-    if PokemonEcology.is_food(item):
-        if not world.feed_pokemon_in_front(item):
-            item_pocket_description.text = "Face a POKEMON to feed it."
-            return
-        _consume_inventory_item(item)
-        _refresh_battle_item_pocket_menu()
-        return
-    item_pocket_description.text = "It won't have any effect here."
-
-func _refresh_evolution_item_target() -> void:
-    _refresh_pokemon_category_menu()
-    if caught_pokemon.is_empty():
-        return
-    var target := BattleEngine.item_evolution_target(caught_pokemon[pokemon_menu_index], overworld_evolution_item)
-    pokemon_menu_prompt.text = "%s: %s" % [overworld_evolution_item, ("ABLE." if touch_on() else "ABLE. A: USE") if not target.is_empty() else "NOT ABLE"]
-
-func _handle_evolution_item_input(event: InputEvent) -> void:
-    if event.is_action_pressed("cancel") or event.is_action_pressed("start"):
-        overworld_evolution_item = ""
-        pokemon_menu_open = false
-        pokemon_menu.hide()
-        var pocket := battle_item_pocket_index
-        var selection := battle_item_menu_index
-        _show_item_menu()
-        battle_item_pocket_index = pocket
-        battle_item_menu_index = selection
-        _refresh_battle_item_pocket_menu()
-    elif event.is_action_pressed("move_up") or event.is_action_pressed("move_down"):
-        if not caught_pokemon.is_empty():
-            pokemon_menu_index = wrapi(pokemon_menu_index + (-1 if event.is_action_pressed("move_up") else 1), 0, mini(6, caught_pokemon.size()))
-            _refresh_evolution_item_target()
-    elif event.is_action_pressed("confirm"):
-        _use_evolution_item_on(pokemon_menu_index)
-    else:
-        return
-    get_viewport().set_input_as_handled()
-
-func _use_evolution_item_on(index: int) -> void:
-    if overworld_evolution_running or index < 0 or index >= caught_pokemon.size():
-        return
-    var item := overworld_evolution_item
-    if item.is_empty() or int(inventory.get(item, 0)) <= 0:
-        return
-    var pokemon: Dictionary = caught_pokemon[index]
-    var target := BattleEngine.item_evolution_target(pokemon, item)
-    if target.is_empty():
-        pokemon_menu_prompt.text = "It won't have any effect."
-        return
-    var identity := _ensure_party_ecology_id(index)
-    var field_move := String(world.active_field_move) if String(world.active_field_pokemon.get("party_ecology_id", "")) == identity else ""
-    var following := String(world.follower_pokemon.get("party_ecology_id", "")) == identity
-    overworld_evolution_item = ""
-    overworld_evolution_running = true
-    progression_active = true
-    field_item_busy = true
-    pokemon_menu_open = false
-    pokemon_menu.hide()
-    _leave_game_menu_for_field_action(false)
-    world.set_gameplay_enabled(false)
-    _consume_inventory_item(item)
-    var previous_actor := battle_player
-    battle_player = pokemon
-    _reset_progression_overlay()
-    var evolved := await _run_evolution_sequence(pokemon, target, index)
-    if not evolved:
-        inventory[item] = int(inventory.get(item, 0)) + 1
-    elif not field_move.is_empty():
-        world.set_active_field_move(pokemon, field_move)
-    if evolved and following:
-        world.set_follower(pokemon, false)
-    battle_player = previous_actor
-    _hide_progression_overlay()
-    overworld_evolution_running = false
-    progression_active = false
-    field_item_busy = false
-    world.set_gameplay_enabled(not _field_ui_blocks_gameplay())
-
-func _consume_inventory_item(item: String) -> void:
-    inventory[item] = maxi(0, int(inventory.get(item, 0)) - 1)
-
-func _leave_game_menu_for_field_action(enable_world: bool) -> void:
-    battle_item_pocket_open = false
-    item_pocket_context = ""
-    item_pocket_menu.visible = false
-    game_menu_detail_open = false
-    game_menu_open = false
-    game_menu.visible = false
-    if enable_world:
-        world.set_gameplay_enabled(true)
-        touch_controls.set_game_active(true)
-
-func _sleeping_bag_active() -> bool:
-    var sprite = world.get("sleeping_bag_sprite")
-    return sprite is Sprite2D and is_instance_valid(sprite)
-
-func _update_sleeping_bag_rest(delta: float) -> void:
-    if battle_active:
-        return
-    if not field_item_busy or not _sleeping_bag_active():
-        sleeping_bag_heal_accumulator = 0.0
-        return
-    sleeping_bag_heal_accumulator += delta
-    var interval := 128.0 / 60.0 if world.bed_rest_active else 1.0
-    while sleeping_bag_heal_accumulator >= interval:
-        sleeping_bag_heal_accumulator -= interval
-        var party_changed := false
-        for party_index in range(caught_pokemon.size()):
-            if typeof(caught_pokemon[party_index]) != TYPE_DICTIONARY or bool(
-                    (caught_pokemon[party_index] as Dictionary).get(
-                        "is_egg", false)):
-                continue
-            var pokemon := BattleEngine.ensure_pokemon(
-                caught_pokemon[party_index])
-            var old_hp := int(pokemon.get("hp", 0))
-            var max_hp := maxi(1, int(pokemon.get("max_hp", 1)))
-            if old_hp < max_hp:
-                var recovery := (ceili(float(max_hp) / 25.0) + ceili(float(max_hp) / 15.0)) if world.bed_rest_active else (4 if world.active_area_id == "HOUSE" else 2)
-                pokemon["hp"] = mini(max_hp, old_hp + recovery)
-                party_changed = true
-            # Source bed recovery clears status at full HP. Apply that same
-            # completion rule to sleeping-bag rest, including full-HP status.
-            if int(pokemon["hp"]) >= max_hp and not String(pokemon.get("status", "")).is_empty():
-                pokemon["status"] = ""
-                pokemon["status_counter"] = 0
-                pokemon["toxic_counter"] = 0
-                party_changed = true
-            caught_pokemon[party_index] = pokemon
-        if party_changed and pokemon_menu_open and pokemon_menu != null and \
-                pokemon_menu.visible:
-            _refresh_party_list_rows(
-                pokemon_party_rows, caught_pokemon, pokemon_menu_index)
-
-func _end_sleeping_bag_rest() -> void:
-    if not _sleeping_bag_active():
-        return
-    var was_bed: bool = world.bed_rest_active
-    world.call("end_sleeping_bag")
-    field_item_busy = false
-    sleeping_bag_heal_accumulator = 0.0
-    world.set_gameplay_enabled(true)
-    touch_controls.set_game_active(true)
-    _show_message("You got out of bed." if was_bed else "Your POKEMON rested. This is now your return point.")
-
-func _show_map_menu() -> void:
-    game_menu_open = true
-    game_menu.show()
-    world.set_gameplay_enabled(false)
-    $UI/GameMenu/MapScreen/Hint.text = "DPAD/STICK: CURSOR  R STICK: PAN\nL/R: ZOOM  " + ("Waypoint: A  " if GameOptions.enabled("map_waypoint") else "") + "B: BACK"
-    $UI/GameMenu/MapScreen/Hint.add_theme_constant_override("line_spacing", 0)
-    if not is_instance_valid(waypoint_ui):
-        waypoint_ui=preload("res://scripts/map_waypoints.gd").new()
-        add_child(waypoint_ui)
-        waypoint_ui.configure(self)
-    teleport_map_mode = false
-    teleport_destinations.clear()
-    game_menu_detail_open = true
-    game_menu_box.visible = false
-    game_menu_detail.visible = false
-    game_menu_map_screen.visible = true
-    game_menu_map.visible = true
-    map_zoom = DEFAULT_MAP_ZOOM
-    map_pan = Vector2.ZERO
-    _draw_world_map()
-    if is_instance_valid(map_view_node): waypoint_ui.setup_map()
-
-func _open_teleport_map(destinations: Array) -> void:
-    if destinations.is_empty():
-        _show_message("There are no BEACONS to TELEPORT to.")
-        return
-    teleport_map_mode = true
-    teleport_destinations = destinations.duplicate(true)
-    teleport_destination_index = 0
-    game_menu_open = true
-    game_menu_detail_open = true
-    game_menu.visible = true
-    game_menu_box.visible = false
-    game_menu_detail.visible = false
-    game_menu_map_screen.visible = true
-    game_menu_map.visible = true
-    world.set_gameplay_enabled(false)
-    touch_controls.set_game_active(true)
-    map_zoom = DEFAULT_MAP_ZOOM
-    map_pan = Vector2.ZERO
-    _draw_world_map()
-    _refresh_teleport_map_selection()
-
-func _cycle_teleport_destination(direction: int) -> void:
-    if teleport_destinations.is_empty():
-        return
-    teleport_destination_index = wrapi(teleport_destination_index + direction, 0, teleport_destinations.size())
-    _refresh_teleport_map_selection()
-
-func _refresh_teleport_map_selection() -> void:
-    if teleport_destinations.is_empty() or map_view_node == null:
-        return
-    var destination: Dictionary = teleport_destinations[teleport_destination_index]
-    var cell: Vector2i = destination.get("cell", Vector2i.ZERO)
-    # The tile streams draw the view there while the map is up, so the jump finds it drawn.
-    if world.has_method("prepare_view_at"): world.call("prepare_view_at", cell)
-    var bounds: Rect2i = world.call("get_map_bounds") if world.has_method("get_map_bounds") else Rect2i(Vector2i.ZERO, Vector2i(int(world.get("map_w")), int(world.get("map_h"))))
-    var local_center := Vector2(
-        float(cell.x - bounds.position.x) / maxf(1.0, float(bounds.size.x)) * map_view_node.size.x,
-        float(cell.y - bounds.position.y) / maxf(1.0, float(bounds.size.y)) * map_view_node.size.y
-    )
-    map_pan = (map_view_node.size * 0.5 - local_center) * map_zoom
-    _update_map_transform()
-    if teleport_name_label == null or not is_instance_valid(teleport_name_label):
-        teleport_name_label = Label.new()
-        teleport_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-        teleport_name_label.add_theme_font_override("font", JOHTO_FONT)
-        teleport_name_label.add_theme_font_size_override("font_size", 8)
-        teleport_name_label.position = Vector2(8, 134)
-        teleport_name_label.size = Vector2(304, 18)
-        teleport_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-        teleport_name_label.z_index = 100
-        game_menu_map.add_child(teleport_name_label)
-    teleport_name_label.text = "%s   %d/%d" % [
-        String(destination.get("name", "BEACON")),
-        teleport_destination_index + 1, teleport_destinations.size()]
-
-func _draw_world_map() -> void:
-    _clear_map_canvas()
-    var bounds: Rect2i = world.get_map_bounds()
-    if bounds.size.x <= 0 or bounds.size.y <= 0:
-        return
-    var image_size := bounds.size * SOURCE_MAP_TILE_PIXELS
-    # Interiors are one small image; the overworld's picture is kept (map_raster).
-    var interior: Image = world.interior_map_image(bounds)
-    var map_view: TextureRect = map_raster.make_view() if interior == null else TextureRect.new()
-    if interior != null:
-        map_view.texture = ImageTexture.create_from_image(interior)
-        map_view.stretch_mode = TextureRect.STRETCH_SCALE
-    map_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    map_view.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-    map_view.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-    map_view.size = Vector2(image_size)
-    map_view_node = map_view
-    game_menu_map.add_child(map_view)
-
-    var marker := TextureRect.new()
-    marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    var player = world.get_node("Player")
-    var appearance_texture := _player_appearance_texture(false)
-    if appearance_texture != null:
-        var marker_frame := AtlasTexture.new()
-        marker_frame.atlas = appearance_texture
-        # The Java minimap draws the full 16x11 head/upper-body region. The
-        # old 8-pixel crop removed most hats and made the marker easy to hide.
-        marker_frame.region = Rect2(0.0, 0.0, 16.0, 11.0)
-        marker.texture = marker_frame
-    marker.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-    marker.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-    marker.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-    marker.z_index = 20
-    var player_cell: Vector2i = Vector2i(
-        int(floor(player.position.x / 16.0)),
-        int(floor(player.position.y / 16.0))
-    )
-    var marker_size := MAP_MARKER_DISPLAY_SIZE
-    var marker_center := Vector2(
-        float(player_cell.x - bounds.position.x) * SOURCE_MAP_TILE_PIXELS,
-        float(player_cell.y - bounds.position.y) * SOURCE_MAP_TILE_PIXELS
-    )
-    marker.position = Vector2(
-        clampf(
-            marker_center.x - marker_size.x * 0.5,
-            0.0,
-            maxf(0.0, float(image_size.x) - marker_size.x)
-        ),
-        clampf(
-            marker_center.y - marker_size.y * 0.5,
-            0.0,
-            maxf(0.0, float(image_size.y) - marker_size.y)
-        )
-    )
-    marker.size = marker_size
-    marker.pivot_offset = marker_size * 0.5
-    map_marker_node = marker
-    map_view.add_child(marker)
-    _add_map_other_players(map_view, bounds, image_size, marker_size)
-
-    # Separate respawn marker using the authored sleeping-bag sprite. Only show
-    # it after the player has actually set a respawn point.
-    var respawn: Vector2i = world.get("respawn_cell")
-    if respawn.x > -2147483648 and bounds.has_point(respawn):
-        var bag_marker := TextureRect.new()
-        bag_marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
-        bag_marker.texture = MAP_SLEEPING_BAG_TEXTURE
-        bag_marker.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-        bag_marker.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-        bag_marker.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-        bag_marker.z_index = 19
-        var bag_center := Vector2(
-            float(respawn.x - bounds.position.x) * SOURCE_MAP_TILE_PIXELS,
-            float(respawn.y - bounds.position.y) * SOURCE_MAP_TILE_PIXELS
-        )
-        bag_marker.size = MAP_SLEEPING_BAG_DISPLAY_SIZE
-        bag_marker.position = bag_center - bag_marker.size * 0.5
-        bag_marker.pivot_offset = bag_marker.size * 0.5
-        map_sleeping_bag_node = bag_marker
-        map_view.add_child(bag_marker)
-
-    # Open on the player's discovered area instead of the center of the full
-    # generated landmass, where the explored patch looked tiny.
-    var marker_local_center := marker.position + marker.size * 0.5
-    map_pan = (map_view.size * 0.5 - marker_local_center) * map_zoom
-    _update_map_transform()
-
-func _paint_source_map_tile(image: Image, destination: Vector2i,
-        spec: Dictionary, texture_images: Dictionary,
-        map_tile_previews: Dictionary) -> void:
-    if spec.is_empty():
-        return
-    var texture := spec.get("texture") as Texture2D
-    if texture == null:
-        return
-    var texture_id := texture.get_instance_id()
-    if not texture_images.has(texture_id):
-        texture_images[texture_id] = TexturePixels.of(texture)
-    var source: Image = texture_images[texture_id]
-    if source == null:
-        return
-    var region: Rect2 = spec.get("region", Rect2(0, 0, 16, 16))
-    var offset: Vector2 = spec.get("offset", Vector2.ZERO)
-    var preview_key := "%d|%s" % [texture_id, region]
-    if not map_tile_previews.has(preview_key):
-        var preview := source.get_region(Rect2i(region))
-        preview.resize(
-            maxi(1, roundi(region.size.x * SOURCE_MAP_TILE_PIXELS / 16.0)),
-            maxi(1, roundi(region.size.y * SOURCE_MAP_TILE_PIXELS / 16.0)),
-            Image.INTERPOLATE_NEAREST)
-        map_tile_previews[preview_key] = preview
-    var tile_image: Image = map_tile_previews[preview_key]
-    var map_offset := Vector2i((offset * SOURCE_MAP_TILE_PIXELS / 16.0).round())
-    image.blend_rect(tile_image,
-        Rect2i(Vector2i.ZERO, tile_image.get_size()),
-        destination + map_offset)
-
-func _update_map_transform() -> void:
-    if map_view_node == null or not is_instance_valid(map_view_node):
-        return
-    _clamp_map_pan()
-    map_view_node.scale = Vector2(map_zoom, map_zoom)
-    map_view_node.position = MAP_VIEWPORT_CENTER + map_pan - \
-        map_view_node.size * map_zoom * 0.5
-    if is_instance_valid(waypoint_ui):waypoint_ui.update_markers()
-    var inverse_zoom := 1.0 / maxf(map_zoom, 0.01)
-    if map_marker_node != null and is_instance_valid(map_marker_node):
-        # Terrain zoom must not turn the locator into a giant head.
-        map_marker_node.scale = Vector2(inverse_zoom, inverse_zoom)
-    for other in map_other_markers:
-        if is_instance_valid(other):
-            other.scale = Vector2(inverse_zoom, inverse_zoom)
-    if map_sleeping_bag_node != null and is_instance_valid(map_sleeping_bag_node):
-        map_sleeping_bag_node.scale = Vector2(inverse_zoom, inverse_zoom)
-
-func _set_map_zoom(value: float) -> void:
-    var old_zoom := maxf(map_zoom, 0.01)
-    map_zoom = clampf(value, 0.75 / SOURCE_MAP_TILE_PIXELS, 1.0)
-    # Preserve the local point currently under the screen center.
-    map_pan *= map_zoom / old_zoom
-    _update_map_transform()
-
-func _clamp_map_pan() -> void:
-    if map_view_node == null or not is_instance_valid(map_view_node):
-        return
-    var scaled_size := map_view_node.size * map_zoom
-    var limit := Vector2(
-        maxf(0.0, (scaled_size.x - MAP_VIEWPORT_SIZE.x) * 0.5),
-        maxf(0.0, (scaled_size.y - MAP_VIEWPORT_SIZE.y) * 0.5)
-    )
-    map_pan.x = clampf(map_pan.x, -limit.x, limit.x)
-    map_pan.y = clampf(map_pan.y, -limit.y, limit.y)
-
-func _clear_map_canvas() -> void:
-    teleport_name_label = null
-    for child in game_menu_map.get_children():
-        child.queue_free()
-    map_view_node = null
-    map_marker_node = null
-    map_sleeping_bag_node = null
-
-func _show_guide_menu() -> void:
-    guide_menu_open = true
-    guide_topic_open = false
-    guide_menu_index = 0
-    game_menu_box.visible = false
-    game_menu_detail.visible = false
-    guide_menu.visible = true
-    _refresh_guide_menu()
-
-func _refresh_guide_menu() -> void:
-    var window_start := maxi(0, guide_menu_index - 3)
-    window_start = mini(
-        window_start, maxi(0, GUIDE_TOPICS.size() - guide_menu_rows.size())
-    )
-    for row in range(guide_menu_rows.size()):
-        var topic_index := window_start + row
-        guide_menu_rows[row].text = (
-            String((GUIDE_TOPICS[topic_index] as Dictionary).get("name", ""))
-            if topic_index < GUIDE_TOPICS.size()
-            else ""
-        )
-    var visible_row := guide_menu_index - window_start
-    _align_menu_tick(guide_menu_cursor, guide_menu_rows[visible_row])
-    guide_menu_up_arrow.visible = window_start > 0
-    guide_menu_down_arrow.visible = (
-        window_start + guide_menu_rows.size() < GUIDE_TOPICS.size()
-    )
-
-func _show_selected_guide_topic() -> void:
-    var topic: Dictionary = GUIDE_TOPICS[guide_menu_index]
-    guide_menu.visible = false
-    guide_topic_open = true
-    game_menu_detail_open = true
-    game_menu_detail.visible = true
-    game_menu_detail_title.text = String(topic.get("name", "GUIDE"))
-    game_menu_detail_body.text = String(topic.get("body", ""))
-    game_menu_map.visible = false
-    game_menu_map_screen.visible = false
-
-func _open_save_confirmation() -> void:
-    save_confirm_open = true
-    save_confirm_index = 0
-    game_menu_box.visible = false
-    game_menu_detail.visible = false
-    save_confirm.visible = true
-    _update_save_confirm_cursor()
-
-func _close_save_confirmation() -> void:
-    save_confirm_open = false
-    save_confirm.visible = false
-    game_menu_box.visible = true
-
-func _update_save_confirm_cursor() -> void:
-    # Reference layout: YES on the left, NO on the right.
-    if save_confirm_index == 0:
-        save_confirm_cursor.position = Vector2(22.0, 57.0)
-    else:
-        save_confirm_cursor.position = Vector2(134.0, 57.0)
-    _align_menu_tick(save_confirm_cursor, save_confirm.get_node("Yes" if save_confirm_index == 0 else "No"))
-
-func _capture_game_save(version: int = 2, personal_only: bool = false) -> Dictionary:
-    var player = world.get_node("Player")
-    var world_name = world_edit.text.strip_edges()
-    if world_name.is_empty():
-        world_name = "PokeWilds"
-
-    return {
-        "version": version,
-        "world_seed": int(world.get("world_seed")),
-        "world_size": int(world.get("map_size_index")),
-        "world_name": world_name,
-        "player_name": player_model_name.text,
-        "player_name_custom": not custom_player_name.is_empty(),
-        "player_color": player_color_index,
-        "player_model": player_model_index,
-        "player_x": player.position.x,
-        "player_y": player.position.y,
-        "options": GameOptions.values.duplicate(),
-        "waypoints": map_waypoints.duplicate(true),
-        "pokedex": pokedex_progress.entries.duplicate(),
-        "pokedex_shiny": pokedex_progress.shiny_entries.duplicate(),
-        "caught_pokemon": caught_pokemon,
-        "pokemon_storage": pokemon_storage,
-        "preferred_storage_box": preferred_storage_box,
-        "inventory": inventory,
-        "source_key_items_initialized": true,
-        "egg_step_timer": egg_step_timer,
-        "friendship_step_timer": friendship_step_timer,
-        "next_party_ecology_id": next_party_ecology_id,
-        "adjacent_worlds": adjacent_worlds,
-        "world_grid_x": current_world_grid.x,
-        "world_grid_y": current_world_grid.y,
-        "crafting_state": preload("res://scripts/coop_world_snapshot.gd").capture_personal(world) if personal_only else world.get_crafting_save_state()
-    }
-
-
-func _save_current_game() -> void:
-    _sync_pokedex_owned()
-    if not saves.ensure_directory():
-        _close_save_confirmation()
-        _show_message("SAVE FAILED.")
-        return
-
-    var data = _capture_game_save()
-    if coop_game.active:
-        var saved_ok: bool = await coop_game.save_game(data)
-        _close_save_confirmation()
-        if saved_ok:
-            _close_game_menu();world.call("play_source_sound","save1");_show_message("GAME SAVED.")
-        else: _show_message("SAVE FAILED.")
-        return
-
-    var error: Error = await _write_single_player_save(data)
-    if error != OK:
-        _close_save_confirmation()
-        _show_message("SAVE FAILED.")
-        return
-
-    await shared_save_folder.export_files(self)
-    _close_save_confirmation()
-    _close_game_menu()
-    world.call("play_source_sound", "save1")
-    if shared_storage_error == OK:
-        _show_message("GAME SAVED.")
-    else:
-        _show_message("GAME SAVED, but the STORAGE BOXES could not be saved.")
-
-## The single-player save and what goes with it, for the SAVE menu and the save
-## before quitting. The save grows with play, so it is encoded and written on
-## save_thread from a copy of `data` (_save_snapshot); one save at a time.
-func _write_single_player_save(data: Dictionary) -> Error:
-    while save_thread != null:
-        await get_tree().process_frame
-    var save_path := _prepare_single_player_save(data)
-    if save_path.is_empty():
-        return ERR_CANT_CREATE
-    save_thread = Thread.new()
-    save_thread.start(WorldSaves.write_manual.bind(save_path, _save_snapshot(data)))
-    while save_thread.is_alive():
-        await get_tree().process_frame
-    var error: Error = save_thread.wait_to_finish()
-    save_thread = null
-    return _finish_single_player_save(data, save_path, error)
-
-## `data` (_capture_game_save) as the save thread may read it while the game
-## goes on. Copying all of it held the game ~35 ms on a long-played save, and
-## var_to_bytes was slower still; only what the game keeps changing is copied.
-## crafting_state is made for this save, and a neighbouring world's state is
-## replaced, never changed, when travelling: only the world played now may
-## share records with the game (restore_crafting_save_state keeps them).
-func _save_snapshot(data: Dictionary) -> Dictionary:
-    var snapshot := {}
-    var here := _world_grid_key(current_world_grid)
-    for key in data:
-        var value = data[key]
-        if key == "adjacent_worlds":
-            value = (value as Dictionary).duplicate()
-            if value.has(here): value[here] = value[here].duplicate(true)
-        elif key != "crafting_state" and (value is Dictionary or value is Array):
-            value = value.duplicate(true)
-        snapshot[key] = value
-    return snapshot
-
-## The save's path, once the folder is there and `data` carries the storage serial.
-func _prepare_single_player_save(data: Dictionary) -> String:
-    if not saves.ensure_directory():
-        return ""
-    data["storage_shared"] = true
-    data["storage_serial"] = shared_storage_serial + 1
-    return saves.path_for_world(String(data.world_name))
-
-func _finish_single_player_save(data: Dictionary, save_path: String, error: Error) -> Error:
-    if error != OK:
-        push_error("%s could not be saved (%d)." % [save_path, error])
-        return error
-    _write_shared_storage()
-    saves.write_index(String(data.world_name), save_path)
-    world_edit.text = String(data.world_name)
-    _save_setup()
-    return OK
-
-## iOS may end a suspended app without warning: autosave when it goes to the
-## background, whenever the SAVE menu could be opened, before returning (no
-## thread). Online worlds keep their own journal.
-func _save_on_pause() -> void:
-    if not started or generating or battle_active or edge_travel_busy or coop_game.active or \
-            (field_item_busy and not _sleeping_bag_active()):
-        return
-    _wait_for_save_thread()
-    _sync_pokedex_owned()
-    var data := _capture_game_save()
-    # The game's own save: the autosave, never the player's SAVE.
-    var save_path := _prepare_single_player_save(data)
-    if not save_path.is_empty():
-        save_path = WorldSaves.autosave_path(save_path)
-        _finish_single_player_save(data, save_path, WorldSaves.write(save_path, data))
-
-## A save being written lands before another starts or the game goes away.
-## The coroutine that started it still joins the thread.
-func _wait_for_save_thread() -> void:
-    while save_thread != null and save_thread.is_alive():
-        OS.delay_msec(1)
-
-## Writes the SHARED chest's contents after the save that goes with them, so
-## that what is stored always matches a saved party. If this write is lost,
-## that save's own copy is the newer one and is used when it is next loaded.
-func _write_shared_storage() -> void:
-    shared_storage_serial += 1
-    var held = pokemon_storage.get(SHARED_STORAGE_KEY, [])
-    shared_storage_error = preload("res://scripts/shared_storage.gd").write(
-        {SHARED_STORAGE_KEY: held if held is Array else []}, shared_storage_serial)
-    if shared_storage_error != OK:
-        push_error("Shared storage could not be written (%d)." % shared_storage_error)
-
-func _read_game_save(world_name: String):
-    return saves.find(world_name).get("data", {})
-
-func _restore_game_save(data) -> void:
-    GameOptions.restore_game_options(data.get("options", {}),String(data.get("world_name","")))
-    _apply_game_options()
-    map_waypoints = (data.get("waypoints", {}) as Dictionary).duplicate(true)
-    if not is_instance_valid(waypoint_ui):
-        waypoint_ui=preload("res://scripts/map_waypoints.gd").new();add_child(waypoint_ui);waypoint_ui.configure(self)
-    pokedex_progress.restore(data.get("pokedex", {}))
-    pokedex_progress.restore_shiny(data.get("pokedex_shiny", {}))
-    adjacent_worlds = (data.get("adjacent_worlds", {}) as Dictionary).duplicate(true)
-    current_world_grid = Vector2i(int(data.get("world_grid_x", 0)), int(data.get("world_grid_y", 0)))
-    world_edit.text = String(data.get("world_name", world_edit.text))
-    player_color_index = clampi(
-        int(data.get("player_color", player_color_index)),
-        0,
-        PLAYER_TEXTURES.size() - 1
-    )
-    player_model_index = clampi(
-        int(data.get("player_model", player_model_index)),
-        0,
-        _player_model_count() - 1
-    )
-    var saved_player_name := String(data.get("player_name", "")).strip_edges().left(24)
-    var was_custom := bool(data.get("player_name_custom", not saved_player_name.is_empty() and saved_player_name.to_upper() != PLAYER_MODEL_NAMES[player_model_index].to_upper()))
-    custom_player_name = saved_player_name if was_custom else ""
-    _apply_player_appearance()
-    _apply_world_player_textures()
-    egg_step_timer = clampi(
-        int(data.get("egg_step_timer", 0)),
-        0,
-        PokemonEcology.EGG_STEP_INTERVAL - 1
-    )
-    friendship_step_timer = clampi(
-        int(data.get("friendship_step_timer", 0)),
-        0,
-        PokemonEcology.FRIENDSHIP_STEP_INTERVAL - 1
-    )
-    next_party_ecology_id = maxi(
-        1, int(data.get("next_party_ecology_id", 1))
-    )
-
-    caught_pokemon.clear()
-    caught_species.clear()
-    var saved_party = data.get("caught_pokemon", [])
-    if typeof(saved_party) == TYPE_ARRAY:
-        for entry in saved_party:
-            if typeof(entry) == TYPE_DICTIONARY:
-                caught_pokemon.append(entry)
-                var species = String(entry.get("species", ""))
-                if not species.is_empty() and not caught_species.has(species):
-                    caught_species.append(species)
-
-    var saved_inventory = data.get("inventory", {})
-    if typeof(saved_inventory) == TYPE_DICTIONARY:
-        inventory = CraftingData.ensure_inventory(saved_inventory)
-    else:
-        inventory = CraftingData.ensure_inventory(STARTING_INVENTORY)
-    if not bool(data.get("source_key_items_initialized", false)):
-        inventory["SLEEPING BAG"] = maxi(1, int(inventory.get("SLEEPING BAG", 0)))
-        inventory["ESCAPE ROPE"] = maxi(1, int(inventory.get("ESCAPE ROPE", 0)))
-
-    preferred_storage_box = String(data.get("preferred_storage_box", ""))
-    var saved_storage = data.get("pokemon_storage", {})
-    pokemon_storage = saved_storage.duplicate(true) if typeof(saved_storage) == TYPE_DICTIONARY else {}
-
-    var crafting_state = data.get("crafting_state", {})
-    if typeof(crafting_state) == TYPE_DICTIONARY:
-        await world.restore_crafting_save_state(crafting_state)
-
-    var player = world.get_node("Player")
-    player.position = Vector2(
-        float(data.get("player_x", player.position.x)),
-        float(data.get("player_y", player.position.y))
-    )
-    if typeof(crafting_state) == TYPE_DICTIONARY:
-        player.position = world.migrate_source_interior_position(player.position, crafting_state)
-    if world.has_method("reveal_player_area"):
-        world.call("reveal_player_area")
-    _recover_hidden_party_overflow()
-    _sync_pokedex_owned()
-
-func _open_crafting_menu(station: String) -> void:
-    if craft_menu_open or game_menu_open or battle_active:
-        return
-    craft_station = station
-    craft_index = 0
-    craft_menu_open = true
-    crafting_panel.visible = true
-    world.set_gameplay_enabled(false)
-    touch_controls.set_game_active(true)
-    world.call("play_source_sound", "menu_open1")
-    _refresh_crafting_menu()
-
-func _close_crafting_menu() -> void:
-    craft_menu_open = false
-    crafting_panel.visible = false
-    world.set_gameplay_enabled(true)
-    touch_controls.set_game_active(true)
-
-func _find_party_builder_index() -> int:
-    for index in range(caught_pokemon.size()):
-        var raw_pokemon = caught_pokemon[index]
-        if typeof(raw_pokemon) != TYPE_DICTIONARY:
-            continue
-        var pokemon := raw_pokemon as Dictionary
-        if bool(pokemon.get("is_egg", false)) or int(pokemon.get("hp", 1)) <= 0:
-            continue
-        if FieldMoveData.field_moves_for(String(pokemon.get("species", "")), String(pokemon.get("form", ""))).has("BUILD"):
-            return index
-    return -1
-
-func _open_build_menu() -> void:
-    if build_menu_open or craft_menu_open or game_menu_open or battle_active or not started:
-        return
-    var builder_index := _find_party_builder_index()
-    if builder_index < 0:
-        _show_message("A FIGHTING-type Pokemon is needed to BUILD.")
-        return
-
-    _ensure_party_ecology_id(builder_index)
-    var builder := caught_pokemon[builder_index] as Dictionary
-    var active_move := String(world.get("active_field_move"))
-    var active_builder := String(world.get("active_field_species"))
-    var helper_missing := (world.get("field_helper_pokemon") as Dictionary).is_empty()
-    if active_move != "BUILD" or active_builder != String(builder.get("species", "")).to_lower() or helper_missing:
-        if not bool(world.set_active_field_move(builder, "BUILD")):
-            _show_message("There is no room for %s to BUILD here." % PokemonData.battle_display_name(String(builder.get("species", "POKEMON"))))
-            return
-
-    build_menu_index = int(world.call("get_build_selection_index"))
-    build_menu_open = true
-    build_panel.visible = true
-    message_panel.visible = false
-    world.call("set_build_preview_active", true)
-    world.set_gameplay_enabled(true)
-    touch_controls.set_game_active(true)
-    _refresh_build_menu()
-
-func _close_build_menu(stop_building: bool = true) -> void:
-    build_menu_open = false
-    build_panel.visible = false
-    world.call("set_build_preview_active", false)
-    if stop_building and String(world.get("active_field_move")) == "BUILD":
-        world.call("clear_active_field_move", true)
-    world.set_gameplay_enabled(not _field_ui_blocks_gameplay())
-    touch_controls.set_game_active(true)
-
-func _handle_build_menu_input(event: InputEvent) -> void:
-    var recipe_count := CraftingData.build_recipes().size()
-    if event.is_action_pressed("shoulder_left"):
-        if recipe_count > 0:
-            build_menu_index = wrapi(build_menu_index - 1, 0, recipe_count)
-            _refresh_build_menu()
-        get_viewport().set_input_as_handled()
-    elif event.is_action_pressed("shoulder_right"):
-        if recipe_count > 0:
-            build_menu_index = wrapi(build_menu_index + 1, 0, recipe_count)
-            _refresh_build_menu()
-        get_viewport().set_input_as_handled()
-    elif event.is_action_pressed("confirm"):
-        if recipe_count > 0:
-            world.call("set_build_selection_index", build_menu_index)
-            var recipe := CraftingData.build_recipes()[build_menu_index] as Dictionary
-            var build_name := String(recipe.get("name", ""))
-            var target: Vector2i = world.call("get_build_execution_cell")
-            _on_build_requested(build_name, target)
-            _refresh_build_menu()
-        get_viewport().set_input_as_handled()
-    elif event.is_action_pressed("cancel") or event.is_action_pressed("build_menu"):
-        _close_build_menu()
-        get_viewport().set_input_as_handled()
-
-func _refresh_build_menu() -> void:
-    var recipes := CraftingData.build_recipes()
-    if recipes.is_empty():
-        build_list.text = "NO BUILD RECIPES"
-        build_cost.text = ""
-        build_cursor.visible = false
-        return
-    build_menu_index = clampi(build_menu_index, 0, recipes.size() - 1)
-    _apply_build_hud_selection()
-    world.call("set_build_selection_index", build_menu_index)
-    world.call("set_build_preview_active", true)
-
-func _apply_build_hud_selection() -> void:
-    var recipes := CraftingData.build_recipes()
-    if recipes.is_empty():
-        return
-    build_menu_index = clampi(build_menu_index, 0, recipes.size() - 1)
-    var selected := recipes[build_menu_index] as Dictionary
-    var cost: Dictionary = selected.get("cost", {})
-    build_title.text = String(selected.get("display_name", selected.get("name", ""))).to_upper()
-    build_list.text = ""
-    build_cursor.visible = false
-    build_cost.text = _format_need_box(cost)
-    # Four lines for the three-material recipe still fit the matched 48px box.
-    var compact_cost := cost.size() > 2
-    build_cost.position.y = 6.0 if compact_cost else 8.0
-    build_cost.size.y = 36.0 if compact_cost else 34.0
-    build_cost.add_theme_constant_override("line_separation", -3 if compact_cost else 0)
-
-func _on_world_build_selection_changed(index: int) -> void:
-    if not build_menu_open or CraftingData.build_recipes().is_empty():
-        return
-    var normalized := wrapi(index, 0, CraftingData.build_recipes().size())
-    if normalized == build_menu_index:
-        return
-    build_menu_index = normalized
-    # World input can receive shoulder events first while gameplay stays live
-    # in BUILD mode.  Update the two visible boxes from that authoritative
-    # selection without sending the value back and causing a signal loop.
-    _apply_build_hud_selection()
-
-func _handle_crafting_input(event: InputEvent) -> void:
-    var recipes := CraftingData.recipes_for_station(craft_station)
-    if event.is_action_pressed("move_up"):
-        if not recipes.is_empty():
-            craft_index = wrapi(craft_index - 1, 0, recipes.size())
-            world.call("play_source_sound", "menu_switch2")
-            _refresh_crafting_menu()
-        get_viewport().set_input_as_handled()
-    elif event.is_action_pressed("move_down"):
-        if not recipes.is_empty():
-            craft_index = wrapi(craft_index + 1, 0, recipes.size())
-            world.call("play_source_sound", "menu_switch2")
-            _refresh_crafting_menu()
-        get_viewport().set_input_as_handled()
-    elif event.is_action_pressed("move_left") or event.is_action_pressed("shoulder_left"):
-        if not recipes.is_empty():
-            craft_index = wrapi(craft_index - 1, 0, recipes.size())
-            world.call("play_source_sound", "menu_switch2")
-            _refresh_crafting_menu()
-        get_viewport().set_input_as_handled()
-    elif event.is_action_pressed("move_right") or event.is_action_pressed("shoulder_right"):
-        if not recipes.is_empty():
-            craft_index = wrapi(craft_index + 1, 0, recipes.size())
-            world.call("play_source_sound", "menu_switch2")
-            _refresh_crafting_menu()
-        get_viewport().set_input_as_handled()
-    elif event.is_action_pressed("confirm"):
-        _craft_selected_recipe()
-        get_viewport().set_input_as_handled()
-    elif event.is_action_pressed("cancel") or event.is_action_pressed("start"):
-        _close_crafting_menu()
-        get_viewport().set_input_as_handled()
-
-func _refresh_crafting_menu() -> void:
-    var recipes := CraftingData.recipes_for_station(craft_station)
-    if recipes.is_empty():
-        crafting_title.text = "No recipes"
-        crafting_list.text = "NO RECIPES"
-        crafting_cost.text = ""
-        crafting_cursor.visible = false
-        return
-
-    craft_index = clampi(craft_index, 0, recipes.size() - 1)
-    var selected: Dictionary = recipes[craft_index]
-    crafting_title.text = String(selected.get("name", "")).capitalize()
-    crafting_list.text = ""
-    crafting_cursor.visible = false
-    var crafting_cost_data: Dictionary = selected.get("cost", {})
-    crafting_cost.text = _format_need_box(crafting_cost_data)
-
-func _format_need_box(cost: Dictionary) -> String:
-    var lines: Array[String] = ["NEED"]
-    for raw_name in cost.keys():
-        var item_name := String(raw_name).to_upper()
-        var required := int(cost[raw_name])
-        var enough := int(inventory.get(raw_name, 0)) >= required
-        if enough:
-            lines.append("%s x%d" % [item_name, required])
-        else:
-            lines.append("[font=res://assets/source_text_font_gray.fnt]%s x%d[/font]" % [
-                item_name, required])
-    return "\n".join(lines)
-
-func _craft_selected_recipe() -> void:
-    var recipes := CraftingData.recipes_for_station(craft_station)
-    if recipes.is_empty():
-        return
-    var recipe: Dictionary = recipes[craft_index]
-    var cost: Dictionary = recipe.get("cost", {})
-    var output := String(recipe.get("name", ""))
-    if not CraftingData.can_afford(inventory, cost):
-        world.call("play_source_sound", "error1")
-        _show_message("Not enough materials for %s." % output)
-        return
-    if (
-            bool(recipe.get("event", false))
-            and craft_station == "REGI FORGE"
-            and world.has_method("can_awaken_regi")
-            and not bool(world.call("can_awaken_regi", output))
-        ):
-        _show_message("That Regi has already answered the pedestal.")
-        return
-    CraftingData.consume(inventory, cost)
-    world.call("play_source_sound", "click1")
-    if bool(recipe.get("event", false)):
-        if craft_station == "REGI FORGE":
-            if world.complete_regi_forge(output):
-                _close_crafting_menu()
-            else:
-                _show_message("The pedestal did not respond.")
-        elif craft_station == "FOSSIL REVIVER":
-            _close_crafting_menu()
-            _revive_fossil(output)
-        else:
-            _show_message("%s awakened!" % output)
-    else:
-        CraftingData.grant(inventory, output, 1)
-        _show_message("Crafted %s." % output)
-    if craft_menu_open:
-        _refresh_crafting_menu()
-
-func _revive_fossil(fossil_name: String) -> void:
-    var species := String(SourceEventData.FOSSIL_SPECIES.get(fossil_name, ""))
-    if species.is_empty():
-        _show_message("The machine could not read that fossil.")
-        return
-    var level_total := 0
-    var level_count := 0
-    for raw_pokemon in caught_pokemon:
-        if typeof(raw_pokemon) != TYPE_DICTIONARY:
-            continue
-        var pokemon := raw_pokemon as Dictionary
-        if bool(pokemon.get("is_egg", false)):
-            continue
-        level_total += maxi(1, int(pokemon.get("level", 1)))
-        level_count += 1
-    var average_level := 5 if level_count == 0 else int(floor(float(level_total) / float(level_count)))
-    var revived_level := clampi(average_level - 3 + battle_rng.randi_range(0, 2), 1, 50)
-    var revived := BattleEngine.make_pokemon(species, revived_level)
-    if String(world.get("active_field_move")) == "CHARM":
-        var destination := _route_received_pokemon(revived)
-        if not caught_species.has(species):
-            caught_species.append(species)
-        var notice := _received_pokemon_notice(revived, destination)
-        _show_message("%s was revived from the %s!" % [PokemonData.battle_display_name(species), fossil_name] if notice.is_empty() else notice)
-        return
-    _show_message("%s was revived... and attacked!" % PokemonData.battle_display_name(species))
-    _start_battle_context({
-        "id": "fossil_%s" % species,
-        "kind": "fossil",
-        "intro": "%s was revived... and attacked!" % PokemonData.battle_display_name(species),
-        "can_run": true,
-        "can_catch": true,
-        "clear_on_capture": false,
-        "clear_on_defeat": false,
-        "party": [{"species": species, "level": revived_level}]
-    })
-
-func _fit_compact_dig_label(label: Label) -> void:
-    var compact := label.get_line_count() > 3
-    label.add_theme_constant_override("line_spacing", -3 if compact else 0)
-    label.position.y = 6.0 if compact else 8.0
-    label.size.y = 36.0 if compact else 34.0
-
-func _on_dig_reward_collected(items: Dictionary, grant_items: bool = true) -> void:
-    if is_instance_valid(coop_game) and coop_game.active and coop_game.building.collect(items):return
-    if world.get_meta("ball_action_reward", false) or world.active_field_move != "DIG":
-        _on_material_bundle_collected(items,grant_items)
-        return
-    var lines: Array[String] = []
-    for raw_name in items:
-        var item := ItemData.normalize_name(String(raw_name))
-        var amount := int(items[raw_name])
-        if grant_items:CraftingData.grant(inventory, item, amount)
-        lines.append("Got x%d %s" % [amount, item])
-    dig_reward_label.text = "\n".join(lines)
-    _fit_compact_dig_label(dig_reward_label)
-    dig_reward_seconds = 1.8
-    _update_dig_hud_and_minimap(0.0)
-
-func _on_material_collected(item_name: String, amount: int) -> void:
-    if is_instance_valid(coop_game) and coop_game.active and coop_game.building.collect({ItemData.normalize_name(item_name):amount}):return
-    var normalized := ItemData.normalize_name(item_name)
-    CraftingData.grant(inventory, normalized, amount)
-    _show_acquired_resource(normalized, amount)
-
-func _on_material_bundle_collected(items: Dictionary, grant_items: bool = true) -> void:
-    if is_instance_valid(coop_game) and coop_game.active and coop_game.building.collect(items):return
-    var lines: Array[String] = ["GOT"]
-    for raw_name in items.keys():
-        var normalized := ItemData.normalize_name(String(raw_name))
-        var amount := maxi(1, int(items[raw_name]))
-        if grant_items:CraftingData.grant(inventory, normalized, amount)
-        lines.append("x%d %s" % [amount, normalized])
-    resource_popup_name = ""
-    resource_popup_amount = 0
-    resource_popup_text.text = "\n".join(lines)
-    resource_popup.visible = true
-    resource_popup_timer = 0.9
-
-func _on_paint_requested(picture_index: int, cell: Vector2i) -> void:
-    if int(inventory.get("THIN PAPER", 0)) <= 0:
-        _show_message("PAINT needs 1 THIN PAPER.")
-        return
-    if is_instance_valid(coop_game) and coop_game.active:
-        coop_game.building.paint(picture_index,cell)
-        return
-    if world.has_method("apply_paint") and bool(world.call("apply_paint", picture_index, cell)):
-        inventory["THIN PAPER"] = int(inventory.get("THIN PAPER", 0)) - 1
-
-func _on_build_requested(build_name: String, cell: Vector2i) -> void:
-    var recipe := CraftingData.build_recipe(build_name)
-    if recipe.is_empty():
-        return
-    var cost: Dictionary = recipe.get("cost", {})
-    if not CraftingData.can_afford(inventory, cost):
-        _show_message("Not enough materials for %s." % build_name)
-        return
-    if is_instance_valid(coop_game) and coop_game.active:
-        coop_game.building.build(build_name,cell)
-        return
-    if world.place_structure(build_name, cell):
-        CraftingData.consume(inventory, cost)
-
-func _on_dig_requested(choice: String, cell: Vector2i, material: String) -> void:
-    if int(inventory.get(material, 0)) <= 0:
-        _show_message("DIG needs %s to place %s." % [material, choice])
-        return
-    if is_instance_valid(coop_game) and coop_game.active and not coop_game.building.collecting:
-        coop_game.building.dig(cell,choice)
-        return
-    if world.has_method("apply_dig_choice"):
-        if bool(world.call("apply_dig_choice", cell, choice)):
-            if is_instance_valid(coop_game) and coop_game.active and coop_game.building.collecting:coop_game.building.field_choice=choice
-            else:inventory[material] = int(inventory.get(material, 0)) - 1
-
-func _on_build_refund_requested(refund: Dictionary, grant_items: bool = true) -> void:
-    if refund.is_empty():
-        return
-    if refund.size() == 1:
-        var raw_name = refund.keys()[0]
-        var normalized := ItemData.normalize_name(String(raw_name))
-        var amount := maxi(1, int(refund[raw_name]))
-        if grant_items:CraftingData.grant(inventory, normalized, amount)
-        _show_acquired_resource(normalized, amount)
-        return
-    var lines: Array[String] = ["GOT"]
-    for raw_name in refund.keys():
-        var normalized := ItemData.normalize_name(String(raw_name))
-        var amount := maxi(1, int(refund[raw_name]))
-        if grant_items:CraftingData.grant(inventory, normalized, amount)
-        lines.append("x%d %s" % [amount, normalized])
-    resource_popup_name = ""
-    resource_popup_amount = 0
-    resource_popup_text.text = "\n".join(lines)
-    resource_popup.visible = true
-    resource_popup_timer = 0.9
-
-func _on_structure_removal_requested(cell: Vector2i, move: String) -> void:
-    if move == "CUT" and not String(world.house_wall_decoration_at(cell)).is_empty():
-        if is_instance_valid(coop_game) and coop_game.active:
-            coop_game.building.remove_decoration(cell)
-        else:
-            world.remove_house_wall_decoration(cell, true)
-        return
-    var online: bool = is_instance_valid(coop_game) and coop_game.active
-    var wipe_public := false
-    if world.built_structures.has(cell):
-        var build_name := String((world.built_structures[cell] as Dictionary).get("name", ""))
-        # A STORAGE BOX can be cut with Pokemon in it while another one stands
-        # in this world: its Pokemon stay reachable from the others. The last
-        # one takes every stored Pokemon with it, so only the host may cut it,
-        # and only after saying yes twice to prompts that start on NO.
-        # The box itself, or boxes inside a house that go with the piece of its
-        # outside being cut: the same questions either way.
-        var boxes_going := 1 if build_name == "STORAGE BOX" else 0
-        for inside_cell in world.house_interior_cells_behind(cell):
-            if String(world.built_structures.get(inside_cell, {}).get("name", "")) == "STORAGE BOX":
-                boxes_going += 1
-        if boxes_going > 0 and _public_box_count() - boxes_going < 1:
-            if online and not coop_game.hosting:
-                _show_message("Sorry, a guest cannot cut the last public box in a world.")
-                return
-            if not await _ask_yes_no_starting_on_no("Last STORAGE BOX in this world!\nCut it and lose stored POKEMON?"):
-                return
-            if not await _ask_yes_no_starting_on_no("Are you sure? Stored POKEMON\ncannot be brought back."):
-                return
-            if not world.built_structures.has(cell):
-                return
-            wipe_public = true
-    if online:
-        coop_game.building.remove(cell,move,wipe_public)
-        return
-    if wipe_public:
-        # PRIVATE CHEST contents belong to the player, not to this world.
-        var private_keys: Array[String] = []
-        for built_cell in world.built_structures:
-            if String(world.built_structures[built_cell].get("name", "")) == "PRIVATE CHEST":
-                private_keys.append(_world_storage_key(world._cell_key(built_cell),current_world_grid))
-        for key in pokemon_storage.keys():
-            if not String(key) in private_keys and String(key) != SHARED_STORAGE_KEY: pokemon_storage.erase(key)
-    if world.has_method("remove_structure_with_field_move"):
-        world.call("remove_structure_with_field_move", cell, move)
-
-## How many public STORAGE BOXES stand in this world.
-func _public_box_count() -> int:
-    # Counted from the boxes that are actually built. Online the host makes
-    # the same count over the whole world and has the last word.
-    var count := 0
-    for cell in world.built_structures:
-        if String(world.built_structures[cell].get("name", "")) == "STORAGE BOX": count += 1
-    # Neighbouring sections belong to a single-player world. Online the host
-    # counts the whole world itself.
-    if is_instance_valid(coop_game) and coop_game.active: return count
-    for grid_key in adjacent_worlds:
-        if grid_key == _world_grid_key(current_world_grid): continue
-        for piece in adjacent_worlds[grid_key].get("state",{}).get("structures",[]):
-            if piece.get("name","") == "STORAGE BOX": count += 1
-    return count
-
-## A yes/no question whose cursor starts on NO, so that pressing A through it
-## answers no.
-func _ask_yes_no_starting_on_no(prompt: String) -> bool:
-    world.set_gameplay_enabled(false)
-    # The question is only sent button presses while this is set; without it
-    # the question appeared and then answered to nothing.
-    var was_active := progression_active
-    progression_active = true
-    _show_progression_yes_no(prompt)
-    progression_choice_index = 1
-    _refresh_progression_yes_no()
-    var result = await progression_choice_made
-    _hide_progression_overlay()
-    progression_active = was_active
-    world.set_gameplay_enabled(not _field_ui_blocks_gameplay(build_menu_open))
-    return int(result) == 1
-
-func _world_storage_key(cell_key: String, grid: Vector2i) -> String:
-    var qualified := _world_grid_key(grid) + "|" + cell_key
-    # Preserve legacy boxes and their contents; never discard unqualified saves.
-    if not pokemon_storage.has(qualified) and pokemon_storage.has(cell_key): return cell_key
-    return qualified
-
-func _built_storage_keys() -> Array[String]:
-    var keys: Array[String] = []
-    for cell in world.built_structures:
-        if String(world.built_structures[cell].get("name", "")) == "STORAGE BOX":
-            var key := _world_storage_key(world._cell_key(cell),current_world_grid)
-            if not key in keys: keys.append(key)
-    for grid_key in adjacent_worlds:
-        if grid_key == _world_grid_key(current_world_grid): continue
-        var pieces = String(grid_key).split(",")
-        if pieces.size()!=2: continue
-        var grid := Vector2i(int(pieces[0]),int(pieces[1]))
-        for piece in adjacent_worlds[grid_key].get("state",{}).get("structures",[]):
-            if piece.get("name","")!="STORAGE BOX": continue
-            var key := _world_storage_key(world._cell_key(Vector2i(int(piece.x),int(piece.y))),grid)
-            if not key in keys: keys.append(key)
-    # Previously saved contents stay reachable even if the physical box was cut.
-    for key in pokemon_storage:
-        if String(key) != SHARED_STORAGE_KEY and not String(key) in keys: keys.append(String(key))
-    keys.sort()
-    if preferred_storage_box in keys:
-        keys.erase(preferred_storage_box)
-        keys.push_front(preferred_storage_box)
-    return keys
+## game_menu.gd under its old names, for the scripts and tests that call them on main.
+func _open_game_menu() -> void: start_menu.open_game_menu()
+func _close_game_menu() -> void: start_menu.close_game_menu()
+func _update_game_menu_cursor() -> void: start_menu.update_game_menu_cursor()
+func _activate_game_menu_option() -> void: start_menu.activate_game_menu_option()
+func _update_save_confirm_cursor() -> void: start_menu.update_save_confirm_cursor()
+func _update_quit_prompt_cursor() -> void: start_menu.update_quit_prompt_cursor()
+
+## game_saving.gd under its old names, for the scripts and tests that call them on main.
+func _capture_game_save(version: int = 2, personal_only: bool = false) -> Dictionary: return saving.capture_game_save(version, personal_only)
+func _save_current_game() -> void: await saving.save_current_game()
+
+## crafting_menu.gd under its old names, for the scripts and tests that call them on main.
+func _open_build_menu() -> void: crafting_menu.open_build_menu()
+func _close_build_menu(stop_building: bool = true) -> void: crafting_menu.close_build_menu(stop_building)
+
+## field_actions.gd under its old names, for the scripts and tests that call them on main.
+func _on_dig_reward_collected(items: Dictionary, grant_items: bool = true) -> void: field_actions.on_dig_reward_collected(items, grant_items)
+func _on_dig_requested(choice: String, cell: Vector2i, material: String) -> void: field_actions.on_dig_requested(choice, cell, material)
+func _on_build_refund_requested(refund: Dictionary, grant_items: bool = true) -> void: field_actions.on_build_refund_requested(refund, grant_items)
 
 func _route_received_pokemon(pokemon: Dictionary, allow_party: bool = true) -> String:
     # Every acquisition shares this boundary; the visible party has six slots.
@@ -10344,7 +5086,7 @@ func _route_received_pokemon(pokemon: Dictionary, allow_party: bool = true) -> S
         pokedex_progress.mark(pokemon, true)
         return "PARTY"
     if is_instance_valid(coop_game) and coop_game.active:return coop_game.storage.route_received(pokemon)
-    for key in _built_storage_keys():
+    for key in storage.built_storage_keys():
         var box: Array = pokemon_storage.get(key, [])
         if POKEMON_STORAGE_CAPACITY > 0 and box.size() >= POKEMON_STORAGE_CAPACITY:
             continue
@@ -10381,7 +5123,7 @@ func _recover_hidden_party_overflow() -> void:
 func _can_receive_overworld_pokemon() -> bool:
     if caught_pokemon.size() < 6:
         return true
-    for key in _built_storage_keys():
+    for key in storage.built_storage_keys():
         if POKEMON_STORAGE_CAPACITY <= 0 or (pokemon_storage.get(key, []) as Array).size() < POKEMON_STORAGE_CAPACITY:
             return true
     return false
@@ -10404,7 +5146,7 @@ func _on_pokemon_recalled(pokemon_data: Dictionary) -> void:
         caught_species.append(species)
     world.play_source_sound("seed1")
     var notice := _received_pokemon_notice(pokemon_data, destination)
-    if not notice.is_empty(): _show_message(notice)
+    if not notice.is_empty(): dialogs.show_message(notice)
 
 func _on_wild_pokemon_prompt_requested(
         wild_id: int, species: String, kind: String
@@ -10512,7 +5254,7 @@ func _recruit_friendly_wild(wild_id: int, species: String) -> void:
         return
     if not _can_receive_overworld_pokemon():
         _close_wild_pokemon_prompt()
-        _show_message("Your party and storage are full.")
+        dialogs.show_message("Your party and storage are full.")
         return
     # Online the host keeps the record of every wild Pokemon. It is claimed and
     # then reported as taken, exactly as a capture in battle is. Taking it from
@@ -10527,7 +5269,7 @@ func _recruit_friendly_wild(wild_id: int, species: String) -> void:
         if not await coop_game.wild.reserve(wild_id):
             if coop_game.active and not battle_active:
                 world.set_gameplay_enabled(not _field_ui_blocks_gameplay(build_menu_open))
-                _show_message(coop_game.population.refusal(
+                dialogs.show_message(coop_game.population.refusal(
                     coop_game.wild.refused if not coop_game.wild.refused.is_empty() else "too_late", species.to_upper()))
             return
         coop_game.wild.applying = true
@@ -10543,7 +5285,7 @@ func _recruit_friendly_wild(wild_id: int, species: String) -> void:
             if coop_game.active:
                 world.set_gameplay_enabled(not _field_ui_blocks_gameplay(build_menu_open))
         _close_wild_pokemon_prompt()
-        _show_message("Too late! %s is no longer here." % species.to_upper())
+        dialogs.show_message("Too late! %s is no longer here." % species.to_upper())
         return
     var source := (record as Dictionary).duplicate(true)
     var nested_source = source.get("source_record", {})
@@ -10573,7 +5315,7 @@ func _recruit_friendly_wild(wild_id: int, species: String) -> void:
     _close_wild_pokemon_prompt()
     world.play_source_sound("seed1")
     var notice := _received_pokemon_notice(pokemon, destination)
-    if not notice.is_empty(): _show_message(notice)
+    if not notice.is_empty(): dialogs.show_message(notice)
 
 func _handle_wild_pokemon_prompt_input(event: InputEvent) -> void:
     if wild_pokemon_prompt_kind in ["PROVOKE", "PROVOKE_WARNING", "PROVOKED"]:
@@ -10633,7 +5375,7 @@ func _handle_wild_pokemon_prompt_input(event: InputEvent) -> void:
                 if data.has("species") or (is_instance_valid(coop_game) and coop_game.active):
                     world._recall_deployed_pokemon(cell, data)
                 else:
-                    _show_message("It went away.")
+                    dialogs.show_message("It went away.")
             else:
                 _recruit_friendly_wild(chosen_id, chosen_species)
         else:
@@ -10747,7 +5489,7 @@ func _on_egg_collected(species: String) -> void:
         for key in ["dropped_party_egg", "house_door", "house_floor", "x", "y"]: egg_record.erase(key)
         var destination := _route_received_pokemon(egg_record)
         world.play_source_sound("Berry_Get")
-        _show_message("You picked up the EGG." if destination == "PARTY" else "The EGG was sent to storage.")
+        dialogs.show_message("You picked up the EGG." if destination == "PARTY" else "The EGG was sent to storage.")
         return
     if egg_record.is_empty():
         egg_record = {
@@ -10777,7 +5519,7 @@ func _on_egg_collected(species: String) -> void:
     var destination := _route_received_pokemon(egg)
     world.play_source_sound("Berry_Get")
     var notice := _received_pokemon_notice(egg, destination)
-    _show_message("%s received an EGG." % player_model_name.text.strip_edges() if notice.is_empty() else notice)
+    dialogs.show_message("%s received an EGG." % player_model_name.text.strip_edges() if notice.is_empty() else notice)
 
 func _on_player_stepped() -> void:
     egg_step_timer = wrapi(
@@ -10834,7 +5576,7 @@ func _on_player_stepped() -> void:
         var hatched := _pokemon_from_egg_record(entry, species, level)
         hatched["happiness"] = 100
         hatched["friendship"] = 100
-        await _run_egg_hatch_sequence(index, hatched)
+        await progression.run_egg_hatch_sequence(index, hatched)
         # PlayerStanding returns after the first ready egg; another ready egg
         # is handled on a later step instead of merging hatch sequences.
         return
@@ -10929,705 +5671,9 @@ func _pokemon_from_egg_record(
     pokemon["toxic_counter"] = 0
     return pokemon
 
-func _create_sign_editor() -> void:
-    sign_dialog = ConfirmationDialog.new()
-    var sign_theme := Theme.new()
-    sign_theme.default_font = JOHTO_FONT
-    sign_theme.default_font_size = 10
-    sign_dialog.theme = sign_theme
-    sign_dialog.title = "Write on the sign"
-    sign_dialog.exclusive = true
-    sign_dialog.ok_button_text = "WRITE"
-    sign_edit = LineEdit.new()
-    sign_edit.placeholder_text = "Sign text"
-    sign_edit.max_length = 64
-    sign_edit.position = Vector2(12, 18)
-    sign_edit.size = Vector2(236, 30)
-    sign_dialog.add_child(sign_edit)
-    $UI.add_child(sign_dialog)
-    sign_dialog.confirmed.connect(_confirm_sign_text)
+## touch_config_panel.gd under its old names, for the scripts and tests that call them on main.
+func _open_touch_config(from_options: bool = false) -> void: touch_config_panel.open_touch_config(from_options)
 
-func _confirm_sign_text() -> void:
-    if sign_edit_mode == "BEACON":
-        if world.has_method("set_structure_beacon_label"):
-            world.call("set_structure_beacon_label", sign_edit_cell, sign_edit.text)
-        return
-    if world.has_method("set_structure_sign_text"):
-        world.call("set_structure_sign_text", sign_edit_cell, sign_edit.text)
-
-func _storage_entry_text(pokemon: Dictionary) -> String:
-    if bool(pokemon.get("is_egg", false)):
-        return "EGG"
-    var display := PokemonState.display_name(pokemon).replace("_", " ").to_upper()
-    return "%s  L%d" % [display, int(pokemon.get("level", 1))]
-
-
-func _open_storage_menu(box_key: String) -> void:
-    if is_instance_valid(coop_game) and coop_game.active:
-        # Preparing has the host pack and save the whole area and send every
-        # shared record back, which took seconds and stalled the host. It is
-        # only needed for a box the shared world does not know yet.
-        if not coop_game.storage.known(_world_storage_key(box_key,current_world_grid)):
-            if not await coop_game.storage.prepare():_show_message("ONLINE STORAGE COULD NOT LOAD.");return
-    var shared_chest: bool = not (is_instance_valid(coop_game) and coop_game.active) and \
-        String(world.built_structures.get(world._cell_from_key(box_key), {}).get("name", "")) == "PRIVATE CHEST"
-    box_key = SHARED_STORAGE_KEY if shared_chest else _world_storage_key(box_key,current_world_grid)
-    storage_pooled = false
-    storage_box_key = box_key
-    if is_instance_valid(coop_game) and coop_game.active:coop_game.storage.refresh()
-    # A Pokemon caught with a full party goes to the last STORAGE BOX used,
-    # never to the SHARED chest.
-    if not shared_chest: preferred_storage_box = box_key
-    if not pokemon_storage.has(storage_box_key):
-        pokemon_storage[storage_box_key] = []
-    storage_column = 0
-    storage_index = 0
-    storage_box_window_start = 0
-    storage_mode = "LIST"
-    storage_switch_from = -1
-    storage_menu_open = true
-    storage_menu.visible = true
-    message_panel.visible = false
-    world.set_gameplay_enabled(false)
-    touch_controls.set_game_active(true)
-    _refresh_storage_menu()
-
-
-func _open_pooled_storage_menu() -> void:
-    # Opening the worldwide view must not change the last physical box used.
-    storage_pooled = true
-    storage_box_key = ""
-    if is_instance_valid(coop_game) and coop_game.active: coop_game.storage.refresh()
-    storage_column = 1
-    storage_index = 0
-    storage_box_window_start = 0
-    storage_mode = "LIST"
-    storage_switch_from = -1
-    storage_menu_open = true
-    game_menu_box.hide()
-    storage_menu.show()
-    message_panel.hide()
-    world.set_gameplay_enabled(false)
-    _refresh_storage_menu()
-
-func _storage_pool_locations() -> Array:
-    var locations: Array = []
-    var keys: Array = pokemon_storage.keys()
-    keys.sort()
-    for key in keys:
-        # The SHARED chest is opened only at a SHARED chest.
-        if String(key) == SHARED_STORAGE_KEY and not (is_instance_valid(coop_game) and coop_game.active): continue
-        for index in range(pokemon_storage[key].size()):
-            locations.append([key, index])
-    if is_instance_valid(coop_game) and coop_game.active and not coop_game.storage.sort_mode.is_empty():
-        locations.sort_custom(func(a,b):return coop_game.storage.sort_less(pokemon_storage[a[0]][a[1]],pokemon_storage[b[0]][b[1]]))
-    return locations
-
-func _storage_deposit_key() -> String:
-    if not storage_pooled:
-        return storage_box_key
-    if not preferred_storage_box.is_empty() and pokemon_storage.has(preferred_storage_box):
-        return preferred_storage_box
-    var keys := _built_storage_keys()
-    if not keys.is_empty():
-        return keys[0]
-    var saved: Array = pokemon_storage.keys()
-    saved.sort()
-    return String(saved[0]) if not saved.is_empty() else ""
-
-func _storage_entries() -> Array:
-    if storage_column == 0:
-        return caught_pokemon
-    if not storage_pooled:
-        return pokemon_storage.get(storage_box_key, [])
-    var entries: Array = []
-    for location in _storage_pool_locations():
-        entries.append(pokemon_storage[location[0]][location[1]])
-    return entries
-
-func _storage_swap(first: int, second: int) -> void:
-    if is_instance_valid(coop_game) and coop_game.active and storage_column==1:
-        await coop_game.storage.swap(second)
-        return
-    if storage_pooled and storage_column == 1:
-        var locations := _storage_pool_locations()
-        var a: Array = locations[first]
-        var b: Array = locations[second]
-        var previous = pokemon_storage[a[0]][a[1]]
-        pokemon_storage[a[0]][a[1]] = pokemon_storage[b[0]][b[1]]
-        pokemon_storage[b[0]][b[1]] = previous
-    else:
-        var entries := _storage_entries()
-        var previous = entries[first]
-        entries[first] = entries[second]
-        entries[second] = previous
-
-func _refresh_storage_menu() -> void:
-    if not storage_menu_open:
-        return
-    var entries := _storage_entries()
-    storage_index = clampi(storage_index, 0, maxi(0, entries.size() - 1))
-    storage_box_window_start = clampi(storage_box_window_start,
-        maxi(0, storage_index - 5), storage_index)
-    _refresh_party_list_rows(storage_rows,
-        entries.slice(storage_box_window_start, storage_box_window_start + 6),
-        storage_index - storage_box_window_start)
-    for row_index in range(storage_rows.size()):
-        var row: Dictionary = storage_rows[row_index]
-        var skill_label: Label = row.field_moves
-        var entry_index := storage_box_window_start + row_index
-        skill_label.text = ""
-        if entry_index == storage_index and entry_index < entries.size() and not entries[entry_index].get("is_egg",false):
-            var pokemon: Dictionary = entries[entry_index]
-            skill_label.text = " / ".join(FieldMoveData.field_moves_for(String(pokemon.species),String(pokemon.get("form",""))))
-            var width := skill_label.get_theme_font("font").get_string_size(skill_label.text,HORIZONTAL_ALIGNMENT_LEFT,-1,8).x
-            skill_label.scale.x = minf(1.0,132.0/maxf(1.0,width))
-        row.status.visible = skill_label.text.is_empty()
-    storage_prompt.text = "Your POKéMON" if storage_column == 0 else "Stored POKéMON"
-    storage_footer_arrow.position.x = 292 if storage_column == 0 else 18
-    storage_footer_arrow.flip_h = storage_column == 1
-    if storage_mode == "SWITCH":
-        storage_prompt.text = "Switch with which POKéMON?"
-    storage_actions.visible = storage_mode == "ACTION"
-    var actions := _storage_actions_list()
-    storage_action_index=clampi(storage_action_index,0,actions.size()-1)
-    for index in range(storage_action_labels.size()):
-        storage_action_labels[index].visible=index<actions.size()
-        if index>=actions.size():continue
-        storage_action_labels[index].position.y=9+index*(17 if actions.size()==7 else 20)
-        storage_action_labels[index].text = actions[index]
-    storage_choice_panel.visible = storage_mode == "CONFIRM"
-    storage_choice_arrow.visible = storage_mode == "CONFIRM"
-    storage_choice_label.visible = storage_mode == "CONFIRM"
-    _align_menu_tick(storage_choice_arrow, storage_choice_label if storage_yes else storage_no_label)
-    _align_menu_tick(storage_cursor, storage_action_labels[storage_action_index])
-    storage_dialog.visible = storage_mode in ["CONFIRM", "NOTICE", "NICKNAME"]
-    storage_nickname.visible = storage_mode == "NICKNAME"
-    if storage_mode == "NICKNAME":
-        storage_dialog_text.text = "Press enter to set"
-    elif storage_mode == "CONFIRM":
-        var question := "Store POKéMON of this type?" if storage_pending=="STORE TYPE" else "Move to storage?" if storage_pending == "STORE" else "Add to your party?"
-        if storage_pending == "RELEASE":
-            question = "Release %s to the wild? This can't be undone!" % (PokemonState.display_name(entries[storage_index]) if storage_index<entries.size() else "this POKéMON")
-        elif storage_pending == "NICKNAME":
-            question = "Keep changes?"
-        storage_dialog_text.text = question
-        storage_choice_label.text = "YES"
-
-func _storage_notice(text: String) -> void:
-    storage_mode = "NOTICE"
-    storage_dialog_text.text = text
-    world.call("play_source_sound", "error1")
-    _refresh_storage_menu()
-
-func _storage_is_active(pokemon: Dictionary) -> bool:
-    var active: Dictionary = world.get("active_field_pokemon")
-    if active.is_empty():
-        return false
-    var identity := String(active.get("party_ecology_id", ""))
-    if not identity.is_empty():
-        return identity == String(pokemon.get("party_ecology_id", ""))
-    if int(active.get("ecology_id", -1)) >= 0:
-        return int(active.ecology_id) == int(pokemon.get("ecology_id", -2))
-    return is_same(active, pokemon)
-
-func _storage_actions_list()->Array:
-    var actions=["STORE" if storage_column==0 else "TAKE","RELEASE","NICKNAME","STATS","SWITCH","CANCEL"]
-    if is_instance_valid(coop_game) and coop_game.active and storage_column==0:actions.insert(1,"STORE TYPE")
-    return actions
-
-func _storage_choose_action() -> void:
-    var entries := _storage_entries()
-    if entries.is_empty():
-        return
-    var pokemon: Dictionary = entries[storage_index]
-    if is_instance_valid(coop_game) and coop_game.active:coop_game.storage.select()
-    storage_pending = _storage_actions_list()[storage_action_index]
-    if storage_pending == "CANCEL":
-        storage_mode = "LIST"
-    elif storage_pending == "STATS":
-        _open_pokemon_stats(pokemon, "STORAGE")
-    elif storage_pending == "SWITCH":
-        storage_switch_from = storage_index
-        storage_mode = "SWITCH"
-    elif storage_pending == "NICKNAME":
-        storage_mode = "NICKNAME"
-        storage_nickname.text = PokemonState.display_name(pokemon)
-        storage_nickname.call_deferred("grab_focus")
-    else:
-        if storage_column == 0 and storage_pending in ["STORE", "RELEASE"] and _storage_is_active(pokemon) and String(world.active_field_move) in ["SURF", "FLY"]:
-            _storage_notice("Stop the field move before moving this POKéMON.")
-            return
-        if storage_pending in ["STORE","STORE TYPE"]:
-            if _storage_deposit_key().is_empty():
-                _storage_notice("Build a STORAGE BOX first.")
-                return
-            var healthy := false
-            for index in range(entries.size()):
-                if index != storage_index and not bool(entries[index].get("is_egg", false)) and int(entries[index].get("hp", 0)) > 0:
-                    healthy = true
-            if not healthy:
-                _storage_notice("You need at least 1 healthy POKéMON in your party.")
-                return
-            if _storage_is_active(pokemon) and String(world.get("active_field_move")) == "SURF":
-                _storage_notice("Can't store a POKéMON that's using SURF.")
-                return
-        elif storage_pending == "TAKE" and caught_pokemon.size() >= 6:
-            _storage_notice("Your party is full!")
-            return
-        elif storage_pending == "RELEASE" and storage_column == 0 and entries.size() <= 1:
-            _storage_notice("You need at least 1 POKéMON in your party.")
-            return
-        storage_yes = storage_pending != "RELEASE"
-        storage_mode = "CONFIRM"
-    _refresh_storage_menu()
-
-func _storage_apply_action() -> void:
-    if is_instance_valid(coop_game) and coop_game.active:
-        await coop_game.storage.apply()
-        return
-    var entries := _storage_entries()
-    if entries.is_empty():
-        return
-    var pokemon: Dictionary = entries[storage_index]
-    if storage_pending == "NICKNAME":
-        pokemon["nickname"] = storage_nickname.text
-        world.call("play_source_sound", "coin1")
-        return
-    if storage_column == 0 and _storage_is_active(pokemon):
-        world.call("clear_active_field_move", true)
-    if storage_pooled and storage_column == 1:
-        var location: Array = _storage_pool_locations()[storage_index]
-        pokemon_storage[location[0]].remove_at(location[1])
-    else:
-        entries.remove_at(storage_index)
-    if storage_pending == "STORE":
-        var destination := _storage_deposit_key()
-        var box: Array = pokemon_storage.get(destination, [])
-        box.append(pokemon)
-        pokemon_storage[destination] = box
-    elif storage_pending == "TAKE":
-        caught_pokemon.append(pokemon)
-    if storage_pending != "RELEASE":
-        world.call("play_source_sound", "ball_switch1")
-    else:
-        _play_pokemon_cry(pokemon)
-
-func _handle_storage_menu_input(event: InputEvent) -> void:
-    if is_instance_valid(coop_game) and coop_game.active and coop_game.storage.handle_key(event):
-        get_viewport().set_input_as_handled();return
-    if is_instance_valid(coop_game) and coop_game.active and coop_game.storage.busy:
-        get_viewport().set_input_as_handled();return
-    if pokemon_stats_open:
-        _handle_pokemon_stats_input(event)
-        return
-    if storage_mode == "NICKNAME":
-        if event.is_action_pressed("cancel") and not (event is InputEventKey and event.unicode > 0):
-            storage_nickname.release_focus()
-            storage_mode = "LIST"
-            _refresh_storage_menu()
-        return
-    if event.is_action_pressed("cancel") or event.is_action_pressed("start"):
-        if storage_mode == "LIST":
-            _close_storage_menu()
-        else:
-            storage_mode = "LIST"
-            storage_switch_from = -1
-            _refresh_storage_menu()
-    elif storage_mode == "NOTICE":
-        if event.is_action_pressed("confirm"):
-            storage_mode = "LIST"
-            _refresh_storage_menu()
-    elif storage_mode == "CONFIRM":
-        if event.is_action_pressed("move_up") or event.is_action_pressed("move_left"):
-            storage_yes = true
-        elif event.is_action_pressed("move_down") or event.is_action_pressed("move_right"):
-            storage_yes = false
-        elif event.is_action_pressed("confirm"):
-            if storage_yes:
-                await _storage_apply_action()
-            if storage_mode!="NOTICE":storage_mode = "LIST"
-        _refresh_storage_menu()
-    elif storage_mode == "ACTION":
-        if event.is_action_pressed("move_up"):
-            storage_action_index = maxi(0, storage_action_index - 1)
-        elif event.is_action_pressed("move_down"):
-            storage_action_index = mini(_storage_actions_list().size()-1, storage_action_index + 1)
-        elif event.is_action_pressed("confirm"):
-            _storage_choose_action()
-        _refresh_storage_menu()
-    else:
-        var entries := _storage_entries()
-        if storage_mode == "LIST" and (event.is_action_pressed("move_left") or event.is_action_pressed("move_right")):
-            storage_column = 0 if event.is_action_pressed("move_left") else 1
-            storage_index = 0
-            storage_box_window_start = 0
-            world.call("play_source_sound", "menu_switch2")
-        elif event.is_action_pressed("move_up"):
-            storage_index = maxi(0, storage_index - 1)
-        elif event.is_action_pressed("move_down"):
-            storage_index = mini(maxi(0, entries.size() - 1), storage_index + 1)
-        elif event.is_action_pressed("confirm") and not entries.is_empty():
-            if storage_mode == "SWITCH":
-                await _storage_swap(storage_switch_from, storage_index)
-                storage_switch_from = -1
-                if storage_mode!="NOTICE":storage_mode = "LIST"
-            else:
-                storage_mode = "ACTION"
-                storage_action_index = 0
-        _refresh_storage_menu()
-    get_viewport().set_input_as_handled()
-
-
-func _close_storage_menu() -> void:
-    if storage_pooled and game_menu_open:
-        game_menu_box.show()
-        _update_game_menu_cursor()
-    var was_pooled := storage_pooled
-    storage_pooled = false
-    storage_menu_open = false
-    storage_menu.visible = false
-    if was_pooled and is_instance_valid(coop_game) and coop_game.active: coop_game.storage.refresh()
-    storage_box_key = ""
-    storage_column = 0
-    storage_index = 0
-    storage_box_window_start = 0
-    if (
-            started
-            and not battle_active
-            and not game_menu_open
-            and not craft_menu_open
-            and not build_menu_open
-            and not trainer_tip_open
-        ):
-        world.set_gameplay_enabled(true)
-
-
-func _on_structure_action(action: String) -> void:
-    if action.begins_with("PLANT_HOLE:"):
-        _open_planting_bag(Vector2i(int(action.get_slice(":",1)), int(action.get_slice(":",2))))
-    elif action == "SHORE_SURF":
-        await _prompt_shore_surf()
-    elif action == "DRESSER":
-        _next_color()
-        _apply_world_player_textures()
-        _show_message("Changed outfit color to %s." % PLAYER_COLOR_NAMES[player_color_index])
-    elif action == "VANITY":
-        _next_color()
-        _apply_world_player_textures()
-        _show_message("The VANITY changed your appearance to %s." % PLAYER_COLOR_NAMES[player_color_index])
-    elif action.begins_with("BED:"):
-        await _prompt_bed_rest(Vector2i(int(action.get_slice(":",1)),int(action.get_slice(":",2))))
-    elif action.begins_with("STORAGE:"):
-        _open_storage_menu(action.trim_prefix("STORAGE:"))
-    elif action.begins_with("SIGN_EDIT:"):
-        var parts := action.split(":", true, 3)
-        if parts.size() >= 4:
-            sign_edit_mode = "SIGN"
-            sign_dialog.title = "Write on the sign"
-            sign_edit.placeholder_text = "Sign text"
-            sign_edit_cell = Vector2i(int(parts[1]), int(parts[2]))
-            sign_edit.text = String(parts[3])
-            sign_dialog.popup_centered(Vector2i(260, 104))
-            sign_edit.grab_focus()
-    elif action.begins_with("BEACON_EDIT:"):
-        var beacon_parts := action.split(":", true, 3)
-        if beacon_parts.size() >= 4:
-            sign_edit_mode = "BEACON"
-            sign_dialog.title = "Name the BEACON"
-            sign_edit.placeholder_text = "Beacon name"
-            sign_edit_cell = Vector2i(int(beacon_parts[1]), int(beacon_parts[2]))
-            sign_edit.text = String(beacon_parts[3])
-            sign_dialog.popup_centered(Vector2i(260, 104))
-            sign_edit.grab_focus()
-    elif action.begins_with("MANSION_SWITCH:"):
-        var parts := action.split(":")
-        if parts.size() != 3 or mansion_switch_open or _field_ui_blocks_gameplay():
-            return
-        mansion_switch_open = true
-        mansion_switch_stage = 0
-        mansion_switch_index = 0
-        world.set_gameplay_enabled(false)
-        message_panel.hide()
-        egg_dialogue_label.text = "A hidden switch! Press it?"
-        egg_dialogue_arrow.show()
-        egg_dialogue_panel.show()
-        egg_choice_panel.hide()
-        var pressed: bool = await mansion_switch_answered
-        egg_dialogue_panel.hide()
-        egg_choice_panel.hide()
-        await get_tree().create_timer((20.0 if pressed else 3.0) / 60.0).timeout
-        if pressed:
-            world.play_source_sound("enter1")
-            SourceMansionRuntime.press_switch(world, Vector2i(int(parts[1]), int(parts[2])))
-        mansion_switch_open = false
-        world.set_gameplay_enabled(not _field_ui_blocks_gameplay())
-    elif action.begins_with("MANSION_LOCK:"):
-        if int(inventory.get("SECRET KEY", 0)) <= 0:
-            _show_message("It's locked...")
-            return
-        var parts := action.split(":")
-        if parts.size() != 3:
-            return
-        var cell := Vector2i(int(parts[1]), int(parts[2]))
-        if world.unlock_mansion_door(cell):
-            inventory["SECRET KEY"] = int(inventory.get("SECRET KEY", 0)) - 1
-            _show_message("The SECRET KEY opened the door!")
-    elif action.begins_with("ODD_KEYSTONE:"):
-        var parts := action.split(":")
-        if parts.size() != 4:
-            return
-        var cell := Vector2i(int(parts[1]), int(parts[2]))
-        var remaining := maxi(0, int(parts[3]))
-        var available := int(inventory.get("LIFE FORCE", 0))
-        if available <= 0:
-            _show_message("A voice whispers from within... bring %d..." % remaining)
-            return
-        var used := int(world.call("add_keystone_life_force", cell, mini(available, remaining)))
-        inventory["LIFE FORCE"] = maxi(0, available - used)
-
-func _on_item_collected(item_name: String) -> void:
-    if is_instance_valid(coop_game) and coop_game.active and coop_game.building.collect({ItemData.normalize_name(item_name):1}):return
-    if String(world.get("active_field_move")) == "DIG":
-        _on_dig_reward_collected({item_name:1})
-        return
-    CraftingData.grant(inventory, ItemData.normalize_name(item_name), 1)
-    var normalized := ItemData.normalize_name(item_name)
-    _show_acquired_resource(normalized, 1)
-
-func _show_acquired_resource(item_name: String, amount: int) -> void:
-    if resource_popup.visible and resource_popup_timer > 0.0 and resource_popup_name == item_name:
-        resource_popup_amount += amount
-    else:
-        resource_popup_name = item_name
-        resource_popup_amount = amount
-    resource_popup_text.text = "GOT\nx%d %s" % [
-        resource_popup_amount, resource_popup_name
-    ]
-    resource_popup.visible = true
-    resource_popup_timer = 0.9
-
-
-func _open_quit_prompt() -> void:
-    if generating or field_item_busy:
-        return
-    if field_move_wheel_open:
-        _close_field_move_wheel(false)
-    quit_prompt_open = true
-    quit_prompt_stage = 0
-    quit_prompt_index = 0
-    quit_prompt_title.text = "QUIT GAME?" if _app_can_quit() else "EXIT TO TITLE?"
-    quit_prompt.visible = true
-    if started:
-        world.set_gameplay_enabled(false)
-        touch_controls.set_game_active(true)
-    _update_quit_prompt_cursor()
-
-func _close_quit_prompt() -> void:
-    quit_prompt_open = false
-    quit_prompt.visible = false
-    if started:
-        world.set_gameplay_enabled(true)
-        touch_controls.set_game_active(true)
-
-func _update_quit_prompt_cursor() -> void:
-    if quit_prompt_index == 0:
-        quit_prompt_cursor.position = Vector2(32.0, 52.0)
-    else:
-        quit_prompt_cursor.position = Vector2(134.0, 52.0)
-    _align_menu_tick(quit_prompt_cursor, quit_prompt.get_node("Yes" if quit_prompt_index == 0 else "No"))
-
-func _handle_quit_prompt_input(event: InputEvent) -> void:
-    if event.is_action_pressed("move_left") or event.is_action_pressed("move_right"):
-        quit_prompt_index = 1 - quit_prompt_index
-        _update_quit_prompt_cursor()
-        get_viewport().set_input_as_handled()
-        return
-
-    if event.is_action_pressed("cancel"):
-        _close_quit_prompt()
-        get_viewport().set_input_as_handled()
-        return
-
-    if event.is_action_pressed("confirm"):
-        if quit_prompt_stage == 0:
-            if quit_prompt_index == 1:
-                _close_quit_prompt()
-            else:
-                # User confirmed quit. Ask whether to save before leaving.
-                quit_prompt_stage = 1
-                quit_prompt_index = 0
-                quit_prompt_title.text = "SAVE BEFORE QUIT?" if _app_can_quit() else "SAVE BEFORE EXIT?"
-                _update_quit_prompt_cursor()
-        else:
-            if quit_prompt_index == 0:
-                var saved_ok = await _save_current_game_for_quit()
-                if not saved_ok:
-                    quit_prompt_title.text = "SAVE FAILED"
-                    quit_prompt_stage = 0
-                    quit_prompt_index = 1
-                    _update_quit_prompt_cursor()
-                    return
-            if not _app_can_quit():
-                # iOS apps may not close themselves: go back to the title screen.
-                get_tree().reload_current_scene()
-                return
-            set_process_input(false)
-            await shared_save_folder.export_files(self)
-            get_tree().quit()
-        get_viewport().set_input_as_handled()
-
-func _app_can_quit() -> bool:
-    return OS.get_name() != "iOS" and not OS.get_cmdline_user_args().has("--no-app-quit")
-
-func _save_current_game_for_quit() -> bool:
-    _sync_pokedex_owned()
-    if not started:
-        return true
-    if coop_game.active:
-        return await coop_game.save_game(_capture_game_save(3))
-
-    # Same record as the SAVE menu (the old hand-built one dropped egg/friendship
-    # timers and ecology ids).
-    var error: Error = await _write_single_player_save(_capture_game_save())
-    if error != OK:
-        return false
-    world.call("play_source_sound", "save1")
-    return true
-
-func _show_touch_changed(enabled: bool) -> void:
-    touch_controls.set_touch_enabled(enabled)
-    _refresh_touch_config_labels()
-
-func _auto_hide_changed(enabled: bool) -> void:
-    touch_controls.set_auto_hide_controller(enabled)
-    _refresh_touch_config_labels()
-
-func _touch_opacity_changed(value: float) -> void:
-    touch_controls.set_control_opacity(value / 100.0)
-    _refresh_touch_config_labels()
-
-func _touch_size_changed(value: float) -> void:
-    touch_controls.set_control_scale(value / 100.0)
-    _refresh_touch_config_labels()
-
-func _cycle_touch_theme() -> void:
-    touch_controls.set_theme_mode((touch_controls.theme_mode + 1) % 3)
-    _refresh_touch_config_labels()
-    _apply_touch_config_theme()
-
-func _on_touch_theme_changed() -> void:
-    if touch_config.visible:
-        _apply_touch_config_theme()
-
-func _refresh_touch_config_labels() -> void:
-    auto_hide.text = "AUTO HIDE: %s" % ("ON" if touch_controls.auto_hide_controller else "OFF")
-    show_touch.text = "TOUCH CONTROLS: %s" % (
-        "ON" if touch_controls.touch_enabled else "OFF"
-    )
-    touch_opacity_label.text = "  OPACITY %d%%" % roundi(
-        touch_controls.control_opacity * 100.0
-    )
-    touch_size_label.text = "  SIZE %d%%" % roundi(
-        touch_controls.control_scale * 100.0
-    )
-    var theme_names := ["SYSTEM", "LIGHT", "DARK"]
-    touch_theme_button.text = "THEME: %s" % theme_names[
-        clampi(touch_controls.theme_mode, 0, theme_names.size() - 1)
-    ]
-
-func _apply_touch_config_theme() -> void:
-    touch_config.add_theme_stylebox_override("panel", GameOptions.style())
-    _set_touch_config_colors(touch_config, Color.BLACK)
-    _style_touch_config_buttons()
-    _style_touch_config_sliders()
-    if touch_config_scroll == null:
-        # Keep every setting reachable on smaller screens and within cutouts.
-        var contents := touch_config.get_node("VBox") as VBoxContainer
-        touch_config_scroll = ScrollContainer.new()
-        touch_config_scroll.name = "TouchSettingsScroll"
-        touch_config_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-        touch_config_scroll.follow_focus = true
-        touch_config.add_child(touch_config_scroll)
-        contents.reparent(touch_config_scroll)
-        contents.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
-        contents.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-        touch_controls.safe_area_changed.connect(_layout_touch_config)
-    var scroll_bar := touch_config_scroll.get_v_scroll_bar()
-    var rail := StyleBoxFlat.new();rail.bg_color=Color(0.9,0.9,0.9);rail.content_margin_left=2;rail.content_margin_right=2
-    var thumb := StyleBoxFlat.new();thumb.bg_color=Color.BLACK;thumb.content_margin_left=2;thumb.content_margin_right=2
-    scroll_bar.add_theme_stylebox_override("scroll",rail)
-    for state in ["grabber","grabber_highlight","grabber_pressed"]:scroll_bar.add_theme_stylebox_override(state,thumb)
-    _layout_touch_config()
-    _prepare_swipe_cursor()
-
-var touch_config_scroll: ScrollContainer
-
-func _layout_touch_config(_bounds: Rect2 = Rect2()) -> void:
-    if touch_config_scroll == null: return
-    var bounds := touch_controls.usable_rect
-    var panel_size := Vector2(minf(224.0, bounds.size.x - 8.0), minf(172.0, bounds.size.y - 8.0))
-    touch_config.size = panel_size
-    touch_config.position = (bounds.position + (bounds.size - panel_size) * 0.5).round()
-    touch_config_scroll.position = Vector2(12, 10)
-    touch_config_scroll.size = panel_size - Vector2(24, 20)
-
-func _touch_config_box(color: Color, border: Color, radius: int) -> StyleBoxFlat:
-    var style := StyleBoxFlat.new()
-    style.bg_color = color
-    style.border_color = border
-    style.set_border_width_all(1)
-    style.corner_radius_top_left = radius
-    style.corner_radius_top_right = radius
-    style.corner_radius_bottom_left = radius
-    style.corner_radius_bottom_right = radius
-    return style
-
-func _style_touch_config_buttons() -> void:
-    for node in touch_config.find_children("*", "Button", true, false):
-        var button := node as Button
-        button.text = button.text.to_upper()
-        button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-        button.custom_minimum_size.y = 16
-        button.focus_mode = Control.FOCUS_NONE
-        var plain := StyleBoxEmpty.new()
-        plain.content_margin_left = 12
-        for state in ["normal", "hover", "pressed", "focus", "disabled"]:
-            button.add_theme_stylebox_override(state, plain)
-        if button is CheckButton:
-            var blank := ImageTexture.create_from_image(Image.create(1,1,false,Image.FORMAT_RGBA8))
-            for icon_name in ["checked", "unchecked", "checked_disabled", "unchecked_disabled", "checked_mirrored", "unchecked_mirrored"]:
-                button.add_theme_icon_override(icon_name, blank)
-
-func _style_touch_config_sliders() -> void:
-    var track := _touch_config_box(Color.BLACK,Color.BLACK,0)
-    track.content_margin_top = 1.0
-    track.content_margin_bottom = 1.0
-    var fill := _touch_config_box(Color.BLACK,Color.BLACK,0)
-    var grabber := GradientTexture2D.new()
-    var gradient := Gradient.new()
-    gradient.set_color(0,Color(0.75,0.15,0.15))
-    gradient.set_color(1,Color(0.75,0.15,0.15))
-    grabber.gradient = gradient
-    grabber.width = 6
-    grabber.height = 10
-    for slider in [touch_opacity_slider,touch_size_slider]:
-        slider.add_theme_stylebox_override("slider",track)
-        slider.add_theme_stylebox_override("grabber_area",fill)
-        slider.add_theme_stylebox_override("grabber_area_highlight",fill)
-        for state in ["grabber","grabber_highlight","grabber_disabled"]:
-            slider.add_theme_icon_override(state,grabber)
-
-func _set_touch_config_colors(node: Node, color: Color) -> void:
-    if node is Label or node is Button:
-        var control := node as Control
-        control.add_theme_font_override("font",JOHTO_FONT)
-        control.add_theme_font_size_override("font_size",8)
-        control.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-        for state in ["font_color","font_hover_color","font_pressed_color","font_focus_color","font_hover_pressed_color","font_disabled_color"]:
-            control.add_theme_color_override(state,color)
-    for child in node.get_children():
-        _set_touch_config_colors(child,color)
 
 func _open_modding_menu() -> void:
     touch_config.hide()
@@ -11645,224 +5691,6 @@ func _open_game_files_menu() -> void:
         game_files_menu.configure(self)
     game_files_menu.open()
 
-func _open_touch_config(from_options: bool = false) -> void:
-    if not from_options and not _is_android_touch_runtime():
-        touch_config.visible = false
-        touch_controls.set_game_active(false)
-        return
-    if touch_controls.edit_mode:
-        touch_controls.end_edit()
-    if field_move_wheel_open:
-        _close_field_move_wheel(false)
-    touch_config.visible = true
-    swipe_stick_held = false
-    _position_swipe_cursor.call_deferred()
-    touch_controls.set_game_active(false)
-    show_touch.button_pressed = touch_controls.touch_enabled
-    auto_hide.button_pressed = touch_controls.auto_hide_controller
-    touch_opacity_slider.set_value_no_signal(
-        touch_controls.control_opacity * 100.0
-    )
-    touch_size_slider.set_value_no_signal(
-        touch_controls.control_scale * 100.0
-    )
-    _refresh_touch_config_labels()
-    _apply_touch_config_theme()
-    if started:
-        world.set_gameplay_enabled(false)
-
-func _move_controls() -> void:
-    touch_config.visible = false
-    touch_controls.set_game_active(true)
-    touch_controls.begin_edit()
-
-func _reset_layout() -> void:
-    touch_controls.reset_layout()
-
-func _close_touch_config() -> void:
-    touch_config.visible = false
-    if not started:
-        touch_controls.set_game_active(true)
-        return
-    var gameplay_should_resume := (
-        not battle_active
-        and not game_menu_open
-        and not craft_menu_open
-        and not quit_prompt_open
-    )
-    world.set_gameplay_enabled(gameplay_should_resume)
-    touch_controls.set_game_active(true)
-
-func _set_fitting_pokemon_name(label: Label, record: Dictionary, override_text: String = "") -> void:
-    if not label.has_meta("original_name_overrun"):
-        label.set_meta("original_name_overrun", label.text_overrun_behavior)
-        label.set_meta("original_name_clip", label.clip_text)
-    var mega_name := String(record.get("species", "")) in ["mega_charizard_x", "mega_charizard_y", "mega_venusaur", "mega_blastoise", "mega_gyarados", "mega_sharpedo", "mega_kangaskhan"]
-    # Fit the full X/Y suffix before drawing; Label ellipsis runs before scale.
-    label.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING if mega_name else int(label.get_meta("original_name_overrun"))
-    label.clip_text = false if mega_name else bool(label.get_meta("original_name_clip"))
-    var full_name := PokemonState.display_name(record).to_upper() if override_text.is_empty() else override_text
-    label.text = full_name
-    var width := label.get_theme_font("font").get_string_size(label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, label.get_theme_font_size("font_size")).x
-    label.scale.x = minf(1.0, label.size.x / maxf(1.0, width))
-
-func _party_record_frame(row_data: Dictionary) -> Texture2D:
-    var species := String(row_data.get("species", ""))
-    var community_key := "mega_gengar" if species == "gengar" and String(row_data.get("form", "")) == "mega" else species
-    var community := preload("res://scripts/divinakra_mega_art.gd").texture(community_key, "menu", PokemonData.is_shiny(row_data))
-    if community != null:
-        return _source_texture_region(community, Rect2((4 + party_sprite_animation_frame % 2) * 16, 0, 16, 16))
-    if species == "gengar" and String(row_data.get("form", "")) == "mega":
-        var sheet := PokemonData.record_texture(row_data, "overworld")
-        return _source_texture_region(sheet, Rect2((4 + party_sprite_animation_frame % 2) * 32, 0, 32, 32))
-    return _party_overworld_frame(species, party_sprite_animation_frame, bool(row_data.get("shiny", false)))
-
-func _party_overworld_frame(species: String, animation_frame: int = 0, shiny: bool = false) -> Texture2D:
-    # Picture 2 uses the Pokemon's actual PokeWilds 16x16 overworld artwork.
-    # Use each authored sheet's front-facing pair; never reuse CUT pose state.
-    var texture := PokemonData.texture(species, "overworld", shiny)
-    if texture == null:
-        return _battle_sprite_frame(PokemonData.texture(species, "front", shiny))
-    if texture.has_meta("mega_gengar_walk"):
-        var mega_frame := texture.get_width() / 6.0
-        return _source_texture_region(texture, Rect2((4 + animation_frame % 2) * mega_frame, 0, mega_frame, texture.get_height()))
-    var front_pair := 4
-    if species.to_lower() in ["krabby", "kingler"]:
-        front_pair = 0
-    elif species.to_lower() in ["lombre", "lotad", "shellder", "slowpoke", "growlithe_hisuian"]:
-        front_pair = 2
-    var frame := front_pair + clampi(animation_frame, 0, 1)
-    if species.to_lower() in ["aexeggutor", "exeggutor_alolan"] and texture.get_height() == 48:
-        return _source_texture_region(texture, Rect2(frame * 16, 0, 16, 48))
-    if texture.get_width() >= 96 and texture.get_height() >= 16:
-        return _source_texture_region(texture, Rect2(frame * 16, 0, 16, 16))
-    if texture.get_height() >= 96 and texture.get_width() >= 16:
-        return _source_texture_region(texture, Rect2(0, frame * 16, 16, 16))
-    frame = clampi(animation_frame, 0, 1)
-    if texture.get_width() >= 32 and texture.get_height() >= 16:
-        return _source_texture_region(texture, Rect2(frame * 16, 0, 16, 16))
-    if texture.get_height() >= 32 and texture.get_width() >= 16:
-        return _source_texture_region(texture, Rect2(0, frame * 16, 16, 16))
-    if texture.get_width() >= 16 and texture.get_height() >= 16:
-        return _source_texture_region(texture, Rect2(0, 0, 16, 16))
-    return texture
-
-func _refresh_source_action_rows(label: Label, cursor: TextureRect,
-        entries: Array, selected: int) -> void:
-    var first := maxi(0, selected - 5)
-    var lines: Array[String] = []
-    for index in range(first, mini(first + 6, entries.size())):
-        lines.append(String(entries[index]))
-    label.text = "\n".join(lines)
-    var font_size := label.get_theme_font_size("font_size")
-    var pitch := JOHTO_FONT.get_height(font_size) + float(
-        label.get_theme_constant("line_spacing"))
-    cursor.position.y = roundf(label.position.y +
-        float(selected - first) * pitch)
-
-func _pokemon_stat_field(parent: Control, key: String, at: Vector2,
-        dimensions: Vector2, font_size: int = 9, right: bool = false) -> Label:
-    var label := _source_ui_label(parent, key, at, dimensions, font_size)
-    label.clip_text = true
-    if right:
-        label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-    pokemon_stats_fields[key] = label
-    return label
-
-func _pokemon_stats_border(parent: Control, at: Vector2,
-        dimensions: Vector2) -> void:
-    # Restore the original source-style NinePatch border. Only the unwanted
-    # EXP track is removed; the stats-page frame itself remains intact.
-    var border = NinePatchRect.new()
-    border.texture = GameOptions.frame_texture()
-    border.position = at
-    border.size = dimensions
-    border.patch_margin_left = 8 if int(GameOptions.values.frame) >= 2 else 10
-    border.patch_margin_top = 8 if int(GameOptions.values.frame) >= 2 else 10
-    border.patch_margin_right = 8 if int(GameOptions.values.frame) >= 2 else 10
-    border.patch_margin_bottom = 8 if int(GameOptions.values.frame) >= 2 else 10
-    border.draw_center = false
-    border.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    border.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-    parent.add_child(border)
-    parent.move_child(border, 0)
-
-func _build_pokemon_stats_pages(parent: Control) -> void:
-    for index in range(3):
-        var page = ColorRect.new()
-        page.name = "StatsPage%d" % index
-        page.position = Vector2(0, 80)
-        page.size = Vector2(320, 100)
-        page.color = [Color8(248, 152, 248), Color8(176, 248, 104),
-            Color8(136, 240, 240)][index]
-        parent.add_child(page)
-        pokemon_stats_pages.append(page)
-
-    var hp_page = pokemon_stats_pages[0]
-    _source_ui_label(hp_page, "HPTitle", Vector2(14, 11), Vector2(30, 14), 9, "HP:")
-    # M74.3.9.13: this is the stats page only. The source-font current/max HP
-    # replaces the meter; battle and six-slot party HP bars are untouched.
-    pokemon_stats_hp_fill = null
-    _pokemon_stat_field(hp_page, "HP", Vector2(48, 10), Vector2(90, 14), 10, true)
-    _source_ui_label(hp_page, "StatusTitle", Vector2(14, 40), Vector2(82, 14), 9, "STATUS/")
-    _pokemon_stat_field(hp_page, "Status", Vector2(52, 53), Vector2(84, 14), 9, true)
-    _source_ui_label(hp_page, "TypeTitle", Vector2(14, 69), Vector2(70, 14), 9, "TYPE/")
-    _pokemon_stat_field(hp_page, "Types", Vector2(52, 65), Vector2(84, 24), 8, true)
-    _source_ui_label(hp_page, "ExpTitle", Vector2(171, 11), Vector2(132, 14), 10, "EXP POINTS")
-    _pokemon_stat_field(hp_page, "Exp", Vector2(188, 24), Vector2(112, 14), 10, true)
-    _source_ui_label(hp_page, "NextTitle", Vector2(171, 42), Vector2(132, 14), 10, "LEVEL UP")
-    _pokemon_stat_field(hp_page, "NextExp", Vector2(188, 58), Vector2(112, 14), 10, true)
-    _pokemon_stat_field(hp_page, "NextLevel", Vector2(188, 73), Vector2(112, 14), 9, true)
-    pokemon_stats_exp_fill = null
-    _pokemon_stats_border(hp_page, Vector2.ZERO, Vector2(153, 100))
-    _pokemon_stats_border(hp_page, Vector2(151, 0), Vector2(169, 100))
-
-    var moves_page = pokemon_stats_pages[1]
-    _source_ui_label(moves_page, "ItemTitle", Vector2(16, 12), Vector2(72, 14), 10, "ITEM")
-    _pokemon_stat_field(moves_page, "Item", Vector2(104, 12), Vector2(198, 14), 10)
-    _source_ui_label(moves_page, "MoveTitle", Vector2(16, 27), Vector2(72, 14), 10, "MOVE")
-    for index in range(4):
-        _pokemon_stat_field(moves_page, "Move%d" % index,
-            Vector2(104, 27 + index * 16), Vector2(198, 15), 10)
-    _pokemon_stats_border(moves_page, Vector2.ZERO, Vector2(320, 100))
-
-    var stats_page = pokemon_stats_pages[2]
-    _source_ui_label(stats_page, "IdTitle", Vector2(16, 10), Vector2(82, 14), 9, "IDNo.")
-    _pokemon_stat_field(stats_page, "TrainerId", Vector2(36, 27), Vector2(102, 14), 10)
-    _source_ui_label(stats_page, "OTTitle", Vector2(16, 51), Vector2(82, 14), 10, "OT/")
-    _pokemon_stat_field(stats_page, "OriginalTrainer", Vector2(36, 68), Vector2(102, 18), 10)
-    var keys = ["attack", "defense", "sp_attack", "sp_defense", "speed"]
-    var titles = ["ATTACK", "DEFENSE", "SPCL.ATK", "SPCL.DEF", "SPEED"]
-    for index in range(5):
-        _source_ui_label(stats_page, "Title%d" % index,
-            Vector2(171, 11 + index * 17), Vector2(104, 14), 9, titles[index])
-        _pokemon_stat_field(stats_page, keys[index],
-            Vector2(268, 11 + index * 17), Vector2(34, 14), 9, true)
-    _pokemon_stats_border(stats_page, Vector2.ZERO, Vector2(153, 100))
-    _pokemon_stats_border(stats_page, Vector2(151, 0), Vector2(169, 100))
-
-func _setup_generation_clouds() -> void:
-    var background := $UI/GenerationPanel/Background as TextureRect
-    background.texture = preload("res://assets/environment/cloud5.png")
-    background.stretch_mode = TextureRect.STRETCH_SCALE
-    var shader := Shader.new()
-    shader.code = """
-shader_type canvas_item;
-render_mode unshaded;
-void fragment() {
-    // Game.render: four one-pixel steps per 65 source ticks.
-    // Rotate the loading artwork 180 degrees and scroll right-to-left.
-    float tick = floor(TIME * 60.0);
-    float offset = floor(tick / 65.0) * 4.0 + floor(mod(tick, 65.0) / 16.0);
-    vec2 pixel = floor(UV * vec2(320.0, 180.0));
-    COLOR = texture(TEXTURE, (vec2(191.0) - mod(pixel + vec2(offset, 0.0), vec2(192.0)) + 0.5) / 192.0);
-}
-"""
-    var material_value := ShaderMaterial.new()
-    material_value.shader = shader
-    background.material = material_value
-
-
 var mod_menu_panel: Control
 
 const START_DOUBLE_TAP_SECONDS := 0.28
@@ -11870,296 +5698,12 @@ var start_menu_ticket := 0
 var start_menu_pending := false
 var start_menu_held := false
 
-func _start_menu_context_available() -> bool:
-    return started and not generating and not battle_active and not battle_entry_pending and not game_menu_open \
-        and not wild_pokemon_prompt_open and not egg_pickup_open and not storage_menu_open \
-        and not trainer_tip_open and not setup_load_open and not pokemon_stats_open \
-        and not touch_config.visible and not touch_controls.edit_mode and not progression_active \
-        and not field_move_wheel_open and not quit_prompt_open and not build_menu_open \
-        and not craft_menu_open and (not field_item_busy or _sleeping_bag_active()) \
-        and not (is_instance_valid(game_files_menu) and game_files_menu.visible) \
-        and not (is_instance_valid(mod_menu_panel) and mod_menu_panel.visible)
-
-func _queue_start_menu(event: InputEvent) -> void:
-    # Start opens the ordinary menu immediately on physical and touch controls.
-    if event is InputEventJoypadButton and event.button_index == JOY_BUTTON_START:
-        if start_menu_held:
-            return
-        start_menu_held = true
-    if _start_menu_context_available():
-        _open_game_menu()
-
-func _prompt_shore_surf() -> void:
-    var party_index := _find_field_move_pokemon_index("SURF")
-    if party_index < 0 or _field_ui_blocks_gameplay():
-        return
-    var target: Vector2i = world._player_cell() + world._facing_cell()
-    if not world._can_prompt_shore_surf(target):
-        return
-    # Reuse the tested two-stage egg/switch dialogue and its exact tick offsets.
-    mansion_switch_open = true
-    mansion_switch_stage = 0
-    mansion_switch_index = 0
-    world.set_gameplay_enabled(false)
-    message_panel.hide()
-    egg_dialogue_label.text = "Want to SURF?"
-    egg_dialogue_arrow.show()
-    egg_dialogue_panel.show()
-    egg_choice_panel.hide()
-    var accepted: bool = await mansion_switch_answered
-    egg_choice_panel.hide()
-    egg_dialogue_arrow.hide()
-    if accepted and world._can_prompt_shore_surf(target):
-        _ensure_party_ecology_id(party_index)
-        var pokemon: Dictionary = caught_pokemon[party_index]
-        var name := String(pokemon.get("nickname", "")).strip_edges()
-        if name.is_empty(): name = PokemonData.battle_display_name(String(pokemon.get("species", "POKEMON")))
-        egg_dialogue_label.text = "%s is using SURF!" % name.to_upper()
-        await get_tree().create_timer(3.0 / 60.0).timeout
-        _play_pokemon_cry(pokemon)
-        mansion_switch_stage = 3
-        egg_dialogue_arrow.show()
-        await mansion_switch_answered
-        egg_dialogue_arrow.hide()
-        if world.set_active_field_move(pokemon, "SURF"):
-            world.present_field_move_pokemon()
-            var entry := create_tween()
-            entry.tween_property(world.player, "position", world._cell_center(target), 16.0 / 120.0)
-            await entry.finished
-    else:
-        await get_tree().create_timer(10.0 / 60.0).timeout
-    egg_dialogue_panel.hide()
-    mansion_switch_open = false
-    world.set_gameplay_enabled(not _field_ui_blocks_gameplay())
-
-func _prompt_bed_rest(cell: Vector2i) -> void:
-    if _field_ui_blocks_gameplay(): return
-    mansion_switch_open = true
-    mansion_switch_stage = 0
-    mansion_switch_index = 0
-    world.set_gameplay_enabled(false)
-    message_panel.hide()
-    egg_dialogue_label.text = "Do you want to sleep?"
-    egg_dialogue_arrow.show()
-    egg_dialogue_panel.show()
-    egg_choice_panel.hide()
-    var accepted: bool = await mansion_switch_answered
-    egg_choice_panel.hide()
-    egg_dialogue_panel.hide()
-    egg_dialogue_arrow.hide()
-    mansion_switch_open = false
-    if accepted:
-        field_item_busy = true
-        await get_tree().create_timer(20.0/60.0).timeout
-        if world.begin_bed_rest(cell):
-            sleeping_bag_heal_accumulator = 0.0
-            return
-        field_item_busy = false
-    world.set_gameplay_enabled(not _field_ui_blocks_gameplay())
-
-
 func _world_grid_key(grid: Vector2i) -> String:
     return "%d,%d" % [grid.x, grid.y]
 
-func _show_flying_edge_sky() -> void:
-    var bounds: Rect2i = world.get_map_bounds()
-    if not is_instance_valid(edge_sky):
-        edge_sky = preload("res://scripts/world_boundary_water.gd").new()
-        edge_sky.name = "WorldBoundaryWater"
-        world.get_node("GroundLayer").add_child(edge_sky)
-        edge_sky.configure(world)
-    edge_sky.visible = true
-    var camera = world.player.camera
-    camera.limit_left = bounds.position.x*16-192
-    camera.limit_top = bounds.position.y*16-192
-    camera.limit_right = bounds.end.x*16+192
-    camera.limit_bottom = bounds.end.y*16+192
-
-func check_flying_map_edge() -> void:
-    if not started or generating or edge_travel_busy or _field_ui_blocks_gameplay():
-        return
-    if world.active_area_id != "OVERWORLD" or world.active_field_move not in ["FLY","SURF"]: return
-    _show_flying_edge_sky()
-    var bounds: Rect2i = world.get_map_bounds()
-    var cell: Vector2i = world._player_cell()
-    if bounds.has_point(cell):
-        if world.active_field_move != "SURF": return
-        var facing: Vector2i = world._facing_cell()
-        var intent: Vector2 = world.player.input_router.movement_vector()
-        if bounds.has_point(cell+facing) or (world.player.velocity.dot(Vector2(facing))<=0 and intent.dot(Vector2(facing))<=0): return
-        cell += facing
-    var direction := Vector2i.ZERO
-    if cell.x < bounds.position.x: direction = Vector2i.LEFT
-    elif cell.x >= bounds.end.x: direction = Vector2i.RIGHT
-    elif cell.y < bounds.position.y: direction = Vector2i.UP
-    elif cell.y >= bounds.end.y: direction = Vector2i.DOWN
-    edge_travel_busy = true
-    world.set_gameplay_enabled(false)
-    _prompt_adjacent_world.call_deferred(direction)
-
-func _prompt_adjacent_world(direction: Vector2i) -> void:
-    mansion_switch_open = true
-    mansion_switch_stage = 0
-    mansion_switch_index = 0
-    message_panel.hide()
-    egg_dialogue_label.text = "Going further will take you to a new area... keep going?"
-    egg_dialogue_arrow.show()
-    egg_dialogue_panel.show()
-    egg_choice_panel.hide()
-    var accepted: bool = await mansion_switch_answered
-    egg_choice_panel.hide()
-    egg_dialogue_arrow.hide()
-    egg_dialogue_panel.hide()
-    if accepted:
-        await _travel_adjacent_world(direction)
-    else:
-        var bounds: Rect2i = world.get_map_bounds()
-        var cell: Vector2i = world._player_cell()
-        cell.x = clampi(cell.x, bounds.position.x, bounds.end.x-1)
-        cell.y = clampi(cell.y, bounds.position.y, bounds.end.y-1)
-        world.player.position = world._cell_center(cell)
-        world.player.facing = -Vector2(direction)
-        world._place_field_helper_live()
-    mansion_switch_open = false
-    edge_travel_busy = false
-    world.set_gameplay_enabled(not _field_ui_blocks_gameplay())
-
-func _travel_adjacent_world(direction: Vector2i) -> void:
-    var online_destination:Dictionary={}
-    if is_instance_valid(coop_game) and coop_game.active:
-        online_destination=await coop_game.prepare_travel(current_world_grid+direction)
-        if online_destination.has("error"):_show_message(String(online_destination.error));return
-    var bounds: Rect2i = world.get_map_bounds()
-    var cell: Vector2i = world._player_cell()
-    var fraction := Vector2(cell-bounds.position)/Vector2(bounds.size)
-    var mount: Dictionary = world.active_field_pokemon.duplicate(true)
-    var travel_move := String(world.active_field_move)
-    var elapsed: float = world.world_elapsed_seconds
-    var key := _world_grid_key(current_world_grid)
-    adjacent_worlds[key] = {"seed":world.world_seed,"size":world.map_size_index,"state":world.get_crafting_save_state()}
-    current_world_grid += direction
-    var destination: Dictionary = adjacent_worlds.get(_world_grid_key(current_world_grid), {})
-    if not online_destination.is_empty():destination={} if online_destination.get("new",false) else online_destination
-    var seed_value := int(destination.get("seed", 0))
-    if seed_value == 0:
-        var random := RandomNumberGenerator.new()
-        random.randomize()
-        seed_value = int(random.randi_range(1,2147483646))
-    # Java chooses 40000, 50000, 54000 or 56000 radius parameters.
-    var size_index := int(destination.get("size", randi_range(1,4)))
-    generating = true
-    var travel_view: Control
-    if destination.is_empty():
-        # A new area takes minutes to generate. It was shown as a plain grey
-        # screen with the player hovering in it and no word of what was
-        # happening, so it looked as if the game had stopped. It now has the
-        # same sky, trainer tips and message as every other loading screen.
-        generation_status.text = "GENERATING WORLD...\nPLEASE WAIT..."
-        _show_generation_tip()
-        generation_panel.show()
-        await get_tree().process_frame
-    else:
-        generation_status.text = "LOADING...\nPLEASE WAIT...."
-        generation_panel.show()
-    await world.generate_world(seed_value, size_index, not destination.is_empty())
-    if not world.generation_error.is_empty():
-        current_world_grid -= direction
-        # Preflight failure leaves the current world's terrain and items intact.
-        world.player.position = world._cell_center(Vector2i(
-            clampi(cell.x,bounds.position.x,bounds.end.x-1),
-            clampi(cell.y,bounds.position.y,bounds.end.y-1)))
-        world.player.facing = -Vector2(direction)
-        # Failed preflight retains the existing mount along with the world.
-        world.fly_phase = "HOVER"
-        world.fly_height = 32.0
-        world._place_field_helper_live()
-        if is_instance_valid(travel_view): travel_view.queue_free()
-        generation_panel.hide()
-        generating = false
-        _show_message(world.generation_error)
-        return
-    world.set_gameplay_enabled(false)
-    if not destination.is_empty(): await world.restore_crafting_save_state(destination.state)
-    world.world_elapsed_seconds = elapsed
-    _apply_world_player_textures()
-    bounds = world.get_map_bounds()
-    cell = bounds.position + Vector2i(Vector2(bounds.size)*fraction)
-    cell.x = clampi(cell.x,bounds.position.x,bounds.end.x-1)
-    cell.y = clampi(cell.y,bounds.position.y,bounds.end.y-1)
-    if direction == Vector2i.LEFT: cell.x = bounds.end.x-1
-    elif direction == Vector2i.RIGHT: cell.x = bounds.position.x
-    elif direction == Vector2i.UP: cell.y = bounds.end.y-1
-    else: cell.y = bounds.position.y
-    world.player.position = world._cell_center(cell)
-    world.player.facing = Vector2(direction)
-    if travel_move == "SURF":
-        # Find water along the destination edge rather than mounting on dry land.
-        var water_cell := cell
-        var found := false
-        for offset in range(maxi(bounds.size.x,bounds.size.y)):
-            for sign_value in [1,-1]:
-                var candidate: Vector2i = cell + (Vector2i.DOWN if direction.x!=0 else Vector2i.RIGHT)*offset*sign_value
-                if bounds.has_point(candidate) and world.terrain_kind_at(candidate)==0:
-                    water_cell=candidate;found=true;break
-            if found: break
-        if found: world.player.position=world._cell_center(water_cell)
-    world.set_active_field_move(mount, travel_move, travel_move=="SURF")
-    world.fly_phase = "HOVER"
-    world.fly_height = 32.0
-    world._place_field_helper_live()
-    world.begin_encounter_grace()
-    # Generating a new area uncovers the map around wherever the player
-    # stood in the area they left, which in the new one is somewhere they
-    # have never been: a lone explored circle far from where they arrive.
-    if destination.is_empty(): world.discovered_cells.clear()
-    world.reveal_player_area()
-    _invalidate_travel_maps()
-    _show_flying_edge_sky()
-    world.player.camera.reset_smoothing()
-    if is_instance_valid(coop_game) and coop_game.active:
-        if not await coop_game.finish_travel():
-            coop_game.end_session("ONLINE AREA COULD NOT BE SAVED. SESSION ENDED.")
-            return
-    await _draw_world_view()
-    if is_instance_valid(travel_view): travel_view.queue_free()
-    message_panel.hide()
-    generation_panel.hide()
-    generating = false
-
-func _invalidate_travel_maps() -> void:
-    map_raster.forget()
-    minimap_raster_key.clear()
-    minimap_source_cache.clear()
-    minimap_cache_world_id = 0
-    minimap_cache_until = 0
-    minimap_texture_images.clear()
-    minimap_tile_previews.clear()
-    minimap_recipes.clear()
-    _clear_map_canvas()
-    _refresh_minimap(world.get_map_bounds(), world.player.position)
-
-func _planting_bag_item_allowed(item: String) -> bool:
-    if planting_bag_target == null or item == "MANURE": return false
-    if not preload("res://scripts/source_plant_farming.gd").plantable(item): return false
-    return world.plants().valid(world.exact_world.tile_at(planting_bag_target), item)
-
-func _open_planting_bag(cell: Vector2i) -> void:
-    if not world.is_empty_planting_hole(cell): return
-    _open_game_menu()
-    if not game_menu_open: return
-    planting_bag_target = cell
-    _show_item_menu()
-    for pocket in range(ItemData.POCKET_COUNT):
-        var found := false
-        for item in ItemData.items_for_pocket(pocket):
-            if int(inventory.get(item,0)) > 0 and _planting_bag_item_allowed(item):
-                found = true
-                break
-        if found:
-            battle_item_pocket_index = pocket
-            _refresh_battle_item_pocket_menu()
-            return
-    item_pocket_description.text = "No seeds or apricorns in your bag can grow here."
+## world_edge_travel.gd under its old names, for the scripts and tests that call them on main.
+func check_flying_map_edge() -> void: edge_travel.check_flying_map_edge()
+func _travel_adjacent_world(direction: Vector2i) -> void: await edge_travel.travel_adjacent_world(direction)
 
 func _sync_pokedex_owned() -> void:
     pokedex_progress.seed_owned(caught_pokemon)
@@ -12226,67 +5770,4 @@ func _warm_world_shaders() -> void:
     RenderingServer.frame_pre_draw.disconnect(on_pre)
     RenderingServer.frame_post_draw.disconnect(on_post)
 
-func _warm_map_cache() -> void:
-    if not is_instance_valid(waypoint_ui):
-        waypoint_ui = preload("res://scripts/map_waypoints.gd").new()
-        add_child(waypoint_ui)
-        waypoint_ui.configure(self)
-    # The map's picture of the ground discovered so far, under the loading screen.
-    if map_raster.refresh():
-        while map_raster.draw_dirty(12000): await get_tree().process_frame
 
-
-var swipe_rows: Array[Control] = []
-var swipe_selection := 0
-var swipe_stick_held := false
-var swipe_cursor: TextureRect
-
-func _prepare_swipe_cursor() -> void:
-    if is_instance_valid(swipe_cursor): return
-    var contents := touch_config.find_child("VBox",true,false)
-    for child in contents.get_children():
-        if child is BaseButton or child is Slider:
-            swipe_rows.append(child)
-            var index := swipe_rows.size()-1
-            child.mouse_entered.connect(func(): _select_swipe_row(index))
-    swipe_cursor = TextureRect.new()
-    swipe_cursor.texture = source_command_cursor.texture
-    swipe_cursor.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-    swipe_cursor.size = Vector2(5,7)
-    swipe_cursor.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    swipe_cursor.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-    touch_config.add_child(swipe_cursor)
-    touch_config_scroll.get_v_scroll_bar().value_changed.connect(func(_value): _position_swipe_cursor())
-    _select_swipe_row(0)
-
-func _select_swipe_row(index: int) -> void:
-    swipe_selection = wrapi(index,0,swipe_rows.size())
-    touch_config_scroll.ensure_control_visible(swipe_rows[swipe_selection])
-    _position_swipe_cursor.call_deferred()
-
-func _position_swipe_cursor() -> void:
-    if not is_instance_valid(swipe_cursor): return
-    var row := swipe_rows[swipe_selection]
-    if row == touch_opacity_slider:row=touch_opacity_label
-    elif row == touch_size_slider:row=touch_size_label
-    swipe_cursor.global_position.x = roundf(row.global_position.x+2)
-    _align_control_tick(swipe_cursor,row)
-    swipe_cursor.visible = touch_config_scroll.get_global_rect().encloses(swipe_cursor.get_global_rect())
-
-func _handle_swipe_menu(event: InputEvent) -> void:
-    if event.is_echo(): return
-    if event.is_action_pressed("cancel") or event.is_action_pressed("start"):
-        _close_touch_config();return
-    var direction := 0
-    var change := 0
-    if event.is_action_pressed("move_down"): direction=1
-    elif event.is_action_pressed("move_up"): direction=-1
-    elif event.is_action_pressed("move_right"): change=1
-    elif event.is_action_pressed("move_left"): change=-1
-    if direction!=0: _select_swipe_row(swipe_selection+direction);return
-    var row := swipe_rows[swipe_selection]
-    if row is Slider:
-        if change!=0: row.value += change*5
-    elif event.is_action_pressed("confirm") or change!=0:
-        if row is CheckButton:row.button_pressed=not row.button_pressed
-        elif event.is_action_pressed("confirm"):row.pressed.emit()
