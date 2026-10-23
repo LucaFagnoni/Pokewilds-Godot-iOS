@@ -77,7 +77,7 @@ func _initialize() -> void:
     # One top line, MARGIN under the safe area: minimap at the left, clock at the centre.
     var chip: Rect2 = hud.clock_chip.get_global_rect()
     check(absf(chip.get_center().x - screen.x / 2.0) <= 0.5 and chip.position.y == top and chip.size.y == Hud.ROW, "the clock is at the top centre: %s on %s" % [chip, screen])
-    var minimap: Rect2 = main.m3924_minimap_root.get_global_rect()
+    var minimap: Rect2 = main.minimap_root.get_global_rect()
     check(minimap.position == Vector2(safe.position.x + Hud.MARGIN, top), "the minimap in the top left corner: %s" % minimap)
     check(Settings.change("fps_counter", true) == OK, "FPS counter on")
     await _frames(3)

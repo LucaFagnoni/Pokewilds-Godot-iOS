@@ -113,7 +113,7 @@ func _initialize() -> void:
     await run("field")
     check(not s.build().is_empty(), "the field has a surface")
     var clock: Control = main.status_hud.clock_chip
-    var map: Control = main.m3924_minimap_root
+    var map: Control = main.minimap_root
     map.hide()
     await run("field, minimap hidden")
     map.show()

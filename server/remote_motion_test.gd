@@ -133,8 +133,8 @@ func _observe() -> void:
 	var at: Vector2 = remote.player.sprite.global_position
 	_line("O %.1f %.2f %.2f %d" % [_now(), at.x, at.y, 1 if remote.visible else 0])
 	if shots != "": _shoot(remote)
-	for actor in main.m3924_minimap_others:
-		var marker = main.m3924_minimap_others[actor]
+	for actor in main.minimap_others:
+		var marker = main.minimap_others[actor]
 		if is_instance_valid(marker): _line("M %.1f %.2f %.2f" % [_now(), marker.position.x, marker.position.y])
 
 ## Windowed (--shots=DIR): contact sheets of the screen, a frame per tile,

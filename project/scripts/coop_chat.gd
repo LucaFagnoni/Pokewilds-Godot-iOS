@@ -180,7 +180,7 @@ func centre()->float:
 ## most what a 320 px screen has, so a wider phone wraps them the same way.
 func room()->float:
     var left:float=main.get_viewport().get_visible_rect().size.x/2.0-main.touch_controls.usable_rect.position.x
-    return 2.0*(minf(left,160.0)-(HudStyle.MARGIN+main.M3924_MINIMAP_SIZE.x+HudStyle.GAP+HudStyle.PAD))
+    return 2.0*(minf(left,160.0)-(HudStyle.MARGIN+main.MINIMAP_SIZE.x+HudStyle.GAP+HudStyle.PAD))
 
 static func _advance(text:String)->float:
     return HudStyle.FONT.get_string_size(text,HORIZONTAL_ALIGNMENT_LEFT,-1,HudStyle.FONT_SIZE).x

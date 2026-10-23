@@ -158,8 +158,7 @@ func cut(cell:Vector2i,move:String="CUT")->void:
     var prior_encounter:Dictionary=game.main.world.pending_encounter_record.duplicate(true)
     field_rewards={};field_encounter={};collecting=true
     if move=="CUT":game.main.world._try_cut_target(cell)
-    elif game.main.world.exact_world_mode:game.main.world._harvest_exact_resource(cell,move)
-    else:game.main.world._harvest_resource_with_move(cell,move)
+    else:game.main.world._harvest_exact_resource(cell,move)
     collecting=false
     var encounter=field_encounter.duplicate(true)
     game.main.world.pending_encounter_record=prior_encounter
@@ -378,11 +377,10 @@ func cut_cells(cell:Vector2i)->Array:
     var anchor:Vector2i=world._exact_resource_anchor(cell)
     if anchor.x<=-2147483648:anchor=world._resource_object_anchor(cell)
     if anchor.x>-2147483648 and anchor not in cells:cells.append(anchor)
-    if world.exact_world_mode:
-        var giant:Vector2i=world._exact_large_tree1_anchor(anchor if anchor.x>-2147483648 else cell)
-        if giant.x>-2147483648:
-            for offset in [Vector2i.ZERO,Vector2i.RIGHT,Vector2i.DOWN,Vector2i(1,1)]:
-                if giant+offset not in cells:cells.append(giant+offset)
+    var giant:Vector2i=world._exact_large_tree1_anchor(anchor if anchor.x>-2147483648 else cell)
+    if giant.x>-2147483648:
+        for offset in [Vector2i.ZERO,Vector2i.RIGHT,Vector2i.DOWN,Vector2i(1,1)]:
+            if giant+offset not in cells:cells.append(giant+offset)
     return cells
 
 func capture_cut(cells:Array)->Dictionary:
@@ -530,11 +528,7 @@ func apply_records(area:String,records:Array,arriving:bool=false)->void:
         if group=="terrain_changes":
             if record.value!=null:
                 var at:Vector2i=world._cell_from_key(key)
-                if world.exact_world_mode:world._set_exact_tile_names(at,"sand1" if int(record.value)==1 else "green1","")
-                elif world._in_bounds(at):
-                    world.terrain[at.y][at.x]=int(record.value)
-                    var sprite=world.ground_sprites.get(at)
-                    if is_instance_valid(sprite):sprite.texture=world.SAND if int(record.value)==1 else world.GRASS
+                world._set_exact_tile_names(at,"sand1" if int(record.value)==1 else "green1","")
             continue
         if group=="source_plant_farms":
             if record.value is Dictionary and world.exact_world!=null:

@@ -41,7 +41,7 @@ func _shown() -> Image:
 
 func _same_as_whole(what: String) -> void:
     var bounds: Rect2i = main.map_raster.bounds
-    var whole: Image = main._m3924_minimap_render(bounds, bounds, world.exact_world)
+    var whole: Image = main._minimap_render(bounds, bounds, world.exact_world)
     var shown := _shown()
     var same := shown.get_data() == whole.get_data()
     if not same:
@@ -109,8 +109,7 @@ func _initialize() -> void:
 
     # A tile edit (a tree cut down) on discovered ground.
     var edited := Vector2i(-1, -1)
-    for key in world.discovered_cells:
-        var cell: Vector2i = world._cell_from_key(key)
+    for cell in world.discovered_cells.cells():
         var tile: SourceTile = world.exact_world.tile_at(cell)
         if tile != null and not tile.name_upper.is_empty():
             edited = cell

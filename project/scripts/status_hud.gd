@@ -90,9 +90,9 @@ func _place() -> void:
     # The button theme reaches every piece of the HUD.
     if dark != HudStyle.dark:
         dark = HudStyle.dark
-        for item in [clock_chip, battery_chip, fps_chip, main.m3924_minimap_root.get_node("Ring"), main.minimap_north]:
+        for item in [clock_chip, battery_chip, fps_chip, main.minimap_root.get_node("Ring"), main.minimap_north]:
             item.queue_redraw()
-    _move(main.m3924_minimap_root, Vector2(safe.position.x + HudStyle.MARGIN, top))
+    _move(main.minimap_root, Vector2(safe.position.x + HudStyle.MARGIN, top))
     var centre: float = main.get_viewport().get_visible_rect().size.x / 2.0
     _move(clock_chip, Vector2(roundf(centre - clock_chip.size.x / 2.0), top))
     var right := safe.end.x - HudStyle.MARGIN
@@ -150,8 +150,8 @@ func _build() -> void:
     root.z_index = 80
     main.get_node("UI").add_child(root)
     # The minimap joins the row: placed on the whole screen, not the centred 320x180 area.
-    main.m3924_minimap_root.reparent(root, false)
-    main.m3924_minimap_root.z_index = 0
+    main.minimap_root.reparent(root, false)
+    main.minimap_root.z_index = 0
     clock_chip = HudStyle.chip(root, "Clock")
     var sun := Control.new()
     sun.name = "Sun"

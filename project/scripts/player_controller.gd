@@ -139,7 +139,7 @@ func _move(delta: float) -> void:
             before_position, position)
     if world != null and world.has_method("field_motion_completed"):
         world.call("field_motion_completed", before_position, position, dir)
-    var sliding := world != null and world.get("m3922_ice_slide_direction") != null and Vector2(world.get("m3922_ice_slide_direction")) != Vector2.ZERO
+    var sliding := world != null and world.get("ice_slide_direction") != null and Vector2(world.get("ice_slide_direction")) != Vector2.ZERO
     if sliding:
         walk_phase = false
         source_step_distance = 0.0

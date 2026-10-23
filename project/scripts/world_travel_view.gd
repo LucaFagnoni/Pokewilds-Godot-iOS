@@ -15,7 +15,7 @@ func configure(world: Node) -> void:
     start_tick=BoundaryWater.world_tick(world)
     tile=BoundaryWater.water_frame(start_tick)
     var sources: Array[Sprite2D]=[]
-    if is_instance_valid(world.m3922_fly_shadow_sprite):sources.append(world.m3922_fly_shadow_sprite)
+    if is_instance_valid(world.fly_shadow_sprite):sources.append(world.fly_shadow_sprite)
     if is_instance_valid(world.field_helper_sprite):sources.append(world.field_helper_sprite)
     sources.append(world.player.sprite)
     sources.sort_custom(func(a:Sprite2D,b:Sprite2D):return _effective_z(a)<_effective_z(b))

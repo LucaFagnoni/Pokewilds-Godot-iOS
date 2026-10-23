@@ -149,18 +149,18 @@ func delete_marker() -> void:
 func update_minimap(angle: float) -> void:
     var items:=records() if Settings.enabled("map_waypoint") else []
     while mini_markers.size()<items.size():
-        var node:TextureRect=main._source_texture_rect(main.m3924_minimap_root,"Waypoint",Vector2.ZERO,Vector2(5,6),icon)
+        var node:TextureRect=main._source_texture_rect(main.minimap_root,"Waypoint",Vector2.ZERO,Vector2(5,6),icon)
         node.material=outline;node.z_index=3;mini_markers.append(node)
     for node in mini_markers:node.hide()
-    var origin:Vector2=main.m3924_minimap_map.get_meta("view_origin",Vector2.ZERO)
-    var window:Vector2=main.m3924_minimap_map.get_meta("window_cells",Vector2(24,24))
+    var origin:Vector2=main.minimap_map.get_meta("view_origin",Vector2.ZERO)
+    var window:Vector2=main.minimap_map.get_meta("window_cells",Vector2(24,24))
     for i in range(items.size()):
         var record=items[i]
         if not record is Dictionary or not record.has("x") or not record.has("y"):continue
-        var offset:Vector2=((Vector2(float(record.x)+0.5,float(record.y)+0.5)-origin)/window-Vector2(0.5,0.5))*main.M3924_MINIMAP_MAP_RADIUS*2.0
-        if offset.length()>main.M3924_MINIMAP_MAP_RADIUS-3.0:continue
+        var offset:Vector2=((Vector2(float(record.x)+0.5,float(record.y)+0.5)-origin)/window-Vector2(0.5,0.5))*main.MINIMAP_MAP_RADIUS*2.0
+        if offset.length()>main.MINIMAP_MAP_RADIUS-3.0:continue
         mini_markers[i].texture=marker_texture(String(record.get("marker","A")))
-        mini_markers[i].position=(main.M3924_MINIMAP_SIZE*0.5+offset.rotated(angle)-mini_markers[i].size*0.5).round();mini_markers[i].show()
+        mini_markers[i].position=(main.MINIMAP_SIZE*0.5+offset.rotated(angle)-mini_markers[i].size*0.5).round();mini_markers[i].show()
 
 func marker_texture(form: String) -> Texture2D:
     if form.length()!=1 or not MARKER_FORMS.contains(form):form="A"

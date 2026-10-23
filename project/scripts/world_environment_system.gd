@@ -833,7 +833,7 @@ func _update_environment_lights() -> void:
 # ~6 ms for the 625 cells around the player.
 func _nearby_lava_cells(center: Vector2i, radius: int) -> Array:
     var store := world.exact_world.tiles as WorldTileStore if world.get("exact_world") != null else null
-    if store == null or not store.extra.is_empty() or world.get("active_area_id") != "OVERWORLD" or not bool(world.get("exact_world_mode")):
+    if store == null or not store.extra.is_empty() or world.get("active_area_id") != "OVERWORLD":
         return world.call("environment_nearby_lava_cells", radius) as Array
     if lava_name_count != store.strings.size():
         lava_name_count = store.strings.size()
