@@ -19,6 +19,7 @@ const PokemonData = preload("res://scripts/pokemon_data.gd")
 const PokemonEcology = preload("res://scripts/pokemon_ecology.gd")
 const PokemonState = preload("res://scripts/pokemon_state.gd")
 const TileRules = preload("res://scripts/rules/tile_rules.gd")
+const NativePopulation = preload("res://scripts/native_population.gd")
 const NO_CELL := Vector2i(-2147483648, -2147483648)
 const TILE := 16
 ## The world's day (world.gd WORLD_DAY_SECONDS) and where its night begins.
@@ -585,6 +586,10 @@ static func run_ecology_step(state, delta: float, centers: Array, simulated: Cal
         return
     var ecology_delta: float = state.ecology_accumulator
     state.ecology_accumulator = fmod(state.ecology_accumulator, PokemonEcology.HABITAT_CHECK_SECONDS)
+    # The same pass natively when the engine has it (native_population.gd).
+    var native := NativePopulation.sim()
+    if native != null and native.ecology_pass(state, ecology_delta, centers, simulated, with_wild, house_cells, may_release):
+        return
     var deployed: Dictionary = state.habitat.records
     # What the pass sets of each habitat Pokemon besides its clocks, as it was:
     # one whose changes is marked for co-op (habitat dirty).
