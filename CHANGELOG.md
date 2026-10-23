@@ -15,6 +15,7 @@ the version description in Feather. Write it for players, not developers.
 - **Smoother players in co-op:** other players move smoothly even when 4G stutters, with no teleporting.
 - **Less battery:** players off screen are no longer drawn.
 - **Cheaper walking:** the game does much less work on every step, especially in tall grass.
+- **Lighter wild Pokémon:** areas full of wild Pokémon, habitats and eggs cost far less: only the Pokémon on screen get a sprite, and finding nearby Pokémon is up to 40 times faster.
 
 ### Fixes
 - **Dedicated server freezes:** autosaves, a player joining and a new day no longer freeze the server for half a second or more.
