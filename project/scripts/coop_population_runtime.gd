@@ -72,9 +72,12 @@ const TIMERS=["move_timer","lay_egg_seconds","friend_seconds","harvest_progress"
 const TIMER_SEND_MS:=30000
 var _timers_sent:Dictionary={}
 var _scopes:Dictionary={}
-## When each record (by key) was last looked at: one nothing marked is looked
-## at again after TIMER_SEND_MS (its timers run; a change nobody marked).
+## When each record was last looked at (group -> cell -> msec): one nothing
+## marked is looked at again after TIMER_SEND_MS (its timers run; a change
+## nobody marked).
 var _checked:Dictionary={}
+## The cell of each stored record's key, worked out once per key.
+var _cells:Dictionary={}
 ## The tiles of a beat that did not get through, looked at again next beat.
 var _retry:Dictionary={}
 var _bare:Dictionary={}
@@ -111,7 +114,7 @@ func publish_motion()->void:
     var now:=Time.get_ticks_msec()
     if _timers_sent.size()>512:_timers_sent.clear()
     if _scopes.size()>2048:_scopes.clear()
-    if _checked.size()>4096:_checked.clear()
+    if _cells.size()>4096:_cells.clear()
     var nothing:String=Delta.encode(null)
     var world=game.main.world
     # A Pokemon saved on two tiles at once is one Pokemon: keep the first and
@@ -128,17 +131,18 @@ func publish_motion()->void:
         var population=world.habitat_population if group=="deployed_pokemon" else world.egg_population
         for cell in population.take_dirty():check[_record_key(group,cell)]=[group,cell]
         var shown:Dictionary=world.get(group)
+        var looked:Dictionary=_checked.get_or_add(group,{})
+        if looked.size()>4096:looked.clear()
         for cell in shown:
-            var key:=_record_key(group,cell)
-            if now-int(_checked.get(key,-TIMER_SEND_MS))>=TIMER_SEND_MS:check[key]=[group,cell]
+            if now-int(looked.get(cell,-TIMER_SEND_MS))>=TIMER_SEND_MS:check[_record_key(group,cell)]=[group,cell]
         for full_key in game.record_keys(prefix+group+"/"):
             var held=records.get(full_key)
             # A tile a Pokemon has left keeps an empty record; most are these.
             if held==null or held==nothing:continue
-            var key:=String(full_key).trim_prefix(prefix)
-            if check.has(key):continue
-            var cell:=_key_cell(key)
-            if not shown.has(cell):check[key]=[group,cell]
+            var cell=_cells.get(full_key)
+            if cell==null:
+                cell=_key_cell(String(full_key).trim_prefix(prefix));_cells[full_key]=cell
+            if not shown.has(cell):check[String(full_key).trim_prefix(prefix)]=[group,cell]
     for key in check:
         var group:String=check[key][0];var cell:Vector2i=check[key][1]
         var held=records.get(prefix+key)
@@ -151,8 +155,8 @@ func publish_motion()->void:
                 _scopes[prefix+key]=known
             if known[1]!="" and authority(known[1]):before[key]=held
         var data=world.get(group).get(cell)
+        _checked[group][cell]=now
         if data==null or not authority(Records.record_scope(data)):continue
-        _checked[key]=now
         var serial:Dictionary=world._serializable_ecology_record(data,cell)
         var next:String=Delta.encode(serial)
         # A Pokemon standing still only has its timers running. Those are
