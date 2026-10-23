@@ -135,6 +135,7 @@ func execute(actor:String,id:String,op:String,args:Dictionary)->Dictionary:
         game.main.world.field_moves.play_rule({"events":result.events.filter(func(event):return event[0] in shown)})
     committed["events"]=Rules.answered(result.events)
     committed["grant"]=result.grant
+    committed["consume"]=result.consume
     return committed
 
 ## What the rules are told about `actor`, from what the host holds: the bag of
@@ -208,8 +209,8 @@ func predict(op:String,cmd:Dictionary,extra:Dictionary={})->Dictionary:
     return answer
 
 ## The answer's own events (rules.gd ANSWERED): its words; what was gained, as
-## the game shows rewards (the bag itself comes with the player's record); a
-## Pokemon met.
+## the game shows rewards (the bag itself changes with the commit: apply_bag);
+## a Pokemon met.
 func _show_answer(answer:Dictionary)->void:
     var world=game.main.world
     var events:Array=answer.get("events",[]) if answer.get("events") is Array else []
@@ -226,6 +227,17 @@ func _show_answer(answer:Dictionary)->void:
                 if tile!=null and tile.route_belongs_to!=null and not tile.route_belongs_to.stored_pokemon.is_empty():tile.route_belongs_to.stored_pokemon.pop_front()
             if event[3] is Dictionary:world.pending_encounter_record=event[3].duplicate(true)
             world.encounter_requested.emit(String(event[1]),int(event[2]))
+
+## This player's own command, as committed: what it paid and gained taken
+## from and added to the bag here as a change (the host's copy of the bag is
+## not taken whole for these: it may lack what is not saved yet). Applied with
+## the commit itself, before anything else reads the bag.
+func apply_bag(commit:Dictionary)->void:
+    var consume=commit.get("consume",{})
+    var grant=commit.get("grant",{})
+    if consume is Dictionary and not consume.is_empty():Crafting.consume(game.main.inventory,consume)
+    if grant is Dictionary:
+        for item in grant:Crafting.grant(game.main.inventory,String(item),int(grant[item]))
 
 ## Player: the host's changes for this area arrived while a prediction is
 ## kept: theirs stand (a rollback leaves them alone).
