@@ -21,6 +21,9 @@ the version description in Feather. Write it for players, not developers.
 - **4G disconnects:** a player is only dropped after 30 seconds without signal, not 20.
 - **Battles:** all battle logic now lives in one place, shared by wild, trainer, boss and PvP battles. It behaves exactly as before, checked against 30 recorded battles.
 
+### Downloads
+- **The Android file is now called `Pokewilds-arm64.apk`:** it runs on 64-bit ARM phones, which is nearly every Android phone from the last years.
+
 ### Server and multiplayer
 - **Update the server and the app together:** this version uses a new co-op protocol.
 - **Automatic cleanup:** the server deletes old area files by itself after each save.

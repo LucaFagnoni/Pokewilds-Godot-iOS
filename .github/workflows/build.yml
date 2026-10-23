@@ -77,7 +77,7 @@ jobs:
           echo "---" >> notes.md
           echo "IPA version $VERSION ($BUNDLE). IPA, APK and server built from ${GITHUB_SHA::8}: they play together (a host refuses players of another build)." >> notes.md
           echo "- **Pokewilds-unsigned.ipa**: sign it with Feather (or similar) before installing." >> notes.md
-          echo "- **Pokewilds.apk**: Android, signed; installs over the previous APK." >> notes.md
+          echo "- **Pokewilds-arm64.apk**: Android (64-bit ARM phones), signed; installs over the previous APK." >> notes.md
           echo "- **PokeWilds-Server-win64.zip**: unzip it and run start_server.bat. Guide: README_SERVER.md." >> notes.md
           gh release create "$TAG" --draft --target "$GITHUB_SHA" \
             --title "PokeWilds $VERSION" --notes-file notes.md
@@ -777,15 +777,15 @@ jobs:
           set -o pipefail
           mkdir -p ../build/android
           "$GODOT" --headless --import
-          "$GODOT" --headless --export-release "Android" ../build/android/Pokewilds.apk 2>&1 | tee export.log \
+          "$GODOT" --headless --export-release "Android" ../build/android/Pokewilds-arm64.apk 2>&1 | tee export.log \
             || { grep -E -i -B2 -A8 'error|FAILURE|What went wrong' export.log | head -80 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}' | sed 's/^/::error::/'; echo; exit 1; }
-          test -f ../build/android/Pokewilds.apk
-          echo "::notice::APK $(du -h ../build/android/Pokewilds.apk | cut -f1)"
+          test -f ../build/android/Pokewilds-arm64.apk
+          echo "::notice::APK $(du -h ../build/android/Pokewilds-arm64.apk | cut -f1)"
 
       - name: Add the APK to the draft release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload --clobber "$TAG" build/android/Pokewilds.apk
+        run: gh release upload --clobber "$TAG" build/android/Pokewilds-arm64.apk
 
   # World generation must stay byte-identical per seed and size: saves, world
   # caches and co-op peers all regenerate from it. 35 worlds (all five sizes) are

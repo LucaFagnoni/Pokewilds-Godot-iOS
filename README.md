@@ -5,7 +5,7 @@ A mobile port of PokeWilds for iPhone and Android, remade in Godot, with a Windo
 ## Download
 
 - **iPhone:** [Pokewilds-unsigned.ipa](https://github.com/LucaFagnoni/pokewilds-mobile/releases/latest/download/Pokewilds-unsigned.ipa). Sign it with Feather (or a similar tool) before installing.
-- **Android:** [Pokewilds.apk](https://github.com/LucaFagnoni/pokewilds-mobile/releases/latest/download/Pokewilds.apk). Signed: each new APK installs over the previous one.
+- **Android:** [Pokewilds-arm64.apk](https://github.com/LucaFagnoni/pokewilds-mobile/releases/latest/download/Pokewilds-arm64.apk) (64-bit ARM phones). Signed: each new APK installs over the previous one.
 - **Windows server:** [PokeWilds-Server-win64.zip](https://github.com/LucaFagnoni/pokewilds-mobile/releases/latest/download/PokeWilds-Server-win64.zip). Unzip it and run `start_server.bat`. Setup guide: [README_SERVER.md](README_SERVER.md).
 
 Both links always point to the newest release. Each release holds an IPA, an APK and a server built from the same commit, so they always play together.
