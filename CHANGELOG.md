@@ -22,6 +22,7 @@ the version description in Feather. Write it for players, not developers.
 - **Fewer waits in co-op:** digging, cutting, picking up and storing things no longer save your whole game first.
 - **Building in co-op answers at once:** building, painting and cutting down what you built show straight away, you can place several pieces in a row without waiting, and the host checks every piece and pays back what it cost. Signs, beacon names, torches, windows and the PLANT's seed are now the same for every player.
 - **No hitches when players change areas:** a server no longer stutters for everyone while players walk into another area or a new one is made.
+- **No hitches when a server saves:** autosaves no longer make a server stutter for everyone, even on a long-played world, and a save cut short by a crash or a power cut still loses nothing.
 
 ### Fixes
 - **Dedicated server freezes:** autosaves, a player joining and a new day no longer freeze the server for half a second or more.
