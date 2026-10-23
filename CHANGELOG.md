@@ -6,7 +6,7 @@ the version description in Feather. Write it for players, not developers.
 ## Next version
 
 ### Improvements
-- **Smoother near lots of Pokémon:** wild Pokémon, habitat Pokémon and eggs now run in the game's engine itself. The habitat check, every second and a half, takes about a fourteenth of the time it did, so the game no longer hitches near habitats, and the wild Pokémon around you cost about a third as much every frame.
+- **Smoother near lots of Pokémon:** wild Pokémon, habitat Pokémon and eggs now run in the game's engine itself. The habitat check, every second and a half, takes about a twelfth of the time it did, so the game no longer hitches near habitats, and the wild Pokémon around you cost about a third as much every frame. A dedicated server running areas full of players and Pokémon no longer takes a long frame for that check either.
 - **Long-played worlds load faster:** the ground you have cut, dug, planted and built on is kept in a lighter form. Loading a world with a lot of it takes about 40% less time, saving it is quicker, and the short pause it caused once a second is gone. Old saves still load as before.
 
 ### Fixes
