@@ -18,6 +18,14 @@ SCons in the Godot source with profile=<this package>/.github/engine/custom.py
 (on Windows also d3d12=no). POKEWILDS_NATIVE_WORLDGEN=0 forces GDScript.
 .github/engine/native_worldgen_test.gd, and worldgen_check.gd with
 POKEWILDS_NATIVE_WORLDGEN=1, check it against the GDScript.
+The module also runs the Pokemon's frame (PokeWildsPopulationSim: the wild
+and habitat Pokemon's ticks, the zone query and the ecology pass of
+wild_population.gd, habitat_population.gd and rules/population_rules.gd),
+with the GDScript's results and random numbers; without the module the
+GDScript runs (project/scripts/native_population.gd chooses).
+POKEWILDS_NATIVE_POPULATION=0 forces GDScript.
+.github/engine/native_population_test.gd, and population_sim_hash.gd with
+POKEWILDS_NATIVE_POPULATION=1, check it against the GDScript.
 
 ANDROID
 1. Install JDK 17, Android SDK and matching Godot Android export templates.

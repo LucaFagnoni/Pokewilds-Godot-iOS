@@ -16,6 +16,7 @@ extends RefCounted
 const PokemonEcology = preload("res://scripts/pokemon_ecology.gd")
 const PopulationRules = preload("res://scripts/rules/population_rules.gd")
 const PokemonData = preload("res://scripts/pokemon_data.gd")
+const NativePopulation = preload("res://scripts/native_population.gd")
 const RADIUS := PokemonEcology.HABITAT_RADIUS
 const DIRECTIONS := [Vector2i.ZERO, Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]
 
@@ -181,6 +182,11 @@ func _cover_add(center: Vector2i, change: int) -> void:
 ## up and lays, or steps about its habitat; the one the player is calling back
 ## (World.recall_hold) waits. `rng` is drawn in the records' order.
 func tick(delta: float, rng: RandomNumberGenerator) -> void:
+    # The same frame natively when the engine has it (native_population.gd).
+    var native := NativePopulation.sim()
+    if native != null:
+        native.habitat_tick(self, delta, rng)
+        return
     for raw_cell in records.keys():
         var old_cell: Vector2i = raw_cell
         if not records.has(old_cell):

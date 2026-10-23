@@ -22,6 +22,7 @@ extends RefCounted
 
 const PokemonEcology = preload("res://scripts/pokemon_ecology.gd")
 const PopulationRules = preload("res://scripts/rules/population_rules.gd")
+const NativePopulation = preload("res://scripts/native_population.gd")
 const RareForestMew = preload("res://scripts/rare_forest_mew.gd")
 const RareLegendaries = preload("res://scripts/rare_biome_legendaries.gd")
 const BUCKET_SHIFT := 4
@@ -265,6 +266,9 @@ func ids_at(cell: Vector2i) -> Variant:
 ## The slots of the Pokemon within any of the squares (Vector3i: center x, y,
 ## and the half side), in order. Only the buckets the squares touch are looked at.
 func slots_in(squares: Array) -> PackedInt32Array:
+    var native := NativePopulation.sim()
+    if native != null:
+        return native.slots_in(self, squares)
     sync()
     var result := PackedInt32Array()
     var seen := {}
@@ -468,6 +472,10 @@ static func decode_motion(bytes: PackedByteArray) -> Array:
 ## Returns the ids that changed (moved, were removed, or whose co-op target
 ## changed).
 func tick(delta: float, observers: Array, rng: RandomNumberGenerator) -> PackedInt64Array:
+    # The same frame natively when the engine has it (native_population.gd).
+    var native := NativePopulation.sim()
+    if native != null:
+        return native.wild_tick(self, delta, observers, rng)
     sync()
     _ticking = true
     _tick_dirty = PackedInt64Array()

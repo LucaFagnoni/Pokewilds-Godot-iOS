@@ -4,12 +4,14 @@ name: Native world generator
 # release builds: the stripped Linux engine built with it (the smoke job's
 # build and caches), then the native world generator against the GDScript one
 # step by step (native_worldgen_test.gd) and against the worlds' oracle
-# (worldgen_check.gd), and their times. By hand on any branch, or by a push
-# to the native-worldgen branch.
+# (worldgen_check.gd), and their times; then the native population frame
+# against the GDScript (native_population_test.gd, population_sim_hash.gd).
+# By hand on any branch, or by a push to the native-worldgen or
+# native-population branch.
 on:
   workflow_dispatch:
   push:
-    branches: [native-worldgen]
+    branches: [native-worldgen, native-population]
 
 env:
   GODOT_VERSION: 4.7.2
@@ -57,6 +59,20 @@ jobs:
       - name: Import the project
         working-directory: project
         run: '"$GODOT" --headless --import'
+
+      - name: Native population against GDScript
+        env:
+          POKEWILDS_NATIVE_POPULATION: "1"
+        run: |
+          engine=godot-src/bin/godot.linuxbsd.template_release.x86_64
+          timeout 1200 "$engine" --headless --path project -s ../.github/engine/native_population_test.gd 2>&1 | tee population.log
+          grep -q "NATIVE POPULATION TEST: failed 0" population.log
+          for mode in "" --no-sprites; do
+            timeout 1800 "$engine" --headless --fixed-fps 60 --path project -s ../server/population_sim_hash.gd -- $mode \
+              --expect=d60bd575a137bc966c7eb37c8c5fbd67e7dba8c36692c4e71ab634739865e312 2>&1 | tee "pop$mode.log"
+            grep -q "POPULATION SIM API OK" "pop$mode.log"
+          done
+          grep -h "NATIVE POPULATION TEST:" population.log | sed 's/^/::notice::/'
 
       - name: Native world generator against GDScript
         env:
