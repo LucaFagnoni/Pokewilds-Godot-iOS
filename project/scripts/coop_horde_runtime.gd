@@ -76,7 +76,9 @@ func host_tick()->void:
             areas[area][actor]=level
         for area in areas:commit(model().start(game.session.actor,game._id(),area,areas[area]))
     last_night=night
-    for key in game.state.records.keys():
+    # Four times a second: not a walk over every record of the world (12 ms at
+    # 60,000), only those of no area, as "horde/" ones are (coop_state.gd keys_by_area).
+    for key in game.state.keys_by_area.get("",{}).keys():
         if not String(key).begins_with("horde/"):continue
         var current:Dictionary=game.state.records[key]
         if night==0 or not settings().get("horde",true):commit(model().end(game.session.actor,game._id(),current.area));continue
