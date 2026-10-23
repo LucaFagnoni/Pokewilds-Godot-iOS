@@ -23,6 +23,8 @@ var records: Dictionary = {}
 ## collects them.
 var dirty: Dictionary = {}
 var tracking := false
+## Counts the records placed and taken (and clear()), for the views.
+var version := 0
 ## cell -> how many records stand within RADIUS of it.
 var _cover: Dictionary = {}
 ## How many records _cover was counted for.
@@ -47,6 +49,7 @@ func place(cell: Vector2i, record: Dictionary) -> void:
         _cover_add(cell, 1)
         _covered += 1
     records[cell] = record
+    version += 1
     mark(cell)
 
 ## Takes the record off `cell` ({} if none).
@@ -58,6 +61,7 @@ func take(cell: Vector2i) -> Dictionary:
     records.erase(cell)
     _cover_add(cell, -1)
     _covered -= 1
+    version += 1
     mark(cell)
     return record
 
@@ -70,6 +74,7 @@ func move(from: Vector2i, to: Vector2i) -> void:
 
 func clear() -> void:
     records.clear()
+    version += 1
     _cover.clear()
     _covered = 0
     dirty.clear()

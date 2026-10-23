@@ -464,6 +464,8 @@ func _check_api() -> String:
         for raw_cell in before.keys() + now.keys():
             if before.get(raw_cell) != now.get(raw_cell) and not touched.has(raw_cell):
                 return "%s on %s changed but is not dirty" % [population.group, raw_cell]
+    var drawn: String = await _check_views()
+    if not drawn.is_empty(): return drawn
     var probe := dirty.duplicate()
     probe.append((1 << 40) + 7)
     var decoded: Array = wild.decode_motion(wild.encode_motion(probe))
@@ -494,4 +496,38 @@ func _check_api() -> String:
             if before != after:
                 return "%s: to_save() after from_save() differs at %d of %d (%d now):\n%s\n%s" % [
                     "wild" if population == wild else population.group, index, saved.size(), again.size(), before, after]
+    return ""
+
+## The habitat Pokemon's and the eggs' pooled sprites (habitat_view.gd): one
+## for each record outdoors in view and none other, next to a habitat Pokemon
+## and far from it; none on a dedicated server. "" when that holds.
+func _check_views() -> String:
+    var habitat: Dictionary = world.get("deployed_pokemon")
+    if habitat.is_empty(): return "no habitat Pokemon to check the views with"
+    var near: Vector2i = habitat.keys()[0]
+    var far := near
+    var wild: Dictionary = world.get("wild_pokemon")
+    for raw_id in wild:
+        var cell: Vector2i = wild[raw_id].cell
+        if maxi(absi(cell.x - near.x), absi(cell.y - near.y)) > maxi(absi(far.x - near.x), absi(far.y - near.y)): far = cell
+    var seen := 0
+    for place in [near + Vector2i(0, 2), far]:
+        await _teleport(place)
+        await _frames(30)
+        for view in [world.get("habitat_view"), world.get("egg_view")]:
+            var rect: Rect2i = view._view_cells()
+            var records: Dictionary = view.records_of.records
+            for raw_cell in records:
+                var data: Dictionary = records[raw_cell]
+                if data.has("house_door"): continue
+                var sprite = data.get("sprite")
+                var shown: bool = is_instance_valid(sprite) and view.held.has(sprite)
+                if shown != (view.drawn and rect.has_point(raw_cell)):
+                    return "%s on %s: sprite %s, in view %s (drawn %s)" % [view.records_of.group, raw_cell, shown, rect.has_point(raw_cell), view.drawn]
+                if shown:
+                    seen += 1
+                    if (sprite as Sprite2D).texture == null or not sprite.visible: return "%s on %s: its sprite is not drawn" % [view.records_of.group, raw_cell]
+            for sprite in view.held:
+                if not is_instance_valid(sprite) or not is_same(view.held[sprite].get("sprite"), sprite): return "%s: a pooled sprite no record holds" % view.records_of.group
+    if seen == 0 and world.get("habitat_view").drawn: return "no habitat Pokemon or egg drawn next to one"
     return ""

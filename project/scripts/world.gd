@@ -306,6 +306,11 @@ var wild_pokemon: Dictionary = wild_population.records
 const PopulationView = preload("res://scripts/population_view.gd")
 ## The wild Pokemon's pooled sprites (the WildPokemonLayer): only those in view.
 var population_view: PopulationView
+const HabitatView = preload("res://scripts/habitat_view.gd")
+## The habitat Pokemon's and the eggs' pooled sprites (in the LandmarkLayer and
+## the WildEggLayer): only those outdoors in view.
+var habitat_view: HabitatView
+var egg_view: HabitatView
 ## The eggs lying in the world (a HabitatPopulation of their own, for the
 ## tiles changed since co-op last sent them).
 var egg_population := HabitatPopulation.new(self, "wild_eggs")
@@ -320,6 +325,18 @@ func _sprite_of(data: Dictionary) -> Sprite2D:
     if is_same(wild_pokemon.get(wild_id), data):
         return population_view.sprite_of(wild_id) if is_instance_valid(population_view) else null
     return data.get("sprite") as Sprite2D
+
+## A habitat Pokemon's or egg's record lets go of its sprite: back to its
+## view's pool, or freed (one in a house has its own).
+func _drop_record_sprite(data: Dictionary) -> void:
+    var sprite = data.get("sprite")
+    if not is_instance_valid(sprite):
+        return
+    var view = sprite.get_parent()
+    if view is HabitatView:
+        view.release(sprite)
+    else:
+        sprite.queue_free()
 var next_wild_id := 1
 var next_deployed_id := 1
 var ecology_accumulator := 0.0
@@ -688,6 +705,9 @@ func generate_world(
     landmark_layer.name = "LandmarkLayer"
     landmark_layer.z_index = 0
     add_child(landmark_layer)
+    habitat_view = HabitatView.new()
+    habitat_view.configure_records(self, habitat_population)
+    landmark_layer.add_child(habitat_view)
 
     var wild_layer := PopulationView.new()
     wild_layer.name = "WildPokemonLayer"
@@ -700,6 +720,9 @@ func generate_world(
     egg_layer.name = "WildEggLayer"
     egg_layer.z_index = 0
     add_child(egg_layer)
+    egg_view = HabitatView.new()
+    egg_view.configure_records(self, egg_population)
+    egg_layer.add_child(egg_view)
 
     var collision_body := CollisionBody.new()
     collision_body.name = "WorldCollision"
@@ -2942,18 +2965,10 @@ func deploy_pokemon(pokemon_data: Dictionary) -> bool:
         world_message.emit("That Pokemon's overworld sprite is not available yet.")
         return false
 
-    var sprite := Sprite2D.new()
-    sprite.texture = pokemon_texture
-    sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-    sprite.position = _cell_center(cell)
-    sprite.z_as_relative = false
-    sprite.z_index = _depth_z(cell)
-    _configure_overworld_sprite(sprite)
-    var layer := _house_pokemon_layer() if indoors else get_node_or_null("LandmarkLayer") as Node2D
-    if layer == null:
+    if not indoors and get_node_or_null("LandmarkLayer") == null:
         return false
-    layer.add_child(sprite)
-    preload("res://scripts/shiny_sparkles.gd").attach(sprite, pokemon_data)
+    # Outdoors habitat_view draws it while it is in view.
+    var sprite := _house_record_sprite(pokemon_texture, cell, pokemon_data) if indoors else null
 
     var stored := PokemonEcology.ensure_record(
         pokemon_data, rng, "owned:%d" % next_deployed_id
@@ -2968,7 +2983,8 @@ func deploy_pokemon(pokemon_data: Dictionary) -> bool:
     stored["move_timer"] = _wild_move_delay(species)
     stored["anim_phase"] = 0
     stored["behavior"] = PokemonData.info(species).get("overworld_behavior", {})
-    stored["sprite"] = sprite
+    if sprite != null:
+        stored["sprite"] = sprite
     stored = _refresh_record_habitat(stored, cell)
     habitat_population.place(cell, stored)
     return true
@@ -2999,9 +3015,7 @@ func _recall_deployed_pokemon(cell:Vector2i,data:Dictionary)->void:
             "missing_habitats", "manured", "house_door", "house_floor"
         ]:
         recalled.erase(runtime_key)
-    var sprite: Sprite2D = data.get("sprite") as Sprite2D
-    if is_instance_valid(sprite):
-        sprite.queue_free()
+    _drop_record_sprite(data)
     habitat_population.take(cell)
     deployed_recall_candidate = Vector2i(-2147483648, -2147483648)
     deployed_recall_candidate_msec = 0
@@ -3150,9 +3164,45 @@ func respawn_after_whiteout() -> void:
     _configure_camera()
     _refresh_exact_tile_streams()
 
+## A packed tile's ecology names (its two names lowered, and whether one of
+## them is grass1), by its names' ids, and a packed tile's biome
+## (_source_biome_for_tile), by its biome, route and water: the same for every
+## cell with that tile. For _tile_names_store's tiles.
+var _tile_names := {}
+var _tile_biomes := {}
+var _tile_names_store: Object
+
 func _ecology_names_at(cell: Vector2i) -> String:
     if active_area_id == "HOUSE" and built_house_interior_cells.has(cell):
         return "house_floor " + String((built_structures.get(cell, {}) as Dictionary).get("name", "")).to_lower()
+    # A packed tile: the same names as below from the tile's, without the
+    # lookups, the lowering and the biome (a tile object each) for every cell.
+    var tiles = exact_world.tiles if exact_world != null else null
+    if tiles is WorldTileStore:
+        var store: WorldTileStore = tiles
+        var index: int = store.index_of(cell * TILE)
+        if index >= 0:
+            if not is_same(store, _tile_names_store):
+                _tile_names_store = store
+                _tile_names.clear()
+                _tile_biomes.clear()
+            var pair: int = store.name_ids[index] << 24 | store.upper_ids[index]
+            var own = _tile_names.get(pair)
+            if own == null:
+                var name: String = store.name_at(index)
+                var upper: String = store.upper_at(index)
+                own = [name.to_lower() + " " + upper.to_lower(), _source_tile_key(name) == "grass1" or _source_tile_key(upper) == "grass1"]
+                _tile_names[pair] = own
+            # _is_tall_grass_cell, from the same fields.
+            var flags: int = store.flags[index]
+            var grass: bool
+            if tall_grass.has(cell):
+                grass = _packed_tile_biome(store, index, cell) != "SNOW"
+            elif flags & WorldTileStore.TIDAL != 0 and _packed_tile_biome(store, index, cell) != "BEACH":
+                grass = false
+            else:
+                grass = own[1] or flags & WorldTileStore.GRASS != 0
+            return own[0] + (" grass" if grass else "") + _placed_ecology_names(cell)
     if not _in_bounds(cell):
         return ""
     var names: Array[String] = []
@@ -3168,24 +3218,41 @@ func _ecology_names_at(cell: Vector2i) -> String:
         names.append(String(source_data.get("biome", "")).to_lower())
     if _is_tall_grass_cell(cell):
         names.append("grass")
+    var own := " ".join(names)
+    var placed := _placed_ecology_names(cell)
+    return placed.substr(1) if own.is_empty() else own + placed
+
+## biome_at(cell) for packed tile `index` of `store` (cached in _tile_biomes).
+func _packed_tile_biome(store: WorldTileStore, index: int, cell: Vector2i) -> String:
+    var kind: int = (store.biome_ids[index] << 32) | (store.route_ids[index] << 1) | int(store.flags[index] & WorldTileStore.WATER != 0)
+    var biome = _tile_biomes.get(kind)
+    if biome == null:
+        biome = _source_biome_for_tile(exact_world.tile_at(cell))
+        _tile_biomes[kind] = biome
+    return biome
+
+## The ecology names of what lies on `cell` (flowers, resources, buildings,
+## landmarks, ice), each after a space.
+func _placed_ecology_names(cell: Vector2i) -> String:
+    var names := ""
     if flower_cells.has(cell):
-        names.append("flower")
+        names += " flower"
     if resource_objects.has(cell):
-        names.append(String((resource_objects[cell] as Dictionary).get("type", "")).to_lower())
+        names += " " + String((resource_objects[cell] as Dictionary).get("type", "")).to_lower()
     if built_structures.has(cell):
         var built_name := String((built_structures[cell] as Dictionary).get("name", "")).to_lower()
-        names.append(built_name)
+        names += " " + built_name
         if built_name == "flowers":
-            names.append("flower")
+            names += " flower"
         elif built_name == "plant":
-            names.append("potted")
+            names += " potted"
         elif built_name == "grave":
-            names.append("gravestone")
+            names += " gravestone"
     if landmarks.has(cell):
-        names.append(String((landmarks[cell] as Dictionary).get("type", "")).to_lower())
+        names += " " + String((landmarks[cell] as Dictionary).get("type", "")).to_lower()
     if not terrain_changes.is_empty() and bool(terrain_changes.get("ice:%d,%d" % [cell.x, cell.y], false)):
-        names.append("snow")
-    return " ".join(names)
+        names += " snow"
+    return names
 
 ## per-frame
 func _update_ecology(delta:float)->void:
@@ -3517,9 +3584,13 @@ func _habitat_step_visuals(data: Dictionary, direction: Vector2i, target: Vector
     if is_instance_valid(sprite):
         _set_overworld_motion_frame(sprite, direction, int(data["anim_phase"]))
         sprite.z_index = _depth_z(target)
-        create_tween().tween_property(
+        var tween := create_tween()
+        tween.tween_property(
             sprite, "position", _cell_center(target), move_seconds
         ).set_trans(Tween.TRANS_LINEAR)
+        # A pooled sprite's step stops when it goes back to the pool.
+        if is_instance_valid(habitat_view) and habitat_view.held.has(sprite):
+            habitat_view.steps[sprite] = tween
 
 func _egg_ground_cell_is_valid(cell: Vector2i, ignored_wild_id: int = -1) -> bool:
     if not _in_bounds(cell):
@@ -3635,9 +3706,7 @@ func _release_old_eggs() -> void:
             continue
         if world_elapsed_seconds - float(egg["laid_at"]) < lifetime:
             continue
-        var egg_sprite: Sprite2D = egg.get("sprite") as Sprite2D
-        if is_instance_valid(egg_sprite):
-            egg_sprite.queue_free()
+        _drop_record_sprite(egg)
         egg_population.take(raw_cell)
 
 func _couple_egg_count(first_id: String, second_id: String) -> int:
@@ -4260,10 +4329,7 @@ func _clear_wild_pokemon() -> void:
 
 func _clear_wild_eggs() -> void:
     for raw_cell in wild_eggs.keys():
-        var data: Dictionary = wild_eggs[raw_cell]
-        var sprite: Sprite2D = data.get("sprite") as Sprite2D
-        if is_instance_valid(sprite):
-            sprite.queue_free()
+        _drop_record_sprite(wild_eggs[raw_cell])
     egg_population.clear()
 
 func _restore_deployed_pokemon(entry: Dictionary, cell: Vector2i) -> void:
@@ -4279,9 +4345,7 @@ func _restore_deployed_pokemon(entry: Dictionary, cell: Vector2i) -> void:
             if other_cell != cell and String(deployed_pokemon[other_cell].get("ecology_id", "")) == restored_id:
                 return
     if deployed_pokemon.has(cell):
-        var replaced = deployed_pokemon[cell].get("sprite")
-        if is_instance_valid(replaced):
-            replaced.queue_free()
+        _drop_record_sprite(deployed_pokemon[cell])
         habitat_population.take(cell)
     var species := String(entry.get("species", "")).to_lower()
     var pokemon_texture: Texture2D = PokemonData.record_texture(entry, "overworld")
@@ -4289,18 +4353,10 @@ func _restore_deployed_pokemon(entry: Dictionary, cell: Vector2i) -> void:
         pokemon_texture = FARM_POKEMON_TEXTURES.get(species) as Texture2D
     if pokemon_texture == null:
         return
-    var sprite := Sprite2D.new()
-    sprite.texture = pokemon_texture
-    sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-    sprite.position = _cell_center(cell)
-    sprite.z_as_relative = false
-    sprite.z_index = _depth_z(cell)
-    _configure_overworld_sprite(sprite)
-    var layer := _house_pokemon_layer() if indoors else get_node_or_null("LandmarkLayer") as Node2D
-    if layer == null:
+    if not indoors and get_node_or_null("LandmarkLayer") == null:
         return
-    layer.add_child(sprite)
-    preload("res://scripts/shiny_sparkles.gd").attach(sprite, entry)
+    # Outdoors habitat_view draws it while it is in view.
+    var sprite := _house_record_sprite(pokemon_texture, cell, entry) if indoors else null
     var ecology_id := String(entry.get("ecology_id", ""))
     if ecology_id.is_empty():
         ecology_id = "owned:%d" % next_deployed_id
@@ -4313,10 +4369,27 @@ func _restore_deployed_pokemon(entry: Dictionary, cell: Vector2i) -> void:
     stored["y"] = cell.y
     stored["behavior"] = PokemonData.info(species).get("overworld_behavior", {})
     stored["move_timer"] = float(stored.get("move_timer", _wild_move_delay(species)))
-    stored["sprite"] = sprite
-    habitat_population.place(cell, stored)
-    if indoors:
+    stored.erase("sprite")
+    if sprite != null:
+        stored["sprite"] = sprite
         sprite.visible = _house_pokemon_visible(stored)
+    habitat_population.place(cell, stored)
+
+## The sprite of a habitat Pokemon (`data`) or, with no data, an egg in a
+## house: its own (outdoors habitat_view and egg_view draw them).
+func _house_record_sprite(texture: Texture2D, cell: Vector2i, data: Dictionary = {}) -> Sprite2D:
+    var sprite := Sprite2D.new()
+    sprite.texture = texture
+    sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+    sprite.position = _cell_center(cell)
+    sprite.z_as_relative = false
+    sprite.z_index = _depth_z(cell)
+    if not data.is_empty():
+        _configure_overworld_sprite(sprite)
+    _house_pokemon_layer().add_child(sprite)
+    if not data.is_empty():
+        preload("res://scripts/shiny_sparkles.gd").attach(sprite, data)
+    return sprite
 
 func _cell_key(cell: Vector2i) -> String:
     return "%d,%d" % [cell.x, cell.y]
@@ -4667,16 +4740,11 @@ func _add_wild_egg(
         cell = _resolve_egg_ground_cell(cell, ignored_wild_id)
     if cell.x <= -2147483648:
         return
-    var layer := _house_pokemon_layer() if egg_record.has("house_door") else get_node_or_null("WildEggLayer") as Node2D
-    if layer == null:
+    var indoors := egg_record.has("house_door")
+    if not indoors and get_node_or_null("WildEggLayer") == null:
         return
-    var sprite := Sprite2D.new()
-    sprite.texture = POKEMON_EGG
-    sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-    sprite.position = _cell_center(cell)
-    sprite.z_as_relative = false
-    sprite.z_index = _depth_z(cell)
-    layer.add_child(sprite)
+    # Outdoors egg_view draws it while it is in view.
+    var sprite := _house_record_sprite(POKEMON_EGG, cell) if indoors else null
     var stored := egg_record.duplicate(true)
     stored["species"] = species.to_lower()
     stored["egg_species"] = String(stored.get("egg_species", species)).to_lower()
@@ -4694,11 +4762,12 @@ func _add_wild_egg(
         "hatch_steps", int(stored["hatch_cycles"]) * PokemonEcology.EGG_STEP_INTERVAL
     ))
     stored["cell"] = cell
-    stored["sprite"] = sprite
+    stored.erase("sprite")
+    if sprite != null:
+        stored["sprite"] = sprite
+        sprite.visible = _house_pokemon_visible(stored)
     if bool(stored.get("dropped_party_egg", false)) and egg_record.has("hatch_cycles"):
         stored["hatch_cycles"] = int(egg_record["hatch_cycles"])
-    if stored.has("house_door"):
-        sprite.visible = _house_pokemon_visible(stored)
     egg_population.place(cell, stored)
 
 func _add_wild_egg_record(
@@ -4987,9 +5056,7 @@ func _collect_wild_egg(cell:Vector2i)->void:
         world_message.emit("Your party and storage are full.")
         return
     var species := String(data.get("species", "pidgey"))
-    var sprite: Sprite2D = data.get("sprite") as Sprite2D
-    if is_instance_valid(sprite):
-        sprite.queue_free()
+    _drop_record_sprite(data)
     pending_egg_record = data.duplicate(true)
     pending_egg_record.erase("sprite")
     pending_egg_record.erase("cell")
@@ -5527,18 +5594,14 @@ func complete_battle_event(result: Dictionary) -> void:
         # Running leaves the egg untouched. Defeating it destroys the egg.
         if outcome == "defeated" and wild_eggs.has(cell):
             var egg_data: Dictionary = wild_eggs[cell]
-            var egg_sprite: Sprite2D = egg_data.get("sprite") as Sprite2D
-            if is_instance_valid(egg_sprite):
-                egg_sprite.queue_free()
+            _drop_record_sprite(egg_data)
             egg_population.take(cell)
             world_message.emit("The EGG was destroyed.")
         return
     if kind == "attack_deployed":
         if outcome in ["captured", "defeated"] and deployed_pokemon.has(cell):
             var deployed: Dictionary = deployed_pokemon[cell]
-            var deployed_sprite: Sprite2D = deployed.get("sprite") as Sprite2D
-            if is_instance_valid(deployed_sprite):
-                deployed_sprite.queue_free()
+            _drop_record_sprite(deployed)
             habitat_population.take(cell)
             blocked.erase(cell)
         return
@@ -7226,7 +7289,8 @@ func _try_push_fenced_pokemon(cell: Vector2i, direction: Vector2i, require_fence
     if target == _player_cell(): return false
     if active_area_id == "OVERWORLD" and not _pokemon_can_move_between(String(data.get("species", "")), cell, target): return false
     var sprite := data.get("sprite") as Sprite2D
-    if owned and (not is_instance_valid(sprite) or sprite.position.distance_to(_cell_center(cell)) > 1.5): return false
+    # Outdoors one with no sprite (out of view, or a dedicated server's) stands on its cell.
+    if owned and (sprite.position.distance_to(_cell_center(cell)) > 1.5 if is_instance_valid(sprite) else data.has("house_door")): return false
     if not owned and wild_population.visual_position(wild_id).distance_to(_cell_center(cell)) > 1.5: return false
     data["cell"] = target
     if not owned: wild_population.move(wild_id, target)
@@ -7236,9 +7300,10 @@ func _try_push_fenced_pokemon(cell: Vector2i, direction: Vector2i, require_fence
     else: wild_population.set_timer(wild_id, 1.0)
     data["anim_phase"] = 1 - int(data.get("anim_phase", 0))
     if owned:
-        _set_overworld_motion_frame(sprite, Vector2(direction), int(data.anim_phase))
-        sprite.position = _cell_center(target)
-        sprite.z_index = _depth_z(target)
+        if is_instance_valid(sprite):
+            _set_overworld_motion_frame(sprite, Vector2(direction), int(data.anim_phase))
+            sprite.position = _cell_center(target)
+            sprite.z_index = _depth_z(target)
         habitat_population.move(cell, target)
     else:
         wild_population.snap(wild_id)

@@ -209,7 +209,12 @@ func _release(id: int) -> void:
 
 ## A pooled sprite, as Sprite2D.new() made it.
 func _take() -> Sprite2D:
-    var sprite: Sprite2D = _free.pop_back() if not _free.is_empty() else null
+    var sprite: Sprite2D = null
+    # One freed behind the pool's back (with its record) is passed over.
+    while sprite == null and not _free.is_empty():
+        sprite = _free.pop_back()
+        if not is_instance_valid(sprite) or sprite.is_queued_for_deletion():
+            sprite = null
     if sprite == null:
         sprite = Sprite2D.new()
         sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
